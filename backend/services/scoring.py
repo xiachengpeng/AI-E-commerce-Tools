@@ -2,7 +2,7 @@ import requests
 import json
 import logging
 import time
-from config import GEMINI_API_URL, GEMINI_API_KEY
+# from config import GEMINI_API_URL, GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -75,72 +75,18 @@ def _extract_json(text: str) -> str:
         text = "\n".join(lines).strip()
     return text
 
-def _call_gemini_score(prompt: str, retries: int = 3) -> dict:
-    """调用 Gemini API，带重试机制（最多 retries 次，429 时指数退避）。"""
-    params = {"key": GEMINI_API_KEY}
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json"}
-    }
+from .ai_service import AIService
 
-    last_exception = None
-    for i in range(retries):
-        try:
-            response = requests.post(
-                GEMINI_API_URL, headers=headers, params=params, json=payload, timeout=180
-            )
-
-            if response.status_code == 429:
-                wait_time = (i + 1) * 5
-                logger.warning(
-                    f"Rate limit hit (429). Retrying in {wait_time}s... (Attempt {i+1}/{retries})"
-                )
-                time.sleep(wait_time)
-                continue
-
-            response.raise_for_status()
-            data = response.json()
-
-            candidates = data.get("candidates", [])
-            if not candidates:
-                raise ValueError("No candidates found in Gemini response.")
-
-            content = candidates[0].get("content", {})
-            parts = content.get("parts", [])
-            if not parts:
-                raise ValueError("No parts found in Gemini response candidate.")
-
-            json_str = parts[0].get("text", "")
-            parsed = json.loads(_extract_json(json_str))
-            if isinstance(parsed, list):
-                return {}
-            return parsed
-
-        except requests.exceptions.RequestException as e:
-            error_details = ""
-            if hasattr(e, "response") and e.response is not None:
-                error_details = (
-                    f" - Status Code: {e.response.status_code} - Body: {e.response.text}"
-                )
-            last_exception = Exception(
-                f"Gemini API request failed during scoring: {str(e)}{error_details}"
-            )
-            if i < retries - 1:
-                time.sleep(2)
-
-        except Exception as e:
-            last_exception = Exception(
-                f"Failed to parse Gemini score response structure: {str(e)}"
-            )
-            if i < retries - 1:
-                time.sleep(2)
-
-    raise last_exception or Exception("Gemini scoring failed after all retries.")
-
-
-def calculate_score(product_data: dict) -> dict:
+def calculate_score(product_data: dict, provider: str = None) -> dict:
     prompt = PROMPT_TEMPLATE_SCORE.replace(
         "{product}", json.dumps(product_data, ensure_ascii=False, indent=2)
     )
-    return _call_gemini_score(prompt)
+    try:
+        json_str = AIService.call_ai(prompt, provider=provider)
+        parsed = json.loads(_extract_json(json_str))
+        if isinstance(parsed, list):
+            return {}
+        return parsed
+    except Exception as e:
+        logger.error(f"Failed to calculate score: {str(e)}")
+        raise e

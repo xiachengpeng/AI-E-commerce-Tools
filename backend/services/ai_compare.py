@@ -2,7 +2,7 @@ import requests
 import json
 import logging
 import time
-from config import GEMINI_API_URL, GEMINI_API_KEY
+# from config import GEMINI_API_URL, GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -51,46 +51,18 @@ def _extract_json(text: str) -> str:
         text = "\n".join(lines).strip()
     return text
 
-def compare_products(products_data: list, retries: int = 3) -> dict:
+from .ai_service import AIService
+
+def compare_products(products_data: list, provider: str = None) -> dict:
     prompt = PROMPT_TEMPLATE_COMPARE.replace("{products}", json.dumps(products_data, ensure_ascii=False, indent=2))
     
-    params = {"key": GEMINI_API_KEY}
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json"}
-    }
-    
-    for i in range(retries):
-        try:
-            response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=payload, timeout=180)
-            
-            if response.status_code == 429:
-                wait_time = (i + 1) * 5
-                time.sleep(wait_time)
-                continue
-                
-            response.raise_for_status()
-            data = response.json()
-            
-            candidates = data.get("candidates", [])
-            if not candidates:
-                raise ValueError("No candidates found in Gemini response.")
-                
-            content = candidates[0].get("content", {})
-            parts = content.get("parts", [])
-            if not parts:
-                raise ValueError("No parts found in Gemini response candidate.")
-                
-            json_str = parts[0].get("text", "")
-            parsed = json.loads(_extract_json(json_str))
-            logger.info(f"AI Compare Result Parsed: {parsed}")
-            if isinstance(parsed, list):
-                return {}
-            return parsed
-            
-        except Exception as e:
-            if i == retries - 1:
-                raise Exception(f"Failed to compare after {retries} attempts: {str(e)}")
-            time.sleep(2)
-    return {}
+    try:
+        json_str = AIService.call_ai(prompt, provider=provider)
+        parsed = json.loads(_extract_json(json_str))
+        logger.info(f"AI Compare Result Parsed: {parsed}")
+        if isinstance(parsed, list):
+            return {}
+        return parsed
+    except Exception as e:
+        logger.error(f"Failed to compare products: {str(e)}")
+        raise e

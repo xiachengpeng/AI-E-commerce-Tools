@@ -2,7 +2,8 @@ import requests
 import json
 import logging
 import time
-from config import GEMINI_API_URL, GEMINI_API_KEY
+import time
+# from config import GEMINI_API_URL, GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -103,52 +104,22 @@ def _extract_json(text: str) -> str:
         text = "\n".join(lines).strip()
     return text
 
-def _call_gemini(prompt: str, retries: int = 3) -> str:
-    params = {"key": GEMINI_API_KEY}
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json"}
-    }
-    
-    for i in range(retries):
-        try:
-            response = requests.post(GEMINI_API_URL, headers=headers, params=params, json=payload, timeout=180)
-            
-            if response.status_code == 429:
-                wait_time = (i + 1) * 5
-                logger.warning(f"Rate limit hit (429). Retrying in {wait_time}s... (Attempt {i+1}/{retries})")
-                time.sleep(wait_time)
-                continue
-                
-            response.raise_for_status()
-            data = response.json()
-            
-            candidates = data.get("candidates", [])
-            if not candidates:
-                raise ValueError("No candidates found in Gemini response.")
-            content = candidates[0].get("content", {})
-            parts = content.get("parts", [])
-            if not parts:
-                raise ValueError("No parts found in Gemini response candidate.")
-            
-            raw_text = parts[0].get("text", "")
-            logger.info(f"AI Extract Result: {raw_text[:200]}...")
-            return _extract_json(raw_text)
-        except Exception as e:
-            if i == retries - 1:
-                raise e
-            time.sleep(2)
-    return ""
+from .ai_service import AIService
 
-def analyze_single_extract(structured_data: dict) -> str:
+def _call_ai_service(prompt: str, provider: str = None) -> str:
+    """封装调用 AIService 的逻辑"""
+    raw_text = AIService.call_ai(prompt, provider=provider)
+    logger.info(f"AI Result: {raw_text[:200]}...")
+    return _extract_json(raw_text)
+
+def analyze_single_extract(structured_data: dict, provider: str = None) -> str:
     product_data = json.dumps(structured_data.get("product_data", {}), ensure_ascii=False)
     market_data = json.dumps(structured_data.get("market_data", {}), ensure_ascii=False)
     prompt = PROMPT_TEMPLATE_EXTRACT.replace("{product_data}", product_data).replace("{market_data}", market_data)
-    return _call_gemini(prompt)
+    return _call_ai_service(prompt, provider=provider)
 
-def analyze_single_deep(structured_data: dict) -> str:
+def analyze_single_deep(structured_data: dict, provider: str = None) -> str:
     product_data = json.dumps(structured_data.get("product_data", {}), ensure_ascii=False)
     market_data = json.dumps(structured_data.get("market_data", {}), ensure_ascii=False)
     prompt = PROMPT_TEMPLATE_DEEP.replace("{product_data}", product_data).replace("{market_data}", market_data)
-    return _call_gemini(prompt)
+    return _call_ai_service(prompt, provider=provider)
