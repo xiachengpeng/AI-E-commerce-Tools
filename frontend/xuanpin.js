@@ -739,6 +739,7 @@
             const d = data.single_data || {};
             const scoreObj = (data.scores && data.scores.length > 0) ? data.scores[0] : null;
 
+            // 1. 评分
             if (scoreObj) {
                 content += `<div class="section">
                     <div class="section-header"><div class="section-title">📊 智能投资打分</div></div>
@@ -755,29 +756,72 @@
                 </div>`;
             }
 
+            // 2. 产品信息
             const spHtml = (d.core_selling_points || []).map(sp => `<li>${typeof sp === 'object' ? zh(sp.point) : zh(sp)}</li>`).join('');
             content += `<div class="section"><div class="section-header"><div class="section-title">🔬 产品深度透视</div></div>
                 <div class="card"><div class="card-label">产品名称</div><div style="font-size:18px;font-weight:700;">${zh(d.product_name) || 'N/A'}</div></div>
                 <div class="card"><div class="card-label">市场定价</div><div style="font-size:16px;color:#7c3aed;font-weight:700;">${zh(d.price) || 'N/A'}</div></div>
+                <div class="card"><div class="card-label">评价数</div><div>${zh(d.reviews_count || '0')}</div></div>
                 <div class="card"><div class="card-label">核心卖点</div><ul style="margin:0;padding-left:20px;">${spHtml}</ul></div></div>`;
 
+            // 3. 消费者画像与场景
+            const countries = (d.target_countries || []).map(c => zh(c)).join(', ');
+            const audiences = (d.target_audience || []).map(t => zh(typeof t === 'object' ? (t.audience || t.item || '') : String(t))).join('、');
+            const scenarios = (d.use_scenarios || []).map(s => `<span style="display:inline-block;background:#f0f9ff;color:#0369a1;padding:4px 12px;border-radius:15px;font-size:12px;margin:0 5px 5px 0;border:1px solid #bae6fd;">${zh(typeof s === 'object' ? (s.scenario || s.item || '') : String(s))}</span>`).join('');
+            
+            content += `<div class="section"><div class="section-header"><div class="section-title">🎯 消费者画像与场景</div></div>
+                <div class="card"><div class="card-label">人群画像</div>
+                    <p><strong>年龄段：</strong>${zh(d.age_range || '-')}</p>
+                    <p><strong>目标国家：</strong>${countries || '-'}</p>
+                    <p><strong>用户群体：</strong>${audiences || '-'}</p>
+                </div>
+                <div class="card"><div class="card-label">使用场景</div><div>${scenarios || '-'}</div></div></div>`;
+
+            // 4. 用户痛点
+            const painHtml = (d.user_pain_points || []).map(pp => `<div style="background:#fff1f2;border-left:4px solid #f43f5e;padding:12px;margin-bottom:8px;font-size:13px;color:#9f1239;">${zh(typeof pp === 'object' ? pp.pain : String(pp))}</div>`).join('');
+            content += `<div class="section"><div class="section-header"><div class="section-title">😤 用户痛点分析</div></div>${painHtml || '<div class="card">-</div>'}</div>`;
+
+            // 5. 营销策略
+            const trafficHtml = (d.traffic_strategy || []).map(t => `<div style="margin-bottom:10px;"><strong>${zh(t.channel)}:</strong> <span style="font-size:13px;color:#475569;">${zh(t.detail)}</span></div>`).join('');
+            const adHtml = (d.ad_angles || []).map(a => `<li>${zh(String(a))}</li>`).join('');
+            content += `<div class="section"><div class="section-header"><div class="section-title">🚀 逆向营销策略</div></div>
+                <div class="card"><div class="card-label">流量渠道</div>${trafficHtml || '-'}</div>
+                <div class="card"><div class="card-label">广告切入点</div><ul style="margin:0;padding-left:20px;">${adHtml || '-'}</ul></div></div>`;
+
+            // 6. 优势与风险
+            const strHtml = (d.strengths || []).map(s => `<div style="margin-bottom:10px;"><strong style="color:#059669;">${zh(s.point)}:</strong> <span style="font-size:13px;color:#475569;">${zh(s.detail)}</span></div>`).join('');
+            const weakHtml = (d.weaknesses || []).map(w => `<div style="margin-bottom:10px;"><strong style="color:#dc2626;">${zh(w.risk)}:</strong> <span style="font-size:13px;color:#475569;">${zh(w.detail)}</span></div>`).join('');
+            content += `<div class="section"><div class="section-header"><div class="section-title">⚡ 优势与风险</div></div>
+                <div class="card" style="border-left:4px solid #10b981;"><div class="card-label" style="color:#10b981;">核心优势</div>${strHtml || '-'}</div>
+                <div class="card" style="border-left:4px solid #ef4444;"><div class="card-label" style="color:#ef4444;">核心风险</div>${weakHtml || '-'}</div></div>`;
+
+            // 7. 差异化机会与建议
+            const oppHtml = (d.differentiation_opportunities || []).map(opp => `<div class="card" style="border-left:4px solid #8b5cf6;"><div class="card-label">差异化机会</div><p style="margin:0;font-size:13px;">${zh(typeof opp === 'object' ? opp.opportunity : String(opp))}</p></div>`).join('');
+            content += `<div class="section"><div class="section-header"><div class="section-title">💡 差异化机会</div></div>${oppHtml || '-'}</div>`;
+
+            const recRaw = zh(d.entry_recommendation || '');
+            content += `<div class="section"><div class="section-header"><div class="section-title">🎯 操盘建议</div></div>
+                <div class="card" style="background:#f5f3ff;border:1px solid #ddd6fe;"><p style="white-space:pre-wrap;margin:0;font-size:14px;color:#4c1d95;">${recRaw}</p></div></div>`;
+
+            // 8. VOC
             if (d.voc_analysis) {
                 const v = d.voc_analysis;
-                const pList = (v.pros || []).map(p => `<li style="color:#059669;">👍 ${zh(p)}</li>`).join('');
-                const cList = (v.cons || []).map(c => `<li style="color:#dc2626;">👎 ${zh(c)}</li>`).join('');
+                const pList = (v.pros || []).map(p => `<li style="color:#059669;margin-bottom:5px;">👍 ${zh(p)}</li>`).join('');
+                const cList = (v.cons || []).map(c => `<li style="color:#dc2626;margin-bottom:5px;">👎 ${zh(c)}</li>`).join('');
                 content += `<div class="section"><div class="section-header"><div class="section-title">📣 用户评价深度洞察 (VOC)</div></div>
-                    <div class="card"><div style="font-size:12px;color:#64748b;margin-bottom:10px;">满意度：<strong style="color:#7c3aed;">${v.sentiment || '80%'}</strong></div>
-                    <table style="border:none;margin:0;"><tr>
-                        <td style="width:50%;border:none;padding:0 10px 0 0;"><ul style="margin:0;padding:0;list-style:none;font-size:13px;">${pList}</ul></td>
-                        <td style="width:50%;border:none;padding:0 0 0 10px;"><ul style="margin:0;padding:0;list-style:none;font-size:13px;">${cList}</ul></td>
-                    </tr></table></div></div>`;
+                    <div class="card"><div style="font-size:12px;color:#64748b;margin-bottom:15px;padding-bottom:10px;border-bottom:1px solid #f1f5f9;">好评率/满意度：<strong style="color:#7c3aed;font-size:16px;">${zh(v.sentiment || '80%')}</strong></div>
+                    <div style="display:flex;">
+                        <div style="flex:1;padding-right:15px;border-right:1px solid #f1f5f9;"><div style="font-size:11px;font-weight:bold;color:#059669;margin-bottom:10px;">✨ 核心好评点</div><ul style="margin:0;padding:0;list-style:none;font-size:13px;">${pList}</ul></div>
+                        <div style="flex:1;padding-left:15px;"><div style="font-size:11px;font-weight:bold;color:#dc2626;margin-bottom:10px;">⚠️ 核心痛点/差评</div><ul style="margin:0;padding:0;list-style:none;font-size:13px;">${cList}</ul></div>
+                    </div></div></div>`;
             }
         } else {
             const { products = [], comparison, comprehensive_evaluation = [], recommendation_list = [], scores = [] } = data;
 
+            // 1. 评分
             const scoreHtml = scores.map(s => `
-                <td style="border:none;padding:10px;width:${100 / scores.length}%;">
-                    <div class="score-box" style="text-align:left;padding:20px;">
+                <td style="border:none;padding:10px;width:${100 / Math.max(1, scores.length)}%;">
+                    <div class="score-box" style="text-align:left;padding:20px;height:100%;">
                         <div style="font-size:12px;color:#64748b;margin-bottom:10px;font-weight:700;">${zh(s.product) || ''}</div>
                         <div style="display:flex;justify-content:space-between;margin-bottom:15px;">
                             <div><div style="font-size:10px;color:#94a3b8;">机会评分</div><div style="font-size:24px;font-weight:800;color:#3b82f6;">${s.opportunity_score}</div></div>
@@ -788,45 +832,195 @@
                         </div>
                     </div>
                 </td>`).join('');
-            content += `<div class="section"><div class="section-header"><div class="section-title">📊 智能投资打分</div></div><table style="border:none;width:100%;"><tr>${scoreHtml}</tr></table></div>`;
+            content += `<div class="section"><div class="section-header"><div class="section-title">📊 智能投资打分</div></div><table style="border:none;width:100%;table-layout:fixed;"><tr>${scoreHtml}</tr></table></div>`;
 
+            // 2. 竞争分析
             if (comparison) {
                 content += `<div class="section"><div class="section-header"><div class="section-title">⚖️ 市场竞争分析</div></div>
-                    <div class="card"><p><strong>赢家产品：</strong>${zh(comparison.winner_product)}</p><p><strong>竞争程度：</strong>${zh(comparison.competition_level)}</p><p><strong>市场定位：</strong>${zh(comparison.market_position)}</p></div></div>`;
+                    <div class="card"><p><strong>赢家产品：</strong><span style="color:#7c3aed;font-weight:bold;">${zh(comparison.winner_product)}</span></p>
+                    <p><strong>竞争程度：</strong>${zh(comparison.competition_level)}</p>
+                    <p><strong>市场定位：</strong>${zh(comparison.market_position)}</p></div></div>`;
             }
 
-            const ths = products.map(p => `<th>${zh(p.product_name) || 'N/A'}</th>`).join('');
-            const trPrice = products.map(p => `<td>${zh(p.price) || '-'}</td>`).join('');
-            const trSp = products.map(p => `<td><ul style="margin:0;padding-left:15px;font-size:13px;">${(p.core_selling_points || []).map(sp => `<li>${zh(sp)}</li>`).join('')}</ul></td>`).join('');
-            content += `<div class="section"><div class="section-header"><div class="section-title">📋 竞品横向对比矩阵</div></div>
-                <table><thead><tr><th>维度</th>${ths}</tr></thead><tbody>
-                <tr><td><strong>价格</strong></td>${trPrice}</tr>
-                <tr><td><strong>核心卖点</strong></td>${trSp}</tr>
-                </tbody></table></div>`;
+            // 3. 对比矩阵
+            const ths = products.map(p => `<th style="width:${90 / products.length}%;">${zh(p.product_name) || 'N/A'}</th>`).join('');
+            
+            const rows = [
+                { label: '价格', key: 'price' },
+                { label: '评价数', key: 'reviews_count' },
+                { label: '核心卖点', key: 'core_selling_points', isList: true },
+                { label: '目标受众', key: 'target_audience', isList: true },
+                { label: '使用场景', key: 'use_scenarios', isList: true },
+                { label: '核心优势', key: 'strengths', isDetailList: true, color: '#059669' },
+                { label: '核心风险', key: 'weaknesses', isDetailList: true, color: '#dc2626' }
+            ];
 
+            let tableRowsHtml = '';
+            rows.forEach(r => {
+                let cells = products.map(p => {
+                    let val = p[r.key];
+                    if (r.isList && Array.isArray(val)) {
+                        return `<ul style="margin:0;padding-left:15px;font-size:11px;">${val.map(i => `<li>${zh(typeof i === 'object' ? (i.point || i.audience || i.scenario || String(i)) : String(i))}</li>`).join('')}</ul>`;
+                    } else if (r.isDetailList && Array.isArray(val)) {
+                        return `<div style="font-size:11px;">${val.map(i => `<div style="margin-bottom:5px;"><strong style="color:${r.color};">${zh(i.point || i.risk)}:</strong> ${zh(i.detail)}</div>`).join('')}</div>`;
+                    }
+                    return `<span style="font-size:12px;">${zh(val) || '-'}</span>`;
+                }).map(cell => `<td>${cell}</td>`).join('');
+                tableRowsHtml += `<tr><td class="dim-col" style="width:10%;">${r.label}</td>${cells}</tr>`;
+            });
+
+            content += `<div class="section"><div class="section-header"><div class="section-title">📋 竞品横向对比矩阵</div></div>
+                <table style="table-layout:fixed;"><thead><tr><th style="width:10%;">维度</th>${ths}</tr></thead><tbody>${tableRowsHtml}</tbody></table></div>`;
+
+            // 4. 评估与建议
             const evHtml = comprehensive_evaluation.map(ev => `<div class="card"><div class="card-label">${zh(ev.dimension)}</div><p style="font-size:14px;margin:0;">${zh(ev.detail)}</p></div>`).join('');
             if (evHtml) content += `<div class="section"><div class="section-header"><div class="section-title">📊 综合评估维度</div></div>${evHtml}</div>`;
+
+            const recHtml = recommendation_list.map(rec => `<div class="card" style="border-left:4px solid #8b5cf6;"><div style="font-size:12px;font-weight:bold;color:#7c3aed;margin-bottom:5px;">${zh(rec.action)}</div><p style="font-size:14px;margin:0;">${zh(rec.content)}</p></div>`).join('');
+            if (recHtml) content += `<div class="section"><div class="section-header"><div class="section-title">🎯 操盘建议清单</div></div>${recHtml}</div>`;
         }
 
-        const css = `body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:10.5pt;color:#1e293b;line-height:1.6;background:#f1f5f9;margin:0;padding:0;}
-        .container{max-width:900px;margin:40px auto;background:#fff;padding:50px;box-shadow:0 10px 25px -5px rgba(0,0,0,0.1);border-radius:12px;}
-        .report-header{text-align:center;margin-bottom:40px;padding-bottom:30px;border-bottom:3px solid #7c3aed;}
-        .report-title{font-size:32px;font-weight:800;color:#7c3aed;margin-bottom:12px;}
-        .report-meta{font-size:14px;color:#64748b;}
-        .section{margin-bottom:35px;}
-        .section-header{background:#f8fafc;border-left:6px solid #7c3aed;padding:12px 20px;margin-bottom:20px;border-radius:0 8px 8px 0;}
-        .section-title{font-size:20px;font-weight:700;color:#0f172a;margin:0;}
-        .card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin-bottom:15px;}
-        .card-label{font-weight:700;color:#6366f1;margin-bottom:8px;font-size:13px;text-transform:uppercase;}
-        table{width:100%;border-collapse:separate;border-spacing:0;margin:20px 0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;}
-        th,td{padding:15px;text-align:left;vertical-align:top;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;}
-        th{background:#f8fafc;color:#475569;font-weight:700;font-size:13px;}
-        .score-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;}
-        .footer{margin-top:60px;text-align:center;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:30px;}`;
+        const css = `
+            :root {
+                --bg: #0b0f19;
+                --card-bg: rgba(17, 24, 39, 0.8);
+                --card-border: rgba(255, 255, 255, 0.1);
+                --text-primary: #f8fafc;
+                --text-secondary: #94a3b8;
+                --accent: #8b5cf6;
+                --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+            }
+            body {
+                font-family: 'Inter', -apple-system, sans-serif;
+                background-color: var(--bg);
+                color: var(--text-primary);
+                margin: 0;
+                padding: 40px 20px;
+                line-height: 1.6;
+            }
+            .container {
+                max-width: 1000px;
+                margin: 0 auto;
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 40px;
+                padding: 40px;
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: 24px;
+                position: relative;
+                overflow: hidden;
+            }
+            .header::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.15), transparent 70%);
+                z-index: 0;
+            }
+            .title {
+                font-size: 32px;
+                font-weight: 800;
+                background: linear-gradient(135deg, #fff, #cbd5e1);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                position: relative;
+                z-index: 1;
+            }
+            .meta {
+                color: var(--text-secondary);
+                font-size: 14px;
+                margin-top: 10px;
+                position: relative;
+                z-index: 1;
+            }
+            .section {
+                margin-bottom: 40px;
+            }
+            .section-title {
+                font-size: 1.25rem;
+                font-weight: 700;
+                border-bottom: 2px solid rgba(255, 255, 255, 0.07);
+                padding-bottom: 8px;
+                margin-bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .card {
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: 16px;
+                padding: 20px;
+                margin-bottom: 16px;
+                backdrop-filter: blur(20px);
+            }
+            .card-label {
+                font-size: 12px;
+                font-weight: 700;
+                color: var(--text-secondary);
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                margin-bottom: 8px;
+            }
+            .score-box {
+                background: var(--card-bg);
+                border: 1px solid var(--accent);
+                border-radius: 20px;
+            }
+            .score-value {
+                font-size: 42px;
+                font-weight: 800;
+            }
+            .opp-text { color: #3b82f6; }
+            .diff-text { color: #f97316; }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: 12px;
+                overflow: hidden;
+            }
+            th, td {
+                padding: 16px;
+                text-align: left;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                border-right: 1px solid rgba(255, 255, 255, 0.05);
+                vertical-align: top;
+            }
+            th {
+                background: rgba(15, 23, 42, 0.8);
+                color: #fff;
+                font-size: 14px;
+            }
+            .dim-col {
+                background: rgba(255, 255, 255, 0.05);
+                font-weight: bold;
+                color: var(--accent);
+            }
+            .badge {
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 99px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            .footer {
+                text-align: center;
+                padding: 40px;
+                color: var(--text-secondary);
+                font-size: 12px;
+                border-top: 1px solid rgba(255, 255, 255, 0.05);
+            }
+        `;
 
-        return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AI Competitor Analysis Report</title><style>${css}</style></head>
+        return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AI 竞品深度解构报告</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap" rel="stylesheet">
+        <style>${css}</style></head>
 <body><div class="container">
-    <div class="report-header"><div class="report-title">AI 竞品深度解构报告</div><div class="report-meta">分析生成时间：${dateStr}</div></div>
+    <div class="header"><div class="title">AI 竞品深度解构报告</div><div class="meta">分析生成时间：${dateStr}</div></div>
     ${content}
     <div class="footer">本报告由 AI 竞品分析系统深度解构生成 | 内部商业机密</div>
 </div></body></html>`;
