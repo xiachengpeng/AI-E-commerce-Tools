@@ -52,9 +52,21 @@
             }
         }
 
+        const API_BASE = "http://localhost:8000";
+
         /**
          * 将日志发送至后端终端
          */
+        async function saveToHistory(module, data) {
+            try {
+                await fetch(`${API_BASE}/api/save_history/${module}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+            } catch (e) { console.error(`Failed to save ${module} history`, e); }
+        }
+
         async function remoteLog(msg) {
             try {
                 // 移除样式字符 (如 %c) 后发送
@@ -223,6 +235,86 @@
         
         /* 拖拽排版幽灵效果 */
         .ghost-item { opacity: 0.4; background: #f8fafc; border: 2px dashed #94a3b8; }
+
+        /* 全局历史面板样式 */
+        .global-history-panel {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 380px;
+            height: 100%;
+            background: #ffffff;
+            z-index: 200;
+            box-shadow: 20px 0 50px rgba(0,0,0,0.1);
+            transform: translateX(-100%);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+        }
+        .global-history-panel.open { transform: translateX(0); }
+        .history-header {
+            padding: 24px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .history-tabs {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+            padding: 12px;
+            background: #f1f5f9;
+        }
+        .history-tab-btn {
+            padding: 8px 4px;
+            font-size: 10px;
+            font-weight: 800;
+            text-align: center;
+            border-radius: 8px;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .history-tab-btn.active {
+            background: #ffffff;
+            color: #3b82f6;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .history-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        .history-item {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .history-item:hover {
+            border-color: #3b82f6;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
+        }
+        .history-item-del {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 4px;
+            color: #cbd5e1;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        .history-item-del:hover {
+            background: #fee2e2;
+            color: #ef4444;
+        }
     </style>
 </head>
 <body class="bg-[#f8fafc] text-gray-800 h-screen overflow-hidden flex font-sans">
@@ -250,6 +342,12 @@
         <button id="tab-translate" onclick="switchMainTab('translate')" class="side-tab" title="图片翻译">
             <i class="ph ph-translate"></i><span>图片翻译</span>
         </button>
+
+        <div class="mt-auto mb-4 flex flex-col items-center gap-4">
+            <button id="btnOpenHistory" onclick="toggleGlobalHistory()" class="side-tab" title="历史记录中心">
+                <i class="ph ph-clock-counter-clockwise"></i><span>历史</span>
+            </button>
+        </div>
     </div>
 
     <!-- Main Content Area -->
@@ -1394,7 +1492,10 @@ ${task.totalVariants > 1 ? `6. Variation: version ${task.variant + 1}/${task.tot
 
                 const imagePart = imgRes.candidates[0].content?.parts?.find(p => p.inlineData);
                 if (imagePart?.inlineData) {
-                    contentDiv.innerHTML = `<img src="data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}" class="w-full h-full object-cover">`;
+                    const generatedSrc = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+                    contentDiv.innerHTML = `<img src="${generatedSrc}" class="w-full h-full object-cover">`;
+                    
+                    contentDiv.innerHTML = `<img src="${generatedSrc}" class="w-full h-full object-cover">`;
                 } else throw new Error("No image data in response");
 
             } catch (error) {
@@ -1648,7 +1749,6 @@ ${JSON.stringify(modulesToSort, null, 2)}
                     backgroundColor: '#ffffff',
                     logging: false
                 });
-                
                 const link = document.createElement('a');
                 const pad = n => n.toString().padStart(2, '0');
                 const d = new Date();
@@ -1664,6 +1764,18 @@ ${JSON.stringify(modulesToSort, null, 2)}
                 
                 link.click();
                 showToast(`长图导出成功 (${format.toUpperCase()})`, 'success');
+
+                // === 新增：导出时自动保存整页历史记录 ===
+                const styleOpt = document.getElementById('imageStyleSelect');
+                saveToHistory('render', {
+                    name: `详情页全案_${ts}`,
+                    style: styleOpt.options[styleOpt.selectedIndex].text,
+                    image: finalCanvas.toDataURL('image/jpeg', 0.7), // 压缩一下存入数据库
+                    metadata: { 
+                        platform: document.getElementById('platformSelect').value,
+                        count: globalGenContext?.longImageOrder?.length || 0
+                    }
+                });
             } catch(e) {
                 showToast('长图渲染失败，请检查网络或重试', 'error');
             } finally {
@@ -1721,6 +1833,51 @@ JSON格式如下：
             finally { btn.innerHTML = origHtml; btn.disabled = false; }
         }
 
+        function renderListingData(data) {
+            document.getElementById('listingEmpty').classList.add('hidden');
+            const resArea = document.getElementById('listingResults');
+            resArea.classList.remove('hidden'); resArea.classList.add('flex');
+            document.getElementById('btnRiskCheck').classList.remove('hidden');
+            
+            const getVal = (obj) => typeof obj === 'string' ? { target: obj, zh: '' } : { target: obj?.target || '', zh: obj?.zh || '' };
+            
+            // 渲染常规区块
+            const tData = getVal(data.title);
+            document.getElementById('resListingTitle').innerHTML = `<div class="target-text text-gray-800 text-lg mb-2">${tData.target}</div> <div class="zh-text text-sm text-gray-400 pt-2 border-t border-gray-100 font-normal">${tData.zh}</div>`;
+            
+            const dData = getVal(data.description);
+            document.getElementById('resListingDesc').innerHTML = `<div class="target-text text-gray-700 whitespace-pre-wrap">${dData.target}</div> <div class="zh-text text-sm text-gray-400 mt-4 pt-4 border-t border-gray-100 whitespace-pre-wrap">${dData.zh}</div>`;
+            
+            const makeBulletLi = arr => (arr || []).map(b => {
+                const v = getVal(b);
+                return `<li class="mb-4 bg-gray-50/80 p-3.5 rounded-xl border border-gray-100"><div class="target-text font-bold text-gray-700 text-sm">${v.target}</div><div class="zh-text text-xs text-gray-400 mt-2 border-t border-gray-200/60 pt-2">${v.zh}</div></li>`;
+            }).join('');
+            document.getElementById('resListingBullets').innerHTML = makeBulletLi(data.bullets);
+
+            const makeKwLi = arr => (arr || []).map(k => {
+                const v = getVal(k);
+                return `<li><span class="target-text">${v.target}</span> <span class="text-gray-400 text-[10px] ml-1">(<span class="zh-text">${v.zh}</span>)</span></li>`;
+            }).join('');
+            
+            document.getElementById('resKwCore').innerHTML = makeKwLi(data.keywords?.core);
+            document.getElementById('resKwTail').innerHTML = makeKwLi(data.keywords?.longTail);
+            document.getElementById('resKwAds').innerHTML = makeKwLi(data.keywords?.ads);
+
+            // 渲染 QA
+            const makeQALi = arr => (arr || []).map(item => {
+                const q = getVal(item.q);
+                const a = getVal(item.a);
+                return `<div class="bg-indigo-50/50 p-4 rounded-xl border border-indigo-50 shadow-sm">
+                    <div class="mb-2"><span class="font-bold text-indigo-700 mr-2">Q:</span><span class="text-gray-800 font-medium target-text text-sm">${q.target}</span><div class="text-xs text-gray-400 mt-1 ml-6 zh-text">${q.zh}</div></div>
+                    <div><span class="font-bold text-emerald-600 mr-2">A:</span><span class="text-gray-600 target-text text-sm">${a.target}</span><div class="text-xs text-gray-400 mt-1 ml-6 zh-text">${a.zh}</div></div>
+                </div>`;
+            }).join('');
+            document.getElementById('resListingQA').innerHTML = makeQALi(data.qa);
+
+            // 渲染社媒
+            const sData = getVal(data.socialMedia);
+            document.getElementById('resListingSocial').innerHTML = `<div class="target-text text-gray-700 whitespace-pre-wrap">${sData.target}</div> <div class="zh-text text-sm text-gray-400 mt-4 pt-4 border-t border-gray-200 whitespace-pre-wrap">${sData.zh}</div>`;
+        }
         async function generateListing() {
             const name = document.getElementById('listingName').value.trim();
             const points = document.getElementById('listingPoints').value.trim();
@@ -1837,6 +1994,8 @@ JSON格式如下：
                     
                     // 保存到草稿箱历史
                     saveListingToHistory(name, data);
+                    // 保存到后端历史库
+                    saveToHistory('listing', { name, platform: style, result: data });
                     
                     showToast('本土化 Listing 编撰完成！', 'success');
                 } else throw new Error("API text empty");
@@ -2412,6 +2571,13 @@ OUTPUT: You must generate and return the modified image.`;
                     const generatedSrc = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
                     contentDiv.innerHTML = `<img id="${slotId}-img" src="${generatedSrc}" class="w-full rounded object-contain max-h-[280px]">`;
                     if(actionsDiv) actionsDiv.classList.remove('hidden');
+
+                    // 保存到后端历史库
+                    saveToHistory('translation', { 
+                        text: img.name, 
+                        lang: langInfo.label, 
+                        result: { image: generatedSrc, source_name: img.name } 
+                    });
                 } else if (textPart?.text) {
                     throw new Error("模型重绘失败：模型仅返回了文字翻译，未能生成图片。");
                 } else {
@@ -2423,7 +2589,162 @@ OUTPUT: You must generate and return the modified image.`;
             }
         }
 
+        // ====== 全局历史记录中心逻辑 ======
+        let currentHistoryModule = 'analysis';
+
+        function toggleGlobalHistory() {
+            const panel = document.getElementById('globalHistoryPanel');
+            panel.classList.toggle('open');
+            if (panel.classList.contains('open')) {
+                switchHistoryTab(currentHistoryModule);
+            }
+        }
+
+        async function switchHistoryTab(module) {
+            currentHistoryModule = module;
+            // 更新 UI 标签
+            document.querySelectorAll('.history-tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.id === `hist-tab-${module}`);
+            });
+            
+            const listContainer = document.getElementById('globalHistoryList');
+            listContainer.innerHTML = '<div class="flex justify-center py-10"><span class="loader"></span></div>';
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/history/${module}?_t=${Date.now()}`);
+                const data = await res.json();
+                renderHistoryList(module, data);
+            } catch (e) {
+                listContainer.innerHTML = `<div class="text-center py-10 text-red-400 text-xs">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        function renderHistoryList(module, items) {
+            const listContainer = document.getElementById('globalHistoryList');
+            if (!items || items.length === 0) {
+                listContainer.innerHTML = `<div class="text-center py-20 text-gray-400 text-xs flex flex-col items-center gap-2">
+                    <i class="ph ph-files text-3xl opacity-20"></i>
+                    暂无历史记录
+                </div>`;
+                return;
+            }
+
+            listContainer.innerHTML = items.map(item => {
+                let contentHTML = '';
+                const date = new Date(item.timestamp).toLocaleString();
+                const itemData = JSON.stringify(item).replace(/"/g, '&quot;');
+                
+                if (module === 'analysis') {
+                    contentHTML = `
+                        <div class="text-[11px] font-bold text-gray-800 mb-1 truncate">${item.query_url || '竞品分析报告'}</div>
+                        <div class="text-[9px] text-gray-400">时间: ${date}</div>
+                    `;
+                } else if (module === 'listing') {
+                    contentHTML = `
+                        <div class="text-[11px] font-bold text-gray-800 mb-1 truncate">${item.product_name}</div>
+                        <div class="text-[9px] text-gray-500 mb-1">平台: ${item.platform}</div>
+                        <div class="text-[9px] text-gray-400">时间: ${date}</div>
+                    `;
+                } else if (module === 'translation') {
+                    contentHTML = `
+                        <div class="flex gap-2">
+                            <img src="${item.result?.image}" class="w-12 h-12 rounded object-cover border border-gray-100">
+                            <div class="flex-1 min-w-0">
+                                <div class="text-[11px] font-bold text-gray-800 truncate">${item.source_text}</div>
+                                <div class="text-[9px] text-gray-400">语言: ${item.target_lang}</div>
+                                <div class="text-[9px] text-gray-400">${date}</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (module === 'render') {
+                    contentHTML = `
+                        <div class="flex gap-2">
+                            <img src="${item.image_base64}" class="w-12 h-12 rounded object-cover border border-gray-100">
+                            <div class="flex-1 min-w-0">
+                                <div class="text-[11px] font-bold text-gray-800 truncate">${item.task_name}</div>
+                                <div class="text-[9px] text-gray-400">风格: ${item.style}</div>
+                                <div class="text-[9px] text-gray-400">${date}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="history-item" onclick="restoreHistoryItem('${module}', ${itemData})">
+                        ${contentHTML}
+                        <button class="history-item-del" onclick="event.stopPropagation(); deleteHistoryItem('${module}', ${item.id})">
+                            <i class="ph ph-trash"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function deleteHistoryItem(module, id) {
+            if (!confirm('确定要删除这条记录吗？')) return;
+            try {
+                await fetch(`${API_BASE}/api/history/${module}/${id}`, { method: 'DELETE' });
+                showToast('已删除历史记录', 'success');
+                switchHistoryTab(module);
+            } catch (e) {
+                showToast('删除失败', 'error');
+            }
+        }
+
+        function restoreHistoryItem(module, item) {
+            toggleGlobalHistory();
+            const viewMap = { 'analysis': 'xuanpin', 'listing': 'listing', 'translation': 'translate', 'render': 'generate' };
+            switchMainTab(viewMap[module]);
+            
+            if (module === 'analysis') {
+                if (window.xp_renderReport) window.xp_renderReport(item.data);
+            } else if (module === 'listing') {
+                renderListingData(item.result);
+            } else if (module === 'translation') {
+                const modal = document.getElementById('transPreviewModal');
+                if (modal) {
+                    document.getElementById('previewModalTitle').textContent = `历史记录回显`;
+                    const wrap = document.getElementById('previewResultsWrap');
+                    wrap.innerHTML = `<div class="flex flex-col gap-4 w-full p-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-black text-blue-500 uppercase">→ 历史翻译结果 (${item.target_lang})</span>
+                            <button onclick="const a=document.createElement('a');a.href='${item.result.image}';a.download='history_trans_${item.id}.png';a.click();" class="text-xs text-blue-600 hover:underline font-bold flex items-center gap-1">
+                                <i class="ph ph-download-simple"></i> 下载此图
+                            </button>
+                        </div>
+                        <div class="rounded-2xl border-4 border-white shadow-xl overflow-hidden bg-slate-100 flex items-center justify-center"><img src="${item.result.image}" class="w-full h-auto object-contain"></div>
+                    </div>`;
+                    modal.classList.remove('hidden');
+                }
+            } else if (module === 'render') {
+                const previewContainer = document.getElementById('longImageCanvas');
+                if (previewContainer) {
+                    previewContainer.innerHTML = `<img src="${item.image_base64}" class="w-full shadow-2xl rounded-lg">`;
+                    document.getElementById('showcaseArea').classList.add('hidden');
+                    document.getElementById('resultArea').classList.remove('hidden');
+                    document.getElementById('longImageBuilderModal').classList.remove('hidden');
+                }
+            }
+        }
+
     </script>
+    <!-- 全局历史记录面板 -->
+    <div id="globalHistoryPanel" class="global-history-panel">
+        <div class="history-header">
+            <h3 class="font-black text-slate-800 flex items-center gap-2"><i class="ph-fill ph-clock-counter-clockwise text-blue-500 text-xl"></i> 历史记录中心</h3>
+            <button onclick="toggleGlobalHistory()" class="text-slate-400 hover:text-red-500 transition-colors"><i class="ph ph-x text-xl"></i></button>
+        </div>
+        <div class="history-tabs">
+            <div onclick="switchHistoryTab('analysis')" id="hist-tab-analysis" class="history-tab-btn active">竞品分析</div>
+            <div onclick="switchHistoryTab('listing')" id="hist-tab-listing" class="history-tab-btn">Listing</div>
+            <div onclick="switchHistoryTab('translation')" id="hist-tab-translation" class="history-tab-btn">图片翻译</div>
+            <div onclick="switchHistoryTab('render')" id="hist-tab-render" class="history-tab-btn">详情渲染</div>
+        </div>
+        <div id="globalHistoryList" class="history-list custom-scrollbar">
+            <!-- 记录列表 -->
+        </div>
+    </div>
+
     <!-- 竞品分析模块脚本 -->
     <script src="xuanpin.js?v=20260423v2"></script>
 </body>
