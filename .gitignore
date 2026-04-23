@@ -11,7 +11,7 @@ venv/
 env/
 
 # Environment variables / secrets
-.env
+# .env
 .env.local
 config.local.py
 
