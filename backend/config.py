@@ -20,5 +20,9 @@ VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "ornate-rarity-493511-p5")
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
 VERTEX_KEY_PATH = os.getenv("VERTEX_KEY_PATH", r"D:\Workspace\miyao\hezihua0215 Gemini API Key\ornate-rarity-493511-p5-6759bce81d52.json")
 
+# 前端并发配置
+FRONTEND_CONCURRENCY_LIMIT = int(os.getenv("FRONTEND_CONCURRENCY_LIMIT", "2"))
+FRONTEND_STAGGER_DELAY = int(os.getenv("FRONTEND_STAGGER_DELAY", "2000"))
+
 if not GEMINI_API_KEY and AI_PROVIDER == "gemini":
     raise EnvironmentError("GEMINI_API_KEY 未配置，请在 backend/.env 文件中设置。")

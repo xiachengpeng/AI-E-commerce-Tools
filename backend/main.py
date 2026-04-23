@@ -35,19 +35,19 @@ app.add_middleware(
 
 async def process_single_url(url: str, provider: str = None) -> dict:
     try:
-        logger.info(f"Starting analysis for URL: {url} (Provider: {provider})")
+        logger.info(f"🔍 [单品处理] 开始处理 URL: {url} (提供商: {provider})")
         markdown_content = await asyncio.to_thread(fetch_markdown, url)
-        logger.info(f"Successfully fetched markdown for {url}.")
+        logger.info(f"✅ [单品处理] 成功获取 Markdown 内容: {url}")
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
-            raise Exception("The scraped content is empty or invalid.")
-        logger.info(f"Parsing content for {url}...")
+            raise Exception("抓取到的内容为空或无效")
+        logger.info(f"🏗️ [单品处理] 正在解析页面结构: {url}...")
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
             structured_data = parse_general(markdown_content)
         
-        logger.info(f"Sending structured data to AI for extraction ({url})...")
+        logger.info(f"🤖 [单品处理] 正在发送至 AI 进行特征提取 ({url})...")
         ai_result_json_str = await asyncio.to_thread(analyze_single_extract, structured_data, provider=provider)
         
         try:
@@ -67,18 +67,19 @@ async def process_single_url(url: str, provider: str = None) -> dict:
              parsed_data["reviews_count"] = "0"
 
         validated_product = ProductCompareData(**parsed_data)
+        logger.info(f"✨ [单品处理] 特征提取完成: {url}")
         return validated_product.model_dump()
     except Exception as e:
-        logger.error(f"Error processing URL {url}: {str(e)}")
+        logger.error(f"❌ [单品处理] 处理 URL 出错 {url}: {str(e)}")
         raise e
 
 async def process_single_url_deep(url: str, provider: str = None) -> dict:
     try:
-        logger.info(f"Starting DEEP analysis for URL: {url} (Provider: {provider})")
+        logger.info(f"🧠 [深度分析] 开始深度分析 URL: {url} (提供商: {provider})")
         markdown_content = await asyncio.to_thread(fetch_markdown, url)
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
-            raise Exception("The scraped content is empty or invalid.")
+            raise Exception("抓取到的内容为空或无效")
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
@@ -112,9 +113,9 @@ async def compare(request: CompareRequest):
         urls = request.urls
         provider = request.ai_provider
         if not urls:
-             return CompareResponse(status="error", message="No URLs provided.")
+             return CompareResponse(status="error", message="未提供 URL。")
              
-        logger.info(f"Starting analysis for {len(urls)} URLs: {urls} (Provider: {provider})")
+        logger.info(f"🚀 [竞品分析] 接收到 {len(urls)} 个链接: {urls} (提供商: {provider})")
 
         unique_urls = list(dict.fromkeys([u.strip() for u in urls if u.strip()]))
         
@@ -139,7 +140,7 @@ async def compare(request: CompareRequest):
                     
                     try:
                         scores = [ScoreCard(**score_res)]
-                        logger.info(f"Score generated successfully for single product: {score_res.get('opportunity_score')}")
+                        logger.info(f"📋 [竞品分析] 评分生成成功: {score_res.get('opportunity_score')}")
                     except Exception as ve:
                         logger.error(f"ScoreCard validation failed for single product: {ve}")
                 
@@ -148,10 +149,10 @@ async def compare(request: CompareRequest):
                 response_data = CompareResponseData(single_data=single_data, scores=scores)
                 return CompareResponse(status="success", template_type="single", data=response_data)
             except Exception as e:
-                logger.error(f"Single analysis failed: {e}")
-                return CompareResponse(status="error", message=f"Failed to analyze URL: {str(e)}")
+                logger.error(f"❌ [竞品分析] 单品分析失败: {e}")
+                return CompareResponse(status="error", message=f"URL 分析失败: {str(e)}")
 
-        logger.info(f"Multiple URLs ({len(unique_urls)}) → switching to Matrix Comparison")
+        logger.info(f"📊 [竞品分析] 检测到多个链接 ({len(unique_urls)}) → 进入矩阵对比模式")
         tasks = [process_single_url(url, provider=provider) for url in unique_urls]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -165,14 +166,14 @@ async def compare(request: CompareRequest):
                 valid_products.append(res)
                 
         if not valid_products:
-            return CompareResponse(status="error", message=f"All URLs failed to process. Errors: {'; '.join(errors)}")
+            return CompareResponse(status="error", message=f"所有 URL 处理均失败。 错误信息: {'; '.join(errors)}")
 
         comparison_data = None
         comprehensive_evaluation = []
         recommendation_list = []
         
         if len(valid_products) > 1:
-            logger.info("Multiple products detected. Running Compare AI...")
+            logger.info("⚔️ [竞品分析] 多产品检测成功，正在运行对比 AI...")
             try:
                 comp_result = await asyncio.to_thread(compare_products, valid_products, provider=provider)
                 
@@ -198,9 +199,9 @@ async def compare(request: CompareRequest):
                             content=str(item.get("content", ""))
                         ))
             except Exception as e:
-                logger.error(f"Compare AI failed: {e}")
+                logger.error(f"❌ [竞品分析] 对比 AI 运行失败: {e}")
 
-        logger.info("Running Scoring AI for valid products...")
+        logger.info("⚖️ [竞品分析] 正在运行评分 AI...")
         score_tasks = [asyncio.to_thread(calculate_score, p, provider=provider) for p in valid_products]
         score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
         
@@ -225,9 +226,9 @@ async def compare(request: CompareRequest):
 
                     scores.append(ScoreCard(**s_res))
                 except Exception as eval_err:
-                     logger.error(f"Invalid Score output: {eval_err}")
+                     logger.error(f"❌ [竞品分析] 评分输出格式无效: {eval_err}")
         
-        msg = f"Successfully analyzed {len(valid_products)} products."
+        msg = f"成功分析了 {len(valid_products)} 个产品。"
         if errors:
             msg += f" {len(errors)} failed: " + "; ".join(errors[:2])
             
@@ -252,14 +253,41 @@ async def compare(request: CompareRequest):
         logger.error(f"Unexpected error in /compare: {str(e)}")
         return CompareResponse(status="error", message=f"An unexpected error occurred: {str(e)}")
 
+@app.post("/log")
+async def receive_frontend_log(data: dict):
+    """接收来自前端的日志并打印到后端终端"""
+    message = data.get("message", "")
+    if message:
+        logger.info(f"🖥️ [前端] {message}")
+    return {"status": "ok"}
+
 @app.get("/config")
 async def get_frontend_config():
     """向前端提供配置信息（从 .env 读取）"""
-    return {
+    logger.info("⚙️ [系统] 正在读取前端配置下发...")
+    from services.ai_service import AIService
+    from config import AI_PROVIDER, VERTEX_PROJECT_ID, VERTEX_LOCATION, FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY
+    
+    config = {
+        "AI_PROVIDER": AI_PROVIDER,
         "API_KEY":     os.getenv("FRONTEND_API_KEY", ""),
-        "TEXT_MODEL":  os.getenv("FRONTEND_TEXT_MODEL", "gemini-3-flash-preview"),
-        "IMAGE_MODEL": os.getenv("FRONTEND_IMAGE_MODEL", "gemini-3-pro-image-preview"),
+        "TEXT_MODEL":  os.getenv("FRONTEND_TEXT_MODEL", "gemini-3.1-flash-preview"),
+        "IMAGE_MODEL": os.getenv("FRONTEND_IMAGE_MODEL", "gemini-3.1-flash-image-preview"),
+        "CONCURRENCY_LIMIT": FRONTEND_CONCURRENCY_LIMIT,
+        "STAGGER_DELAY": FRONTEND_STAGGER_DELAY,
     }
+    
+    # 如果是 vertex 模式，提供必要的鉴权信息
+    if AI_PROVIDER == "vertex":
+        try:
+            config["ACCESS_TOKEN"] = AIService._get_vertex_token()
+            config["PROJECT_ID"] = VERTEX_PROJECT_ID
+            config["LOCATION"] = VERTEX_LOCATION
+        except Exception as e:
+            logger.error(f"❌ [系统] 获取 Vertex Token 失败: {e}")
+            
+    logger.info(f"📡 [系统] 配置已成功下发 (Provider: {config['AI_PROVIDER']})")
+    return config
 
 if __name__ == "__main__":
     import uvicorn
