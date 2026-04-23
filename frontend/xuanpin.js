@@ -22,6 +22,9 @@
 
     // ─── 初始化入口（标签页激活时调用）────────────────────────────────────────
     window.xp_init = function () {
+        if (window._xp_is_init) return; // 防止重复初始化导致事件堆叠
+        window._xp_is_init = true;
+
         const urlsInputContainer = xp_getEl('xp-urlsInputContainer');
         const urlInputField = xp_getEl('xp-urlInputField');
         const tagsList = xp_getEl('xp-tagsList');
@@ -326,7 +329,8 @@
     }
 
     // ─── 渲染路由 ─────────────────────────────────────────────────────────────
-    function xp_renderResults(response) {
+    window.xp_renderResults = function(response) {
+        xp_currentResponse = response; // 同步状态，使导出按钮生效
         const { template_type, data, message } = response;
         const resultSection = xp_getEl('xp-resultSection');
         const singleTemplate = xp_getEl('xp-single-template');

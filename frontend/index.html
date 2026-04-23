@@ -2629,10 +2629,12 @@ OUTPUT: You must generate and return the modified image.`;
                 return;
             }
 
-            listContainer.innerHTML = items.map(item => {
+            // 将当前列表数据存入全局缓存，防止 HTML 属性过载
+            window._history_cache = items;
+
+            listContainer.innerHTML = items.map((item, index) => {
                 let contentHTML = '';
                 const date = new Date(item.timestamp).toLocaleString();
-                const itemData = JSON.stringify(item).replace(/"/g, '&quot;');
                 
                 if (module === 'analysis') {
                     contentHTML = `
@@ -2670,7 +2672,7 @@ OUTPUT: You must generate and return the modified image.`;
                 }
 
                 return `
-                    <div class="history-item" onclick="restoreHistoryItem('${module}', ${itemData})">
+                    <div class="history-item" onclick="restoreHistoryItemByIndex('${module}', ${index})">
                         ${contentHTML}
                         <button class="history-item-del" onclick="event.stopPropagation(); deleteHistoryItem('${module}', ${item.id})">
                             <i class="ph ph-trash"></i>
@@ -2691,13 +2693,33 @@ OUTPUT: You must generate and return the modified image.`;
             }
         }
 
+        function restoreHistoryItemByIndex(module, index) {
+            const item = window._history_cache[index];
+            if (!item) return;
+            restoreHistoryItem(module, item);
+        }
+
         function restoreHistoryItem(module, item) {
             toggleGlobalHistory();
             const viewMap = { 'analysis': 'xuanpin', 'listing': 'listing', 'translation': 'translate', 'render': 'generate' };
             switchMainTab(viewMap[module]);
             
             if (module === 'analysis') {
-                if (window.xp_renderReport) window.xp_renderReport(item.data);
+                console.log("[History] Restoring Analysis Data:", item.data);
+                // 延迟执行，确保标签页切换后的容器已就绪
+                setTimeout(() => {
+                    if (window.xp_renderResults) {
+                        // 组装回显数据：包括模板类型和分析正文
+                        const responseObj = {
+                            template_type: item.template_type,
+                            data: item.data,
+                            message: "从历史记录恢复"
+                        };
+                        window.xp_renderResults(responseObj);
+                    } else {
+                        console.error("xp_renderResults function not found!");
+                    }
+                }, 100);
             } else if (module === 'listing') {
                 renderListingData(item.result);
             } else if (module === 'translation') {
