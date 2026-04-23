@@ -67,17 +67,17 @@
 .xp-loading-section p{font-size:1.2rem;font-weight:700;color:#e2e8f0;}
 .xp-spinner{width:32px;height:32px;border:3px solid rgba(139,92,246,.1);border-radius:50%;border-top-color:#8b5cf6;border-right-color:#ec4899;animation:xp-spin 1s linear infinite;}
 @keyframes xp-spin{to{transform:rotate(360deg)}}
-.xp-result-section{display:flex;flex-direction:column;gap:1.8rem;max-width:1080px;margin:0 auto;width:100%;animation:xp-fadeInUp .5s ease;}
+.xp-result-section{display:flex;flex-direction:column;gap:10px;max-width:1080px;margin:0 auto;width:100%;animation:xp-fadeInUp .5s ease;}
 .xp-result-action-bar{display:flex;justify-content:flex-end;gap:.7rem;margin-bottom:.4rem;}
 .xp-export-btn,.xp-lang-btn{background:rgba(30,41,59,.6);color:var(--xp-text-primary);border:1px solid rgba(255,255,255,.1);padding:.35rem .9rem;border-radius:9999px;font-size:.78rem;font-weight:600;cursor:pointer;transition:all .3s;box-shadow:none;display:inline-flex;align-items:center;gap:.4rem;}
 .xp-export-btn:hover:not(:disabled),.xp-lang-btn:hover{background:rgba(139,92,246,.2);border-color:rgba(139,92,246,.4);transform:translateY(-1px);box-shadow:0 4px 12px rgba(139,92,246,.2);}
-.xp-section-title h2{font-size:1.2rem;font-weight:700;color:#fff;border-bottom:2px solid rgba(255,255,255,.07);padding-bottom:.35rem;margin-bottom:.8rem;}
+.xp-section-title h2{font-size:1.2rem;font-weight:700;color:#fff;border-bottom:2px solid rgba(255,255,255,.07);padding-bottom:.35rem;margin-bottom:10px;}
 /* 卡片 */
 .xp-card{background:var(--xp-card-bg);border:1px solid var(--xp-card-border);border-radius:16px;padding:1.3rem;backdrop-filter:blur(20px);box-shadow:0 8px 30px rgba(0,0,0,.1),inset 0 1px 0 rgba(255,255,255,.05);transition:all .3s;position:relative;overflow:hidden;}
 .xp-card:hover{transform:translateY(-3px);box-shadow:0 12px 35px rgba(0,0,0,.18),0 0 12px rgba(139,92,246,.07);border-color:rgba(255,255,255,.12);}
 .xp-card h3{font-size:.9rem;color:#cbd5e1;margin-bottom:.8rem;text-transform:uppercase;letter-spacing:.06em;font-weight:700;}
 /* 评分卡 */
-.xp-scores-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;}
+.xp-scores-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;}
 .xp-score-card{display:flex;flex-direction:column;padding:1.3rem;}
 .xp-score-title{font-size:1rem;font-weight:700;color:#fff;margin-bottom:.8rem;}
 .xp-score-main-flex{display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:1rem;gap:.5rem;}
@@ -101,16 +101,17 @@
 .xp-decision-neutral,.xp-decision-caution{background:rgba(245,158,11,.2);color:#fbbf24;border:1px solid rgba(245,158,11,.4);}
 .xp-decision-reason{font-size:.88rem;color:#e2e8f0;line-height:1.5;}
 /* 单品模板 */
-.xp-single-score-card{border:1px solid rgba(139,92,246,.3)!important;background:rgba(30,41,59,.5)!important;width:100%;margin-bottom:1.5rem;}
+.xp-single-score-card{border:1px solid rgba(139,92,246,.3)!important;background:rgba(30,41,59,.5)!important;width:100%;margin-bottom:10px;}
 .xp-single-score-card .xp-score-main-flex{justify-content:center;gap:3rem;margin-bottom:1.2rem;}
-.xp-single-hero-card{border-left:4px solid #8b5cf6;margin-bottom:1.5rem;}
+.xp-single-hero-card{border-left:4px solid #8b5cf6;margin-bottom:10px;}
 .xp-single-hero-name{font-size:1.7rem;font-weight:800;background:linear-gradient(135deg,#fff,#cbd5e1);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;line-height:1.2;margin-bottom:.6rem;}
 .xp-single-hero-price{font-size:1.4rem;font-weight:800;color:#a78bfa;margin-bottom:.8rem;}
 .xp-single-hero-points{display:flex;flex-direction:column;gap:.5rem;}
 .xp-single-hero-point{display:flex;align-items:center;gap:.6rem;font-size:.95rem;color:#e2e8f0;}
 .xp-single-hero-point::before{content:'✓';color:#10b981;font-weight:800;flex-shrink:0;}
 /* 双列布局 */
-.xp-two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;}
+.xp-two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
+.xp-persona-pain-container{display:flex;flex-direction:column;margin-bottom:10px;}
 .xp-single-tags-block{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.5rem;}
 .xp-single-tag{background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.3);color:#c4b5fd;padding:.3rem .8rem;border-radius:9999px;font-size:.8rem;font-weight:500;}
 .xp-single-tag.xp-scenario{background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.3);color:#7dd3fc;}

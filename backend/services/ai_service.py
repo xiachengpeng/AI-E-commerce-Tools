@@ -45,7 +45,7 @@ class AIService:
             return cls._vertex_token
         
         try:
-            logger.info(f"Refreshing Vertex AI access token from {VERTEX_KEY_PATH}...")
+            logger.info(f"🔑 [Vertex] 正在刷新访问令牌 (Key: {VERTEX_KEY_PATH})...")
             credentials = service_account.Credentials.from_service_account_file(
                 VERTEX_KEY_PATH, 
                 scopes=['https://www.googleapis.com/auth/cloud-platform']
@@ -57,7 +57,7 @@ class AIService:
             cls._token_expiry = time.time() + 3300 
             return cls._vertex_token
         except Exception as e:
-            logger.error(f"Failed to get Vertex AI token: {e}")
+            logger.error(f"❌ [Vertex] 获取鉴权令牌失败: {e}")
             raise e
 
     @classmethod
@@ -111,6 +111,7 @@ class AIService:
     @classmethod
     def _send_request(cls, url: str, headers: dict, payload: dict, params: dict = None) -> str:
         session = cls._get_session()
+        logger.info(f"📡 [AI调用] 正在发送 API 请求 (模型: {url.split('/')[-1].split(':')[0]})...")
         try:
             response = session.post(url, headers=headers, params=params, json=payload, timeout=180)
             response.raise_for_status()
@@ -127,8 +128,8 @@ class AIService:
             
             return parts[0].get("text", "")
         except requests.exceptions.HTTPError as e:
-            logger.error(f"AI Request Failed: {e.response.text}")
+            logger.error(f"❌ [AI调用] HTTP 错误: {e.response.text}")
             raise e
         except Exception as e:
-            logger.error(f"Unexpected error in AI request: {e}")
+            logger.error(f"❌ [AI调用] 意外错误: {e}")
             raise e
