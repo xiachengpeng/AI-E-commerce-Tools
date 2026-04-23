@@ -114,6 +114,9 @@ async def process_single_url_deep(url: str, provider: str = None) -> dict:
         logger.error(f"Error in deep single analysis for URL {url}: {str(e)}")
         raise e
 
+# --- 全局请求防重缓存 ---
+analysis_cache = {}
+
 @app.post("/compare", response_model=CompareResponse)
 async def compare(request: CompareRequest):
     try:
@@ -121,10 +124,19 @@ async def compare(request: CompareRequest):
         provider = request.ai_provider
         if not urls:
              return CompareResponse(status="error", message="未提供 URL。")
-             
-        logger.info(f"🚀 [竞品分析] 接收到 {len(urls)} 个链接: {urls} (提供商: {provider})")
 
+        # --- 防重逻辑 ---
+        import time
         unique_urls = list(dict.fromkeys([u.strip() for u in urls if u.strip()]))
+        cache_key = f"{';'.join(sorted(unique_urls))}_{provider}"
+        now = time.time()
+        if cache_key in analysis_cache:
+            cached_time, cached_res = analysis_cache[cache_key]
+            if now - cached_time < 30:
+                logger.info(f"♻️ [防重] 检测到重复请求，返回缓存结果: {cache_key}")
+                return cached_res
+        
+        logger.info(f"🚀 [竞品分析] 接收到 {len(urls)} 个链接: {urls} (提供商: {provider})")
         
         if len(unique_urls) == 1:
             logger.info(f"Single Unique URL detected → switching to Deep Single Analysis")
@@ -145,128 +157,68 @@ async def compare(request: CompareRequest):
                     if "final_decision" not in score_res: score_res["final_decision"] = "Pending ||| 待评估"
                     if "product" not in score_res: score_res["product"] = basic_data.get("product_name", "Product")
                     
-                    try:
-                        scores = [ScoreCard(**score_res)]
-                        logger.info(f"📋 [竞品分析] 评分生成成功: {score_res.get('opportunity_score')}")
-                    except Exception as ve:
-                        logger.error(f"ScoreCard validation failed for single product: {ve}")
+                    scores = [ScoreCard(**score_res)]
                 
                 single_data = await process_single_url_deep(unique_urls[0], provider=provider)
-                
                 response_data = CompareResponseData(single_data=single_data, scores=scores)
-                return CompareResponse(status="success", template_type="single", data=response_data)
+                template_type = "single"
+                msg = "单品分析完成。"
             except Exception as e:
                 logger.error(f"❌ [竞品分析] 单品分析失败: {e}")
                 return CompareResponse(status="error", message=f"URL 分析失败: {str(e)}")
-
-        logger.info(f"📊 [竞品分析] 检测到多个链接 ({len(unique_urls)}) → 进入矩阵对比模式")
-        tasks = [process_single_url(url, provider=provider) for url in unique_urls]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        valid_products = []
-        errors = []
-        for i, res in enumerate(results):
-            if isinstance(res, Exception):
-                logger.error(f"Failed on URL {urls[i]}: {res}")
-                errors.append(f"Failed on {urls[i]}: {str(res)}")
-            else:
-                valid_products.append(res)
-                
-        if not valid_products:
-            return CompareResponse(status="error", message=f"所有 URL 处理均失败。 错误信息: {'; '.join(errors)}")
-
-        comparison_data = None
-        comprehensive_evaluation = []
-        recommendation_list = []
-        
-        if len(valid_products) > 1:
-            logger.info("⚔️ [竞品分析] 多产品检测成功，正在运行对比 AI...")
-            try:
+        else:
+            logger.info(f"📊 [竞品分析] 检测到多个链接 ({len(unique_urls)}) → 进入矩阵对比模式")
+            tasks = [process_single_url(url, provider=provider) for url in unique_urls]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            valid_products = []
+            errors = []
+            for i, res in enumerate(results):
+                if isinstance(res, Exception):
+                    errors.append(f"Failed on {urls[i]}: {str(res)}")
+                else:
+                    valid_products.append(res)
+            if not valid_products:
+                return CompareResponse(status="error", message=f"所有 URL 处理均失败。 错误信息: {'; '.join(errors)}")
+            comparison_data = None
+            comprehensive_evaluation = []
+            recommendation_list = []
+            if len(valid_products) > 1:
                 comp_result = await asyncio.to_thread(compare_products, valid_products, provider=provider)
-                
-                if not isinstance(comp_result, dict):
-                    logger.error(f"Compare AI returned invalid type: {type(comp_result)}")
-                    comp_result = {}
-
                 comparison_data = ComparisonSummary(
                     market_position=comp_result.get("market_position", ""),
                     competition_level=comp_result.get("competition_level", ""),
                     winner_product=comp_result.get("winner_product", "")
                 )
                 for item in comp_result.get("comprehensive_evaluation", []):
-                    if isinstance(item, dict):
-                        comprehensive_evaluation.append(EvalDetail(
-                            dimension=str(item.get("dimension", "")),
-                            detail=str(item.get("detail", ""))
-                        ))
+                    comprehensive_evaluation.append(EvalDetail(dimension=str(item.get("dimension", "")), detail=str(item.get("detail", ""))))
                 for item in comp_result.get("recommendation_list", []):
-                    if isinstance(item, dict):
-                        recommendation_list.append(RecItem(
-                            action=str(item.get("action", "")),
-                            content=str(item.get("content", ""))
-                        ))
-            except Exception as e:
-                logger.error(f"❌ [竞品分析] 对比 AI 运行失败: {e}")
-
-        logger.info("⚖️ [竞品分析] 正在运行评分 AI...")
-        score_tasks = [asyncio.to_thread(calculate_score, p, provider=provider) for p in valid_products]
-        score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
-        
-        scores = []
-        for i, s_res in enumerate(score_results):
-            if isinstance(s_res, Exception):
-                logger.error(f"Scoring AI failed for product index {i}: {s_res}")
-            else:
-                try:
-                    if not s_res.get("product"):
-                        s_res["product"] = valid_products[i].get("product_name", f"Product {i+1}")
-                    
+                    recommendation_list.append(RecItem(action=str(item.get("action", "")), content=str(item.get("content", ""))))
+            score_tasks = [asyncio.to_thread(calculate_score, p, provider=provider) for p in valid_products]
+            score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
+            scores = []
+            for i, s_res in enumerate(score_results):
+                if not isinstance(s_res, Exception):
                     if "decision_details" not in s_res:
-                         s_res["decision_details"] = {
-                             "confidence": s_res.get("confidence", "medium"),
-                             "reason": s_res.get("decision_reason", "")
-                         }
-                    
-                    if "opportunity_score" not in s_res: s_res["opportunity_score"] = 0
-                    if "difficulty_score" not in s_res: s_res["difficulty_score"] = 0
-                    if "final_decision" not in s_res: s_res["final_decision"] = "Pending ||| 待评估"
-
+                         s_res["decision_details"] = {"confidence": s_res.get("confidence", "medium"), "reason": s_res.get("decision_reason", "")}
                     scores.append(ScoreCard(**s_res))
-                except Exception as eval_err:
-                     logger.error(f"❌ [竞品分析] 评分输出格式无效: {eval_err}")
-        
-        msg = f"成功分析了 {len(valid_products)} 个产品。"
-        if errors:
-            msg += f" {len(errors)} failed: " + "; ".join(errors[:2])
-            
-        template_type = "matrix" if len(request.urls) > 1 else "single"
-        
-        if len(valid_products) == 0:
-             template_type = "matrix"
-        
-        # 组装最终返回数据
-        response_data = CompareResponseData(
-            products=[ProductCompareData(**p) for p in valid_products],
-            comparison=comparison_data,
-            comprehensive_evaluation=comprehensive_evaluation,
-            recommendation_list=recommendation_list,
-            scores=scores,
-            single_data=valid_products[0] if len(unique_urls) == 1 else None
-        )
-        
-        # 自动保存历史记录 (使用独立 Session 确保隔离)
+            template_type = "matrix"
+            msg = f"成功分析了 {len(valid_products)} 个产品。"
+            response_data = CompareResponseData(
+                products=[ProductCompareData(**p) for p in valid_products],
+                comparison=comparison_data,
+                comprehensive_evaluation=comprehensive_evaluation,
+                recommendation_list=recommendation_list,
+                scores=scores
+            )
+
         db_session = None
         try:
             from db import SessionLocal
             db_session = SessionLocal()
-            new_hist = AnalysisHistory(
-                query_url="; ".join(unique_urls),
-                template_type=template_type,
-                data=response_data.model_dump()
-            )
+            pure_json_data = json.loads(response_data.model_dump_json())
+            new_hist = AnalysisHistory(query_url="; ".join(unique_urls), template_type=template_type, data=pure_json_data)
             db_session.add(new_hist)
             db_session.commit()
-            db_session.refresh(new_hist) # 确认写入成功
             logger.info(f"💾 [系统] 竞品分析历史已保存 (ID: {new_hist.id})")
         except Exception as db_err:
             logger.error(f"❌ [数据库] 保存历史记录失败: {str(db_err)}")
@@ -274,9 +226,15 @@ async def compare(request: CompareRequest):
             if db_session:
                 db_session.close()
 
-        return CompareResponse(status="success", template_type=template_type, data=response_data, message=msg)
-
+        final_res = CompareResponse(status="success", template_type=template_type, data=response_data, message=msg if 'msg' in locals() else "")
         
+        # 写入防重缓存
+        try:
+            analysis_cache[cache_key] = (time.time(), final_res)
+        except: pass
+
+        return final_res
+
     except Exception as e:
         logger.error(f"Unexpected error in /compare: {str(e)}")
         return CompareResponse(status="error", message=f"An unexpected error occurred: {str(e)}")
