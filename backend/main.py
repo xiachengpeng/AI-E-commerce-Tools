@@ -18,10 +18,17 @@ from config import GEMINI_API_KEY
 import os
 from dotenv import load_dotenv
 
+from db import init_db, get_db, AnalysisHistory, ListingHistory, TranslationHistory, RenderHistory
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# 初始化数据库
+init_db()
 
 app = FastAPI(title="AI Competitor Analyzer V2")
 
@@ -237,15 +244,36 @@ async def compare(request: CompareRequest):
         if len(valid_products) == 0:
              template_type = "matrix"
         
+        # 组装最终返回数据
         response_data = CompareResponseData(
             products=[ProductCompareData(**p) for p in valid_products],
             comparison=comparison_data,
             comprehensive_evaluation=comprehensive_evaluation,
             recommendation_list=recommendation_list,
             scores=scores,
-            single_data=None
+            single_data=valid_products[0] if len(unique_urls) == 1 else None
         )
         
+        # 自动保存历史记录 (使用独立 Session 确保隔离)
+        db_session = None
+        try:
+            from db import SessionLocal
+            db_session = SessionLocal()
+            new_hist = AnalysisHistory(
+                query_url="; ".join(unique_urls),
+                template_type=template_type,
+                data=response_data.model_dump()
+            )
+            db_session.add(new_hist)
+            db_session.commit()
+            db_session.refresh(new_hist) # 确认写入成功
+            logger.info(f"💾 [系统] 竞品分析历史已保存 (ID: {new_hist.id})")
+        except Exception as db_err:
+            logger.error(f"❌ [数据库] 保存历史记录失败: {str(db_err)}")
+        finally:
+            if db_session:
+                db_session.close()
+
         return CompareResponse(status="success", template_type=template_type, data=response_data, message=msg)
 
         
@@ -288,6 +316,66 @@ async def get_frontend_config():
             
     logger.info(f"📡 [系统] 配置已成功下发 (Provider: {config['AI_PROVIDER']})")
     return config
+
+# --- 历史记录通用 API ---
+
+@app.post("/api/save_history/{module}")
+async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
+    try:
+        if module == "listing":
+            hist = ListingHistory(product_name=data.get("name"), platform=data.get("platform"), result=data.get("result"))
+        elif module == "translation":
+            hist = TranslationHistory(source_text=data.get("text"), target_lang=data.get("lang"), result=data.get("result"))
+        elif module == "render":
+            hist = RenderHistory(task_name=data.get("name"), style=data.get("style"), image_base64=data.get("image"), metadata_info=data.get("metadata"))
+        elif module == "analysis": # 手动保存入口（如果需要）
+            hist = AnalysisHistory(query_url=data.get("url"), template_type=data.get("type"), data=data.get("data"))
+        else:
+            return {"status": "error", "message": "Unknown module"}
+        
+        db.add(hist)
+        db.commit()
+        return {"status": "success", "id": hist.id}
+    except Exception as e:
+        logger.error(f"Error saving history for {module}: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/history/{module}")
+async def get_history(module: str, db: Session = Depends(get_db)):
+    try:
+        if module == "analysis":
+            res = db.query(AnalysisHistory).order_by(AnalysisHistory.timestamp.desc()).all()
+        elif module == "listing":
+            res = db.query(ListingHistory).order_by(ListingHistory.timestamp.desc()).all()
+        elif module == "translation":
+            res = db.query(TranslationHistory).order_by(TranslationHistory.timestamp.desc()).all()
+        elif module == "render":
+            res = db.query(RenderHistory).order_by(RenderHistory.timestamp.desc()).all()
+        else:
+            return []
+        return res
+    except Exception as e:
+        logger.error(f"Error fetching history for {module}: {e}")
+        return []
+
+@app.delete("/api/history/{module}/{id}")
+async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
+    try:
+        model = {
+            "analysis": AnalysisHistory,
+            "listing": ListingHistory,
+            "translation": TranslationHistory,
+            "render": RenderHistory
+        }.get(module)
+        if not model: return {"status": "error"}
+        
+        item = db.query(model).filter(model.id == id).first()
+        if item:
+            db.delete(item)
+            db.commit()
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
