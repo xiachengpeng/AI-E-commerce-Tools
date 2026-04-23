@@ -7,6 +7,7 @@ from typing import List, Union, Any
 
 class CompareRequest(BaseModel):
     urls: List[str]
+    ai_provider: str | None = None # 可选，支持 "gemini" 或 "vertex"
 
 class ProductCompareData(BaseModel):
     product_name: str

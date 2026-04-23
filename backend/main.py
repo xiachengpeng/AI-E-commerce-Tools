@@ -33,9 +33,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def process_single_url(url: str) -> dict:
+async def process_single_url(url: str, provider: str = None) -> dict:
     try:
-        logger.info(f"Starting analysis for URL: {url}")
+        logger.info(f"Starting analysis for URL: {url} (Provider: {provider})")
         markdown_content = await asyncio.to_thread(fetch_markdown, url)
         logger.info(f"Successfully fetched markdown for {url}.")
         cleaned_text = clean_content(markdown_content)
@@ -47,8 +47,8 @@ async def process_single_url(url: str) -> dict:
         else:
             structured_data = parse_general(markdown_content)
         
-        logger.info(f"Sending structured data to Gemini for matrix-mode extraction ({url})...")
-        ai_result_json_str = await asyncio.to_thread(analyze_single_extract, structured_data)
+        logger.info(f"Sending structured data to AI for extraction ({url})...")
+        ai_result_json_str = await asyncio.to_thread(analyze_single_extract, structured_data, provider=provider)
         
         try:
             parsed_data = json.loads(ai_result_json_str)
@@ -72,9 +72,9 @@ async def process_single_url(url: str) -> dict:
         logger.error(f"Error processing URL {url}: {str(e)}")
         raise e
 
-async def process_single_url_deep(url: str) -> dict:
+async def process_single_url_deep(url: str, provider: str = None) -> dict:
     try:
-        logger.info(f"Starting DEEP single analysis for URL: {url}")
+        logger.info(f"Starting DEEP analysis for URL: {url} (Provider: {provider})")
         markdown_content = await asyncio.to_thread(fetch_markdown, url)
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
@@ -84,7 +84,7 @@ async def process_single_url_deep(url: str) -> dict:
         else:
             structured_data = parse_general(markdown_content)
             
-        ai_result_json_str = await asyncio.to_thread(analyze_single_deep, structured_data)
+        ai_result_json_str = await asyncio.to_thread(analyze_single_deep, structured_data, provider=provider)
         
         try:
             parsed_data = json.loads(ai_result_json_str)
@@ -110,19 +110,20 @@ async def process_single_url_deep(url: str) -> dict:
 async def compare(request: CompareRequest):
     try:
         urls = request.urls
+        provider = request.ai_provider
         if not urls:
              return CompareResponse(status="error", message="No URLs provided.")
              
-        logger.info(f"Starting analysis for {len(urls)} URLs: {urls}")
+        logger.info(f"Starting analysis for {len(urls)} URLs: {urls} (Provider: {provider})")
 
         unique_urls = list(dict.fromkeys([u.strip() for u in urls if u.strip()]))
         
         if len(unique_urls) == 1:
             logger.info(f"Single Unique URL detected → switching to Deep Single Analysis")
             try:
-                basic_data = await process_single_url(unique_urls[0])
+                basic_data = await process_single_url(unique_urls[0], provider=provider)
                 
-                score_res = await asyncio.to_thread(calculate_score, basic_data)
+                score_res = await asyncio.to_thread(calculate_score, basic_data, provider=provider)
                 
                 scores = []
                 if score_res and isinstance(score_res, dict):
@@ -142,7 +143,7 @@ async def compare(request: CompareRequest):
                     except Exception as ve:
                         logger.error(f"ScoreCard validation failed for single product: {ve}")
                 
-                single_data = await process_single_url_deep(unique_urls[0])
+                single_data = await process_single_url_deep(unique_urls[0], provider=provider)
                 
                 response_data = CompareResponseData(single_data=single_data, scores=scores)
                 return CompareResponse(status="success", template_type="single", data=response_data)
@@ -151,7 +152,7 @@ async def compare(request: CompareRequest):
                 return CompareResponse(status="error", message=f"Failed to analyze URL: {str(e)}")
 
         logger.info(f"Multiple URLs ({len(unique_urls)}) → switching to Matrix Comparison")
-        tasks = [process_single_url(url) for url in unique_urls]
+        tasks = [process_single_url(url, provider=provider) for url in unique_urls]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         valid_products = []
@@ -173,7 +174,7 @@ async def compare(request: CompareRequest):
         if len(valid_products) > 1:
             logger.info("Multiple products detected. Running Compare AI...")
             try:
-                comp_result = await asyncio.to_thread(compare_products, valid_products)
+                comp_result = await asyncio.to_thread(compare_products, valid_products, provider=provider)
                 
                 if not isinstance(comp_result, dict):
                     logger.error(f"Compare AI returned invalid type: {type(comp_result)}")
@@ -200,7 +201,7 @@ async def compare(request: CompareRequest):
                 logger.error(f"Compare AI failed: {e}")
 
         logger.info("Running Scoring AI for valid products...")
-        score_tasks = [asyncio.to_thread(calculate_score, p) for p in valid_products]
+        score_tasks = [asyncio.to_thread(calculate_score, p, provider=provider) for p in valid_products]
         score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
         
         scores = []
