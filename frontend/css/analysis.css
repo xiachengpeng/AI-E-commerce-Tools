@@ -568,8 +568,8 @@
     width: 100%;
     padding: .8rem;
     border-radius: 10px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #fffbeb;
+    border: 1px solid #3d679e;
     text-align: left;
 }
 
@@ -589,15 +589,15 @@
 
 .xp-decision-winner,
 .xp-decision-recommend {
-    background: rgba(16, 185, 129, .2);
-    color: #10b981;
-    border: 1px solid rgba(16, 185, 129, .4);
+    background: rgb(255, 244, 199);
+    color: #92400e;
+    border: 1px solid rgba(245, 158, 11, .4);
 }
 
 .xp-decision-neutral,
 .xp-decision-caution {
-    background: rgba(245, 158, 11, .2);
-    color: #fbbf24;
+    background: rgb(255, 244, 199);
+    color: #92400e;
     border: 1px solid rgba(245, 158, 11, .4);
 }
 
@@ -693,7 +693,7 @@
 .xp-single-tag {
     background: rgba(139, 92, 246, .12);
     border: 1px solid rgba(139, 92, 246, .3);
-    color: #c4b5fd;
+    color: #8b5cf6;
     padding: .3rem .8rem;
     border-radius: 9999px;
     font-size: .8rem;
@@ -703,7 +703,7 @@
 .xp-single-tag.xp-scenario {
     background: rgba(56, 189, 248, .1);
     border-color: rgba(56, 189, 248, .3);
-    color: #7dd3fc;
+    color: #1e40b0;
 }
 
 .xp-persona-info-list {
@@ -745,7 +745,7 @@
     border-radius: 10px;
     padding: .8rem 1rem;
     font-size: .88rem;
-    color: #fca5a5;
+    color: #e11d48;
     line-height: 1.6;
 }
 
@@ -1152,11 +1152,14 @@
     background: var(--xp-card-bg);
     border: 1px solid var(--xp-card-border);
     border-radius: 14px;
-    padding: 1.1rem 1.3rem;
+    padding: 1.2rem 1.5rem;
     backdrop-filter: blur(20px);
-    border-left: 3px solid #8b5cf6;
+    border-left: 4px solid #8b5cf6;
     transition: transform .2s;
     animation: xp-fadeInUp .5s ease;
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
 }
 
 .xp-eval-card:hover {
@@ -1164,12 +1167,11 @@
 }
 
 .xp-eval-card-dim {
-    font-size: .72rem;
+    flex: 0 0 160px;
+    font-size: .85rem;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .07em;
-    color: #a78bfa;
-    margin-bottom: .4rem;
+    color: #6366f1;
+    line-height: 1.6;
 }
 
 .xp-eval-card-detail {
@@ -1247,9 +1249,9 @@
 
 .xp-score-eval-item {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: flex-start;
-    gap: .4rem;
+    gap: 1rem;
     font-size: .8rem;
     padding: .3rem 0;
     border-bottom: 1px solid rgba(255, 255, 255, .04);
@@ -1265,7 +1267,7 @@
 .xp-score-eval-detail {
     color: #334155;
     line-height: 1.4;
-    text-align: right;
+    text-align: left;
 }
 
 /* 徽章 */
@@ -1281,14 +1283,14 @@
 }
 
 .xp-conf-high {
-    background: rgba(16, 185, 129, .25);
-    color: #34d399;
+    background: rgb(235, 252, 244);
+    color: #047857;
     border: 1px solid rgba(16, 185, 129, .4);
 }
 
 .xp-conf-medium {
-    background: rgba(245, 158, 11, .25);
-    color: #fbbf24;
+    background: rgb(255, 251, 235);
+    color: #b45309;
     border: 1px solid rgba(245, 158, 11, .4);
 }
 

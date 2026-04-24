@@ -515,7 +515,7 @@
         singleDiffOpps.innerHTML = (d.differentiation_opportunities || []).map(opp => {
             const text = xp_processText(typeof opp === 'object' ? (opp.opportunity || '') : String(opp));
             const badge = typeof opp === 'object' ? conf(opp.confidence) : '';
-            return `<div class="xp-eval-card"><div class="xp-eval-card-dim">${xp_currentLang === 'zh' ? '差异化机会' : 'Opportunity'}</div><div class="xp-eval-card-detail">${text} ${badge}</div></div>`;
+            return `<div class="xp-eval-card"><div class="xp-eval-card-dim">${xp_currentLang === 'zh' ? '差异化机会' : 'Opportunity'}</div><div class="xp-eval-card-detail">${text.trim()} ${badge}</div></div>`;
         }).join('');
 
         // 操盘建议
@@ -662,7 +662,7 @@
             evalGrid.innerHTML = '';
             if (hasEval) {
                 comprehensive_evaluation.forEach(item => {
-                    evalGrid.innerHTML += `<div class="xp-eval-card"><div class="xp-eval-card-dim">${xp_getI18nText(item.dimension)}</div><div class="xp-eval-card-detail">${xp_processText(item.detail)}</div></div>`;
+                    evalGrid.innerHTML += `<div class="xp-eval-card"><div class="xp-eval-card-dim">${xp_getI18nText(item.dimension).trim()}</div><div class="xp-eval-card-detail">${xp_processText(item.detail).trim()}</div></div>`;
                 });
             }
             recGrid.innerHTML = '';
