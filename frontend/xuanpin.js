@@ -261,13 +261,24 @@
             const savedResponse = localStorage.getItem(XP_STORAGE_KEY);
             const savedUrls = localStorage.getItem(XP_STORAGE_URLS_KEY);
             if (savedResponse) {
-                xp_currentResponse = JSON.parse(savedResponse);
+                let parsed = JSON.parse(savedResponse);
+                // 兼容旧版或直接存储的数据部
+                if (parsed && !parsed.template_type && (parsed.products || parsed.single_data)) {
+                    parsed = { status: 'success', template_type: parsed.single_data ? 'single' : 'matrix', data: parsed };
+                }
+                xp_currentResponse = parsed;
+
                 const urlsInputContainer = xp_getEl('xp-urlsInputContainer');
                 const urlInputField = xp_getEl('xp-urlInputField');
                 const tagsList = xp_getEl('xp-tagsList');
                 const urlCounter = xp_getEl('xp-urlCounter');
-                const resultSection = xp_getEl('xp-resultSection');
-                if (savedUrls) JSON.parse(savedUrls).forEach(u => xp_addUrlTag(u, tagsList, urlInputField, urlCounter));
+
+                if (savedUrls) {
+                    try {
+                        const urls = JSON.parse(savedUrls);
+                        urls.forEach(u => xp_addUrlTag(u, tagsList, urlInputField, urlCounter));
+                    } catch (e) { }
+                }
                 xp_renderResults(xp_currentResponse);
             }
         } catch (e) {
@@ -329,7 +340,7 @@
     }
 
     // ─── 渲染路由 ─────────────────────────────────────────────────────────────
-    window.xp_renderResults = function(response) {
+    window.xp_renderResults = function (response) {
         xp_currentResponse = response; // 同步状态，使导出按钮生效
         const { template_type, data, message } = response;
         const resultSection = xp_getEl('xp-resultSection');
@@ -772,7 +783,7 @@
             const countries = (d.target_countries || []).map(c => zh(c)).join(', ');
             const audiences = (d.target_audience || []).map(t => zh(typeof t === 'object' ? (t.audience || t.item || '') : String(t))).join('、');
             const scenarios = (d.use_scenarios || []).map(s => `<span style="display:inline-block;background:#f0f9ff;color:#0369a1;padding:4px 12px;border-radius:15px;font-size:12px;margin:0 5px 5px 0;border:1px solid #bae6fd;">${zh(typeof s === 'object' ? (s.scenario || s.item || '') : String(s))}</span>`).join('');
-            
+
             content += `<div class="section"><div class="section-header"><div class="section-title">🎯 消费者画像与场景</div></div>
                 <div class="card"><div class="card-label">人群画像</div>
                     <p><strong>年龄段：</strong>${zh(d.age_range || '-')}</p>
@@ -848,7 +859,7 @@
 
             // 3. 对比矩阵
             const ths = products.map(p => `<th style="width:${90 / products.length}%;">${zh(p.product_name) || 'N/A'}</th>`).join('');
-            
+
             const rows = [
                 { label: '价格', key: 'price' },
                 { label: '评价数', key: 'reviews_count' },

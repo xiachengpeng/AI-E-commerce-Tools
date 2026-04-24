@@ -1,0 +1,3243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI电商工具箱 - 进阶版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/fill/style.css">
+    <!-- 引入 html2canvas 以支持将生成的排版模块下载为图片 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- 竞品分析模块样式 -->
+    <link rel="stylesheet" href="xuanpin.css">
+
+    <script>
+        // ==========================================
+        // 【核心配置文件集成】
+        // 配置从后端 /config 接口动态加载，不在前端硬编码
+        // ==========================================
+        let API_KEY = "";
+        let TEXT_MODEL = "";
+        let IMAGE_MODEL = "";
+        let AI_PROVIDER = "gemini";
+        let ACCESS_TOKEN = "";
+        let PROJECT_ID = "";
+        let LOCATION = "";
+
+        let CONCURRENCY_LIMIT = 2;
+        let STAGGER_DELAY = 2000;
+
+        async function loadConfig() {
+            try {
+                const res = await fetch("http://localhost:8000/config");
+                const cfg = await res.json();
+                API_KEY = cfg.API_KEY;
+                TEXT_MODEL = cfg.TEXT_MODEL;
+                IMAGE_MODEL = cfg.IMAGE_MODEL;
+                AI_PROVIDER = cfg.AI_PROVIDER || "gemini";
+                ACCESS_TOKEN = cfg.ACCESS_TOKEN || "";
+                PROJECT_ID = cfg.PROJECT_ID || "";
+                LOCATION = cfg.LOCATION || "";
+
+                // 从后端同步并发配置
+                if (cfg.CONCURRENCY_LIMIT) CONCURRENCY_LIMIT = cfg.CONCURRENCY_LIMIT;
+                if (cfg.STAGGER_DELAY) STAGGER_DELAY = cfg.STAGGER_DELAY;
+
+                const logMsg = `配置加载成功 | 平台: ${AI_PROVIDER} | 模型: ${TEXT_MODEL} | 并发限制: ${CONCURRENCY_LIMIT} | 启动间隔: ${STAGGER_DELAY}ms`;
+                console.log(`%c[系统] ${logMsg}`, "color: #4f46e5; font-weight: bold;");
+                remoteLog(logMsg);
+            } catch (e) {
+                console.error("❌ 无法加载后端配置，请确认后端服务已启动:", e);
+            }
+        }
+
+        const API_BASE = "http://localhost:8000";
+
+        /**
+         * 将日志发送至后端终端
+         */
+        async function saveToHistory(module, data) {
+            try {
+                await fetch(`${API_BASE}/api/save_history/${module}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+            } catch (e) { console.error(`Failed to save ${module} history`, e); }
+        }
+
+        async function remoteLog(msg) {
+            try {
+                // 移除样式字符 (如 %c) 后发送
+                const cleanMsg = msg.replace(/%c/g, '');
+                fetch("http://localhost:8000/log", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: cleanMsg })
+                }).catch(() => { }); // 失败时不阻塞
+            } catch (e) { }
+        }
+
+        /**
+         * 统一 AI 调用封装，支持 Gemini API 和 Vertex AI
+         */
+        async function callAI(modelId, payload) {
+            const logMsg = `正在调用模型: ${modelId} (${AI_PROVIDER})`;
+            console.log(`%c[AI请求] ${logMsg}`, "color: #0891b2; font-weight: bold;");
+            remoteLog(logMsg);
+            let url = "";
+            let headers = { "Content-Type": "application/json" };
+
+            if (AI_PROVIDER === "vertex") {
+                url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${modelId}:generateContent`;
+                headers["Authorization"] = `Bearer ${ACCESS_TOKEN}`;
+            } else {
+                url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${API_KEY}`;
+            }
+
+            return await fetchWithRetry(url, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(payload)
+            });
+        }
+
+        const MODULES_CONFIG = [
+            { id: 'm1', title: '首屏主视觉', subtitle: '传递核心价值', active: true, count: 1, prompt: "Create a high-impact hero banner with cinematic lighting, showcasing the product in the center with a premium background." },
+            { id: 'm2', title: '核心卖点图', subtitle: '突出卖点优势', active: true, count: 3, prompt: "Create an infographic style layout highlighting key selling points with modern typography and icons next to the product." },
+            { id: 'm3', title: '使用场景图', subtitle: '呈现真实使用场景', active: false, count: 1, prompt: "Create lifestyle photography showing the product being used in a real-world scenario or natural environment." },
+            { id: 'm4', title: '多角度图', subtitle: '多角度呈现外观', active: false, count: 1, prompt: "Create a layout showing a collage of different angle views of the product on a clean studio background." },
+            { id: 'm5', title: '场景氛围图', subtitle: '展示使用场景', active: false, count: 1, prompt: "Create an atmospheric lifestyle shot with warm lighting, setting a mood that perfectly fits the product's aesthetic." },
+            { id: 'm6', title: '商品细节图', subtitle: '放大材质与工艺', active: false, count: 1, prompt: "Create a macro close-up shot highlighting the premium material, texture, and exquisite craftsmanship of the product." },
+            { id: 'm7', title: '品牌故事图', subtitle: '传达品牌理念', active: false, count: 1, prompt: "Create an editorial layout with a brand story aesthetic, combining the product with lifestyle elements and elegant text space." },
+            { id: 'm8', title: '尺寸/容量/尺码图', subtitle: '展示规格信息', active: false, count: 1, prompt: "Create a technical drawing or infographic style image showing exact dimensions, size proportions, or capacity with measurement lines." },
+            { id: 'm9', title: '效果对比图', subtitle: '对比展示优势', active: false, count: 1, prompt: "Create a split-screen comparison layout highlighting the clear advantages of the product." },
+            { id: 'm10', title: '详细规格表', subtitle: '展示详细参数', active: false, count: 1, prompt: "Create a clean, modern specification data visualization or structured layout with tech-inspired graphics." },
+            { id: 'm11', title: '售后保障图', subtitle: '增强购买信心', active: false, count: 1, prompt: "Create a trust-building infographic highlighting after-sales service, warranty, and customer support with secure icons and reassuring layout." },
+            { id: 'm12', title: '使用建议图', subtitle: '指导正确使用', active: false, count: 1, prompt: "Create an instructional step-by-step guide or usage tips layout showing how to properly use or maintain the product with clear visual cues." }
+        ];
+
+        const PLATFORM_OPTIONS = [
+            { value: "Independent Website (Shopify-like, highly aesthetic, minimalist, lifestyle-focused)", label: "独立站" },
+            { value: "Amazon (clean white background, highly informative, feature-focused)", label: "亚马逊" },
+            { value: "Taobao (vibrant, promotional, colorful, high-density text)", label: "淘宝" }
+        ];
+
+        const REGION_OPTIONS = [
+            { value: "US Market", label: "美国 (US)" },
+            { value: "European Market", label: "欧洲 (Europe)" },
+            { value: "UK Market", label: "英国 (UK)" },
+            { value: "Japan Market", label: "日本 (Japan)" },
+            { value: "Southeast Asia Market", label: "东南亚 (SEA)" },
+            { value: "Middle East Market", label: "中东 (Middle East)" },
+            { value: "Australian Market", label: "澳大利亚 (Australia)" },
+            { value: "Global Market", label: "全球 (Global)" }
+        ];
+
+        // 市场语境调音引擎映射表
+        const MARKET_TONE_MAP = {
+            "US Market": "极具煽动性，直接展示核心利益点，略带激进的促销感，自信且引人注目。",
+            "European Market": "严谨优雅，强调环保、可持续性、高品质和设计感，措辞清晰高级。",
+            "UK Market": "礼貌克制，略带巧妙的幽默感，注重性价比与实用性，专业而亲和。",
+            "Japan Market": "极端严谨，注重细节和参数说明，措辞极其礼貌，强调信任感和安心感。",
+            "Southeast Asia Market": "色彩鲜艳，情绪高昂，善用FOMO(错失恐惧)心理，促销感极强。",
+            "Middle East Market": "奢华尊贵，尊重传统，强调产品带来的地位感和高端体验。",
+            "Australian Market": "轻松随性，注重生活方式的融入，实用导向，亲切友好。",
+            "Global Market": "中立、专业、普适性强、清晰明了。"
+        };
+
+        const LANGUAGE_OPTIONS = [
+            { value: "English", label: "英文 (English)" },
+            { value: "Chinese", label: "中文 (Chinese)" },
+            { value: "Japanese", label: "日文 (Japanese)" },
+            { value: "Spanish", label: "西语 (Spanish)" },
+            { value: "German", label: "德语 (German)" },
+            { value: "French", label: "法语 (French)" },
+            { value: "Italian", label: "意语 (Italian)" },
+            { value: "Portuguese", label: "葡语 (Portuguese)" },
+            { value: "Russian", label: "俄语 (Russian)" },
+            { value: "Arabic", label: "阿拉伯语 (Arabic)" },
+            { value: "Korean", label: "韩语 (Korean)" }
+        ];
+
+        const ASPECT_RATIO_OPTIONS = [
+            { value: "1:1", label: "1:1 (正方形)" },
+            { value: "3:4", label: "3:4 (竖图)" },
+            { value: "16:9", label: "16:9 (横图)" },
+            { value: "custom", label: "自定义比例" }
+        ];
+
+        const IMAGE_STYLE_OPTIONS = [
+            { value: "High-end minimalist, clean, premium, sophisticated", label: "高端极简" },
+            { value: "Trendy, vibrant, TikTok viral style, energetic, bold", label: "TikTok爆款" },
+            { value: "Light luxury, elegant, glossy, high-fashion aesthetic", label: "轻奢风" },
+            { value: "Tech-focused, cyberpunk, modern, neon accents", label: "科技风" },
+            { value: "Natural, organic, warm, cozy, lifestyle photography", label: "自然原木" }
+        ];
+
+        const MARKETING_THEMES = [
+            { value: "none", label: "无营销主题 (常规)" },
+            { value: "Black Friday cyber punk sales vibe, neon accents, discount tags", label: "🔥 黑五 / 网一" },
+            { value: "Christmas festive vibe, snow, warm lights, red and green accents", label: "🎄 圣诞节庆" },
+            { value: "Valentine's Day romantic vibe, roses, pink and red tones", label: "💖 情人节限定" },
+            { value: "Summer beach vibe, bright sunshine, ocean background", label: "🏖️ 夏日大促" },
+            { value: "Halloween spooky vibe, pumpkins, dark atmospheric lighting", label: "🎃 万圣节主题" }
+        ];
+
+        const LISTING_STYLE_OPTIONS = [
+            { value: "Amazon风 (注重核心大词SEO布局，规格严谨，信息密度极高)", label: "Amazon风 (注重SEO)" },
+            { value: "Shopify独立站风 (注重品牌故事，排版优雅，营销导向，强调生活方式)", label: "独立站风 (营销导向)" },
+            { value: "TikTok短视频带货风 (短促有力，情绪煽动强，多用emoji，网感强)", label: "TikTok风 (短促有力)" }
+        ];
+
+        const RETRY_DELAYS = [1000, 2000, 4000, 8000, 16000];
+    </script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .toast-enter {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .side-tab {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 64px;
+            padding: 12px 4px;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: all 0.2s;
+            color: #9ca3af;
+            font-size: 11px;
+            line-height: 1.4;
+            text-align: center;
+            gap: 6px;
+            background: transparent;
+        }
+
+        .side-tab:hover {
+            background: #f0f6ff;
+            color: #3b82f6;
+        }
+
+        .side-tab.active {
+            background: #eff6ff;
+            color: #3b82f6;
+            border-left-color: #3b82f6;
+        }
+
+        .side-tab i {
+            font-size: 24px;
+            display: block;
+        }
+
+        .hide-scroll::-webkit-scrollbar {
+            display: none;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(6px)
+            }
+
+            to {
+                opacity: 1;
+                transform: none
+            }
+        }
+
+        /* 翻译样式保留 */
+        .trans-card {
+            background: #fff;
+            border-radius: 20px;
+            border: 1.5px solid #e5e7eb;
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .trans-card:hover {
+            border-color: #93c5fd;
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.08);
+        }
+
+        .trans-card-thumb {
+            width: 80px;
+            height: 80px;
+            border-radius: 14px;
+            overflow: hidden;
+            flex-shrink: 0;
+            background: #f1f5f9;
+            border: 2.5px solid #f0f0f0;
+            cursor: zoom-in;
+            position: relative;
+        }
+
+        .trans-card-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .trans-card-thumb-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, .45);
+            opacity: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.18s;
+        }
+
+        .trans-card:hover .trans-card-thumb-overlay {
+            opacity: 1;
+        }
+
+        .trans-progress-bar {
+            height: 6px;
+            border-radius: 99px;
+            background: #e5e7eb;
+            overflow: hidden;
+        }
+
+        .trans-progress-fill {
+            height: 100%;
+            border-radius: 99px;
+            background: linear-gradient(90deg, #60a5fa, #3b82f6);
+            transition: width 0.4s ease;
+        }
+
+        .step-badge {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: #3b82f6;
+            animation: pulse-text 1.2s infinite;
+        }
+
+        @keyframes pulse-text {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .5
+            }
+        }
+
+        .lang-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .lang-dropdown-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            min-width: 260px;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.10);
+            z-index: 200;
+            padding: 10px;
+        }
+
+        .lang-dropdown-menu.open {
+            display: block;
+            animation: fadeIn 0.18s ease;
+        }
+
+        .lang-dropdown-trigger {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            cursor: pointer;
+            font-size: 12px;
+            color: #374151;
+            transition: border-color 0.15s, background 0.15s;
+            user-select: none;
+        }
+
+        .lang-dropdown-trigger:hover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+            color: #3b82f6;
+        }
+
+        .lang-dropdown-trigger.has-selection {
+            border-color: #3b82f6;
+            background: #eff6ff;
+            color: #3b82f6;
+        }
+
+        .lang-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            background: #3b82f6;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 11px;
+            padding: 1px 6px;
+        }
+
+        .lang-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .lang-option label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 12px;
+            color: #374151;
+            transition: background 0.12s;
+        }
+
+        .lang-option label:hover {
+            background: #f0f6ff;
+        }
+
+        .lang-option input[type=checkbox] {
+            accent-color: #3b82f6;
+            width: 14px;
+            height: 14px;
+            flex-shrink: 0;
+        }
+
+        .drop-zone-active {
+            border-color: #3b82f6 !important;
+            background: #eff6ff !important;
+        }
+
+        /* 拖拽排版幽灵效果 */
+        .ghost-item {
+            opacity: 0.4;
+            background: #f8fafc;
+            border: 2px dashed #94a3b8;
+        }
+
+        /* 全局历史面板样式 */
+        .global-history-panel {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 380px;
+            height: 100%;
+            background: #ffffff;
+            z-index: 200;
+            box-shadow: 20px 0 50px rgba(0, 0, 0, 0.1);
+            transform: translateX(-100%);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .global-history-panel.open {
+            transform: translateX(0);
+        }
+
+        .history-header {
+            padding: 24px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .history-tabs {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+            padding: 12px;
+            background: #f1f5f9;
+        }
+
+        .history-tab-btn {
+            padding: 8px 4px;
+            font-size: 10px;
+            font-weight: 800;
+            text-align: center;
+            border-radius: 8px;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .history-tab-btn.active {
+            background: #ffffff;
+            color: #3b82f6;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .history-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .history-item {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .history-item:hover {
+            border-color: #3b82f6;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
+        }
+
+        .history-item-del {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 4px;
+            color: #cbd5e1;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .history-item-del:hover {
+            background: #fee2e2;
+            color: #ef4444;
+        }
+    </style>
+</head>
+
+<body class="bg-[#f8fafc] text-gray-800 h-screen overflow-hidden flex font-sans">
+
+    <div id="toastContainer" class="fixed top-5 right-5 z-[300] flex flex-col gap-2"></div>
+
+    <!-- ===== 最左侧竖向导航栏 ===== -->
+    <div
+        class="flex-shrink-0 w-16 bg-white border-r border-gray-200 flex flex-col items-center py-4 z-20 shadow-sm relative">
+        <div
+            class="w-10 h-10 bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-xl flex items-center justify-center mb-6 shadow-md shadow-blue-200">
+            <i class="ph ph-storefront text-white text-xl"></i>
+        </div>
+
+        <button id="tab-xuanpin" onclick="switchMainTab('xuanpin')" class="side-tab" title="竞品分析">
+            <i class="ph ph-chart-bar"></i><span>竞品分析</span>
+        </button>
+
+        <button id="tab-generate" onclick="switchMainTab('generate')" class="side-tab active" title="详情页生成">
+            <i class="ph ph-squares-four"></i><span>详情页</span>
+        </button>
+
+        <button id="tab-listing" onclick="switchMainTab('listing')" class="side-tab" title="Listing智能生成">
+            <i class="ph ph-article"></i><span>Listing</span>
+        </button>
+
+        <button id="tab-translate" onclick="switchMainTab('translate')" class="side-tab" title="图片翻译">
+            <i class="ph ph-translate"></i><span>图片翻译</span>
+        </button>
+
+        <div class="mt-auto mb-4 flex flex-col items-center gap-4">
+            <button id="btnOpenHistory" onclick="toggleGlobalHistory()" class="side-tab" title="历史记录中心">
+                <i class="ph ph-clock-counter-clockwise"></i><span>历史</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+        <!-- ============================================== -->
+        <!-- 视图：竞品分析 (VIEW: XUANPIN)                  -->
+        <!-- ============================================== -->
+        <div id="view-xuanpin" class="hidden flex-1 overflow-hidden" style="display:none">
+            <div class="xp-app-layout">
+                <!-- 左侧输入面板 -->
+                <aside class="xp-left-panel">
+                    <h1 id="xp-appTitle" class="xp-app-title">AI 竞品分析</h1>
+                    <p class="xp-subtitle">输入独立站或亚马逊链接，一键生成洞察报告</p>
+
+                    <div class="xp-input-section">
+                        <div class="xp-tags-input-container" id="xp-urlsInputContainer">
+                            <div id="xp-tagsList" class="xp-tags-list">
+                                <input type="text" id="xp-urlInputField" class="xp-tag-input-field"
+                                    placeholder="输入URL回车添加，支持批量粘贴">
+                            </div>
+                        </div>
+                        <div class="xp-input-info-bar">
+                            <div id="xp-urlCounter" class="xp-url-counter">已添加 0/5 个竞品链接</div>
+                            <button id="xp-copyAllBtn" class="xp-copy-all-btn" title="复制全部链接">
+                                <span class="xp-copy-icon">📋</span>
+                                <span class="xp-copy-text">复制全部</span>
+                            </button>
+                        </div>
+                        <button id="xp-analyzeBtn" class="xp-analyze-btn">
+                            <span>分析对比</span><span>→</span>
+                        </button>
+                        <div id="xp-errorMsg" class="xp-error-msg xp-hidden"></div>
+
+                        <!-- 评分说明 -->
+                        <div class="xp-scoring-legend">
+                            <div class="xp-legend-group">
+                                <div class="xp-legend-item">
+                                    <span class="xp-legend-dot xp-opp"></span>
+                                    <div><strong>机会分</strong>：分值越高，增长潜力与利润空间越大</div>
+                                </div>
+                                <div class="xp-legend-item">
+                                    <span class="xp-legend-dot xp-diff"></span>
+                                    <div><strong>难度分</strong>：分值越高，竞争阻碍越大，所需资源更多</div>
+                                </div>
+                            </div>
+                            <div class="xp-legend-logic">
+                                <span class="xp-logic-tag xp-recommend">高机会 + 低难度 = 强烈建议</span>
+                                <span class="xp-logic-tag xp-caution">高机会 + 高难度 = 谨慎进入</span>
+                                <span class="xp-logic-tag xp-stop">低机会 + 低难度 = 不建议</span>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <!-- 右侧结果面板 -->
+                <main class="xp-right-panel">
+                    <section id="xp-loadingSection" class="xp-loading-section xp-hidden">
+                        <div class="xp-spinner"></div>
+                        <p>AI 正在解构该网页，请稍候...</p>
+                    </section>
+
+                    <section id="xp-resultSection" class="xp-result-section xp-hidden">
+                        <div class="xp-result-action-bar">
+                            <button id="xp-exportBtn" class="xp-export-btn">📥 导出报告</button>
+                            <button id="xp-langToggle" class="xp-lang-btn">🌐 English</button>
+                        </div>
+
+                        <!-- 单品深度模板 -->
+                        <div id="xp-single-template" class="xp-hidden">
+                            <div class="xp-section-title">
+                                <h2>🔬 产品深度透视</h2>
+                            </div>
+                            <div id="xp-singleHero" class="xp-card xp-single-hero-card"></div>
+                            <div id="xp-singleScore" class="xp-hidden"></div>
+
+                            <div class="xp-persona-pain-container">
+                                <div>
+                                    <div class="xp-section-title">
+                                        <h2>🎯 消费者画像</h2>
+                                    </div>
+                                    <div id="xp-singleAudience" class="xp-single-tags-block"></div>
+                                    <div class="xp-section-title">
+                                        <h2>📍 使用场景</h2>
+                                    </div>
+                                    <div id="xp-singleScenarios" class="xp-single-tags-block"></div>
+                                </div>
+                                <div>
+                                    <div class="xp-section-title">
+                                        <h2>😤 用户痛点</h2>
+                                    </div>
+                                    <div id="xp-singlePainPoints" class="xp-single-pain-grid"></div>
+                                </div>
+                            </div>
+
+                            <div class="xp-section-title">
+                                <h2>🚀 逆向营销策略</h2>
+                            </div>
+                            <div class="xp-two-col">
+                                <div id="xp-singleTraffic" class="xp-card"></div>
+                                <div id="xp-singleAdAngles" class="xp-card"></div>
+                            </div>
+
+                            <div class="xp-section-title">
+                                <h2>⚡ 优势 &amp; 风险</h2>
+                            </div>
+                            <div class="xp-two-col">
+                                <div id="xp-singleStrengths" class="xp-card xp-single-strength-card"></div>
+                                <div id="xp-singleWeaknesses" class="xp-card xp-single-weakness-card"></div>
+                            </div>
+
+                            <div class="xp-section-title">
+                                <h2>💡 差异化机会</h2>
+                            </div>
+                            <div id="xp-singleDiffOpps" class="xp-eval-grid"></div>
+
+                            <div class="xp-section-title">
+                                <h2>🎯 操盘建议</h2>
+                            </div>
+                            <div id="xp-singleRec" class="xp-card xp-single-rec-card"></div>
+
+                            <div class="xp-section-title">
+                                <h2>📣 用户评价深度洞察 (VOC)</h2>
+                            </div>
+                            <div id="xp-singleVoc" class="xp-voc-section"></div>
+                        </div>
+
+                        <!-- 矩阵对比模板 -->
+                        <div id="xp-matrix-template" class="xp-hidden">
+                            <div class="xp-section-title">
+                                <h2>📊 智能投资打分</h2>
+                            </div>
+                            <div id="xp-scoresContainer" class="xp-scores-grid"></div>
+
+                            <div id="xp-comparisonContainer" class="xp-hidden">
+                                <div class="xp-section-title">
+                                    <h2>⚖️ 市场竞争分析</h2>
+                                </div>
+                                <div class="xp-card xp-comparison-card">
+                                    <p><strong>赢家产品：</strong><span id="xp-compWinner"></span></p>
+                                    <p><strong>竞争程度：</strong><span id="xp-compLevel"></span></p>
+                                    <p><strong>市场定位：</strong><span id="xp-compPosition"></span></p>
+                                </div>
+                            </div>
+
+                            <div class="xp-section-title">
+                                <h2>📋 竞品横向对比矩阵</h2>
+                            </div>
+                            <div class="xp-table-container">
+                                <table id="xp-compareTable" class="xp-compare-table">
+                                    <thead>
+                                        <tr id="xp-tableHeader"></tr>
+                                    </thead>
+                                    <tbody id="xp-tableBody"></tbody>
+                                </table>
+                            </div>
+
+                            <div id="xp-opportunitiesContainer" class="xp-hidden">
+                                <div class="xp-section-title">
+                                    <h2>📊 综合评估维度</h2>
+                                </div>
+                                <div id="xp-evalGrid" class="xp-eval-grid"></div>
+                                <div class="xp-section-title" style="margin-top:1.5rem;">
+                                    <h2>🎯 操盘建议清单</h2>
+                                </div>
+                                <div id="xp-recGrid" class="xp-rec-grid"></div>
+                            </div>
+                        </div>
+                    </section>
+                </main>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- 视图：详情页生成 (VIEW: GENERATE) -->
+        <!-- ============================================== -->
+        <div id="view-generate" class="flex-1 flex overflow-hidden">
+            <!-- 配置面板 -->
+            <div
+                class="w-[340px] bg-white border-r border-gray-200 flex flex-col h-full z-10 flex-shrink-0 relative shadow-sm">
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-5 pb-24">
+                    <div class="mb-4">
+                        <div class="flex items-center text-sm font-bold mb-3">上传主图素材 <i
+                                class="ph ph-question text-gray-400 ml-1 cursor-help"></i></div>
+                        <div class="flex gap-3">
+                            <div id="imagePreviewContainer"
+                                class="w-[84px] h-[84px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group hidden shadow-inner">
+                                <img id="uploadedImagePreview" src="" alt="Product" class="w-full h-full object-cover">
+                                <button onclick="removeImage()"
+                                    class="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"><i
+                                        class="ph ph-x text-xs"></i></button>
+                            </div>
+                            <label for="imageUpload"
+                                class="w-[84px] h-[84px] rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:bg-gray-100 hover:border-blue-400 transition-all">
+                                <i class="ph ph-plus text-gray-400 text-xl"></i>
+                                <input type="file" id="imageUpload" class="hidden" accept="image/*"
+                                    onchange="handleImageUpload(event)">
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-6">
+                        <div class="text-sm font-bold mb-3">场景与营销配置</div>
+                        <!-- 新增：营销主题选择 -->
+                        <select id="marketingThemeSelect"
+                            class="w-full text-xs border border-orange-200 rounded-md px-2 py-1.5 focus:border-orange-500 outline-none bg-orange-50 text-orange-700 font-medium mb-2 shadow-sm"></select>
+
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <select id="imageStyleSelect"
+                                class="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:border-blue-500 outline-none bg-gray-50 font-medium"></select>
+                            <select id="platformSelect"
+                                class="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:border-blue-500 outline-none bg-gray-50"></select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <select id="regionSelect"
+                                class="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:border-blue-500 outline-none bg-gray-50"></select>
+                            <select id="languageSelect"
+                                class="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:border-blue-500 outline-none bg-gray-50"></select>
+                        </div>
+                        <select id="aspectRatioSelect" onchange="toggleCustomRatio()"
+                            class="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:border-blue-500 outline-none bg-gray-50 mb-2"></select>
+
+                        <div id="customRatioContainer"
+                            class="hidden grid-cols-2 gap-2 items-center bg-blue-50/50 p-2 rounded-md border border-blue-100">
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="customRatioW"
+                                    class="w-full text-xs border border-gray-200 rounded px-1.5 py-1 text-center outline-none focus:border-blue-500"
+                                    placeholder="宽" value="2" min="1">
+                                <span class="text-gray-400 font-bold">:</span>
+                                <input type="number" id="customRatioH"
+                                    class="w-full text-xs border border-gray-200 rounded px-1.5 py-1 text-center outline-none focus:border-blue-500"
+                                    placeholder="高" value="1" min="1">
+                            </div>
+                            <div class="text-[10px] text-gray-500">输入自定义宽高比</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-6 relative">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-bold flex items-center">核心卖点</div>
+                            <button id="aiWriteBtn" onclick="generateSellingPoints()"
+                                class="flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded transition-colors"><i
+                                    class="ph ph-sparkle"></i> AI 帮写</button>
+                        </div>
+                        <textarea id="sellingPointsText" rows="5"
+                            class="w-full text-xs text-gray-600 border border-gray-200 rounded-lg p-3 focus:border-blue-500 outline-none bg-white resize-none leading-relaxed"
+                            placeholder="输入商品名称及特色，或点击 AI 帮写自动提取素材内容..."></textarea>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="text-sm font-bold mb-3 flex items-center">包含模块 (多选)</div>
+                        <div class="grid grid-cols-2 gap-2" id="moduleGrid"></div>
+                    </div>
+                </div>
+
+                <div class="absolute bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200">
+                    <button id="generateBtn" onclick="generateAIPage()"
+                        class="w-full bg-[#3b82f6] hover:bg-blue-600 text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 shadow-sm">
+                        <i class="ph ph-magic-wand text-lg"></i> 生成跨平台详情页
+                    </button>
+                </div>
+            </div>
+
+            <!-- 主展示区 -->
+            <div id="panel-generate"
+                class="flex-1 flex flex-col items-center justify-center relative bg-gray-50 overflow-hidden">
+                <div id="showcaseArea"
+                    class="flex flex-col items-center justify-center w-full max-w-4xl px-8 transition-opacity duration-300">
+                    <div class="bg-blue-100 p-4 rounded-full mb-6">
+                        <i class="ph ph-magic-wand text-5xl text-blue-500"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold text-gray-800 mb-2 tracking-wide">AI 驱动详情页引擎</h1>
+                    <p class="text-sm text-gray-500 mb-10">极速渲染跨平台风格，自动融合营销主题与竞品对抗策略</p>
+                </div>
+
+                <div id="resultArea"
+                    class="hidden flex-col items-center justify-start w-full h-full overflow-y-auto custom-scrollbar relative bg-gray-50">
+
+                    <div
+                        class="w-full sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm flex justify-center px-8 py-3.5">
+                        <div class="w-full max-w-3xl flex justify-between items-center">
+                            <button onclick="resetView()"
+                                class="flex items-center gap-2 text-gray-500 hover:text-gray-800 transition-colors text-sm bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200">
+                                <i class="ph ph-arrow-left"></i> 返回修改
+                            </button>
+                            <h2 class="text-lg font-black text-gray-800 flex items-center gap-2"><i
+                                    class="ph-fill ph-check-circle text-green-500"></i> 渲染方案预览</h2>
+                            <div class="flex items-center gap-2">
+                                <button onclick="downloadAllModules()"
+                                    class="flex items-center gap-1.5 text-gray-600 bg-white hover:bg-gray-50 border border-gray-200 transition-colors text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm">
+                                    <i class="ph ph-download-simple text-sm"></i> 批量单图
+                                </button>
+                                <!-- 生成长图/排版台入口 -->
+                                <button id="btnOpenBuilder" onclick="openLongImageBuilder()"
+                                    class="flex items-center gap-1.5 text-white bg-indigo-600 hover:bg-indigo-700 transition-colors text-xs font-bold px-4 py-1.5 rounded-lg shadow-md border border-indigo-700">
+                                    <i class="ph ph-kanban text-sm"></i> 拖拽排版长图
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 动态注入生成卡片 -->
+                    <div id="modulesResultContainer" class="w-full max-w-3xl flex flex-col gap-6 pt-6 pb-20 px-4"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- 视图：LISTING 生成 (VIEW: LISTING) -->
+        <!-- ============================================== -->
+        <div id="view-listing" class="hidden flex-1 overflow-hidden flex bg-[#f8fafc]" style="display:none">
+            <!-- 左侧输入配置 -->
+            <div
+                class="w-[340px] bg-white border-r border-gray-200 flex flex-col h-full z-10 flex-shrink-0 relative shadow-sm">
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-6 pb-24">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center gap-2">
+                            <div class="bg-indigo-100 p-1.5 rounded-lg text-indigo-600"><i
+                                    class="ph ph-text-aa text-lg"></i></div>
+                            <h2 class="text-base font-black text-gray-800 tracking-tight">Listing 智能编撰</h2>
+                        </div>
+                    </div>
+
+                    <!-- Input: Reference Image -->
+                    <div class="mb-5">
+                        <div class="flex items-center text-xs font-bold text-gray-700 mb-2">参考产品图 (非必填)</div>
+                        <div class="flex gap-3">
+                            <div id="listingImagePreviewContainer"
+                                class="w-[72px] h-[72px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group hidden shadow-inner">
+                                <img id="listingUploadedImagePreview" src="" class="w-full h-full object-cover">
+                                <button onclick="removeListingImage()"
+                                    class="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"><i
+                                        class="ph ph-x text-[10px]"></i></button>
+                            </div>
+                            <label for="listingImageUpload"
+                                class="w-[72px] h-[72px] rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:bg-gray-100 hover:border-indigo-400 transition-all">
+                                <i class="ph ph-image text-gray-400 text-xl"></i>
+                                <input type="file" id="listingImageUpload" class="hidden" accept="image/*"
+                                    onchange="handleListingImageUpload(event)">
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Input: Name -->
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-xs font-bold text-gray-700">产品名称 <span class="text-red-500">*</span></label>
+                        <button id="aiListingExtractBtn" onclick="aiFillListingInputs()"
+                            class="text-[10px] text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors flex items-center gap-1 font-bold">
+                            <i class="ph ph-sparkle"></i> 视觉提取
+                        </button>
+                    </div>
+                    <input type="text" id="listingName"
+                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 mb-5 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-gray-50"
+                        placeholder="例如：天然藤编半球形复古吊灯">
+
+                    <!-- Input: Points -->
+                    <label class="block text-xs font-bold text-gray-700 mb-1.5">核心卖点与优势 <span
+                            class="text-red-500">*</span></label>
+                    <textarea id="listingPoints" rows="5"
+                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 mb-5 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all resize-none bg-gray-50 leading-relaxed"
+                        placeholder="描述产品的材质、适用场景、痛点解决方案等..."></textarea>
+
+                    <!-- Input: Keywords -->
+                    <label class="block text-xs font-bold text-gray-700 mb-1.5">主打关键词 (可选)</label>
+                    <input type="text" id="listingKeywords"
+                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 mb-5 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-gray-50"
+                        placeholder="逗号分隔，如：藤编, 吊灯, 北欧风">
+
+                    <!-- 进阶：场景与营销配置 -->
+                    <div class="mb-5 pt-4 border-t border-gray-100">
+                        <div class="text-xs font-bold text-gray-800 mb-3 flex items-center gap-1.5"><i
+                                class="ph-fill ph-target text-orange-500"></i> 场景与营销配置</div>
+
+                        <label class="block text-[10px] font-bold text-gray-500 mb-1">营销节点/主题 (自动融入促销文案)</label>
+                        <select id="listingMarketingThemeSelect"
+                            class="w-full text-xs border border-orange-200 rounded-lg p-2.5 outline-none focus:border-orange-500 bg-orange-50 text-orange-700 font-medium mb-3 shadow-sm"></select>
+
+                        <label class="block text-[10px] font-bold text-gray-500 mb-1">目标市场 (启用超本地化语境)</label>
+                        <select id="listingRegionSelect"
+                            class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-gray-50 mb-3"></select>
+
+                        <label class="block text-[10px] font-bold text-gray-500 mb-1">目标平台与调性</label>
+                        <select id="listingStyleSelect"
+                            class="w-full text-xs border border-indigo-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-indigo-50/50 text-indigo-900 font-medium mb-2 shadow-sm"></select>
+                    </div>
+                </div>
+
+                <div
+                    class="absolute bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
+                    <button id="btnGenerateListing" onclick="generateListing()"
+                        class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 shadow-md">
+                        <i class="ph ph-magic-wand text-lg"></i> 一键生成 Listing
+                    </button>
+                </div>
+            </div>
+
+            <!-- 右侧生成结果展示 -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 relative flex flex-col">
+                <!-- Top Bar for Listing -->
+                <div
+                    class="w-full sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm flex justify-between items-center px-8 py-3.5">
+                    <div class="flex items-center gap-3">
+                        <h2 class="text-lg font-black text-gray-800">AI 文案结果</h2>
+                        <div
+                            class="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                            <i class="ph-fill ph-check-circle"></i> 语境引擎适配完毕
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button id="btnRiskCheck" onclick="checkListingCompliance()"
+                            class="hidden flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-100 px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                            <i class="ph ph-shield-warning text-sm"></i> 合规审查
+                        </button>
+                        <button onclick="toggleListingHistory()"
+                            class="flex items-center gap-1.5 text-[11px] font-bold text-gray-600 bg-white hover:bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                            <i class="ph ph-clock-counter-clockwise text-sm"></i> 历史草稿箱
+                        </button>
+                    </div>
+                </div>
+
+                <div id="listingEmpty"
+                    class="flex-1 flex flex-col items-center justify-center text-gray-400 opacity-80 min-h-[400px]">
+                    <i class="ph ph-article text-6xl mb-4 text-indigo-200"></i>
+                    <h3 class="text-lg font-bold text-gray-500 mb-2">等待输入指令</h3>
+                    <p class="text-sm">完善左侧商品特征，AI将匹配目标市场进行本土化编撰</p>
+                </div>
+
+                <div id="listingResults" class="hidden flex-col gap-6 max-w-4xl mx-auto p-8 pb-10 fade-in w-full">
+
+                    <!-- 商品标题 -->
+                    <div
+                        class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 relative group transition-all hover:shadow-md hover:border-indigo-300">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-black text-gray-800 flex items-center gap-2"><i
+                                    class="ph-fill ph-tag text-indigo-500 text-lg"></i> 平台适配标题</h3>
+                            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                                <button onclick="copySectionText('resListingTitle', 'target')"
+                                    class="text-xs bg-gray-100 hover:bg-indigo-100 text-gray-500 hover:text-indigo-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1"><i
+                                        class="ph ph-copy"></i> 外文</button>
+                                <button onclick="copySectionText('resListingTitle', 'zh')"
+                                    class="text-xs bg-gray-100 hover:bg-indigo-100 text-gray-500 hover:text-indigo-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1"><i
+                                        class="ph ph-copy"></i> 中文</button>
+                            </div>
+                        </div>
+                        <div id="resListingTitle" class="text-lg text-gray-800 font-bold leading-relaxed"></div>
+                    </div>
+
+                    <!-- 五点描述 (Bullets) -->
+                    <div
+                        class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 relative group transition-all hover:shadow-md hover:border-indigo-300">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-black text-gray-800 flex items-center gap-2"><i
+                                    class="ph-fill ph-list-bullets text-indigo-500 text-lg"></i> 五点描述 (Bullets)</h3>
+                            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                                <button onclick="copySectionText('resListingBullets', 'target')"
+                                    class="text-xs bg-gray-100 hover:bg-indigo-100 text-gray-500 hover:text-indigo-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1"><i
+                                        class="ph ph-copy"></i> 外文</button>
+                                <button onclick="copySectionText('resListingBullets', 'zh')"
+                                    class="text-xs bg-gray-100 hover:bg-indigo-100 text-gray-500 hover:text-indigo-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1"><i
+                                        class="ph ph-copy"></i> 中文</button>
+                            </div>
+                        </div>
+                        <ul id="resListingBullets" class="space-y-3 list-none p-0 text-sm"></ul>
+                    </div>
+
+                    <!-- 商品长描述 -->
+                    <div
+                        class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 relative group transition-all hover:shadow-md hover:border-indigo-300">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-black text-gray-800 flex items-center gap-2"><i
+                                    class="ph-fill ph-text-align-left text-indigo-500 text-lg"></i> 高转化商品长描述</h3>
+                            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                                <button onclick="copySectionText('resListingDesc', 'target')"
+                                    class="text-xs bg-gray-100 hover:bg-indigo-100 text-gray-500 hover:text-indigo-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1"><i
+                                        class="ph ph-copy"></i> 外文</button>
+                                <button onclick="copySectionText('resListingDesc', 'zh')"
+                                    class="text-xs bg-gray-100 hover:bg-indigo-100 text-gray-500 hover:text-indigo-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1"><i
+                                        class="ph ph-copy"></i> 中文</button>
+                            </div>
+                        </div>
+                        <div id="resListingDesc" class="text-sm text-gray-600 leading-loose whitespace-pre-wrap"></div>
+                    </div>
+
+                    <!-- 关键词金字塔 -->
+                    <div
+                        class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 relative transition-all hover:shadow-md">
+                        <h3 class="text-sm font-black text-gray-800 flex items-center gap-2 mb-5"><i
+                                class="ph-fill ph-funnel text-indigo-500 text-lg"></i> 关键词金字塔体系</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            <div
+                                class="bg-gradient-to-b from-blue-50 to-white p-4 rounded-xl border border-blue-100 relative overflow-hidden group">
+                                <div class="absolute top-0 right-0 p-2 opacity-10"><i
+                                        class="ph-fill ph-target text-4xl text-blue-600"></i></div>
+                                <div class="flex justify-between items-center mb-3">
+                                    <h4 class="text-xs font-black text-blue-800 uppercase tracking-widest">Core Keywords
+                                    </h4>
+                                </div>
+                                <ul id="resKwCore"
+                                    class="text-xs text-blue-700 space-y-1.5 font-medium relative z-10 list-disc pl-4 marker:text-blue-300">
+                                </ul>
+                            </div>
+                            <div
+                                class="bg-gradient-to-b from-emerald-50 to-white p-4 rounded-xl border border-emerald-100 relative overflow-hidden group">
+                                <div class="absolute top-0 right-0 p-2 opacity-10"><i
+                                        class="ph-fill ph-trend-up text-4xl text-emerald-600"></i></div>
+                                <div class="flex justify-between items-center mb-3">
+                                    <h4 class="text-xs font-black text-emerald-800 uppercase tracking-widest">Long-tail
+                                    </h4>
+                                </div>
+                                <ul id="resKwTail"
+                                    class="text-xs text-emerald-700 space-y-1.5 font-medium relative z-10 list-disc pl-4 marker:text-emerald-300">
+                                </ul>
+                            </div>
+                            <div
+                                class="bg-gradient-to-b from-purple-50 to-white p-4 rounded-xl border border-purple-100 relative overflow-hidden group">
+                                <div class="absolute top-0 right-0 p-2 opacity-10"><i
+                                        class="ph-fill ph-megaphone text-4xl text-purple-600"></i></div>
+                                <div class="flex justify-between items-center mb-3">
+                                    <h4 class="text-xs font-black text-purple-800 uppercase tracking-widest">PPC / Ads
+                                    </h4>
+                                </div>
+                                <ul id="resKwAds"
+                                    class="text-xs text-purple-700 space-y-1.5 font-medium relative z-10 list-disc pl-4 marker:text-purple-300">
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Q&A 和 社媒矩阵 -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Q&A -->
+                        <div
+                            class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 relative transition-all hover:shadow-md">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-sm font-black text-gray-800 flex items-center gap-2"><i
+                                        class="ph-fill ph-question text-indigo-500 text-lg"></i> 买家高转化 FAQ</h3>
+                                <button onclick="copySectionText('resListingQA', 'target')"
+                                    class="text-xs text-indigo-500 hover:underline"><i class="ph ph-copy"></i>
+                                    复制外文</button>
+                            </div>
+                            <div id="resListingQA" class="space-y-4"></div>
+                        </div>
+
+                        <!-- Social Media -->
+                        <div
+                            class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 relative transition-all hover:shadow-md flex flex-col">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-sm font-black text-gray-800 flex items-center gap-2"><i
+                                        class="ph-fill ph-tiktok-logo text-indigo-500 text-lg"></i> 社媒种草矩阵(IG/TT)</h3>
+                                <button onclick="copySectionText('resListingSocial', 'target')"
+                                    class="text-xs text-indigo-500 hover:underline"><i class="ph ph-copy"></i>
+                                    复制脚本</button>
+                            </div>
+                            <div id="resListingSocial"
+                                class="flex-1 bg-gray-50/80 p-4 rounded-xl border border-gray-100 text-sm overflow-y-auto max-h-[300px] custom-scrollbar">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧滑出的草稿箱历史面板 -->
+            <div id="listingHistoryPanel"
+                class="absolute right-0 top-0 h-full w-80 bg-white shadow-[-10px_0_30px_rgba(0,0,0,0.05)] border-l border-gray-200 transform translate-x-full transition-transform duration-300 z-50 flex flex-col">
+                <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                    <h3 class="font-bold text-gray-800 flex items-center gap-2"><i
+                            class="ph-fill ph-clock-counter-clockwise text-indigo-500"></i> 历史草稿箱</h3>
+                    <button onclick="toggleListingHistory()"
+                        class="text-gray-400 hover:text-red-500 transition-colors p-1"><i
+                            class="ph ph-x text-lg"></i></button>
+                </div>
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-3" id="historyListContainer">
+                    <!-- 历史记录列表 -->
+                </div>
+                <div class="p-4 border-t border-gray-100 bg-gray-50">
+                    <button onclick="clearListingHistory()"
+                        class="w-full py-2 text-xs text-red-500 hover:bg-red-50 rounded border border-red-100 font-bold transition-colors">清空全部历史</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- 视图：图片翻译 (VIEW: TRANSLATE) 保持原样 -->
+        <!-- ============================================== -->
+        <div id="view-translate" class="hidden flex-1 overflow-hidden flex flex-col bg-slate-50" style="display:none">
+            <div
+                class="flex-shrink-0 bg-white/80 backdrop-blur border-b border-slate-200 px-8 py-3.5 flex items-center gap-4 sticky top-0 z-30">
+                <div class="flex items-center gap-2.5 mr-4">
+                    <div class="bg-blue-600 p-1.5 rounded-xl shadow-md shadow-blue-200">
+                        <i class="ph ph-translate text-white text-base"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm font-black tracking-tight text-slate-800 leading-none">AI 图片批量翻译</div>
+                        <div class="flex items-center gap-1.5 mt-0.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block"></span>
+                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Gemini
+                                Active</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="h-5 w-px bg-slate-200"></div>
+
+                <label for="transImageUpload"
+                    class="flex items-center gap-2 cursor-pointer bg-slate-900 hover:bg-slate-700 active:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors shadow-md select-none">
+                    <i class="ph ph-upload-simple text-sm"></i> 上传图片
+                    <input type="file" id="transImageUpload" class="hidden" accept="image/*" multiple
+                        onchange="handleTransImageUpload(event)">
+                </label>
+
+                <div class="lang-dropdown" id="langDropdown">
+                    <div class="lang-dropdown-trigger" id="langDropdownTrigger" onclick="toggleLangDropdown()">
+                        <i class="ph ph-globe text-sm"></i>
+                        <span id="langDropdownLabel">目标语言</span>
+                        <i class="ph ph-caret-down text-xs ml-1 text-gray-400"></i>
+                    </div>
+                    <div class="lang-dropdown-menu" id="langDropdownMenu">
+                        <div class="flex items-center justify-between mb-2 px-1">
+                            <span class="text-[11px] text-gray-400 font-medium">选择翻译目标语言</span>
+                            <button onclick="clearLangSelection()"
+                                class="text-[10px] text-gray-400 hover:text-red-500 transition-colors">清空</button>
+                        </div>
+                        <div id="transLangTags" class="grid grid-cols-2 gap-0.5"></div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-slate-500 whitespace-nowrap">风格保真度</span>
+                    <select id="styleStrength"
+                        class="text-xs border border-slate-200 rounded-xl px-3 py-1.5 bg-slate-50 focus:outline-none focus:border-blue-400 focus:bg-white transition-colors cursor-pointer font-medium">
+                        <option value="strict">极高 · 完全复原</option>
+                        <option value="high" selected>高 · 推荐</option>
+                        <option value="medium">中 · 允许优化</option>
+                    </select>
+                    <button id="transStartBtn" onclick="startTranslation()" disabled
+                        class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white text-xs font-black px-5 py-2 rounded-xl transition-colors shadow-md shadow-blue-200">
+                        <i class="ph ph-play-circle text-sm"></i> 开始批量翻译
+                    </button>
+                </div>
+
+                <div class="ml-auto flex items-center gap-3">
+                    <span id="transFileCount" class="text-xs text-slate-400 font-medium"></span>
+                    <button id="transExportAllBtn" onclick="exportAllTrans()" disabled
+                        class="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-600 text-xs font-black px-4 py-2 rounded-xl transition-colors">
+                        <i class="ph ph-download-simple text-sm"></i> 全部导出
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto custom-scrollbar">
+                <div id="transEmptyState" class="flex items-center justify-center p-8"
+                    style="min-height:calc(100vh - 120px)">
+                    <div id="transDropZone"
+                        class="w-full max-w-3xl border-2 border-dashed border-slate-300 rounded-[2.5rem] p-28 flex flex-col items-center justify-center bg-white hover:border-blue-400 hover:shadow-xl hover:shadow-blue-50 transition-all cursor-pointer group"
+                        onclick="document.getElementById('transImageUpload').click()"
+                        ondragover="event.preventDefault();this.classList.add('drop-zone-active')"
+                        ondragleave="this.classList.remove('drop-zone-active')" ondrop="handleTransDrop(event)">
+                        <div
+                            class="bg-blue-50 p-8 rounded-full mb-8 group-hover:scale-110 transition-transform duration-500 shadow-inner">
+                            <i class="ph ph-images text-blue-500 text-5xl"></i>
+                        </div>
+                        <h2 class="text-2xl font-black mb-3 text-slate-800">拖拽上传图片</h2>
+                        <p class="text-slate-400 mb-8 max-w-sm text-center leading-relaxed font-medium text-sm">
+                            AI 自动识别原图文字，<b class="text-slate-600">无损擦除</b>并按背景纹理填充，<br>以原图风格重新渲染译文。
+                        </p>
+                    </div>
+                </div>
+
+                <div id="transTaskList" class="hidden px-8 py-6 max-w-5xl mx-auto w-full">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="font-black text-slate-800 text-lg tracking-tight">任务队列 <span id="transQueueCount"
+                                class="text-blue-600"></span></h3>
+                        <button onclick="clearTransImages()"
+                            class="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-500 transition-colors font-medium p-2 rounded-lg hover:bg-red-50">
+                            <i class="ph ph-trash text-sm"></i> 清空全部
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-3 mb-4 px-1 py-2 bg-slate-50 rounded-xl border border-slate-100">
+                        <label
+                            class="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-600 font-bold pl-2">
+                            <input type="checkbox" id="transSelectAll" onchange="toggleSelectAllTrans(this.checked)"
+                                class="w-4 h-4 cursor-pointer accent-blue-600">
+                            全选
+                        </label>
+                        <div class="w-px h-4 bg-slate-200"></div>
+                        <span id="transSelectedCount" class="text-xs text-slate-400">已选 0 项</span>
+                        <button id="transBatchDownloadBtn" onclick="downloadSelectedTrans()" disabled
+                            class="ml-auto flex items-center gap-1.5 text-xs font-black px-4 py-1.5 rounded-xl transition-all mr-1 bg-slate-200 text-slate-400 cursor-not-allowed">
+                            <i class="ph ph-download-simple text-sm"></i> 下载所选
+                        </button>
+                    </div>
+                    <div id="transCardContainer" class="flex flex-col gap-4"></div>
+                </div>
+            </div>
+
+            <div id="transFooter"
+                class="hidden flex-shrink-0 bg-slate-900 text-white px-8 py-3.5 flex items-center justify-between z-20">
+                <div class="flex items-center gap-6">
+                    <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Queue Status</span>
+                    <div class="w-px h-4 bg-white/10"></div>
+                    <div class="flex items-center gap-2 text-xs font-bold"><span
+                            class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>已完成：<span
+                            id="transDoneCount">0</span></div>
+                    <div class="flex items-center gap-2 text-xs font-bold opacity-60"><span
+                            class="w-2 h-2 rounded-full bg-blue-500 animate-pulse inline-block"></span>处理中：<span
+                            id="transRunningCount">0</span></div>
+                    <div class="flex items-center gap-2 text-xs font-bold opacity-40"><span
+                            class="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>等待中：<span
+                            id="transPendingCount">0</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="transPreviewModal"
+            class="hidden fixed inset-0 z-[110] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-xl">
+            <!-- 翻译预览内容保持原样 -->
+            <div class="relative bg-white w-full max-w-5xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col"
+                style="max-height:90vh">
+                <div class="px-8 py-5 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                    <div>
+                        <h4 id="previewModalTitle" class="font-black text-xl text-slate-800 tracking-tight"></h4>
+                    </div>
+                    <button onclick="closeTransPreview()"
+                        class="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-800"><i
+                            class="ph ph-x text-lg"></i></button>
+                </div>
+                <div class="flex-1 overflow-auto p-8 grid grid-cols-2 gap-8 bg-slate-50/60">
+                    <div class="flex flex-col gap-3">
+                        <div class="flex justify-between items-center px-1"><span
+                                class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Source
+                                Image</span></div>
+                        <div
+                            class="rounded-[1.5rem] border-4 border-white shadow-xl overflow-hidden bg-slate-200 aspect-square">
+                            <img id="previewOrigImg" src="" class="w-full h-full object-contain" alt="原图"></div>
+                    </div>
+                    <div id="previewResultsWrap" class="flex flex-col gap-3 overflow-y-auto custom-scrollbar"></div>
+                </div>
+                <div
+                    class="px-8 py-4 bg-white border-t border-slate-100 flex items-center justify-end gap-4 flex-shrink-0">
+                    <button onclick="closeTransPreview()"
+                        class="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-400 hover:bg-slate-50 transition-all uppercase tracking-wide">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 进阶：长图拖拽排版与画质控制面板 -->
+    <div id="longImageBuilderModal"
+        class="hidden fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 md:p-8">
+        <div class="bg-white w-full max-w-6xl flex flex-col overflow-hidden max-h-full shadow-2xl rounded-2xl h-[95vh]">
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-shrink-0">
+                <h3 class="font-black text-gray-800 text-lg flex items-center gap-2"><i
+                        class="ph-fill ph-kanban text-indigo-500"></i> 可视化长图排版台</h3>
+                <button onclick="closeLongImageBuilder()"
+                    class="text-gray-400 hover:text-red-500 transition-colors p-1"><i
+                        class="ph ph-x text-xl"></i></button>
+            </div>
+
+            <div class="flex-1 flex overflow-hidden">
+                <!-- 左侧：支持原生的拖拽列表 -->
+                <div
+                    class="w-72 bg-gray-50/50 border-r border-gray-200 p-4 flex flex-col overflow-y-auto custom-scrollbar shadow-inner">
+                    <div class="flex items-center justify-between mb-3">
+                        <div
+                            class="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1">
+                            <i class="ph ph-arrows-out-line-vertical"></i> 拖拽调整顺序</div>
+                        <button id="aiSortBtn" onclick="aiSortLongImage()"
+                            class="text-[10px] font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors flex items-center gap-1">
+                            <i class="ph ph-sparkle"></i> AI 智能排序
+                        </button>
+                    </div>
+                    <div id="sortableList" class="flex flex-col gap-2 relative"></div>
+                    <div
+                        class="mt-4 text-xs text-gray-400 leading-relaxed p-3 bg-indigo-50/50 rounded border border-indigo-100">
+                        提示：点击并按住模块可上下拖动。右侧画板会实时同步您的高转化逻辑排版。
+                    </div>
+                </div>
+
+                <!-- 右侧：实时拼接画板 -->
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-gray-200 text-center relative"
+                    id="longImagePreviewArea">
+                    <div id="longImageCanvas"
+                        class="w-full max-w-[750px] shadow-2xl border border-gray-300 bg-white mx-auto flex flex-col min-h-[800px] pointer-events-none">
+                        <!-- 动态拼装的图片 -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-gray-100 flex justify-between items-center bg-white flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <span class="text-sm font-bold text-gray-700"><i class="ph ph-faders"></i> 导出画质控制:</span>
+                    <select id="exportQualitySelect"
+                        class="text-xs font-medium border border-gray-300 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 bg-gray-50 cursor-pointer shadow-sm">
+                        <option value="png">原画质 (PNG, 无损, 适合归档)</option>
+                        <option value="jpeg">Web极速版 (JPG, 高度压缩, 适合上架)</option>
+                    </select>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="closeLongImageBuilder()"
+                        class="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors border border-transparent">取消</button>
+                    <button onclick="executeLongImageDownload()" id="btnDownloadLong"
+                        class="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-md hover:shadow-lg">
+                        <i class="ph ph-download-simple text-lg"></i> 确认并导出长图
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 合规审查结果弹窗 -->
+    <div id="riskCheckModal"
+        class="hidden fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+        <div
+            class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] border-t-4 border-red-500">
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-red-50/50">
+                <h3 class="font-black text-red-700 text-lg flex items-center gap-2"><i
+                        class="ph-fill ph-shield-warning text-red-500"></i> AI 合规性审查报告</h3>
+                <button onclick="closeRiskCheckModal()" class="text-red-400 hover:text-red-600 transition-colors"><i
+                        class="ph ph-x text-xl"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto custom-scrollbar text-sm leading-relaxed text-gray-700"
+                id="riskCheckContent">
+                <!-- 审查结果注入 -->
+            </div>
+            <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 text-right">
+                <button onclick="closeRiskCheckModal()"
+                    class="px-5 py-2 rounded-lg bg-white border border-gray-200 text-gray-600 text-sm font-bold hover:bg-gray-100">已知悉</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const apiKey = API_KEY;
+        let currentUploadedBase64 = null;
+        let currentListingUploadedBase64 = null;
+
+        // 全局上下文
+        let globalGenContext = null;
+        let currentListingDataText = null;
+
+        // 拖拽相关
+        let draggedItem = null;
+
+        const modules = MODULES_CONFIG.map(m => ({ ...m }));
+
+        // 页面初始化
+        window.onload = async () => {
+            await loadConfig();
+            const fillSelect = (id, options) => {
+                const sel = document.getElementById(id);
+                options.forEach(opt => { const el = document.createElement('option'); el.value = opt.value; el.innerHTML = opt.label; sel.appendChild(el); });
+            };
+            fillSelect('imageStyleSelect', IMAGE_STYLE_OPTIONS);
+            fillSelect('platformSelect', PLATFORM_OPTIONS);
+            fillSelect('regionSelect', REGION_OPTIONS);
+            fillSelect('languageSelect', LANGUAGE_OPTIONS);
+            fillSelect('aspectRatioSelect', ASPECT_RATIO_OPTIONS);
+            fillSelect('marketingThemeSelect', MARKETING_THEMES);
+            fillSelect('listingStyleSelect', LISTING_STYLE_OPTIONS);
+
+            // 初始化 Listing 模块专属的下拉框
+            fillSelect('listingMarketingThemeSelect', MARKETING_THEMES);
+            fillSelect('listingRegionSelect', REGION_OPTIONS);
+
+            initModules();
+            initTransLangTags();
+            loadHistoryToList();
+            // 初始化标签页状态，确保只显示详情页视图
+            switchMainTab('generate');
+        };
+
+        // ====== 详情页模块配置逻辑 ======
+        function initModules() {
+            const grid = document.getElementById('moduleGrid');
+            grid.innerHTML = '';
+            modules.forEach(mod => {
+                const activeClasses = mod.active ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-gray-200 bg-white hover:border-blue-300';
+                const titleClasses = mod.active ? 'text-blue-600' : 'text-gray-700';
+                const iconHTML = mod.active ? `<i class="ph-fill ph-check-circle text-blue-500 absolute top-2 right-2 text-sm"></i>` : '';
+
+                let countControlHTML = '';
+                if (mod.active) {
+                    countControlHTML = `
+                        <div class="mt-2 pt-2 border-t border-blue-100 flex items-center justify-between" onclick="event.stopPropagation()">
+                            <span class="text-[10px] text-gray-500">张数</span>
+                            <div class="flex items-center bg-white rounded border border-gray-200">
+                                <button onclick="updateModuleCount('${mod.id}', -1)" class="w-6 h-5 flex items-center justify-center text-gray-400 hover:text-blue-600 disabled:opacity-30" ${mod.count <= 1 ? 'disabled' : ''}><i class="ph ph-minus text-[10px]"></i></button>
+                                <span class="text-[10px] font-bold w-4 text-center">${mod.count}</span>
+                                <button onclick="updateModuleCount('${mod.id}', 1)" class="w-6 h-5 flex items-center justify-center text-gray-400 hover:text-blue-600 disabled:opacity-30" ${mod.count >= 5 ? 'disabled' : ''}><i class="ph ph-plus text-[10px]"></i></button>
+                            </div>
+                        </div>`;
+                }
+
+                grid.insertAdjacentHTML('beforeend', `
+                    <div onclick="toggleModule('${mod.id}')" class="relative cursor-pointer border rounded-lg p-2.5 transition-all flex flex-col justify-between ${activeClasses}">
+                        ${iconHTML}
+                        <div>
+                            <div class="text-xs font-bold ${titleClasses} mb-0.5">${mod.title}</div>
+                            <div class="text-[10px] text-gray-400 truncate pr-4">${mod.subtitle}</div>
+                        </div>
+                        ${countControlHTML}
+                    </div>`);
+            });
+        }
+
+        function toggleModule(id) {
+            const mod = modules.find(m => m.id === id);
+            if (mod) { mod.active = !mod.active; initModules(); }
+        }
+
+        function updateModuleCount(id, delta) {
+            const mod = modules.find(m => m.id === id);
+            if (mod) {
+                let newCount = mod.count + delta;
+                if (newCount >= 1 && newCount <= 5) { mod.count = newCount; initModules(); }
+            }
+        }
+
+        function toggleCustomRatio() {
+            const select = document.getElementById('aspectRatioSelect');
+            const container = document.getElementById('customRatioContainer');
+            if (select.value === 'custom') {
+                container.classList.remove('hidden'); container.classList.add('grid');
+            } else {
+                container.classList.add('hidden'); container.classList.remove('grid');
+            }
+        }
+
+        // ====== 图像上传处理 ======
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    currentUploadedBase64 = e.target.result;
+                    document.getElementById('uploadedImagePreview').src = currentUploadedBase64;
+                    document.getElementById('imagePreviewContainer').classList.remove('hidden');
+                    document.getElementById('imagePreviewContainer').classList.add('flex');
+                    showToast('主图素材上传成功', 'success');
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function removeImage() {
+            currentUploadedBase64 = null;
+            document.getElementById('imageUpload').value = '';
+            document.getElementById('imagePreviewContainer').classList.add('hidden');
+            document.getElementById('imagePreviewContainer').classList.remove('flex');
+        }
+
+        function handleListingImageUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    currentListingUploadedBase64 = e.target.result;
+                    document.getElementById('listingUploadedImagePreview').src = currentListingUploadedBase64;
+                    document.getElementById('listingImagePreviewContainer').classList.remove('hidden');
+                    document.getElementById('listingImagePreviewContainer').classList.add('flex');
+                    showToast('参考图上传成功', 'success');
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function removeListingImage() {
+            currentListingUploadedBase64 = null;
+            document.getElementById('listingImageUpload').value = '';
+            document.getElementById('listingImagePreviewContainer').classList.add('hidden');
+            document.getElementById('listingImagePreviewContainer').classList.remove('flex');
+        }
+
+        // ====== 通用工具函数 ======
+        async function fetchWithRetry(url, options, retries = RETRY_DELAYS.length) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const res = await fetch(url, options);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return await res.json();
+                } catch (e) {
+                    if (i === retries - 1) throw e;
+                    await new Promise(r => setTimeout(r, RETRY_DELAYS[i]));
+                }
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            let bgClass = type === 'success' ? 'bg-emerald-600' : (type === 'error' ? 'bg-red-500' : (type === 'warning' ? 'bg-amber-500' : 'bg-gray-800'));
+            let icon = type === 'success' ? 'ph-check-circle' : (type === 'error' ? 'ph-warning-circle' : 'ph-info');
+            toast.className = `toast-enter flex items-center gap-2 ${bgClass} text-white px-4 py-3 rounded-xl shadow-xl text-sm font-medium tracking-wide`;
+            toast.innerHTML = `<i class="ph ${icon} text-lg"></i> <span>${message}</span>`;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0'; toast.style.transform = 'translateY(-10px)'; toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function copyText(inputId) {
+            let text = document.getElementById(inputId).value;
+            if (!text) return;
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try { document.execCommand('copy'); showToast('已复制到剪贴板', 'success'); } catch (e) { showToast('复制失败', 'error'); }
+            document.body.removeChild(textArea);
+        }
+
+        function copySectionText(containerId, langType) {
+            const el = document.getElementById(containerId);
+            if (!el) return;
+            let text = '';
+            const selector = langType === 'target' ? '.target-text' : '.zh-text';
+
+            if (el.tagName === 'UL') {
+                const lis = el.querySelectorAll('li');
+                lis.forEach(li => {
+                    const txt = li.querySelector(selector)?.textContent;
+                    if (txt) text += txt + '\n';
+                });
+            } else if (containerId === 'resListingQA') {
+                const qas = el.querySelectorAll('.bg-indigo-50\\/50');
+                qas.forEach(qa => {
+                    const lines = qa.querySelectorAll(selector);
+                    if (lines.length >= 2) {
+                        text += `Q: ${lines[0].textContent}\nA: ${lines[1].textContent}\n\n`;
+                    }
+                });
+            } else {
+                const txt = el.querySelector(selector)?.textContent;
+                if (txt) text = txt;
+            }
+
+            const textArea = document.createElement("textarea");
+            textArea.value = text.trim();
+            document.body.appendChild(textArea);
+            textArea.select();
+            try { document.execCommand('copy'); showToast(`已复制${langType === 'target' ? '外文' : '中文'}文本`, 'success'); } catch (e) { }
+            document.body.removeChild(textArea);
+        }
+
+        function switchMainTab(tab) {
+            ['generate', 'translate', 'listing', 'xuanpin'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                const view = document.getElementById(`view-${t}`);
+                if (btn) btn.classList.toggle('active', t === tab);
+                if (view) {
+                    if (t === tab) {
+                        // 移除 Tailwind hidden class，再设置 display，防止 hidden 优先级覆盖
+                        view.classList.remove('hidden');
+                        view.style.display = 'flex';
+                    } else {
+                        view.style.display = 'none';
+                        view.classList.add('hidden');
+                    }
+                }
+            });
+            // 激活竞品分析时初始化模块
+            if (tab === 'xuanpin' && typeof xp_init === 'function') {
+                xp_init();
+            }
+        }
+
+        // ====== 生成逻辑 ======
+        async function generateSellingPoints() {
+            const logMsg = "开始提取核心卖点...";
+            console.log(`%c[详情页] ${logMsg}`, "color: #6366f1; font-weight: bold;");
+            remoteLog(logMsg);
+            const btn = document.getElementById('aiWriteBtn');
+            const textArea = document.getElementById('sellingPointsText');
+            const origHtml = btn.innerHTML;
+            btn.innerHTML = '<span class="loader w-3 h-3 border-2 border-blue-500 border-t-transparent mr-1"></span> 生成中...';
+            btn.disabled = true;
+
+            let parts = [{
+                text: `你是一名资深跨境电商运营与视觉营销文案专家，擅长将产品视觉信息转化为高转化详情页内容。
+
+请基于我提供的商品图片，对产品进行专业分析，并输出适用于独立站/跨境电商详情页的“核心卖点文案”。
+
+【分析要求】
+1. 仔细观察图片，准确识别：
+   - 商品类型
+   - 材质/做工
+   - 外观设计特点
+   - 核心功能及使用方式
+2. 结合电商用户视角，挖掘真实使用价值，而非表面描述
+
+【输出内容】
+1. 商品名称（简洁、具备电商属性）
+2. 核心卖点（3-4点，条列形式）
+   - 每一点需具备“功能 + 用户价值”表达（避免空泛）
+   - 突出差异化与解决问题能力
+3. 适用人群（明确细分人群）
+4. 使用场景（具体生活或使用情境）
+
+【写作要求】
+- 语言具有销售力与说服力（偏向转化导向）
+- 符合跨境电商（Shopify / Amazon / TikTok）的表达风格
+- 避免空洞词汇，如“高品质”“优质”等无具体支撑描述
+- 输出为清晰结构化文本（不要markdown格式）
+
+请基于图片内容进行合理推断，不要编造明显不符合图片的信息。`}];
+            if (currentUploadedBase64) {
+                parts.push({ inlineData: { mimeType: currentUploadedBase64.split(';')[0].split(':')[1], data: currentUploadedBase64.split(',')[1] } });
+            } else { showToast('未上传图片，将仅使用预设文案测试', 'info'); }
+
+            try {
+                const payload = { contents: [{ role: "user", parts: parts }] };
+                const res = await callAI(TEXT_MODEL, payload);
+                const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) { textArea.value = text; showToast('卖点提取成功', 'success'); }
+            } catch (err) {
+                console.error(err); showToast('生成失败', 'error');
+            } finally {
+                btn.innerHTML = origHtml; btn.disabled = false;
+            }
+        }
+
+        async function generateSEOMetadata(task, sellingPoints) {
+            const targetLang = "English";
+            const prompt = `你是一个专业的电商SEO专家。我正在为电商详情页的“${task.title}”模块生成一张商品图片。
+产品核心信息：${sellingPoints.substring(0, 300)}
+目标语言：${targetLang}
+
+请用【${targetLang}】为这张单独的图片配发SEO数据，并提供【中文对照】：
+1. seoTitle：简短且包含核心关键词的图片标题。
+2. altText：用于无障碍浏览及搜索引擎抓取的图片 Alt 属性文本。
+
+必须严格返回JSON结构，不要输出任何 Markdown 标记，直接输出：
+{
+  "seoTitle": {"target": "目标语言标题", "zh": "中文对照标题"},
+  "altText": {"target": "目标语言alt描述", "zh": "中文对照alt描述"}
+}`;
+
+            try {
+                const res = await callAI(TEXT_MODEL, {
+                    contents: [{ role: "user", parts: [{ text: prompt }] }],
+                    generationConfig: { responseMimeType: "application/json" }
+                });
+                const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                    const data = JSON.parse(text);
+                    const getVal = (obj) => typeof obj === 'string' ? { target: obj, zh: '' } : { target: obj?.target || '', zh: obj?.zh || '' };
+
+                    const titleData = getVal(data.seoTitle);
+                    const altData = getVal(data.altText);
+
+                    document.getElementById(`seo-title-target-${task.uniqueId}`).value = titleData.target;
+                    document.getElementById(`seo-title-zh-${task.uniqueId}`).value = titleData.zh;
+                    document.getElementById(`alt-text-target-${task.uniqueId}`).value = altData.target;
+                    document.getElementById(`alt-text-zh-${task.uniqueId}`).value = altData.zh;
+                }
+            } catch (e) {
+                console.warn("SEO Gen Fail:", e);
+            }
+        }
+
+        async function generateAIPage() {
+            const activeModules = modules.filter(m => m.active);
+            if (!activeModules.length) { showToast('请至少选择一个模块', 'error'); return; }
+            if (!currentUploadedBase64) { showToast('请先上传一张主图素材', 'error'); return; }
+
+            console.log(`%c[详情页] 开始并发渲染流程 | 模块总数: ${activeModules.length} | 并发限制: ${CONCURRENCY_LIMIT}`, "color: #4f46e5; font-weight: bold;");
+
+            const sellingPoints = document.getElementById('sellingPointsText').value;
+            let ratioVal = document.getElementById('aspectRatioSelect').value;
+            if (ratioVal === 'custom') ratioVal = `${document.getElementById('customRatioW').value}:${document.getElementById('customRatioH').value}`;
+
+            const config = {
+                imageStyle: document.getElementById('imageStyleSelect').value,
+                platform: document.getElementById('platformSelect').value,
+                language: document.getElementById('languageSelect').value,
+                aspectRatio: ratioVal,
+                marketingTheme: document.getElementById('marketingThemeSelect').value
+            };
+
+            const base64Data = currentUploadedBase64.split(',')[1];
+            const mimeType = currentUploadedBase64.split(';')[0].split(':')[1];
+
+            globalGenContext = {
+                base64Data, mimeType, sellingPoints, config, tasks: {},
+                longImageOrder: [] // 用于长图拖拽排序
+            };
+
+            let taskQueue = [];
+            activeModules.forEach(mod => {
+                for (let i = 0; i < mod.count; i++) {
+                    const task = { ...mod, uniqueId: mod.count > 1 ? `${mod.id}_${i}` : mod.id, displayTitle: mod.count > 1 ? `${mod.title} 0${i + 1}` : mod.title, variant: i, totalVariants: mod.count };
+                    taskQueue.push(task);
+                    globalGenContext.tasks[task.uniqueId] = task;
+                    globalGenContext.longImageOrder.push(task.uniqueId);
+                }
+            });
+
+            document.getElementById('showcaseArea').classList.add('hidden');
+            const resArea = document.getElementById('resultArea');
+            resArea.classList.remove('hidden'); resArea.classList.add('flex');
+
+            const container = document.getElementById('modulesResultContainer');
+            container.innerHTML = '';
+
+            const ratioStr = config.aspectRatio.replace(':', '/');
+            taskQueue.forEach(task => {
+                container.innerHTML += `
+                    <div id="result-mod-${task.uniqueId}" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col group">
+                        <div class="bg-gray-50/80 px-5 py-3 border-b border-gray-100 flex justify-between items-center backdrop-blur">
+                            <div class="flex items-center gap-2">
+                                <span class="w-1.5 h-4 bg-blue-500 rounded-full"></span>
+                                <span class="font-bold text-gray-700 text-sm">${task.displayTitle}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs text-gray-400 mr-2">${task.subtitle}</span>
+                                <button id="regen-btn-${task.uniqueId}" onclick="generateSingleWrap('${task.uniqueId}')" class="hidden flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-500 hover:text-blue-600 transition-colors shadow-sm" title="重绘图像"><i class="ph ph-arrows-clockwise text-sm"></i></button>
+                            </div>
+                        </div>
+                        <div id="content-mod-${task.uniqueId}" class="p-6 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iMTAiIGN5PSIxMCIgcj0iMSIgZmlsbD0iI2YxZjFmMSIvPjwvc3ZnPg==')]" style="aspect-ratio: ${ratioStr}; min-height: 200px;">
+                            <span class="loader border-blue-500 border-t-transparent w-8 h-8 mb-3"></span><span class="text-sm text-gray-500 font-medium">AI引擎构图中...</span>
+                        </div>
+                        <div class="border-t border-gray-100 bg-slate-50 p-4 flex flex-col gap-3">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-1.5"><i class="ph-fill ph-link text-blue-500"></i><span class="text-xs font-black text-gray-700 uppercase tracking-widest">SEO Meta-Data</span></div>
+                                <button onclick="downloadModule('${task.uniqueId}', '${task.displayTitle}')" class="text-xs flex items-center gap-1 text-gray-500 hover:text-indigo-600 font-bold bg-white border border-gray-200 px-2 py-1 rounded shadow-sm"><i class="ph ph-download-simple"></i> 单存</button>
+                            </div>
+                            <div class="flex flex-col gap-2.5">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] font-bold text-gray-400 w-6">Title</span>
+                                    <div class="relative flex-1">
+                                        <input type="text" id="seo-title-target-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner" placeholder="外文标题" readonly>
+                                        <button onclick="copyText('seo-title-target-${task.uniqueId}')" class="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-400 hover:text-blue-600"><i class="ph ph-copy"></i></button>
+                                    </div>
+                                    <div class="relative flex-1">
+                                        <input type="text" id="seo-title-zh-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner text-gray-500" placeholder="中文标题" readonly>
+                                    </div>
+                                </div>
+                                <div class="flex items-start gap-2">
+                                    <span class="text-[10px] font-bold text-gray-400 w-6 mt-1">Alt</span>
+                                    <div class="relative flex-1">
+                                        <textarea id="alt-text-target-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner resize-none hide-scroll" rows="2" placeholder="外文描述" readonly></textarea>
+                                        <button onclick="copyText('alt-text-target-${task.uniqueId}')" class="absolute top-1 right-0 pr-2 flex items-start text-gray-400 hover:text-blue-600"><i class="ph ph-copy"></i></button>
+                                    </div>
+                                    <div class="relative flex-1">
+                                        <textarea id="alt-text-zh-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner resize-none hide-scroll text-gray-500" rows="2" placeholder="中文描述" readonly></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+
+            const btn = document.getElementById('generateBtn');
+            const origBtnHtml = btn.innerHTML;
+            btn.innerHTML = '<span class="loader mr-2 border-white border-t-transparent w-4 h-4"></span> 正在启动并发渲染引擎...';
+            btn.disabled = true;
+
+            const activeTasks = [];
+            let completedCount = 0;
+
+            for (let i = 0; i < taskQueue.length; i++) {
+                // 如果并发数达到上限，等待最快的一个完成
+                if (activeTasks.length >= CONCURRENCY_LIMIT) {
+                    await Promise.race(activeTasks);
+                }
+
+                const task = taskQueue[i];
+                const submitMsg = `正在提交渲染任务: ${task.title} (序号: ${i + 1}/${taskQueue.length})`;
+                console.log(`%c[详情页] ${submitMsg}`, "color: #8b5cf6;");
+                remoteLog(submitMsg);
+
+                const taskPromise = (async () => {
+                    try {
+                        await generateSingleWrap(task.uniqueId);
+                        const finishMsg = `渲染任务完成: ${task.title}`;
+                        console.log(`%c[详情页] ${finishMsg}`, "color: #10b981;");
+                        remoteLog(finishMsg);
+                    } catch (e) {
+                        console.error(`Task ${task.uniqueId} failed:`, e);
+                    } finally {
+                        completedCount++;
+                        btn.innerHTML = `<span class="loader mr-2 border-white border-t-transparent w-4 h-4"></span> 正在并行渲染 (${completedCount}/${taskQueue.length})...`;
+                    }
+                })();
+
+                activeTasks.push(taskPromise);
+                taskPromise.finally(() => {
+                    const idx = activeTasks.indexOf(taskPromise);
+                    if (idx > -1) activeTasks.splice(idx, 1);
+                });
+
+                // 错开启动时间，避免瞬时 429
+                if (i < taskQueue.length - 1) {
+                    await new Promise(r => setTimeout(r, STAGGER_DELAY));
+                }
+            }
+
+            // 等待所有剩余任务完成
+            await Promise.all(activeTasks);
+
+            btn.innerHTML = origBtnHtml; btn.disabled = false;
+            showToast('所有模块并发生成完毕！', 'success');
+        }
+
+        async function generateSingleWrap(uniqueId) {
+            const task = globalGenContext.tasks[uniqueId];
+            console.log(`%c[模块渲染] 正在绘制: ${task.title}...`, "color: #a855f7;");
+            const contentDiv = document.getElementById(`content-mod-${uniqueId}`);
+
+            contentDiv.innerHTML = `<span class="loader border-blue-500 border-t-transparent w-8 h-8 mb-3"></span><span class="text-sm text-gray-500 font-medium">智能绘制中...</span>`;
+            document.getElementById(`regen-btn-${uniqueId}`)?.classList.add('hidden');
+            contentDiv.classList.add('p-6', 'flex-col', 'items-center', 'justify-center');
+
+            const { base64Data, mimeType, sellingPoints, config } = globalGenContext;
+
+            const themeContext = config.marketingTheme !== 'none' ? `5. Marketing Theme: ${config.marketingTheme} - It is CRITICAL to integrate this theme naturally into the visual.` : '';
+
+            let prompt = `Task: Professional e-commerce section for "${task.title}". Req: ${MODULES_CONFIG.find(m => m.id === task.id)?.prompt}. Context: ${sellingPoints.substring(0, 150)}.
+CONSTRAINTS:
+1. Target Platform: ${config.platform}
+2. Language: ALL text must be ${config.language}
+3. Aspect Ratio: ${config.aspectRatio}
+4. Aesthetic Style: ${config.imageStyle} - CRITICAL to follow this vibe.
+${themeContext}
+${task.totalVariants > 1 ? `6. Variation: version ${task.variant + 1}/${task.totalVariants}. Make it unique.` : ''}`;
+
+            let parts = [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }];
+
+            const payload = { contents: [{ role: "user", parts: parts }], generationConfig: { responseModalities: ['IMAGE'] } };
+
+            try {
+                const [imgRes, _] = await Promise.all([
+                    callAI(IMAGE_MODEL, payload),
+                    generateSEOMetadata(task, sellingPoints)
+                ]);
+
+                const imagePart = imgRes.candidates[0].content?.parts?.find(p => p.inlineData);
+                if (imagePart?.inlineData) {
+                    const generatedSrc = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+                    contentDiv.innerHTML = `<img src="${generatedSrc}" class="w-full h-full object-cover">`;
+
+                    contentDiv.innerHTML = `<img src="${generatedSrc}" class="w-full h-full object-cover">`;
+                } else throw new Error("No image data in response");
+
+            } catch (error) {
+                console.warn(`[Fallback] Module rendering via code CSS`);
+                renderMockModule(contentDiv, task, sellingPoints, config, currentUploadedBase64);
+                await generateSEOMetadata(task, sellingPoints);
+            }
+
+            document.getElementById(`regen-btn-${uniqueId}`)?.classList.remove('hidden');
+        }
+
+        function renderMockModule(container, task, points, config, imgSrc) {
+            const ratioStr = config.aspectRatio.replace(':', '/');
+            let content = `<div class="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-gray-50 to-gray-100">
+                <img src="${imgSrc}" class="h-3/4 object-contain drop-shadow-xl mb-4 max-w-full">
+                <h3 class="text-2xl font-black text-gray-800 tracking-wider">${task.title}</h3>
+                <p class="text-sm text-gray-500 mt-2 max-w-sm">${points.substring(0, 60)}...</p>
+                <div class="mt-4 px-3 py-1 bg-white border border-gray-200 rounded-full text-[10px] font-bold text-gray-400 uppercase tracking-widest">${config.imageStyle.split(',')[0]}</div>
+                ${config.marketingTheme !== 'none' ? `<div class="mt-2 text-xs text-orange-500 font-bold">${config.marketingTheme.split(' ')[0]} Theme</div>` : ''}
+            </div>`;
+            container.innerHTML = `<div class="w-full h-full overflow-hidden" style="aspect-ratio: ${ratioStr};">${content}</div>`;
+            container.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
+            container.style.padding = '0';
+        }
+
+        function resetView() {
+            document.getElementById('resultArea').classList.add('hidden');
+            document.getElementById('resultArea').classList.remove('flex');
+            document.getElementById('showcaseArea').classList.remove('hidden');
+        }
+
+        async function downloadModule(modId, modTitle, isBatch = false) {
+            const el = document.getElementById(`content-mod-${modId}`);
+            if (!el) return;
+            try {
+                if (!isBatch) showToast(`正在打包...`, 'info');
+                const canvas = await html2canvas(el, { useCORS: true, scale: 2, backgroundColor: '#ffffff' });
+                const link = document.createElement('a');
+
+                let baseFilename = modTitle;
+                const seoInput = document.getElementById(`seo-title-target-${modId}`);
+                if (seoInput && seoInput.value && seoInput.value.indexOf('生成中') === -1) {
+                    const parsedTitle = seoInput.value.trim().replace(/[/\\?%*:|"<>]/g, '-');
+                    if (parsedTitle) baseFilename = parsedTitle;
+                }
+
+                const pad = n => n.toString().padStart(2, '0');
+                const d = new Date();
+                const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+
+                link.download = `${baseFilename}_${ts}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                if (!isBatch) showToast('下载成功', 'success');
+            } catch (e) { console.error(e); if (!isBatch) showToast('下载失败', 'error'); }
+        }
+
+        async function downloadAllModules() {
+            if (!globalGenContext || !Object.keys(globalGenContext.tasks).length) return;
+            showToast('开始批量打包单图，请耐心等待...', 'info');
+            const ids = Object.keys(globalGenContext.tasks);
+            for (let id of ids) {
+                await downloadModule(id, globalGenContext.tasks[id].displayTitle, true);
+                await new Promise(r => setTimeout(r, 500));
+            }
+            showToast('单图全部下载完毕！', 'success');
+        }
+
+        // ====== 长图拖拽排版台逻辑 ======
+        function openLongImageBuilder() {
+            if (!globalGenContext || !globalGenContext.longImageOrder.length) {
+                showToast('尚未生成任何模块', 'error'); return;
+            }
+            renderSortableList();
+            document.getElementById('longImageBuilderModal').classList.remove('hidden');
+        }
+
+        function closeLongImageBuilder() {
+            document.getElementById('longImageBuilderModal').classList.add('hidden');
+        }
+
+        function renderSortableList() {
+            const list = document.getElementById('sortableList');
+            const canvas = document.getElementById('longImageCanvas');
+            list.innerHTML = '';
+            canvas.innerHTML = '';
+
+            globalGenContext.longImageOrder.forEach((id) => {
+                const task = globalGenContext.tasks[id];
+                if (!task) return;
+
+                // 构建左侧可拖拽项
+                const li = document.createElement('div');
+                li.className = 'bg-white border border-gray-200 p-3 rounded-lg shadow-sm cursor-move flex items-center gap-3 hover:border-indigo-400 select-none transition-colors';
+                li.draggable = true;
+                li.dataset.id = id;
+                li.innerHTML = `
+                    <i class="ph ph-dots-six-vertical text-gray-400 text-lg"></i>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-xs font-bold text-gray-700 truncate">${task.displayTitle}</div>
+                        <div class="text-[10px] text-gray-400 truncate">${task.subtitle}</div>
+                    </div>
+                `;
+
+                // 拖拽事件监听
+                li.addEventListener('dragstart', function (e) {
+                    draggedItem = li;
+                    setTimeout(() => li.classList.add('ghost-item'), 0);
+                });
+
+                li.addEventListener('dragend', function () {
+                    setTimeout(() => {
+                        draggedItem.classList.remove('ghost-item');
+                        draggedItem = null;
+                        updatePreviewOrder();
+                    }, 0);
+                });
+
+                li.addEventListener('dragover', function (e) { e.preventDefault(); });
+
+                li.addEventListener('dragenter', function (e) {
+                    e.preventDefault();
+                    if (this !== draggedItem) {
+                        this.classList.add('border-indigo-500', 'bg-indigo-50/50', 'transform', 'scale-[1.02]');
+                    }
+                });
+
+                li.addEventListener('dragleave', function () {
+                    this.classList.remove('border-indigo-500', 'bg-indigo-50/50', 'transform', 'scale-[1.02]');
+                });
+
+                li.addEventListener('drop', function () {
+                    this.classList.remove('border-indigo-500', 'bg-indigo-50/50', 'transform', 'scale-[1.02]');
+                    if (this !== draggedItem) {
+                        const allItems = [...list.children];
+                        const currentPos = allItems.indexOf(draggedItem);
+                        const droppedPos = allItems.indexOf(this);
+                        if (currentPos < droppedPos) {
+                            this.parentNode.insertBefore(draggedItem, this.nextSibling);
+                        } else {
+                            this.parentNode.insertBefore(draggedItem, this);
+                        }
+                    }
+                });
+
+                list.appendChild(li);
+
+                // 初始化右侧画板的图片
+                const contentDiv = document.getElementById(`content-mod-${id}`);
+                if (contentDiv) {
+                    const img = contentDiv.querySelector('img');
+                    if (img) {
+                        const cloneImg = document.createElement('img');
+                        cloneImg.src = img.src;
+                        cloneImg.className = 'w-full h-auto block align-bottom m-0 p-0 border-none outline-none';
+                        cloneImg.style.marginBottom = "-1px"; // 消除图片间可能出现的白线
+                        cloneImg.dataset.id = id;
+                        cloneImg.crossOrigin = 'anonymous';
+                        canvas.appendChild(cloneImg);
+                    }
+                }
+            });
+        }
+
+        function updatePreviewOrder() {
+            const list = document.getElementById('sortableList');
+            const newOrder = [...list.children].map(li => li.dataset.id);
+            globalGenContext.longImageOrder = newOrder;
+
+            const canvas = document.getElementById('longImageCanvas');
+            const images = [...canvas.children];
+
+            // 根据新顺序重新插入DOM（相当于移动位置）
+            newOrder.forEach(id => {
+                const img = images.find(img => img.dataset.id === id);
+                if (img) canvas.appendChild(img);
+            });
+        }
+
+        async function aiSortLongImage() {
+            if (!globalGenContext || !globalGenContext.longImageOrder.length) return;
+
+            const btn = document.getElementById('aiSortBtn');
+            const origHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="ph ph-spinner animate-spin text-sm"></i> 智能计算中...';
+            btn.disabled = true;
+
+            const modulesToSort = globalGenContext.longImageOrder.map(id => {
+                const task = globalGenContext.tasks[id];
+                return { id: id, title: task.title, subtitle: task.subtitle };
+            });
+
+            const prompt = `你是一个资深跨境电商运营与高转化详情页架构专家。
+目前我有以下详情页模块需要组合成一张长图。请根据“高转化营销逻辑”（如 AIDA 模型：吸引注意 -> 激发兴趣 -> 建立信任 -> 促成行动）对这些模块进行最优排序。
+
+产品卖点背景：${globalGenContext.sellingPoints.substring(0, 300)}
+
+待排序模块列表：
+${JSON.stringify(modulesToSort, null, 2)}
+
+任务要求：
+1. 分析每个模块的内容，确定其在购物路径中的最佳位置。
+2. 必须返回所有输入的模块 ID，不能遗漏。
+3. 严格返回 JSON 数组格式，仅包含排序后的 ID 字符串列表。
+
+示例输出：["m1", "m2_1", "m2_2", "m3"]
+
+请直接返回纯净的 JSON 数组，不要任何解释。`;
+
+            try {
+                const res = await callAI(TEXT_MODEL, {
+                    contents: [{ role: "user", parts: [{ text: prompt }] }],
+                    generationConfig: { responseMimeType: "application/json" }
+                });
+                const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                    const sortedIds = JSON.parse(text);
+                    if (Array.isArray(sortedIds) && sortedIds.length === globalGenContext.longImageOrder.length) {
+                        globalGenContext.longImageOrder = sortedIds;
+                        renderSortableList(); // 重新渲染列表和预览图
+                        showToast('AI 智能排序已应用', 'success');
+                    } else {
+                        throw new Error("Invalid response format");
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('AI 排序失败，请重试', 'error');
+            } finally {
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }
+        }
+
+        async function executeLongImageDownload() {
+            const btn = document.getElementById('btnDownloadLong');
+            const origHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="ph ph-spinner animate-spin text-lg"></i> 正在渲染与压缩...';
+            btn.disabled = true;
+
+            const format = document.getElementById('exportQualitySelect').value;
+            const canvasEl = document.getElementById('longImageCanvas');
+
+            try {
+                // 等待一下确保DOM稳定
+                await new Promise(r => setTimeout(r, 300));
+
+                const finalCanvas = await html2canvas(canvasEl, {
+                    useCORS: true,
+                    scale: format === 'png' ? 2 : 1.5, // JPG 降低一点采样率以减小体积
+                    backgroundColor: '#ffffff',
+                    logging: false
+                });
+                const link = document.createElement('a');
+                const pad = n => n.toString().padStart(2, '0');
+                const d = new Date();
+                const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+
+                if (format === 'png') {
+                    link.download = `AI排版详情页长图_原画无损_${ts}.png`;
+                    link.href = finalCanvas.toDataURL('image/png');
+                } else {
+                    link.download = `AI排版详情页长图_极速Web版_${ts}.jpg`;
+                    link.href = finalCanvas.toDataURL('image/jpeg', 0.85); // 85%质量的JPG
+                }
+
+                link.click();
+                showToast(`长图导出成功 (${format.toUpperCase()})`, 'success');
+
+                // === 新增：导出时自动保存整页历史记录 ===
+                const styleOpt = document.getElementById('imageStyleSelect');
+                saveToHistory('render', {
+                    name: `详情页全案_${ts}`,
+                    style: styleOpt.options[styleOpt.selectedIndex].text,
+                    image: finalCanvas.toDataURL('image/jpeg', 0.7), // 压缩一下存入数据库
+                    metadata: {
+                        platform: document.getElementById('platformSelect').value,
+                        count: globalGenContext?.longImageOrder?.length || 0
+                    }
+                });
+            } catch (e) {
+                showToast('长图渲染失败，请检查网络或重试', 'error');
+            } finally {
+                btn.innerHTML = origHTML;
+                btn.disabled = false;
+            }
+        }
+
+        // ====== LISTING 智能生成与扩展 ======
+        async function aiFillListingInputs() {
+            if (!currentListingUploadedBase64) {
+                showToast('请先上传产品参考图，AI 才能进行视觉解析', 'error'); return;
+            }
+            const btn = document.getElementById('aiListingExtractBtn');
+            const origHtml = btn.innerHTML;
+            btn.innerHTML = '<span class="loader w-3 h-3 border-2 border-indigo-500 border-t-transparent mr-1"></span> 提取中...';
+            btn.disabled = true;
+
+            const prompt = `你是一个专业的电商选品与视觉分析专家。
+
+请基于输入图片，识别产品并提取关键信息。
+
+任务要求：
+1. 提取产品名称（简洁、通用，不要品牌词）
+2. 提取3-4个核心卖点（每条简短，适合用于电商图片文案）
+3. 卖点必须强调“用户价值”，避免空话（如：high quality、best等）
+
+输出要求（必须严格遵守）：
+- 仅返回JSON
+- 不要任何解释或多余文本
+- 字段必须完整
+
+JSON格式如下：
+{
+  "name": "产品名称",
+  "points": "卖点1\\n卖点2\\n卖点3\\n卖点4"
+}`;
+
+            try {
+                const mimeType = currentListingUploadedBase64.split(';')[0].split(':')[1];
+                const base64Data = currentListingUploadedBase64.split(',')[1];
+                const payload = {
+                    contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }] }],
+                    generationConfig: { responseMimeType: "application/json" }
+                };
+                const res = await callAI(TEXT_MODEL, payload);
+                const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                    const data = JSON.parse(text);
+                    document.getElementById('listingName').value = data.name || '';
+                    document.getElementById('listingPoints').value = data.points || '';
+                    showToast('产品特征视觉提取成功', 'success');
+                }
+            } catch (err) { showToast('智能提取失败，请重试', 'error'); }
+            finally { btn.innerHTML = origHtml; btn.disabled = false; }
+        }
+
+        function renderListingData(data) {
+            document.getElementById('listingEmpty').classList.add('hidden');
+            const resArea = document.getElementById('listingResults');
+            resArea.classList.remove('hidden'); resArea.classList.add('flex');
+            document.getElementById('btnRiskCheck').classList.remove('hidden');
+
+            const getVal = (obj) => typeof obj === 'string' ? { target: obj, zh: '' } : { target: obj?.target || '', zh: obj?.zh || '' };
+
+            // 渲染常规区块
+            const tData = getVal(data.title);
+            document.getElementById('resListingTitle').innerHTML = `<div class="target-text text-gray-800 text-lg mb-2">${tData.target}</div> <div class="zh-text text-sm text-gray-400 pt-2 border-t border-gray-100 font-normal">${tData.zh}</div>`;
+
+            const dData = getVal(data.description);
+            document.getElementById('resListingDesc').innerHTML = `<div class="target-text text-gray-700 whitespace-pre-wrap">${dData.target}</div> <div class="zh-text text-sm text-gray-400 mt-4 pt-4 border-t border-gray-100 whitespace-pre-wrap">${dData.zh}</div>`;
+
+            const makeBulletLi = arr => (arr || []).map(b => {
+                const v = getVal(b);
+                return `<li class="mb-4 bg-gray-50/80 p-3.5 rounded-xl border border-gray-100"><div class="target-text font-bold text-gray-700 text-sm">${v.target}</div><div class="zh-text text-xs text-gray-400 mt-2 border-t border-gray-200/60 pt-2">${v.zh}</div></li>`;
+            }).join('');
+            document.getElementById('resListingBullets').innerHTML = makeBulletLi(data.bullets);
+
+            const makeKwLi = arr => (arr || []).map(k => {
+                const v = getVal(k);
+                return `<li><span class="target-text">${v.target}</span> <span class="text-gray-400 text-[10px] ml-1">(<span class="zh-text">${v.zh}</span>)</span></li>`;
+            }).join('');
+
+            document.getElementById('resKwCore').innerHTML = makeKwLi(data.keywords?.core);
+            document.getElementById('resKwTail').innerHTML = makeKwLi(data.keywords?.longTail);
+            document.getElementById('resKwAds').innerHTML = makeKwLi(data.keywords?.ads);
+
+            // 渲染 QA
+            const makeQALi = arr => (arr || []).map(item => {
+                const q = getVal(item.q);
+                const a = getVal(item.a);
+                return `<div class="bg-indigo-50/50 p-4 rounded-xl border border-indigo-50 shadow-sm">
+                    <div class="mb-2"><span class="font-bold text-indigo-700 mr-2">Q:</span><span class="text-gray-800 font-medium target-text text-sm">${q.target}</span><div class="text-xs text-gray-400 mt-1 ml-6 zh-text">${q.zh}</div></div>
+                    <div><span class="font-bold text-emerald-600 mr-2">A:</span><span class="text-gray-600 target-text text-sm">${a.target}</span><div class="text-xs text-gray-400 mt-1 ml-6 zh-text">${a.zh}</div></div>
+                </div>`;
+            }).join('');
+            document.getElementById('resListingQA').innerHTML = makeQALi(data.qa);
+
+            // 渲染社媒
+            const sData = getVal(data.socialMedia);
+            document.getElementById('resListingSocial').innerHTML = `<div class="target-text text-gray-700 whitespace-pre-wrap">${sData.target}</div> <div class="zh-text text-sm text-gray-400 mt-4 pt-4 border-t border-gray-200 whitespace-pre-wrap">${sData.zh}</div>`;
+        }
+        async function generateListing() {
+            const name = document.getElementById('listingName').value.trim();
+            const points = document.getElementById('listingPoints').value.trim();
+            const keywords = document.getElementById('listingKeywords').value.trim();
+
+            const styleOpt = document.getElementById('listingStyleSelect');
+            const style = styleOpt.options[styleOpt.selectedIndex].text;
+
+            const regionOpt = document.getElementById('listingRegionSelect');
+            const region = regionOpt.options[regionOpt.selectedIndex].value;
+            const toneOfVoice = MARKET_TONE_MAP[region] || MARKET_TONE_MAP["Global Market"];
+
+            const themeOpt = document.getElementById('listingMarketingThemeSelect');
+            const themeVal = themeOpt.value;
+            const themeLabel = themeOpt.options[themeOpt.selectedIndex].text;
+            const themePrompt = themeVal !== 'none' ? `\n【附加营销指令】当前处于"${themeLabel}"营销节点，请在文案(尤其是标题和首要卖点中)巧妙融入相应的节日送礼、促销紧迫感或场景联想。` : '';
+
+            if (!name || !points) { showToast('请填写红星标记的必填项：产品名称与核心卖点', 'error'); return; }
+
+            const btn = document.getElementById('btnGenerateListing');
+            const origBtnHtml = btn.innerHTML;
+            btn.innerHTML = `<span class="loader w-4 h-4 mr-2 border-2 border-white border-t-transparent"></span> 语境适配演算中...`;
+            btn.disabled = true;
+
+            const prompt = `你是一个资深跨境电商运营与超本地化营销专家。请根据以下信息撰写高转化率的商品Listing：
+产品名称: ${name}
+卖点/特色: ${points}
+长尾参考关键词: ${keywords || '无特定限制'}
+目标平台规则与调性: ${style}
+【核心指令】目标市场与本土化语境(Tone of Voice): ${toneOfVoice} - 绝对遵守此语境偏好调整用词风格。${themePrompt}
+
+输出要求：
+1. 必须完全贴合选择的平台调性与市场文化。
+2. 必须提供【目标语言(根据平台/市场主流语言自动判断)】与【中文】的双语对照。
+3. 包含所有规定的JSON字段，不要遗漏。
+
+请严格返回如下 JSON 格式字符串，绝对不要输出 Markdown 代码块，直接返回纯净 JSON 数据：
+{
+  "title": {"target": "外文标题", "zh": "中文标题"},
+  "bullets": [
+    {"target": "卖点1外文", "zh": "卖点1中文"},
+    {"target": "卖点2外文", "zh": "卖点2中文"},
+    {"target": "卖点3外文", "zh": "卖点3中文"},
+    {"target": "卖点4外文", "zh": "卖点4中文"},
+    {"target": "卖点5外文", "zh": "卖点5中文"}
+  ],
+  "description": {"target": "长段落描述（可包含换行符\\n）", "zh": "对应的中文段落"},
+  "keywords": {
+    "core": [{"target": "核心词1", "zh": "中文"}, {"target": "核心词2", "zh": "中文"}],
+    "longTail": [{"target": "长尾词1", "zh": "中文"}, {"target": "长尾词2", "zh": "中文"}],
+    "ads": [{"target": "PPC词1", "zh": "中文"}, {"target": "PPC词2", "zh": "中文"}]
+  },
+  "qa": [
+    {"q": {"target": "痛点提问1外文", "zh": "中文"}, "a": {"target": "专业解答1外文", "zh": "中文"}},
+    {"q": {"target": "痛点提问2外文", "zh": "中文"}, "a": {"target": "专业解答2外文", "zh": "中文"}}
+  ],
+  "socialMedia": {"target": "TikTok/IG风格短视频口播或图文种草脚本(需包含emoji和热门Tags)", "zh": "中文脚本"}
+}`;
+
+            try {
+                const res = await callAI(TEXT_MODEL, {
+                    contents: [{ role: "user", parts: [{ text: prompt }] }],
+                    generationConfig: { responseMimeType: "application/json" }
+                });
+                const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (text) {
+                    const data = JSON.parse(text);
+                    currentListingDataText = text; // 缓存供审查使用
+
+                    document.getElementById('listingEmpty').classList.add('hidden');
+                    const resArea = document.getElementById('listingResults');
+                    resArea.classList.remove('hidden'); resArea.classList.add('flex');
+                    document.getElementById('btnRiskCheck').classList.remove('hidden');
+
+                    const getVal = (obj) => typeof obj === 'string' ? { target: obj, zh: '' } : { target: obj?.target || '', zh: obj?.zh || '' };
+
+                    // 渲染常规区块
+                    const tData = getVal(data.title);
+                    document.getElementById('resListingTitle').innerHTML = `<div class="target-text text-gray-800 text-lg mb-2">${tData.target}</div> <div class="zh-text text-sm text-gray-400 pt-2 border-t border-gray-100 font-normal">${tData.zh}</div>`;
+
+                    const dData = getVal(data.description);
+                    document.getElementById('resListingDesc').innerHTML = `<div class="target-text text-gray-700 whitespace-pre-wrap">${dData.target}</div> <div class="zh-text text-sm text-gray-400 mt-4 pt-4 border-t border-gray-100 whitespace-pre-wrap">${dData.zh}</div>`;
+
+                    const makeBulletLi = arr => (arr || []).map(b => {
+                        const v = getVal(b);
+                        return `<li class="mb-4 bg-gray-50/80 p-3.5 rounded-xl border border-gray-100"><div class="target-text font-bold text-gray-700 text-sm">${v.target}</div><div class="zh-text text-xs text-gray-400 mt-2 border-t border-gray-200/60 pt-2">${v.zh}</div></li>`;
+                    }).join('');
+                    document.getElementById('resListingBullets').innerHTML = makeBulletLi(data.bullets);
+
+                    const makeKwLi = arr => (arr || []).map(k => {
+                        const v = getVal(k);
+                        return `<li><span class="target-text">${v.target}</span> <span class="text-gray-400 text-[10px] ml-1">(<span class="zh-text">${v.zh}</span>)</span></li>`;
+                    }).join('');
+
+                    document.getElementById('resKwCore').innerHTML = makeKwLi(data.keywords?.core);
+                    document.getElementById('resKwTail').innerHTML = makeKwLi(data.keywords?.longTail);
+                    document.getElementById('resKwAds').innerHTML = makeKwLi(data.keywords?.ads);
+
+                    // 渲染 QA
+                    const makeQALi = arr => (arr || []).map(item => {
+                        const q = getVal(item.q);
+                        const a = getVal(item.a);
+                        return `<div class="bg-indigo-50/50 p-4 rounded-xl border border-indigo-50 shadow-sm">
+                            <div class="mb-2"><span class="font-bold text-indigo-700 mr-2">Q:</span><span class="text-gray-800 font-medium target-text text-sm">${q.target}</span><div class="text-xs text-gray-400 mt-1 ml-6 zh-text">${q.zh}</div></div>
+                            <div><span class="font-bold text-emerald-600 mr-2">A:</span><span class="text-gray-600 target-text text-sm">${a.target}</span><div class="text-xs text-gray-400 mt-1 ml-6 zh-text">${a.zh}</div></div>
+                        </div>`;
+                    }).join('');
+                    document.getElementById('resListingQA').innerHTML = makeQALi(data.qa);
+
+                    // 渲染社媒
+                    const sData = getVal(data.socialMedia);
+                    document.getElementById('resListingSocial').innerHTML = `<div class="target-text text-gray-700 whitespace-pre-wrap">${sData.target}</div> <div class="zh-text text-sm text-gray-400 mt-4 pt-4 border-t border-gray-200 whitespace-pre-wrap">${sData.zh}</div>`;
+
+                    // 保存到草稿箱历史
+                    saveListingToHistory(name, data);
+                    // 保存到后端历史库
+                    saveToHistory('listing', { name, platform: style, result: data });
+
+                    showToast('本土化 Listing 编撰完成！', 'success');
+                } else throw new Error("API text empty");
+            } catch (err) { showToast('生成失败，请检查网络或重试', 'error'); }
+            finally { btn.innerHTML = origBtnHtml; btn.disabled = false; }
+        }
+
+        // ====== Listing 合规审查功能 ======
+        async function checkListingCompliance() {
+            if (!currentListingDataText) {
+                showToast('尚未生成任何内容供审查', 'error'); return;
+            }
+            const btn = document.getElementById('btnRiskCheck');
+            const origHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="ph ph-spinner animate-spin text-sm"></i> 扫描中...';
+            btn.disabled = true;
+
+            const prompt = `你是一个亚马逊/Shopify平台的资深法务与合规审查专员。请审阅以下生成的Listing JSON数据内容：
+${currentListingDataText}
+
+请重点排查以下风险：
+1. 违禁极限词 (如 #1, Best, 100% guarantee 等，视平台而定)
+2. 违规医疗/健康声明 (如 cure, prevent, treat 等)
+3. 侵权风险词汇 (常见的第三方商标名)
+4. 不实的售后承诺
+
+输出格式：请用友好的中文撰写一份简短的审查报告，可以直接使用 HTML 格式 (使用 <b>, <ul>, <li>, <span class="text-red-500"> 等进行高亮排版)。如果没有发现明显风险，请给予“低风险”的绿灯评价。`;
+
+            try {
+                const res = await callAI(TEXT_MODEL, {
+                    contents: [{ role: "user", parts: [{ text: prompt }] }]
+                });
+                const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (text) {
+                    document.getElementById('riskCheckContent').innerHTML = text;
+                    document.getElementById('riskCheckModal').classList.remove('hidden');
+                }
+            } catch (err) {
+                showToast('合规审查服务暂时不可用', 'error');
+            } finally {
+                btn.innerHTML = origHtml; btn.disabled = false;
+            }
+        }
+
+        function closeRiskCheckModal() {
+            document.getElementById('riskCheckModal').classList.add('hidden');
+        }
+
+        // ====== Listing 草稿箱历史功能 ======
+        function toggleListingHistory() {
+            const panel = document.getElementById('listingHistoryPanel');
+            panel.classList.toggle('translate-x-full');
+        }
+
+        function saveListingToHistory(name, dataObj) {
+            let history = JSON.parse(localStorage.getItem('listingHistory') || '[]');
+            history.unshift({
+                id: Date.now(),
+                date: new Date().toLocaleString(),
+                name: name,
+                data: dataObj
+            });
+            if (history.length > 15) history = history.slice(0, 15); // 最多保留15条
+            localStorage.setItem('listingHistory', JSON.stringify(history));
+            loadHistoryToList();
+        }
+
+        function loadHistoryToList() {
+            const container = document.getElementById('historyListContainer');
+            if (!container) return;
+            const history = JSON.parse(localStorage.getItem('listingHistory') || '[]');
+
+            if (history.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 text-sm mt-10">暂无草稿记录</div>';
+                return;
+            }
+
+            container.innerHTML = history.map(item => `
+                <div class="mb-3 bg-white border border-gray-200 rounded-lg p-3 hover:border-indigo-300 transition-colors cursor-pointer shadow-sm group" onclick="restoreListingHistory(${item.id})">
+                    <div class="font-bold text-gray-800 text-sm truncate mb-1 group-hover:text-indigo-600">${item.name}</div>
+                    <div class="flex items-center gap-1 text-[10px] text-gray-400"><i class="ph ph-clock"></i> ${item.date}</div>
+                </div>
+            `).join('');
+        }
+
+        function restoreListingHistory(id) {
+            const history = JSON.parse(localStorage.getItem('listingHistory') || '[]');
+            const item = history.find(h => h.id === id);
+            if (!item) return;
+
+            const data = item.data;
+            currentListingDataText = JSON.stringify(data); // 重置缓存
+
+            document.getElementById('listingEmpty').classList.add('hidden');
+            const resArea = document.getElementById('listingResults');
+            resArea.classList.remove('hidden'); resArea.classList.add('flex');
+            document.getElementById('btnRiskCheck').classList.remove('hidden');
+
+            const getVal = (obj) => typeof obj === 'string' ? { target: obj, zh: '' } : { target: obj?.target || '', zh: obj?.zh || '' };
+
+            // 恢复常规渲染
+            const tData = getVal(data.title);
+            document.getElementById('resListingTitle').innerHTML = `<div class="target-text text-gray-800 text-lg mb-2">${tData.target}</div> <div class="zh-text text-sm text-gray-400 pt-2 border-t border-gray-100 font-normal">${tData.zh}</div>`;
+            const dData = getVal(data.description);
+            document.getElementById('resListingDesc').innerHTML = `<div class="target-text text-gray-700 whitespace-pre-wrap">${dData.target}</div> <div class="zh-text text-sm text-gray-400 mt-4 pt-4 border-t border-gray-100 whitespace-pre-wrap">${dData.zh}</div>`;
+            const makeBulletLi = arr => (arr || []).map(b => { const v = getVal(b); return `<li class="mb-4 bg-gray-50/80 p-3.5 rounded-xl border border-gray-100"><div class="target-text font-bold text-gray-700 text-sm">${v.target}</div><div class="zh-text text-xs text-gray-400 mt-2 border-t border-gray-200/60 pt-2">${v.zh}</div></li>`; }).join('');
+            document.getElementById('resListingBullets').innerHTML = makeBulletLi(data.bullets);
+            const makeKwLi = arr => (arr || []).map(k => { const v = getVal(k); return `<li><span class="target-text">${v.target}</span> <span class="text-gray-400 text-[10px] ml-1">(<span class="zh-text">${v.zh}</span>)</span></li>`; }).join('');
+            document.getElementById('resKwCore').innerHTML = makeKwLi(data.keywords?.core);
+            document.getElementById('resKwTail').innerHTML = makeKwLi(data.keywords?.longTail);
+            document.getElementById('resKwAds').innerHTML = makeKwLi(data.keywords?.ads);
+
+            // 恢复QA
+            const makeQALi = arr => (arr || []).map(item => {
+                const q = getVal(item.q); const a = getVal(item.a);
+                return `<div class="bg-indigo-50/50 p-4 rounded-xl border border-indigo-50 shadow-sm"><div class="mb-2"><span class="font-bold text-indigo-700 mr-2">Q:</span><span class="text-gray-800 font-medium target-text text-sm">${q.target}</span><div class="text-xs text-gray-400 mt-1 ml-6 zh-text">${q.zh}</div></div><div><span class="font-bold text-emerald-600 mr-2">A:</span><span class="text-gray-600 target-text text-sm">${a.target}</span><div class="text-xs text-gray-400 mt-1 ml-6 zh-text">${a.zh}</div></div></div>`;
+            }).join('');
+            document.getElementById('resListingQA').innerHTML = makeQALi(data.qa);
+
+            // 恢复社媒
+            const sData = getVal(data.socialMedia);
+            document.getElementById('resListingSocial').innerHTML = `<div class="target-text text-gray-700 whitespace-pre-wrap">${sData.target}</div> <div class="zh-text text-sm text-gray-400 mt-4 pt-4 border-t border-gray-200 whitespace-pre-wrap">${sData.zh}</div>`;
+
+            showToast('已从草稿箱恢复', 'info');
+            toggleListingHistory(); // 自动收起面板
+        }
+
+        function clearListingHistory() {
+            localStorage.removeItem('listingHistory');
+            loadHistoryToList();
+            showToast('历史记录已清空', 'success');
+        }
+
+
+        // ==========================================
+        // 翻译模块逻辑维持不变 (仅确保模型变量引用正确)
+        // ==========================================
+        const TRANS_LANG_OPTIONS = [
+            { value: 'English', label: '英文', short: 'EN' },
+            { value: 'Japanese', label: '日文', short: 'JA' },
+            { value: 'Spanish', label: '西语', short: 'ES' },
+            { value: 'German', label: '德语', short: 'DE' },
+            { value: 'French', label: '法语', short: 'FR' },
+            { value: 'Korean', label: '韩语', short: 'KO' },
+            { value: 'Arabic', label: '阿语', short: 'AR' },
+            { value: 'Portuguese', label: '葡语', short: 'PT' },
+            { value: 'Russian', label: '俄语', short: 'RU' },
+            { value: 'Italian', label: '意语', short: 'IT' },
+        ];
+        let transImages = [];
+        let transRunning = false;
+
+        function initTransLangTags() {
+            const wrap = document.getElementById('transLangTags');
+            if (!wrap) return;
+            wrap.innerHTML = '';
+            TRANS_LANG_OPTIONS.forEach(lang => {
+                const div = document.createElement('div');
+                div.className = 'lang-option';
+                div.innerHTML = `<label><input type="checkbox" value="${lang.value}" ${lang.value === 'English' ? 'checked' : ''} onchange="updateLangDropdownLabel();updateTransStartBtn()"><span>${lang.label}</span><span class="ml-auto text-[10px] text-gray-400">${lang.short}</span></label>`;
+                wrap.appendChild(div);
+            });
+            updateLangDropdownLabel();
+        }
+
+        function toggleLangDropdown() { document.getElementById('langDropdownMenu')?.classList.toggle('open'); }
+        document.addEventListener('click', function (e) {
+            const dropdown = document.getElementById('langDropdown');
+            if (dropdown && !dropdown.contains(e.target)) document.getElementById('langDropdownMenu')?.classList.remove('open');
+        });
+
+        function updateLangDropdownLabel() {
+            const selected = getSelectedTransLangs();
+            const trigger = document.getElementById('langDropdownTrigger');
+            const label = document.getElementById('langDropdownLabel');
+            if (!trigger || !label) return;
+            if (selected.length === 0) { label.textContent = '目标语言'; trigger.classList.remove('has-selection'); }
+            else {
+                const names = selected.map(v => { const o = TRANS_LANG_OPTIONS.find(l => l.value === v); return o ? o.short : v.slice(0, 2).toUpperCase(); });
+                label.innerHTML = names.map(n => `<span class="lang-chip">${n}</span>`).join('');
+                trigger.classList.add('has-selection');
+            }
+        }
+
+        function clearLangSelection() { document.querySelectorAll('#transLangTags input[type=checkbox]').forEach(el => el.checked = false); updateLangDropdownLabel(); updateTransStartBtn(); }
+        function getSelectedTransLangs() { return [...document.querySelectorAll('#transLangTags input[type=checkbox]:checked')].map(el => el.value); }
+
+        function handleTransImageUpload(event) { loadTransFiles([...event.target.files]); event.target.value = ''; }
+        function handleTransDrop(event) { event.preventDefault(); document.getElementById('transDropZone').classList.remove('drop-zone-active'); loadTransFiles([...event.dataTransfer.files].filter(f => f.type.startsWith('image/'))); }
+
+        function loadTransFiles(files) {
+            if (!files.length) return;
+            let loaded = 0;
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = e => {
+                    const id = 'ti_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+                    transImages.push({ id, name: file.name, base64: e.target.result, mimeType: file.type });
+                    loaded++;
+                    if (loaded === files.length) { renderTransCards(); updateTransStartBtn(); showToast(`已添加 ${files.length} 张图片`, 'success'); }
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function renderTransCards() {
+            const empty = document.getElementById('transEmptyState'); const list = document.getElementById('transTaskList'); const footer = document.getElementById('transFooter'); const container = document.getElementById('transCardContainer');
+            if (!transImages.length) { empty.classList.remove('hidden'); list.classList.add('hidden'); footer.classList.add('hidden'); document.getElementById('transFileCount').textContent = ''; return; }
+            empty.classList.add('hidden'); list.classList.remove('hidden'); footer.classList.remove('hidden');
+            document.getElementById('transQueueCount').textContent = `(${transImages.length})`; document.getElementById('transFileCount').textContent = `${transImages.length} 张`;
+            transImages.forEach(img => {
+                if (document.getElementById(`trans-card-${img.id}`)) return;
+                container.insertAdjacentHTML('beforeend', `
+                    <div id="trans-card-${img.id}" class="trans-card fade-in">
+                        <div class="flex-shrink-0 self-center"><input type="checkbox" id="trans-check-${img.id}" data-imgid="${img.id}" class="w-4 h-4 rounded accent-blue-600 cursor-pointer" onclick="event.stopPropagation()" onchange="updateTransSelection()"></div>
+                        <div class="trans-card-thumb" onclick="openTransPreview('${img.id}')"><img src="${img.base64}"><div class="trans-card-thumb-overlay"><i class="ph ph-arrows-out text-white text-xl"></i></div></div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-3 mb-2"><span class="font-black text-slate-800 truncate text-sm tracking-tight">${img.name}</span><span id="trans-card-badge-${img.id}" class="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg font-black uppercase tracking-widest flex-shrink-0">Waiting</span></div>
+                            <div id="trans-card-progress-wrap-${img.id}" class="hidden mb-2"><div class="trans-progress-bar w-full mb-1"><div id="trans-card-progress-${img.id}" class="trans-progress-fill" style="width:0%"></div></div><span id="trans-card-step-${img.id}" class="step-badge">准备中...</span></div>
+                            <div id="trans-card-langs-${img.id}" class="flex flex-wrap gap-2 mt-1"></div>
+                        </div>
+                        <div class="flex flex-col items-end gap-2 flex-shrink-0 min-w-[100px]">
+                            <button onclick="event.stopPropagation();removeTransImage('${img.id}')" class="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><i class="ph ph-trash text-sm"></i></button>
+                            <button id="trans-card-retrans-${img.id}" onclick="event.stopPropagation();retransCard('${img.id}')" class="hidden flex items-center gap-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all border border-amber-200"><i class="ph ph-arrows-clockwise text-sm"></i> 重新生成</button>
+                            <button id="trans-card-export-${img.id}" onclick="event.stopPropagation();exportTransCard('${img.id}')" class="hidden flex items-center gap-1.5 bg-slate-50 text-slate-600 hover:bg-slate-600 hover:text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all border border-slate-200"><i class="ph ph-download-simple text-sm"></i> 导出</button>
+                            <button id="trans-card-preview-${img.id}" onclick="openTransPreview('${img.id}')" class="hidden flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all"><i class="ph ph-eye text-sm"></i> 预览</button>
+                        </div>
+                    </div>`);
+            });
+            updateTransFooterCount();
+        }
+
+        function removeTransImage(id) { transImages = transImages.filter(i => i.id !== id); document.getElementById(`trans-card-${id}`)?.remove(); renderTransCards(); updateTransStartBtn(); updateTransSelection(); }
+        function clearTransImages() { transImages = []; document.getElementById('transCardContainer').innerHTML = ''; if (document.getElementById('transSelectAll')) { document.getElementById('transSelectAll').checked = false; document.getElementById('transSelectAll').indeterminate = false; } renderTransCards(); updateTransStartBtn(); updateTransSelection(); }
+
+        function updateTransStartBtn() {
+            const btn = document.getElementById('transStartBtn'); if (btn) btn.disabled = !transImages.length || !getSelectedTransLangs().length || transRunning;
+            const exportAllBtn = document.getElementById('transExportAllBtn');
+            if (exportAllBtn) exportAllBtn.disabled = !transImages.some(img => document.getElementById(`trans-card-badge-${img.id}`)?.textContent.includes('完成'));
+        }
+
+        function updateTransSelection() {
+            const checkboxes = document.querySelectorAll('#transCardContainer input[type=checkbox][data-imgid]'); const checked = [...checkboxes].filter(c => c.checked);
+            if (document.getElementById('transSelectedCount')) document.getElementById('transSelectedCount').textContent = `已选 ${checked.length} 项`;
+            const btn = document.getElementById('transBatchDownloadBtn');
+            if (btn) {
+                btn.disabled = checked.length === 0;
+                btn.className = checked.length > 0 ? 'ml-auto flex items-center gap-1.5 text-xs font-black px-4 py-1.5 rounded-xl transition-all mr-1 bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-200 cursor-pointer' : 'ml-auto flex items-center gap-1.5 text-xs font-black px-4 py-1.5 rounded-xl transition-all mr-1 bg-slate-200 text-slate-400 cursor-not-allowed';
+            }
+            if (document.getElementById('transSelectAll')) { document.getElementById('transSelectAll').indeterminate = checked.length > 0 && checked.length < checkboxes.length; document.getElementById('transSelectAll').checked = checkboxes.length > 0 && checked.length === checkboxes.length; }
+        }
+
+        function toggleSelectAllTrans(checked) { document.querySelectorAll('#transCardContainer input[type=checkbox][data-imgid]').forEach(c => c.checked = checked); updateTransSelection(); }
+
+        async function downloadSelectedTrans() { /* 同原逻辑，省略重复代码以省字数，核心功能不变 */
+            const checked = [...document.querySelectorAll('#transCardContainer input[type=checkbox][data-imgid]:checked')];
+            if (!checked.length) return;
+            const langs = getSelectedTransLangs(); let total = 0;
+            for (const cb of checked) {
+                const img = transImages.find(i => i.id === cb.dataset.imgid); if (!img) continue;
+                for (const lang of langs) {
+                    const imgEl = document.getElementById(`trans-slot-${img.id}-${lang.replace(/\s/g, '')}-img`);
+                    if (!imgEl || imgEl.tagName !== 'IMG') continue;
+                    const link = document.createElement('a'); link.download = `${img.name.replace(/\.[^.]+$/, '')}-${lang.slice(0, 2)}-AI译图.png`; link.href = imgEl.src; link.click(); total++; await new Promise(r => setTimeout(r, 300));
+                }
+            }
+            showToast(total ? `已下载 ${total} 张译图` : '所选任务暂无已生成的译图', total ? 'success' : 'error');
+        }
+
+        async function exportTransCard(imgId) { /* 同原逻辑 */
+            const img = transImages.find(i => i.id === imgId); if (!img) return; const langs = getSelectedTransLangs(); let count = 0;
+            for (const lang of langs) {
+                const imgEl = document.getElementById(`trans-slot-${imgId}-${lang.replace(/\s/g, '')}-img`);
+                if (!imgEl || imgEl.tagName !== 'IMG') continue;
+                const link = document.createElement('a'); link.download = `${img.name.replace(/\.[^.]+$/, '')}-${lang.slice(0, 2)}-AI译图.png`; link.href = imgEl.src; link.click(); count++; await new Promise(r => setTimeout(r, 300));
+            }
+            showToast(count ? `已导出 ${count} 张译图` : '暂无已生成的译图', count ? 'success' : 'error');
+        }
+
+        async function exportAllTrans() { /* 同原逻辑 */
+            const langs = getSelectedTransLangs(); let total = 0;
+            for (const img of transImages) {
+                if (!document.getElementById(`trans-card-badge-${img.id}`)?.textContent.includes('完成')) continue;
+                for (const lang of langs) {
+                    const imgEl = document.getElementById(`trans-slot-${img.id}-${lang.replace(/\s/g, '')}-img`);
+                    if (!imgEl || imgEl.tagName !== 'IMG') continue;
+                    const link = document.createElement('a'); link.download = `${img.name.replace(/\.[^.]+$/, '')}-${lang.slice(0, 2)}-AI译图.png`; link.href = imgEl.src; link.click(); total++; await new Promise(r => setTimeout(r, 300));
+                }
+            }
+            showToast(total ? `全部导出完成，共 ${total} 张` : '暂无已完成的译图', total ? 'success' : 'error');
+        }
+
+        function updateTransFooterCount() { /* 同原逻辑 */
+            let done = 0, running = 0, pending = 0;
+            transImages.forEach(img => { const t = document.getElementById(`trans-card-badge-${img.id}`)?.textContent.trim(); if (t?.includes('完成')) done++; else if (t === '翻译中') running++; else pending++; });
+            if (document.getElementById('transDoneCount')) document.getElementById('transDoneCount').textContent = done;
+            if (document.getElementById('transRunningCount')) document.getElementById('transRunningCount').textContent = running;
+            if (document.getElementById('transPendingCount')) document.getElementById('transPendingCount').textContent = pending;
+        }
+
+        function openTransPreview(imgId) {
+            const img = transImages.find(i => i.id === imgId); if (!img) return;
+            document.getElementById('previewModalTitle').textContent = img.name;
+            document.getElementById('previewOrigImg').src = img.base64;
+            const wrap = document.getElementById('previewResultsWrap'); wrap.innerHTML = '';
+
+            const langs = getSelectedTransLangs();
+            if (!langs.length) {
+                wrap.innerHTML = '<div class="flex items-center justify-center h-40 text-slate-300 text-sm">暂无翻译结果</div>';
+            } else {
+                langs.forEach(lang => {
+                    const langInfo = TRANS_LANG_OPTIONS.find(l => l.value === lang) || { label: lang, short: lang.slice(0, 2).toUpperCase() };
+                    const slotId = `trans-slot-${imgId}-${lang.replace(/\s/g, '')}`;
+                    const imgEl = document.getElementById(`${slotId}-img`);
+                    const errEl = document.getElementById(`${slotId}-img-error`);
+
+                    let displayHtml = `<div class="flex flex-col items-center gap-2 text-slate-300 py-8"><i class="ph ph-hourglass text-3xl"></i><span class="text-xs">尚未生成</span></div>`;
+
+                    if (imgEl) {
+                        displayHtml = `<img src="${imgEl.src}" class="w-full h-full object-contain rounded-2xl">`;
+                    } else if (errEl) {
+                        displayHtml = `<div class="flex flex-col items-center gap-2 text-red-400 py-8 text-center px-4"><i class="ph ph-warning-circle text-3xl"></i><span class="text-xs font-bold">生成失败</span><span class="text-[10px] text-red-300">${errEl.textContent}</span></div>`;
+                    }
+
+                    wrap.insertAdjacentHTML('beforeend', `
+                        <div class="flex flex-col gap-2 mb-4">
+                            <div class="flex justify-between items-center px-1"><span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">→ ${langInfo.label} (${langInfo.short})</span> ${imgEl ? `<button onclick="downloadTransResult('${slotId}-img','${img.name}-${langInfo.short}')" class="text-[10px] text-blue-600 hover:underline font-bold flex items-center gap-1"><i class="ph ph-download-simple"></i> 导出</button>` : ''}</div>
+                            <div class="rounded-2xl border-4 border-white shadow-xl overflow-hidden bg-slate-100" style="min-height:120px;display:flex;align-items:center;justify-content:center">${displayHtml}</div>
+                        </div>`);
+                });
+            }
+            document.getElementById('transPreviewModal').classList.remove('hidden');
+        }
+
+        function closeTransPreview() { document.getElementById('transPreviewModal').classList.add('hidden'); }
+
+        async function downloadTransResult(imgId, filename) {
+            const el = document.getElementById(imgId);
+            if (!el || el.tagName !== 'IMG') { showToast('图片尚未生成', 'error'); return; }
+            try {
+                const link = document.createElement('a');
+                link.download = `${filename}-AI译图.png`;
+                link.href = el.src;
+                link.click();
+                showToast('下载成功', 'success');
+            } catch (e) { showToast('下载失败', 'error'); }
+        }
+
+        async function startTranslation() {
+            const langs = getSelectedTransLangs();
+            if (!langs.length) { showToast('请选择至少一种目标语言', 'error'); return; }
+            if (!transImages.length) { showToast('请先上传图片', 'error'); return; }
+
+            const logMsg = `开始并发翻译流程 | 目标语言: ${langs.join(', ')}`;
+            console.log(`%c[图片翻译] ${logMsg}`, "color: #3b82f6; font-weight: bold;");
+            remoteLog(logMsg);
+
+            transRunning = true;
+            updateTransStartBtn();
+            const btn = document.getElementById('transStartBtn');
+            const origBtnHtml = btn.innerHTML;
+            btn.innerHTML = `<span class="loader w-3 h-3 border-white border-t-transparent mr-1 border-2"></span> 翻译中...`;
+
+            const styleStrength = document.getElementById('styleStrength').value;
+            const totalTasks = transImages.length * langs.length;
+            let done = 0;
+
+            const allTasks = [];
+            for (const img of transImages) {
+                const badge = document.getElementById(`trans-card-badge-${img.id}`);
+                if (badge && badge.textContent.includes('完成')) continue;
+                for (const lang of langs) {
+                    allTasks.push({ img, lang });
+                }
+            }
+
+            if (!allTasks.length) {
+                transRunning = false;
+                updateTransStartBtn();
+                btn.innerHTML = origBtnHtml;
+                showToast('没有需要处理的新任务', 'info');
+                return;
+            }
+
+            const activeTasks = [];
+            const imgProgress = {};
+
+            for (let i = 0; i < allTasks.length; i++) {
+                if (activeTasks.length >= CONCURRENCY_LIMIT) {
+                    await Promise.race(activeTasks);
+                }
+
+                const { img, lang } = allTasks[i];
+                const taskMsg = `正在提交翻译任务: ${img.name} -> ${lang} (序号: ${i + 1}/${allTasks.length})`;
+                console.log(`%c[图片翻译] ${taskMsg}`, "color: #60a5fa;");
+                remoteLog(taskMsg);
+                if (!imgProgress[img.id]) imgProgress[img.id] = 0;
+
+                const badge = document.getElementById(`trans-card-badge-${img.id}`);
+                const progWrap = document.getElementById(`trans-card-progress-wrap-${img.id}`);
+                if (badge && !badge.textContent.includes('翻译中')) {
+                    badge.textContent = '翻译中';
+                    badge.className = 'text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-lg font-black uppercase tracking-widest flex-shrink-0';
+                }
+                if (progWrap) progWrap.classList.remove('hidden');
+
+                const taskPromise = (async () => {
+                    try {
+                        const langInfo = TRANS_LANG_OPTIONS.find(l => l.value === lang) || { label: lang, short: lang.slice(0, 2).toUpperCase() };
+                        const slotId = `trans-slot-${img.id}-${lang.replace(/\s/g, '')}`;
+
+                        if (!document.getElementById(slotId)) {
+                            const ghost = document.createElement('div');
+                            ghost.id = slotId; ghost.className = 'hidden';
+                            ghost.innerHTML = `<div id="${slotId}-content"></div><div id="${slotId}-actions"></div>`;
+                            document.body.appendChild(ghost);
+                        }
+
+                        const stepEl = document.getElementById(`trans-card-step-${img.id}`);
+                        if (stepEl) stepEl.textContent = `正在翻译 ${langInfo.label}...`;
+
+                        await translateSingleImageToLang(img, lang, langInfo, slotId, styleStrength);
+
+                        done++;
+                        imgProgress[img.id]++;
+
+                        const progBar = document.getElementById(`trans-card-progress-${img.id}`);
+                        if (progBar) progBar.style.width = `${Math.round((imgProgress[img.id] / langs.length) * 100)}%`;
+
+                        const langsRow = document.getElementById(`trans-card-langs-${img.id}`);
+                        if (langsRow && !document.getElementById(`lang-tag-card-${slotId}`)) {
+                            const imgEl = document.getElementById(`${slotId}-img`);
+                            if (imgEl) {
+                                langsRow.insertAdjacentHTML('beforeend', `<button id="lang-tag-card-${slotId}" onclick="openTransPreview('${img.id}')" class="flex items-center gap-1 text-[11px] bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-bold hover:bg-green-100 transition-colors"><i class="ph ph-check-circle text-green-500"></i> ${langInfo.label}</button>`);
+                            } else {
+                                langsRow.insertAdjacentHTML('beforeend', `<span id="lang-tag-card-${slotId}" onclick="openTransPreview('${img.id}')" class="flex items-center gap-1 text-[11px] bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full font-bold cursor-pointer hover:bg-red-100"><i class="ph ph-warning-circle"></i> ${langInfo.label}</span>`);
+                            }
+                        }
+
+                        if (imgProgress[img.id] === langs.length) {
+                            if (badge) {
+                                badge.textContent = '✓ 完成';
+                                badge.className = 'text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-lg font-black uppercase tracking-widest flex-shrink-0';
+                            }
+                            if (stepEl) stepEl.textContent = '处理完成';
+                            setTimeout(() => { if (progWrap) progWrap.classList.add('hidden'); }, 1000);
+                            ['preview', 'export', 'retrans'].forEach(action => {
+                                document.getElementById(`trans-card-${action}-${img.id}`)?.classList.remove('hidden');
+                            });
+                        }
+                        btn.innerHTML = `<span class="loader w-3 h-3 border-white border-t-transparent mr-1 border-2"></span> ${done}/${allTasks.length}`;
+                    } catch (err) { console.error(err); }
+                })();
+
+                activeTasks.push(taskPromise);
+                taskPromise.finally(() => {
+                    const idx = activeTasks.indexOf(taskPromise);
+                    if (idx > -1) activeTasks.splice(idx, 1);
+                });
+
+                if (i < allTasks.length - 1) {
+                    await new Promise(r => setTimeout(r, STAGGER_DELAY));
+                }
+            }
+            await Promise.all(activeTasks);
+
+            transRunning = false;
+            btn.innerHTML = origBtnHtml;
+            updateTransFooterCount();
+            updateTransStartBtn();
+            showToast(`全部翻译完成！共处理 ${done} 个任务`, 'success');
+        }
+
+        async function retransCard(imgId) {
+            const img = transImages.find(i => i.id === imgId);
+            if (!img) return;
+
+            const langs = getSelectedTransLangs();
+            if (!langs.length) { showToast('请先选择目标语言', 'error'); return; }
+
+            const styleStrength = document.getElementById('styleStrength').value;
+            const badge = document.getElementById(`trans-card-badge-${imgId}`);
+            const progWrap = document.getElementById(`trans-card-progress-wrap-${imgId}`);
+            const progBar = document.getElementById(`trans-card-progress-${imgId}`);
+            const stepEl = document.getElementById(`trans-card-step-${imgId}`);
+            const langsRow = document.getElementById(`trans-card-langs-${imgId}`);
+            const previewBtn = document.getElementById(`trans-card-preview-${imgId}`);
+            const exportBtn = document.getElementById(`trans-card-export-${imgId}`);
+            const retransBtn = document.getElementById(`trans-card-retrans-${imgId}`);
+
+            if (badge) { badge.textContent = '翻译中'; badge.className = 'text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-lg font-black uppercase tracking-widest flex-shrink-0'; }
+            if (progWrap) progWrap.classList.remove('hidden');
+            if (langsRow) langsRow.innerHTML = '';
+            if (previewBtn) previewBtn.classList.add('hidden');
+            if (exportBtn) exportBtn.classList.add('hidden');
+            if (retransBtn) retransBtn.classList.add('hidden');
+
+            langs.forEach(lang => {
+                const slotId = `trans-slot-${imgId}-${lang.replace(/\s/g, '')}`;
+                const existing = document.getElementById(slotId);
+                if (existing) existing.remove();
+                const ghost = document.createElement('div');
+                ghost.id = slotId; ghost.className = 'hidden';
+                ghost.innerHTML = `<div id="${slotId}-content"></div><div id="${slotId}-actions"></div>`;
+                document.body.appendChild(ghost);
+            });
+
+            let langIdx = 0;
+            for (const lang of langs) {
+                const langInfo = TRANS_LANG_OPTIONS.find(l => l.value === lang) || { label: lang, short: lang.slice(0, 2).toUpperCase() };
+                const slotId = `trans-slot-${imgId}-${lang.replace(/\s/g, '')}`;
+                if (stepEl) stepEl.textContent = `正在翻译 ${langInfo.label}...`;
+                if (progBar) progBar.style.width = `${Math.round((langIdx / langs.length) * 85)}%`;
+
+                await translateSingleImageToLang(img, lang, langInfo, slotId, styleStrength);
+                langIdx++;
+
+                if (langsRow) {
+                    const imgEl = document.getElementById(`${slotId}-img`);
+                    if (imgEl) {
+                        langsRow.insertAdjacentHTML('beforeend', `<button id="lang-tag-card-${slotId}" onclick="openTransPreview('${imgId}')" class="flex items-center gap-1 text-[11px] bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-bold hover:bg-green-100 transition-colors"><i class="ph ph-check-circle text-green-500"></i> ${langInfo.label}</button>`);
+                    } else {
+                        langsRow.insertAdjacentHTML('beforeend', `<span id="lang-tag-card-${slotId}" onclick="openTransPreview('${imgId}')" class="flex items-center gap-1 text-[11px] bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full font-bold cursor-pointer hover:bg-red-100"><i class="ph ph-warning-circle"></i> ${langInfo.label}</span>`);
+                    }
+                }
+            }
+
+            if (progBar) progBar.style.width = '100%';
+            if (stepEl) stepEl.textContent = '处理完成';
+            if (badge) { badge.textContent = '✓ 完成'; badge.className = 'text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-lg font-black uppercase tracking-widest flex-shrink-0'; }
+            setTimeout(() => { if (progWrap) progWrap.classList.add('hidden'); }, 1000);
+            if (previewBtn) previewBtn.classList.remove('hidden');
+            if (exportBtn) exportBtn.classList.remove('hidden');
+            if (retransBtn) retransBtn.classList.remove('hidden');
+
+            updateTransFooterCount();
+            updateTransStartBtn();
+            showToast(`${img.name} 重新生成完成`, 'success');
+        }
+
+        async function translateSingleImageToLang(img, lang, langInfo, slotId, styleStrength) {
+            const contentDiv = document.getElementById(`${slotId}-content`);
+            const actionsDiv = document.getElementById(`${slotId}-actions`);
+            const base64Data = img.base64.split(',')[1];
+            const mimeType = img.mimeType;
+
+            // 彻底修改提示词：强制作为“新图生成”任务，阻止模型“偷懒”返回原图
+            const prompt = `Generate a completely NEW image based on this reference.
+TASK: Translate all text in the image into ${lang} (${langInfo.label}).
+REQUIREMENTS:
+1. Completely redraw the image. Do NOT return the original image.
+2. Replace the original text with the ${lang} translation.
+3. Keep the exact same product, background, style, and typography layout.
+OUTPUT: You must generate and return the modified image.`;
+
+            try {
+                const payload = {
+                    contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: mimeType, data: base64Data } }] }],
+                    generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+                };
+
+                const result = await callAI(IMAGE_MODEL, payload);
+
+                if (result.error) throw new Error(result.error.message);
+                if (!result.candidates || result.candidates.length === 0) {
+                    throw new Error(result.promptFeedback?.blockReason ? `被安全拦截 (${result.promptFeedback.blockReason})` : "API返回为空");
+                }
+
+                const imagePart = result.candidates[0].content?.parts?.find(p => p.inlineData);
+                const textPart = result.candidates[0].content?.parts?.find(p => p.text);
+
+                if (imagePart?.inlineData) {
+                    const generatedSrc = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+                    contentDiv.innerHTML = `<img id="${slotId}-img" src="${generatedSrc}" class="w-full rounded object-contain max-h-[280px]">`;
+                    if (actionsDiv) actionsDiv.classList.remove('hidden');
+
+                    // 保存到后端历史库
+                    saveToHistory('translation', {
+                        text: img.name,
+                        lang: langInfo.label,
+                        result: { image: generatedSrc, source_name: img.name }
+                    });
+                } else if (textPart?.text) {
+                    throw new Error("模型重绘失败：模型仅返回了文字翻译，未能生成图片。");
+                } else {
+                    throw new Error("模型重绘失败：未返回任何图像数据。");
+                }
+            } catch (err) {
+                console.warn(`[Trans] ${img.name} → ${lang}:`, err.message);
+                if (contentDiv) contentDiv.innerHTML = `<div id="${slotId}-img-error" class="hidden">${err.message}</div>`;
+            }
+        }
+
+        // ====== 全局历史记录中心逻辑 ======
+        let currentHistoryModule = 'analysis';
+
+        function toggleGlobalHistory() {
+            const panel = document.getElementById('globalHistoryPanel');
+            panel.classList.toggle('open');
+            if (panel.classList.contains('open')) {
+                switchHistoryTab(currentHistoryModule);
+            }
+        }
+
+        async function switchHistoryTab(module) {
+            currentHistoryModule = module;
+            // 更新 UI 标签
+            document.querySelectorAll('.history-tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.id === `hist-tab-${module}`);
+            });
+
+            const listContainer = document.getElementById('globalHistoryList');
+            listContainer.innerHTML = '<div class="flex justify-center py-10"><span class="loader"></span></div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/history/${module}?_t=${Date.now()}`);
+                const data = await res.json();
+                renderHistoryList(module, data);
+            } catch (e) {
+                listContainer.innerHTML = `<div class="text-center py-10 text-red-400 text-xs">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        function renderHistoryList(module, items) {
+            const listContainer = document.getElementById('globalHistoryList');
+            if (!items || items.length === 0) {
+                listContainer.innerHTML = `<div class="text-center py-20 text-gray-400 text-xs flex flex-col items-center gap-2">
+                    <i class="ph ph-files text-3xl opacity-20"></i>
+                    暂无历史记录
+                </div>`;
+                return;
+            }
+
+            // 将当前列表数据存入全局缓存，防止 HTML 属性过载
+            window._history_cache = items;
+
+            listContainer.innerHTML = items.map((item, index) => {
+                let contentHTML = '';
+                const date = new Date(item.timestamp).toLocaleString();
+
+                if (module === 'analysis') {
+                    contentHTML = `
+                        <div class="text-[11px] font-bold text-gray-800 mb-1 truncate">${item.query_url || '竞品分析报告'}</div>
+                        <div class="text-[9px] text-gray-400">时间: ${date}</div>
+                    `;
+                } else if (module === 'listing') {
+                    contentHTML = `
+                        <div class="text-[11px] font-bold text-gray-800 mb-1 truncate">${item.product_name}</div>
+                        <div class="text-[9px] text-gray-500 mb-1">平台: ${item.platform}</div>
+                        <div class="text-[9px] text-gray-400">时间: ${date}</div>
+                    `;
+                } else if (module === 'translation') {
+                    contentHTML = `
+                        <div class="flex gap-2">
+                            <img src="${item.result?.image}" class="w-12 h-12 rounded object-cover border border-gray-100">
+                            <div class="flex-1 min-w-0">
+                                <div class="text-[11px] font-bold text-gray-800 truncate">${item.source_text}</div>
+                                <div class="text-[9px] text-gray-400">语言: ${item.target_lang}</div>
+                                <div class="text-[9px] text-gray-400">${date}</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (module === 'render') {
+                    contentHTML = `
+                        <div class="flex gap-2">
+                            <img src="${item.image_base64}" class="w-12 h-12 rounded object-cover border border-gray-100">
+                            <div class="flex-1 min-w-0">
+                                <div class="text-[11px] font-bold text-gray-800 truncate">${item.task_name}</div>
+                                <div class="text-[9px] text-gray-400">风格: ${item.style}</div>
+                                <div class="text-[9px] text-gray-400">${date}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="history-item" onclick="restoreHistoryItemByIndex('${module}', ${index})">
+                        ${contentHTML}
+                        <button class="history-item-del" onclick="event.stopPropagation(); deleteHistoryItem('${module}', ${item.id})">
+                            <i class="ph ph-trash"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function deleteHistoryItem(module, id) {
+            if (!confirm('确定要删除这条记录吗？')) return;
+            try {
+                await fetch(`${API_BASE}/api/history/${module}/${id}`, { method: 'DELETE' });
+                showToast('已删除历史记录', 'success');
+                switchHistoryTab(module);
+            } catch (e) {
+                showToast('删除失败', 'error');
+            }
+        }
+
+        function restoreHistoryItemByIndex(module, index) {
+            const item = window._history_cache[index];
+            if (!item) return;
+            restoreHistoryItem(module, item);
+        }
+
+        function restoreHistoryItem(module, item) {
+            toggleGlobalHistory();
+            const viewMap = { 'analysis': 'xuanpin', 'listing': 'listing', 'translation': 'translate', 'render': 'generate' };
+            switchMainTab(viewMap[module]);
+
+            if (module === 'analysis') {
+                console.log("[History] Restoring Analysis Data:", item.data);
+                // 延迟执行，确保标签页切换后的容器已就绪
+                setTimeout(() => {
+                    if (window.xp_renderResults) {
+                        // 组装回显数据：包括模板类型和分析正文
+                        const responseObj = {
+                            template_type: item.template_type,
+                            data: item.data,
+                            message: "从历史记录恢复"
+                        };
+                        window.xp_renderResults(responseObj);
+                    } else {
+                        console.error("xp_renderResults function not found!");
+                    }
+                }, 100);
+            } else if (module === 'listing') {
+                renderListingData(item.result);
+            } else if (module === 'translation') {
+                const modal = document.getElementById('transPreviewModal');
+                if (modal) {
+                    document.getElementById('previewModalTitle').textContent = `历史记录回显`;
+                    const wrap = document.getElementById('previewResultsWrap');
+                    wrap.innerHTML = `<div class="flex flex-col gap-4 w-full p-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] font-black text-blue-500 uppercase">→ 历史翻译结果 (${item.target_lang})</span>
+                            <button onclick="const a=document.createElement('a');a.href='${item.result.image}';a.download='history_trans_${item.id}.png';a.click();" class="text-xs text-blue-600 hover:underline font-bold flex items-center gap-1">
+                                <i class="ph ph-download-simple"></i> 下载此图
+                            </button>
+                        </div>
+                        <div class="rounded-2xl border-4 border-white shadow-xl overflow-hidden bg-slate-100 flex items-center justify-center"><img src="${item.result.image}" class="w-full h-auto object-contain"></div>
+                    </div>`;
+                    modal.classList.remove('hidden');
+                }
+            } else if (module === 'render') {
+                const previewContainer = document.getElementById('longImageCanvas');
+                if (previewContainer) {
+                    previewContainer.innerHTML = `<img src="${item.image_base64}" class="w-full shadow-2xl rounded-lg">`;
+                    document.getElementById('showcaseArea').classList.add('hidden');
+                    document.getElementById('resultArea').classList.remove('hidden');
+                    document.getElementById('longImageBuilderModal').classList.remove('hidden');
+                }
+            }
+        }
+
+    </script>
+    <!-- 全局历史记录面板 -->
+    <div id="globalHistoryPanel" class="global-history-panel">
+        <div class="history-header">
+            <h3 class="font-black text-slate-800 flex items-center gap-2"><i
+                    class="ph-fill ph-clock-counter-clockwise text-blue-500 text-xl"></i> 历史记录中心</h3>
+            <button onclick="toggleGlobalHistory()" class="text-slate-400 hover:text-red-500 transition-colors"><i
+                    class="ph ph-x text-xl"></i></button>
+        </div>
+        <div class="history-tabs">
+            <div onclick="switchHistoryTab('analysis')" id="hist-tab-analysis" class="history-tab-btn active">竞品分析</div>
+            <div onclick="switchHistoryTab('listing')" id="hist-tab-listing" class="history-tab-btn">Listing</div>
+            <div onclick="switchHistoryTab('translation')" id="hist-tab-translation" class="history-tab-btn">图片翻译</div>
+            <div onclick="switchHistoryTab('render')" id="hist-tab-render" class="history-tab-btn">详情渲染</div>
+        </div>
+        <div id="globalHistoryList" class="history-list custom-scrollbar">
+            <!-- 记录列表 -->
+        </div>
+    </div>
+
+    <!-- 竞品分析模块脚本 -->
+    <script src="xuanpin.js?v=20260423v2"></script>
+</body>
+
+</html>

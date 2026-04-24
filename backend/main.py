@@ -40,11 +40,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def process_single_url(url: str, provider: str = None) -> dict:
+async def process_single_url(url: str, provider: str = None, markdown_content: str = None) -> dict:
     try:
         logger.info(f"🔍 [单品处理] 开始处理 URL: {url} (提供商: {provider})")
-        markdown_content = await asyncio.to_thread(fetch_markdown, url)
-        logger.info(f"✅ [单品处理] 成功获取 Markdown 内容: {url}")
+        if not markdown_content:
+            markdown_content = await asyncio.to_thread(fetch_markdown, url)
+            logger.info(f"✅ [单品处理] 成功获取 Markdown 内容: {url}")
+        else:
+            logger.info(f"♻️ [单品处理] 使用预置 Markdown 内容: {url}")
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
             raise Exception("抓取到的内容为空或无效")
@@ -80,10 +83,14 @@ async def process_single_url(url: str, provider: str = None) -> dict:
         logger.error(f"❌ [单品处理] 处理 URL 出错 {url}: {str(e)}")
         raise e
 
-async def process_single_url_deep(url: str, provider: str = None) -> dict:
+async def process_single_url_deep(url: str, provider: str = None, markdown_content: str = None) -> dict:
     try:
         logger.info(f"🧠 [深度分析] 开始深度分析 URL: {url} (提供商: {provider})")
-        markdown_content = await asyncio.to_thread(fetch_markdown, url)
+        if not markdown_content:
+            markdown_content = await asyncio.to_thread(fetch_markdown, url)
+            logger.info(f"✅ [深度分析] 成功获取 Markdown 内容: {url}")
+        else:
+            logger.info(f"♻️ [深度分析] 使用预置 Markdown 内容: {url}")
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
             raise Exception("抓取到的内容为空或无效")
@@ -139,9 +146,14 @@ async def compare(request: CompareRequest):
         logger.info(f"🚀 [竞品分析] 接收到 {len(urls)} 个链接: {urls} (提供商: {provider})")
         
         if len(unique_urls) == 1:
-            logger.info(f"Single Unique URL detected → switching to Deep Single Analysis")
+            url = unique_urls[0]
+            logger.info(f"Single Unique URL detected → switching to Deep Single Analysis: {url}")
             try:
-                basic_data = await process_single_url(unique_urls[0], provider=provider)
+                # 关键优化：先抓取一次内容，后续复用
+                markdown_content = await asyncio.to_thread(fetch_markdown, url)
+                
+                # 复用抓取到的 markdown_content
+                basic_data = await process_single_url(url, provider=provider, markdown_content=markdown_content)
                 
                 score_res = await asyncio.to_thread(calculate_score, basic_data, provider=provider)
                 
@@ -159,7 +171,8 @@ async def compare(request: CompareRequest):
                     
                     scores = [ScoreCard(**score_res)]
                 
-                single_data = await process_single_url_deep(unique_urls[0], provider=provider)
+                # 再次复用抓取到的 markdown_content
+                single_data = await process_single_url_deep(url, provider=provider, markdown_content=markdown_content)
                 response_data = CompareResponseData(single_data=single_data, scores=scores)
                 template_type = "single"
                 msg = "单品分析完成。"
@@ -197,10 +210,24 @@ async def compare(request: CompareRequest):
             score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
             scores = []
             for i, s_res in enumerate(score_results):
-                if not isinstance(s_res, Exception):
+                if not isinstance(s_res, Exception) and s_res:
+                    # 确保关键字段存在，防止 ScoreCard 实例化失败
+                    if "product" not in s_res: s_res["product"] = "N/A"
+                    if "opportunity_score" not in s_res: s_res["opportunity_score"] = 0
+                    if "difficulty_score" not in s_res: s_res["difficulty_score"] = 0
+                    if "final_decision" not in s_res: s_res["final_decision"] = "Pending ||| 待评估"
+                    if "sub_scores" not in s_res:
+                        s_res["sub_scores"] = {
+                            "opportunity": {"demand":0, "profit":0, "differentiation":0, "marketing":0},
+                            "difficulty": {"competition":0, "brand":0, "ads_cost":0, "barrier":0}
+                        }
                     if "decision_details" not in s_res:
                          s_res["decision_details"] = {"confidence": s_res.get("confidence", "medium"), "reason": s_res.get("decision_reason", "")}
-                    scores.append(ScoreCard(**s_res))
+                    
+                    try:
+                        scores.append(ScoreCard(**s_res))
+                    except Exception as p_err:
+                        logger.error(f"❌ [评分] 实例化 ScoreCard 失败: {p_err}, Data: {s_res}")
             template_type = "matrix"
             msg = f"成功分析了 {len(valid_products)} 个产品。"
             response_data = CompareResponseData(
@@ -277,13 +304,13 @@ async def get_frontend_config():
 
 # --- 历史记录通用 API ---
 
-@app.post("/api/save_history/{module}")
+@app.post("/api/history/{module}")
 async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
     try:
         if module == "listing":
             hist = ListingHistory(product_name=data.get("name"), platform=data.get("platform"), result=data.get("result"))
         elif module == "translation":
-            hist = TranslationHistory(source_text=data.get("text"), target_lang=data.get("lang"), result=data.get("result"))
+            hist = TranslationHistory(source_text=data.get("source_text"), target_lang=data.get("target_lang"), result=data.get("result"))
         elif module == "render":
             hist = RenderHistory(task_name=data.get("name"), style=data.get("style"), image_base64=data.get("image"), metadata_info=data.get("metadata"))
         elif module == "analysis": # 手动保存入口（如果需要）
