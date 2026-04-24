@@ -4,7 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI电商工具箱 - 进阶版</title>
+    <title>AI 电商工具箱 - 进阶版</title>
+    <script>
+        console.log("%c[System] HTML Head Initialized", "color: #4f46e5; font-weight: bold;");
+        window.onerror = function(msg, url, line) {
+            console.error("Critical JS Error: " + msg + " at " + url + ":" + line);
+        };
+    </script>
     <link rel="stylesheet" href="dist/output.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/fill/style.css">
@@ -13,7 +19,7 @@
 
     <!-- 核心样式 -->
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="xuanpin.css">
+    <link rel="stylesheet" href="css/analysis.css">
 
     <!-- 基础配置与工具 (必须优先加载) -->
     <script src="js/config.js"></script>
@@ -32,7 +38,7 @@
             <i class="ph ph-storefront text-white text-xl"></i>
         </div>
 
-        <button id="tab-xuanpin" onclick="switchMainTab('xuanpin')" class="side-tab" title="竞品分析">
+        <button id="tab-analysis" onclick="switchMainTab('analysis')" class="side-tab" title="竞品分析">
             <i class="ph ph-chart-bar"></i><span>竞品分析</span>
         </button>
 
@@ -61,7 +67,7 @@
         <!-- ============================================== -->
         <!-- 视图：竞品分析 (VIEW: XUANPIN)                  -->
         <!-- ============================================== -->
-        <div id="view-xuanpin" class="hidden flex-1 overflow-hidden">
+        <div id="view-analysis" class="hidden flex-1 overflow-hidden">
             <div class="xp-app-layout">
                 <!-- 左侧输入面板 -->
                 <aside class="xp-left-panel">
@@ -332,10 +338,7 @@
                     <div
                         class="w-full sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm flex justify-center px-8 py-3.5">
                         <div class="w-full max-w-3xl flex justify-between items-center">
-                            <button onclick="resetView()"
-                                class="flex items-center gap-2 text-gray-500 hover:text-gray-800 transition-colors text-sm bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200">
-                                <i class="ph ph-arrow-left"></i> 返回修改
-                            </button>
+                            <div></div>
                             <h2 class="text-lg font-black text-gray-800 flex items-center gap-2"><i
                                     class="ph-fill ph-check-circle text-green-500"></i> 渲染方案预览</h2>
                             <div class="flex items-center gap-2">
@@ -826,12 +829,15 @@
     </div>
 
     <!-- 业务模块脚本 (按顺序依赖加载) -->
+    <script>
+        console.log("%c[System] DOM fully loaded, starting app.js...", "color: #4f46e5; font-weight: bold;");
+    </script>
     <script src="js/app.js"></script>
     <script src="js/details.js"></script>
     <script src="js/listing.js"></script>
     <script src="js/translate.js"></script>
     <script src="js/history_manager.js"></script>
-    <script src="xuanpin.js"></script>
+    <script src="js/analysis.js"></script>
 </body>
 
 </html>

@@ -26,8 +26,31 @@ def run_app():
     print("✅ 竞品分析后端已启动: http://localhost:8000")
 
     # 2. 启动前端 HTTP Server - 端口 8080
+    # 使用 python -c 启动一个带 UTF-8 头的简单服务器
+    frontend_script = f"""
+import http.server
+import socketserver
+
+class MyHandler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
+        super().end_headers()
+    
+    def send_response(self, *args, **kwargs):
+        super().send_response(*args, **kwargs)
+
+    def guess_type(self, path):
+        base_type = super().guess_type(path)
+        if base_type.startswith('text/') or base_type == 'application/javascript':
+            return base_type + '; charset=utf-8'
+        return base_type
+
+print("Serving HTTP on 0.0.0.0 port 8080 (http://0.0.0.0:8080/) ...")
+with socketserver.TCPServer(("", 8080), MyHandler) as httpd:
+    httpd.serve_forever()
+"""
     frontend_process = subprocess.Popen(
-        [sys.executable, "-m", "http.server", "8080"],
+        [sys.executable, "-c", frontend_script],
         cwd=frontend_dir
     )
     print("✅ 前端服务已启动: http://localhost:8080")
