@@ -25,8 +25,14 @@ const modules = MODULES_CONFIG.map(m => ({ ...m }));
  * 从后端加载配置
  */
 async function loadConfig() {
+    console.log("[System] Loading config from backend...");
     try {
-        const res = await fetch(`${API_BASE}/config`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+
+        const res = await fetch(`${API_BASE}/config`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
         const cfg = await res.json();
         API_KEY      = cfg.API_KEY;
         TEXT_MODEL   = cfg.TEXT_MODEL;
@@ -39,11 +45,11 @@ async function loadConfig() {
         if (cfg.CONCURRENCY_LIMIT) CONCURRENCY_LIMIT = cfg.CONCURRENCY_LIMIT;
         if (cfg.STAGGER_DELAY) STAGGER_DELAY = cfg.STAGGER_DELAY;
         
-        const logMsg = `配置加载成功 | 平台: ${AI_PROVIDER} | 模型: ${TEXT_MODEL} | 并发限制: ${CONCURRENCY_LIMIT} | 启动间隔: ${STAGGER_DELAY}ms`;
-        console.log(`%c[系统] ${logMsg}`, "color: #4f46e5; font-weight: bold;");
+        const logMsg = `配置加载成功 | 平台: ${AI_PROVIDER} | 模型: ${TEXT_MODEL}`;
+        console.log(`%c[系统] ${logMsg}`, "color: #10b981; font-weight: bold;");
         remoteLog(logMsg);
     } catch (e) {
-        console.error("❌ 无法加载后端配置:", e);
+        console.warn("⚠️ 无法加载后端配置 (使用本地默认值):", e.message);
     }
 }
 
@@ -75,7 +81,7 @@ async function callAI(modelId, payload) {
  * 主视图切换
  */
 function switchMainTab(tab) {
-    ['generate', 'translate', 'listing', 'xuanpin'].forEach(t => {
+    ['generate', 'translate', 'listing', 'analysis'].forEach(t => {
         const btn = document.getElementById(`tab-${t}`);
         const view = document.getElementById(`view-${t}`);
         if (btn) btn.classList.toggle('active', t === tab);
@@ -89,7 +95,7 @@ function switchMainTab(tab) {
             }
         }
     });
-    if (tab === 'xuanpin' && typeof xp_init === 'function') {
+    if (tab === 'analysis' && typeof xp_init === 'function') {
         xp_init();
     }
 }
@@ -98,7 +104,10 @@ function switchMainTab(tab) {
  * 页面初始化
  */
 window.onload = async () => {
+    console.log("[System] window.onload triggered");
     await loadConfig();
+    
+    console.log("[System] Initializing UI components...");
     const fillSelect = (id, options) => {
         const sel = document.getElementById(id);
         if (!sel) return;
@@ -116,9 +125,12 @@ window.onload = async () => {
     fillSelect('listingMarketingThemeSelect', MARKETING_THEMES);
     fillSelect('listingRegionSelect', REGION_OPTIONS);
 
+    console.log("[System] Initializing modules...");
     if (typeof initModules === 'function') initModules();
     if (typeof initTransLangTags === 'function') initTransLangTags();
     if (typeof loadHistoryToList === 'function') loadHistoryToList();
     
+    console.log("[System] Switching to initial tab...");
     switchMainTab('generate');
+    console.log("%c[System] App Ready", "color: #10b981; font-weight: bold;");
 };

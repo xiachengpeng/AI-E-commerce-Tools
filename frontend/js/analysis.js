@@ -209,7 +209,7 @@
     }
 
     function xp_updateStaticI18n() {
-        const panel = xp_getEl('view-xuanpin');
+        const panel = xp_getEl('view-analysis');
         if (!panel) return;
         panel.querySelectorAll('.xp-i18n-text').forEach(el => {
             if (el.dataset[xp_currentLang]) el.textContent = el.dataset[xp_currentLang];

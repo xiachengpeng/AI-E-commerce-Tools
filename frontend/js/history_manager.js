@@ -110,7 +110,7 @@ function restoreHistoryItemByIndex(module, index) {
     }
 
     if (module === 'analysis') {
-        switchMainTab('xuanpin');
+        switchMainTab('analysis');
 
         // 确保数据结构完整
         if (!responseObj || typeof responseObj !== 'object') {
