@@ -1,11 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import base64
+import uuid
 from models.request import (
     CompareRequest, CompareResponse, CompareResponseData, ProductCompareData,
     ComparisonSummary, ScoreCard, EvalDetail, RecItem
 )
 from services.firecrawl import fetch_markdown
-from services.cleaner import clean_content
+from services.cleaner import clean_content, check_block
 from services.amazon_parser import parse_amazon, parse_general, is_amazon
 from services.ai_single import analyze_single_extract, analyze_single_deep
 from services.ai_compare import compare_products
@@ -40,6 +43,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 挂载静态文件目录
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+if not os.path.exists(STATIC_DIR):
+    os.makedirs(STATIC_DIR)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+def save_base64_image(base64_str: str, folder: str = "outputs") -> str:
+    """将 base64 字符串保存为文件并返回 URL"""
+    try:
+        if not base64_str or not isinstance(base64_str, str) or not base64_str.startswith("data:image"):
+            return base64_str
+        
+        # 解析 base64
+        if "," not in base64_str:
+            return base64_str
+            
+        header, encoded = base64_str.split(",", 1)
+        # 获取扩展名
+        ext = "jpg"
+        if "png" in header: ext = "png"
+        elif "gif" in header: ext = "gif"
+        elif "webp" in header: ext = "webp"
+        
+        filename = f"{uuid.uuid4()}.{ext}"
+        rel_path = f"{folder}/{filename}"
+        abs_path = os.path.join(STATIC_DIR, folder, filename)
+        
+        # 确保目录存在
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        
+        with open(abs_path, "wb") as f:
+            f.write(base64.b64decode(encoded))
+            
+        # 返回可访问的 URL 路径
+        return f"/static/{rel_path}"
+    except Exception as e:
+        logger.error(f"❌ [系统] 保存图片失败: {e}")
+        return base64_str
+
 async def process_single_url(url: str, provider: str = None, markdown_content: str = None) -> dict:
     try:
         logger.info(f"🔍 [单品处理] 开始处理 URL: {url} (提供商: {provider})")
@@ -51,6 +93,12 @@ async def process_single_url(url: str, provider: str = None, markdown_content: s
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
             raise Exception("抓取到的内容为空或无效")
+            
+        # [防重/拦截检测]
+        if check_block(markdown_content):
+            logger.warning(f"🚫 [系统拦截] 检测到 URL 被拦截 (Amazon Bot Check): {url}")
+            raise Exception("该链接已被平台拦截（触发验证码），无法获取产品详情。请尝试稍后再试或手动输入文案。")
+            
         logger.info(f"🏗️ [单品处理] 正在解析页面结构: {url}...")
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
@@ -310,10 +358,20 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
         if module == "listing":
             hist = ListingHistory(product_name=data.get("name"), platform=data.get("platform"), result=data.get("result"))
         elif module == "translation":
+            # 优化：将翻译后的图片存为文件
+            res_data = data.get("result")
+            if isinstance(res_data, str) and res_data.startswith("data:image"):
+                data["result"] = save_base64_image(res_data, "outputs")
+            
             hist = TranslationHistory(source_text=data.get("source_text"), target_lang=data.get("target_lang"), result=data.get("result"))
         elif module == "render":
+            # 优化：将渲染的详情页图片存为文件
+            img_data = data.get("image")
+            if img_data:
+                data["image"] = save_base64_image(img_data, "outputs")
+            
             hist = RenderHistory(task_name=data.get("name"), style=data.get("style"), image_base64=data.get("image"), metadata_info=data.get("metadata"))
-        elif module == "analysis": # 手动保存入口（如果需要）
+        elif module == "analysis": # 手动保存入口
             hist = AnalysisHistory(query_url=data.get("url"), template_type=data.get("type"), data=data.get("data"))
         else:
             return {"status": "error", "message": "Unknown module"}

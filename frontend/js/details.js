@@ -142,19 +142,17 @@ async function generateSellingPoints() {
 }
 
 async function generateSEOMetadata(task, sellingPoints) {
-    const targetLang = globalGenContext?.config?.language || "English";
     const prompt = `你是一个专业的电商SEO专家。我正在为电商详情页的“${task.title}”模块生成一张商品图片。
 产品核心信息：${sellingPoints.substring(0, 300)}
-目标语言：${targetLang}
 
-请用【${targetLang}】为这张单独的图片配发SEO数据，并提供【中文对照】：
+请用【English】为这张图片配发SEO数据，并提供【中文对照】：
 1. seoTitle：简短且包含核心关键词的图片标题。
 2. altText：用于无障碍浏览及搜索引擎抓取的图片 Alt 属性文本。
 
 必须严格返回JSON结构，不要输出任何 Markdown 标记，直接输出：
 {
-  "seoTitle": {"target": "目标语言标题", "zh": "中文对照标题"},
-  "altText": {"target": "目标语言alt描述", "zh": "中文对照alt描述"}
+  "seoTitle": {"target": "English Title", "zh": "中文对照标题"},
+  "altText": {"target": "English Alt Text", "zh": "中文对照alt描述"}
 }`;
 
     try {
@@ -262,7 +260,7 @@ async function generateAIPage() {
                         <div class="flex items-center gap-2">
                             <span class="text-[10px] font-bold text-gray-400 w-6">Title</span>
                             <div class="relative flex-1">
-                                <input type="text" id="seo-title-target-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner" placeholder="外文标题" readonly>
+                                <input type="text" id="seo-title-target-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner" placeholder="English Title" readonly>
                                 <button onclick="copyText('seo-title-target-${task.uniqueId}')" class="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-400 hover:text-blue-600"><i class="ph ph-copy"></i></button>
                             </div>
                             <div class="relative flex-1">
@@ -272,11 +270,11 @@ async function generateAIPage() {
                         <div class="flex items-start gap-2">
                             <span class="text-[10px] font-bold text-gray-400 w-6 mt-1">Alt</span>
                             <div class="relative flex-1">
-                                <textarea id="alt-text-target-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner resize-none hide-scroll" rows="2" placeholder="描述(外文)" readonly></textarea>
+                                <textarea id="alt-text-target-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner resize-none hide-scroll" rows="2" placeholder="English Alt" readonly></textarea>
                                 <button onclick="copyText('alt-text-target-${task.uniqueId}')" class="absolute top-1 right-0 pr-2 flex items-start text-gray-400 hover:text-blue-600"><i class="ph ph-copy"></i></button>
                             </div>
                             <div class="relative flex-1">
-                                <textarea id="alt-text-zh-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner resize-none hide-scroll text-gray-500" rows="2" placeholder="描述(中文)" readonly></textarea>
+                                <textarea id="alt-text-zh-${task.uniqueId}" class="w-full text-xs pl-2 pr-8 py-1.5 border border-gray-200 rounded outline-none focus:border-blue-400 bg-white shadow-inner resize-none hide-scroll text-gray-500" rows="2" placeholder="中文描述" readonly></textarea>
                             </div>
                         </div>
                     </div>
@@ -337,7 +335,7 @@ async function generateAIPage() {
 async function generateSingleWrap(uniqueId) {
     const task = globalGenContext.tasks[uniqueId];
     if (!task) return;
-    
+
     remoteLog(`开始渲染模块: ${task.title}`);
     const contentDiv = document.getElementById(`content-mod-${uniqueId}`);
     if (!contentDiv) return;
@@ -390,7 +388,7 @@ function renderMockModule(container, task, points, config, imgSrc) {
     if (!container) return;
     const ratioStr = config.aspectRatio.replace(':', '/');
     const themeTag = config.marketingTheme !== 'none' ? `<div class="absolute top-4 left-4 bg-orange-500 text-white text-[9px] font-black px-2 py-1 rounded shadow-lg uppercase tracking-tighter z-10 animate-bounce">${config.marketingTheme} EDITION</div>` : '';
-    
+
     let content = `<div class="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-slate-50 to-slate-100 relative overflow-hidden">
         ${themeTag}
         <img src="${imgSrc}" class="h-3/5 object-contain drop-shadow-2xl mb-6 max-w-full transform hover:scale-105 transition-transform duration-700">
@@ -503,14 +501,14 @@ function renderSortableList() {
         });
 
         li.addEventListener('dragover', e => e.preventDefault());
-        li.addEventListener('dragenter', function(e) {
+        li.addEventListener('dragenter', function (e) {
             e.preventDefault();
             if (this !== draggedItem) this.classList.add('border-indigo-500', 'bg-indigo-50/50');
         });
-        li.addEventListener('dragleave', function() {
+        li.addEventListener('dragleave', function () {
             this.classList.remove('border-indigo-500', 'bg-indigo-50/50');
         });
-        li.addEventListener('drop', function() {
+        li.addEventListener('drop', function () {
             this.classList.remove('border-indigo-500', 'bg-indigo-50/50');
             if (this !== draggedItem) {
                 const allItems = [...list.children];
