@@ -10,8 +10,16 @@ __pycache__/
 venv/
 env/
 
+# Node dependencies
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+dist/
+frontend/dist/
+
 # Environment variables / secrets
-# .env
+.env
 .env.local
 config.local.py
 
@@ -27,3 +35,9 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+# 忽略后端生成的静态资源（图片等）
+backend/static/uploads/*
+backend/static/outputs/*
+# 如果你希望整个 static 目录都不上传
+backend/static/*
+!.gitkeep

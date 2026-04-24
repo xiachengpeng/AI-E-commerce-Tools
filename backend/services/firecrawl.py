@@ -4,10 +4,27 @@ from config import FIRECRAWL_API_URL
 def fetch_markdown(url: str) -> str:
     """
     Calls the local Firecrawl API to scrape the given URL and return markdown content.
+    Optimized based on debug script results for stability and anti-bot.
     """
     payload = {
         "url": url,
-        "formats": ["markdown"]
+        "formats": ["markdown"],
+        "onlyMainContent": False,
+        "includeTags": [],
+        "excludeTags": [],
+        "maxAge": 3600,
+        "headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Cookie": "i18n-prefs=USD; lc-main=en_US;"
+        },
+        "waitFor": 1000,
+        "mobile": False,
+        "skipTlsVerification": False,
+        "timeout": 60000,
+        "removeBase64Images": True,
+        "blockAds": True,
+        "proxy": "auto"
     }
     
     headers = {
@@ -16,26 +33,26 @@ def fetch_markdown(url: str) -> str:
 
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"🕸️ [爬虫] 正在通过 Firecrawl 抓取页面: {url}...")
+    logger.info(f"🕸️ [爬虫] 正在通过 Firecrawl (V2) 抓取页面: {url}...")
     try:
-        response = requests.post(FIRECRAWL_API_URL, json=payload, headers=headers, timeout=90)
+        import json
+        response = requests.post(FIRECRAWL_API_URL, data=json.dumps(payload).encode('utf-8'), headers=headers, timeout=90)
         response.raise_for_status()
         data = response.json()
         
-        if "data" in data and "markdown" in data["data"]:
+        # V2 响应结构兼容性处理
+        if "data" in data and isinstance(data["data"], dict) and "markdown" in data["data"]:
             md = data["data"]["markdown"]
         elif "markdown" in data:
             md = data["markdown"]
         else:
-            logger.error(f"❌ [爬虫] 未在 Firecrawl 响应中找到 Markdown 内容")
+            logger.error(f"❌ [爬虫] 响应格式不匹配: {data.keys()}")
             raise ValueError("Markdown content not found in Firecrawl response.")
-            
-        if "captcha" in md.lower() or "robot check" in md.lower():
-             logger.warning(f"⚠️ [爬虫] 检测到机器人验证 (CAPTCHA)，抓取质量可能受损: {url}")
-             raise Exception("Amazon detected bot behavior (CAPTCHA).")
              
         logger.info(f"✅ [爬虫] 页面抓取成功: {url} (长度: {len(md)})")
         return md
     except Exception as e:
         logger.error(f"❌ [爬虫] 抓取失败: {str(e)}")
+        if hasattr(e, 'response') and e.response is not None:
+             logger.error(f"🔍 [爬虫] 错误响应详情: {e.response.text}")
         raise Exception(f"Failed to fetch content from Firecrawl: {str(e)}")

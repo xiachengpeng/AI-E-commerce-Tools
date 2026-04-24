@@ -102,3 +102,16 @@ function copySectionText(containerId, langType) {
     try { document.execCommand('copy'); showToast(`已复制${langType==='target'?'外文':'中文'}文本`, 'success'); } catch(e){}
     document.body.removeChild(textArea);
 }
+
+/**
+ * 通用图片下载函数 (支持 URL 和 Base64)
+ */
+function downloadImage(src, filename) {
+    if (!src) return;
+    const link = document.createElement('a');
+    link.href = src;
+    link.download = filename.endsWith('.png') || filename.endsWith('.jpg') ? filename : `${filename}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}

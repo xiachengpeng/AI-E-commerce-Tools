@@ -5,6 +5,15 @@
 let currentHistoryModule = 'analysis'; // 默认标签
 let _history_cache = []; // 全局缓存，防止 DOM 溢出
 
+function formatImgSrc(src) {
+    if (!src) return '';
+    if (typeof src === 'string') {
+        if (src.startsWith('data:image') || src.startsWith('http')) return src;
+        if (src.startsWith('/static')) return API_BASE + src;
+    }
+    return src;
+}
+
 function toggleGlobalHistory() {
     const panel = document.getElementById('globalHistoryPanel');
     if (!panel) return;
@@ -60,7 +69,8 @@ async function loadGlobalHistory(module) {
             let thumb = '';
             if (module === 'render' || module === 'translation') {
                 const imgData = item.image_base64 || item.result || item.data;
-                const imgSrc = (typeof imgData === 'string' && imgData.startsWith('data:image')) ? imgData : (imgData && imgData.image);
+                let imgSrc = formatImgSrc(typeof imgData === 'string' ? imgData : (imgData && imgData.image));
+                
                 if (imgSrc) {
                     thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
                                 <img src="${imgSrc}" class="w-full h-full object-cover">
@@ -145,7 +155,8 @@ function restoreHistoryItemByIndex(module, index) {
             if (imgData && typeof imgData === 'object') {
                 imgData = imgData.image_base64 || imgData.image || imgData.data || imgData;
             }
-            previewContainer.innerHTML = `<img src="${imgData}" class="w-full shadow-2xl rounded-lg">`;
+            const finalSrc = formatImgSrc(imgData);
+            previewContainer.innerHTML = `<img src="${finalSrc}" class="w-full shadow-2xl rounded-lg">`;
             document.getElementById('showcaseArea').classList.add('hidden');
             document.getElementById('resultArea').classList.remove('hidden');
             document.getElementById('longImageBuilderModal').classList.remove('hidden');
@@ -166,12 +177,12 @@ function restoreHistoryItemByIndex(module, index) {
                 wrap.innerHTML = `<div class="flex flex-col gap-4 w-full p-2">
                     <div class="flex justify-between items-center">
                         <span class="text-[10px] font-black text-blue-500 uppercase">→ 历史翻译结果 (${dataObj.target_lang || '未知语言'})</span>
-                        <button onclick="downloadImage('${imgData}', 'history_trans_${Date.now()}')" class="text-xs text-blue-600 hover:underline font-bold flex items-center gap-1">
+                        <button onclick="downloadImage(formatImgSrc('${imgData}'), 'history_trans_${Date.now()}')" class="text-xs text-blue-600 hover:underline font-bold flex items-center gap-1">
                             <i class="ph ph-download-simple"></i> 下载此图
                         </button>
                     </div>
                     <div class="rounded-2xl border-4 border-white shadow-xl overflow-hidden bg-slate-100 flex items-center justify-center">
-                        <img src="${imgData}" class="w-full h-auto object-contain">
+                        <img src="${formatImgSrc(imgData)}" class="w-full h-auto object-contain">
                     </div>
                 </div>`;
             }
