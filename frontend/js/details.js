@@ -245,7 +245,7 @@ async function generateAIPage() {
                     </div>
                     <div class="flex items-center gap-2">
                         <span class="text-xs text-gray-400 mr-2">${task.subtitle}</span>
-                        <button id="regen-btn-${task.uniqueId}" onclick="generateSingleWrap('${task.uniqueId}')" class="hidden flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-500 hover:text-blue-600 transition-colors shadow-sm" title="重绘图像"><i class="ph ph-arrows-clockwise text-sm"></i></button>
+                        <button id="regen-btn-${task.uniqueId}" onclick="generateSingleWrap('${task.uniqueId}', true)" class="hidden flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-500 hover:text-blue-600 transition-colors shadow-sm" title="重绘图像"><i class="ph ph-arrows-clockwise text-sm"></i></button>
                     </div>
                 </div>
                 <div id="content-mod-${task.uniqueId}" class="p-6 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iMTAiIGN5PSIxMCIgcj0iMSIgZmlsbD0iI2YxZjFmMSIvPjwvc3ZnPg==')]" style="aspect-ratio: ${ratioStr}; min-height: 200px;">
@@ -332,7 +332,7 @@ async function generateAIPage() {
     remoteLog(`详情页全案生成结束`);
 }
 
-async function generateSingleWrap(uniqueId) {
+async function generateSingleWrap(uniqueId, skipSEO = false) {
     const task = globalGenContext.tasks[uniqueId];
     if (!task) return;
 
@@ -361,10 +361,13 @@ ${task.totalVariants > 1 ? `6. Variation: version ${task.variant + 1}/${task.tot
     const payload = { contents: [{ role: "user", parts: parts }], generationConfig: { responseModalities: ['IMAGE'] } };
 
     try {
-        const [imgRes, _] = await Promise.all([
-            callAI(IMAGE_MODEL, payload),
-            generateSEOMetadata(task, sellingPoints)
-        ]);
+        const promises = [callAI(IMAGE_MODEL, payload)];
+        if (!skipSEO) {
+            promises.push(generateSEOMetadata(task, sellingPoints));
+        }
+
+        const results = await Promise.all(promises);
+        const imgRes = results[0];
 
         const imagePart = imgRes.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
         if (imagePart?.inlineData) {
@@ -378,7 +381,9 @@ ${task.totalVariants > 1 ? `6. Variation: version ${task.variant + 1}/${task.tot
         console.warn(`[Fallback] Module rendering via code CSS:`, error);
         remoteLog(`模块 [${task.title}] 触发 Fallback 渲染`);
         renderMockModule(contentDiv, task, sellingPoints, config, currentUploadedBase64);
-        await generateSEOMetadata(task, sellingPoints);
+        if (!skipSEO) {
+            await generateSEOMetadata(task, sellingPoints);
+        }
     }
 
     document.getElementById(`regen-btn-${uniqueId}`)?.classList.remove('hidden');
