@@ -78,24 +78,35 @@ async function callAI(modelId, payload) {
 }
 
 /**
- * 主视图切换
+ * 切换主标签页
+ * @param {string} tabId 标签唯一标识
  */
-function switchMainTab(tab) {
-    ['generate', 'translate', 'listing', 'analysis'].forEach(t => {
-        const btn = document.getElementById(`tab-${t}`);
-        const view = document.getElementById(`view-${t}`);
-        if (btn) btn.classList.toggle('active', t === tab);
-        if (view) {
-            if (t === tab) {
-                view.classList.remove('hidden');
-                view.style.display = 'flex';
-            } else {
-                view.style.display = 'none';
-                view.classList.add('hidden');
-            }
+function switchMainTab(tabId) {
+    // 1. 记录状态到本地存储
+    localStorage.setItem('activeMainTab', tabId);
+    
+    // 2. 更新侧边栏 UI (通过 ID 精准匹配)
+    document.querySelectorAll('.side-tab').forEach(item => {
+        if (item.id === `tab-${tabId}`) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
         }
     });
-    if (tab === 'analysis' && typeof xp_init === 'function') {
+
+    // 3. 隐藏所有以 view- 开头的视图容器，并显示目标视图
+    document.querySelectorAll('div[id^="view-"]').forEach(view => {
+        view.classList.add('hidden');
+        view.style.display = 'none'; // 双重保险
+    });
+    
+    const targetView = document.getElementById(`view-${tabId}`);
+    if (targetView) {
+        targetView.classList.remove('hidden');
+        targetView.style.display = 'flex'; // 恢复布局
+    }
+    
+    if (tabId === 'analysis' && typeof xp_init === 'function') {
         xp_init();
     }
 }
@@ -131,6 +142,7 @@ window.onload = async () => {
     if (typeof loadHistoryToList === 'function') loadHistoryToList();
     
     console.log("[System] Switching to initial tab...");
-    switchMainTab('generate');
+    const lastTab = localStorage.getItem('activeMainTab') || 'analysis';
+    switchMainTab(lastTab);
     console.log("%c[System] App Ready", "color: #10b981; font-weight: bold;");
 };

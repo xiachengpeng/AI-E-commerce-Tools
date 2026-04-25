@@ -141,3 +141,44 @@ class AIService:
         except Exception as e:
             logger.error(f"❌ [AI调用] 意外错误: {e}")
             raise e
+    @classmethod
+    def translate_text_batch(cls, text: str, target_langs: list, provider: str = None) -> dict:
+        """
+        批量语境翻译：一次性请求多个语言，利用 AI 的 JSON 输出能力
+        """
+        langs_str = ", ".join(target_langs)
+        prompt = f"""
+        你是一位精通多国语言且深谙全球电商文化的营销专家。
+        
+        请将以下内容翻译成以下目标语言：{langs_str}。
+        
+        【原始文本】：
+        {text}
+        
+        【应用场景】：电商产品描述/Listing (Amazon, TikTok Shop等)
+        
+        【翻译要求】：
+        1. **本地化语境**：不要进行生硬的字面翻译，要符合目标语言母语使用者的表达习惯。
+        2. **电商优化**：使用该语言在电商平台中常用的高转化词汇。
+        3. **格式要求**：必须严格按照以下 JSON 格式返回，不要包含任何多余的解释：
+        {{
+            "语言名称1": "翻译结果1",
+            "语言名称2": "翻译结果2"
+        }}
+        
+        注意：JSON 的 Key 必须严格使用我给出的语言名称列表：{langs_str}。
+        """
+        
+        try:
+            logger.info(f"🚀 [AI批量翻译] 正在请求语言: {langs_str}")
+            response_text = cls.call_ai(prompt, provider=provider, response_mime_type="application/json")
+            
+            # 清理 Markdown 代码块
+            clean_json = response_text.replace("```json", "").replace("```", "").strip()
+            result = json.loads(clean_json)
+            logger.info(f"✅ [AI批量翻译] 成功获取 {len(result)} 种语言结果")
+            return result
+        except Exception as e:
+            logger.error(f"❌ [AI批量翻译] 失败: {e}")
+            # 如果解析失败，尝试返回一个基础错误字典
+            return {lang: f"翻译失败: {str(e)}" for lang in target_langs}

@@ -51,7 +51,11 @@
         </button>
 
         <button id="tab-translate" onclick="switchMainTab('translate')" class="side-tab" title="图片翻译">
-            <i class="ph ph-translate"></i><span>图片翻译</span>
+            <i class="ph ph-image"></i><span>图片翻译</span>
+        </button>
+
+        <button id="tab-text-translate" onclick="switchMainTab('text-translate')" class="side-tab" title="文本翻译">
+            <i class="ph ph-translate"></i><span>文本翻译</span>
         </button>
 
         <div class="mt-auto mb-4 flex flex-col items-center gap-4">
@@ -807,6 +811,120 @@
             </div>
         </div>
 
+        <!-- ============================================== -->
+        <!-- 视图：文本翻译 (VIEW: TEXT-TRANSLATE) -->
+        <!-- ============================================== -->
+        <div id="view-text-translate" class="hidden flex-1 overflow-hidden flex flex-col bg-[#fcfdfe]">
+            <!-- 头部状态栏 -->
+            <div class="flex-shrink-0 bg-white border-b border-gray-100 px-8 py-4 flex items-center">
+                <div class="flex items-center">
+                    <div class="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center mr-3">
+                        <i class="ph-fill ph-translate text-indigo-600 text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base font-black text-gray-800 leading-none">AI 语境翻译</h2>
+                        <p class="text-[9px] text-gray-400 mt-1 uppercase tracking-widest font-bold opacity-60">Localized Contextual Translation</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主内容区：3 列布局 -->
+            <div class="flex-1 p-8 overflow-hidden">
+                <div class="flex gap-6 h-full items-stretch">
+                    <!-- 左侧：原文输入 (Flex-1) -->
+                    <div class="flex-1 flex flex-col bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
+                            <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Source Text</span>
+                            <button onclick="document.getElementById('transInputText').value=''" class="text-[10px] text-gray-400 hover:text-indigo-500 font-bold transition-colors">清空</button>
+                        </div>
+                        <textarea id="transInputText" class="flex-1 p-8 outline-none text-gray-700 text-sm leading-relaxed resize-none bg-transparent scrollbar-thin" placeholder="请输入需要翻译的内容..."></textarea>
+                    </div>
+
+                    <!-- 中间：垂直控制中心 (固定宽度) -->
+                    <div class="flex flex-col items-center justify-center gap-8 px-6 flex-shrink-0">
+                        <div class="flex flex-col gap-3">
+                            <span class="text-[10px] font-black text-gray-400 uppercase text-center tracking-widest">Target Language</span>
+                            
+                            <!-- 自定义多选下拉菜单：强制锁定宽度 256px -->
+                            <div class="relative group z-[100]" style="width: 256px;">
+                                <div id="customLangSelect" class="bg-white border-2 border-gray-100 text-sm rounded-2xl px-5 py-4 font-black text-gray-700 shadow-xl shadow-indigo-50/40 cursor-pointer flex items-center justify-center gap-2 hover:bg-gray-50 transition-all w-full">
+                                    <span id="selectedLangText" class="truncate">选择目标语言</span>
+                                    <i class="ph ph-caret-down text-xs transition-transform group-hover:rotate-180"></i>
+                                </div>
+                                
+                                <!-- 下拉多选列表 -->
+                                <div id="langOptionsList" class="hidden absolute top-full left-0 right-0 mt-2 bg-white border border-gray-100 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in zoom-in duration-200 w-full">
+                                    <div class="p-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+                                        <span class="text-[10px] font-black text-gray-400 uppercase">Select Multiple</span>
+                                        <button onclick="confirmLangSelection()" class="text-[10px] bg-indigo-600 text-white px-2 py-1 rounded font-bold">确定</button>
+                                    </div>
+                                    <div class="max-h-64 overflow-y-auto custom-scrollbar">
+                                        <label class="lang-option-item p-4 flex items-center gap-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-50 transition-colors">
+                                            <input type="checkbox" value="English" class="lang-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-sm font-bold text-gray-600">English (US)</span>
+                                        </label>
+                                        <label class="lang-option-item p-4 flex items-center gap-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-50 transition-colors">
+                                            <input type="checkbox" value="German" class="lang-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-sm font-bold text-gray-600">Deutsch (DE)</span>
+                                        </label>
+                                        <label class="lang-option-item p-4 flex items-center gap-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-50 transition-colors">
+                                            <input type="checkbox" value="French" class="lang-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-sm font-bold text-gray-600">Français (FR)</span>
+                                        </label>
+                                        <label class="lang-option-item p-4 flex items-center gap-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-50 transition-colors">
+                                            <input type="checkbox" value="Spanish" class="lang-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-sm font-bold text-gray-600">Español (ES)</span>
+                                        </label>
+                                        <label class="lang-option-item p-4 flex items-center gap-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-50 transition-colors">
+                                            <input type="checkbox" value="Italian" class="lang-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-sm font-bold text-gray-600">Italiano (IT)</span>
+                                        </label>
+                                        <label class="lang-option-item p-4 flex items-center gap-3 hover:bg-indigo-50 cursor-pointer transition-colors">
+                                            <input type="checkbox" value="Japanese" class="lang-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-sm font-bold text-gray-600">日本語 (JP)</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 批量翻译按钮：强制锁定宽度 256px -->
+                        <button id="btnDoTextTranslate" onclick="executeBatchTextTranslation()" class="group relative flex items-center justify-center gap-3 bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-full shadow-2xl shadow-indigo-300 transition-all active:scale-95 overflow-hidden whitespace-nowrap" style="width: 256px;">
+                            <!-- 光效背景 -->
+                            <div class="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+                            
+                            <i class="ph-fill ph-sparkle text-xl animate-pulse"></i>
+                            <span class="text-sm font-black uppercase tracking-widest">批量翻译</span>
+                        </button>
+                        
+                        <div class="h-24 w-px bg-gradient-to-b from-transparent via-gray-200 to-transparent"></div>
+                    </div>
+
+                    <!-- 右侧：译文结果列表 (Flex-1) -->
+                    <div class="flex-1 flex flex-col bg-white rounded-2xl border border-gray-200 shadow-xl shadow-indigo-100/20 overflow-hidden relative">
+                        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-indigo-50/30">
+                            <span class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">AI Result List</span>
+                            <div class="flex items-center gap-3">
+                                <span id="batchProgress" class="text-[10px] font-bold text-indigo-400 hidden">处理中...</span>
+                                <button onclick="copyAllResults()" class="text-[10px] bg-white border border-indigo-100 text-indigo-500 px-3 py-1 rounded-md font-bold hover:bg-indigo-600 hover:text-white transition-all">全部复制</button>
+                            </div>
+                        </div>
+                        <div id="transResultsContainer" class="flex-1 p-6 overflow-y-auto custom-scrollbar relative flex flex-col gap-4 bg-gray-50/20">
+                            <div id="transResultPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center opacity-20 pointer-events-none">
+                                <i class="ph ph-translate text-4xl mb-2"></i>
+                                <p class="text-xs font-bold italic">等待翻译生成...</p>
+                            </div>
+                            <!-- 动态生成的翻译结果卡片将插入此处 -->
+                        </div>
+                        <div class="px-6 py-3 bg-gray-50/50 border-t border-gray-100 flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                            <p class="text-[9px] text-gray-400 font-bold uppercase tracking-wider">Batch Localized Mode Active</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 全局历史记录面板 -->
         <div id="globalHistoryPanel" class="global-history-panel">
             <div class="history-header">
@@ -821,6 +939,7 @@
                 <div onclick="switchHistoryTab('listing')" id="hist-tab-listing" class="history-tab-btn">Listing</div>
                 <div onclick="switchHistoryTab('translation')" id="hist-tab-translation" class="history-tab-btn">图片翻译
                 </div>
+                <div onclick="switchHistoryTab('text-translation')" id="hist-tab-text-translation" class="history-tab-btn">文本翻译</div>
                 <div onclick="switchHistoryTab('render')" id="hist-tab-render" class="history-tab-btn">详情渲染</div>
             </div>
             <div id="globalHistoryList" class="history-list custom-scrollbar"></div>
@@ -836,6 +955,7 @@
     <script src="js/details.js"></script>
     <script src="js/listing.js"></script>
     <script src="js/translate.js"></script>
+    <script src="js/text_translate.js"></script>
     <script src="js/history_manager.js"></script>
     <script src="js/analysis.js"></script>
 </body>

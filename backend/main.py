@@ -1,11 +1,20 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import base64
 import uuid
+import json
+import logging
+import asyncio
+import os
+from typing import List, Union, Any, Optional
+from sqlalchemy.orm import Session
+from dotenv import load_dotenv
+
 from models.request import (
     CompareRequest, CompareResponse, CompareResponseData, ProductCompareData,
-    ComparisonSummary, ScoreCard, EvalDetail, RecItem
+    ComparisonSummary, ScoreCard, EvalDetail, RecItem,
+    TranslationRequest
 )
 from services.firecrawl import fetch_markdown
 from services.cleaner import clean_content, check_block
@@ -13,18 +22,11 @@ from services.amazon_parser import parse_amazon, parse_general, is_amazon
 from services.ai_single import analyze_single_extract, analyze_single_deep
 from services.ai_compare import compare_products
 from services.scoring import calculate_score
+from services.ai_service import AIService
+from config import GEMINI_API_KEY, AI_PROVIDER, VERTEX_PROJECT_ID, VERTEX_LOCATION, FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY
+from db import init_db, get_db, SessionLocal, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, RenderHistory
 
-import json
-import logging
-import asyncio
-from config import GEMINI_API_KEY
-import os
-from dotenv import load_dotenv
-
-from db import init_db, get_db, AnalysisHistory, ListingHistory, TranslationHistory, RenderHistory
-from sqlalchemy.orm import Session
-from fastapi import Depends
-
+# 加载配置
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
 
 logging.basicConfig(level=logging.INFO)
@@ -54,13 +56,10 @@ def save_base64_image(base64_str: str, folder: str = "outputs") -> str:
     try:
         if not base64_str or not isinstance(base64_str, str) or not base64_str.startswith("data:image"):
             return base64_str
-        
-        # 解析 base64
         if "," not in base64_str:
             return base64_str
             
         header, encoded = base64_str.split(",", 1)
-        # 获取扩展名
         ext = "jpg"
         if "png" in header: ext = "png"
         elif "gif" in header: ext = "gif"
@@ -69,14 +68,9 @@ def save_base64_image(base64_str: str, folder: str = "outputs") -> str:
         filename = f"{uuid.uuid4()}.{ext}"
         rel_path = f"{folder}/{filename}"
         abs_path = os.path.join(STATIC_DIR, folder, filename)
-        
-        # 确保目录存在
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-        
         with open(abs_path, "wb") as f:
             f.write(base64.b64decode(encoded))
-            
-        # 返回可访问的 URL 路径
         return f"/static/{rel_path}"
     except Exception as e:
         logger.error(f"❌ [系统] 保存图片失败: {e}")
@@ -84,92 +78,48 @@ def save_base64_image(base64_str: str, folder: str = "outputs") -> str:
 
 async def process_single_url(url: str, provider: str = None, markdown_content: str = None) -> dict:
     try:
-        logger.info(f"🔍 [单品处理] 开始处理 URL: {url} (提供商: {provider})")
+        logger.info(f"🔍 [单品处理] 开始处理 URL: {url}")
         if not markdown_content:
             markdown_content = await asyncio.to_thread(fetch_markdown, url)
-            logger.info(f"✅ [单品处理] 成功获取 Markdown 内容: {url}")
-        else:
-            logger.info(f"♻️ [单品处理] 使用预置 Markdown 内容: {url}")
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
-            raise Exception("抓取到的内容为空或无效")
-            
-        # [防重/拦截检测]
+            raise Exception("内容为空")
         if check_block(markdown_content):
-            logger.warning(f"🚫 [系统拦截] 检测到 URL 被拦截 (Amazon Bot Check): {url}")
-            raise Exception("该链接已被平台拦截（触发验证码），无法获取产品详情。请尝试稍后再试或手动输入文案。")
+            raise Exception("被拦截")
             
-        logger.info(f"🏗️ [单品处理] 正在解析页面结构: {url}...")
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
             structured_data = parse_general(markdown_content)
         
-        logger.info(f"🤖 [单品处理] 正在发送至 AI 进行特征提取 ({url})...")
         ai_result_json_str = await asyncio.to_thread(analyze_single_extract, structured_data, provider=provider)
+        parsed_data = json.loads(ai_result_json_str)
         
-        try:
-            parsed_data = json.loads(ai_result_json_str)
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing failed for {url}. Error: {e}")
-            cleaned_json = ai_result_json_str.replace('\n', ' ').strip()
-            parsed_data = json.loads(cleaned_json)
-
         p_data = structured_data.get("product_data", {})
-        if parsed_data.get("price") in [None, "", "Unknown"] and p_data.get("price"):
-             parsed_data["price"] = p_data["price"]
-        
-        if not parsed_data.get("reviews_count") and p_data.get("reviews_count"):
-            parsed_data["reviews_count"] = p_data.get("reviews_count")
-        elif not parsed_data.get("reviews_count"):
-             parsed_data["reviews_count"] = "0"
+        if not parsed_data.get("price") and p_data.get("price"): parsed_data["price"] = p_data["price"]
+        if not parsed_data.get("reviews_count"): parsed_data["reviews_count"] = p_data.get("reviews_count", "0")
 
-        validated_product = ProductCompareData(**parsed_data)
-        logger.info(f"✨ [单品处理] 特征提取完成: {url}")
-        return validated_product.model_dump()
+        return ProductCompareData(**parsed_data).model_dump()
     except Exception as e:
-        logger.error(f"❌ [单品处理] 处理 URL 出错 {url}: {str(e)}")
+        logger.error(f"❌ [单品处理] 出错: {e}")
         raise e
 
 async def process_single_url_deep(url: str, provider: str = None, markdown_content: str = None) -> dict:
     try:
-        logger.info(f"🧠 [深度分析] 开始深度分析 URL: {url} (提供商: {provider})")
         if not markdown_content:
             markdown_content = await asyncio.to_thread(fetch_markdown, url)
-            logger.info(f"✅ [深度分析] 成功获取 Markdown 内容: {url}")
-        else:
-            logger.info(f"♻️ [深度分析] 使用预置 Markdown 内容: {url}")
-        cleaned_text = clean_content(markdown_content)
-        if not cleaned_text:
-            raise Exception("抓取到的内容为空或无效")
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
             structured_data = parse_general(markdown_content)
             
         ai_result_json_str = await asyncio.to_thread(analyze_single_deep, structured_data, provider=provider)
-        
-        try:
-            parsed_data = json.loads(ai_result_json_str)
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parsing failed (DEEP) for {url}. Error: {e}")
-            raise e
-
-        p_data = structured_data.get("product_data", {})
-        if parsed_data.get("price") in [None, "", "Unknown"] and p_data.get("price"):
-            parsed_data["price"] = p_data["price"]
-        
-        if not parsed_data.get("reviews_count") and p_data.get("reviews_count"):
-            parsed_data["reviews_count"] = p_data["reviews_count"]
-        elif not parsed_data.get("reviews_count"):
-             parsed_data["reviews_count"] = "0"
-
-        return parsed_data
+        return json.loads(ai_result_json_str)
     except Exception as e:
-        logger.error(f"Error in deep single analysis for URL {url}: {str(e)}")
+        logger.error(f"❌ [深度分析] 出错: {e}")
         raise e
 
-# --- 全局请求防重缓存 ---
+# --- 缓存 ---
 analysis_cache = {}
 
 @app.post("/compare", response_model=CompareResponse)
@@ -177,248 +127,182 @@ async def compare(request: CompareRequest):
     try:
         urls = request.urls
         provider = request.ai_provider
-        if not urls:
-             return CompareResponse(status="error", message="未提供 URL。")
-
-        # --- 防重逻辑 ---
-        import time
         unique_urls = list(dict.fromkeys([u.strip() for u in urls if u.strip()]))
         cache_key = f"{';'.join(sorted(unique_urls))}_{provider}"
-        now = time.time()
+        
         if cache_key in analysis_cache:
             cached_time, cached_res = analysis_cache[cache_key]
-            if now - cached_time < 30:
-                logger.info(f"♻️ [防重] 检测到重复请求，返回缓存结果: {cache_key}")
+            if asyncio.get_event_loop().time() - cached_time < 30:
                 return cached_res
-        
-        logger.info(f"🚀 [竞品分析] 接收到 {len(urls)} 个链接: {urls} (提供商: {provider})")
         
         if len(unique_urls) == 1:
             url = unique_urls[0]
-            logger.info(f"Single Unique URL detected → switching to Deep Single Analysis: {url}")
-            try:
-                # 关键优化：先抓取一次内容，后续复用
-                markdown_content = await asyncio.to_thread(fetch_markdown, url)
-                
-                # 复用抓取到的 markdown_content
-                basic_data = await process_single_url(url, provider=provider, markdown_content=markdown_content)
-                
-                score_res = await asyncio.to_thread(calculate_score, basic_data, provider=provider)
-                
-                scores = []
-                if score_res and isinstance(score_res, dict):
-                    if "decision_details" not in score_res:
-                         score_res["decision_details"] = {
-                             "confidence": score_res.get("confidence", "medium"), 
-                             "reason": score_res.get("decision_reason", score_res.get("reason", ""))
-                         }
-                    if "opportunity_score" not in score_res: score_res["opportunity_score"] = 0
-                    if "difficulty_score" not in score_res: score_res["difficulty_score"] = 0
-                    if "final_decision" not in score_res: score_res["final_decision"] = "Pending ||| 待评估"
-                    if "product" not in score_res: score_res["product"] = basic_data.get("product_name", "Product")
-                    
-                    scores = [ScoreCard(**score_res)]
-                
-                # 再次复用抓取到的 markdown_content
-                single_data = await process_single_url_deep(url, provider=provider, markdown_content=markdown_content)
-                response_data = CompareResponseData(single_data=single_data, scores=scores)
-                template_type = "single"
-                msg = "单品分析完成。"
-            except Exception as e:
-                logger.error(f"❌ [竞品分析] 单品分析失败: {e}")
-                return CompareResponse(status="error", message=f"URL 分析失败: {str(e)}")
+            markdown_content = await asyncio.to_thread(fetch_markdown, url)
+            basic_data = await process_single_url(url, provider=provider, markdown_content=markdown_content)
+            score_res = await asyncio.to_thread(calculate_score, basic_data, provider=provider)
+            
+            # 补全 ScoreCard 所需字段
+            if not score_res.get("decision_details"):
+                score_res["decision_details"] = {"confidence": "medium", "reason": ""}
+            score_res.setdefault("opportunity_score", 0)
+            score_res.setdefault("difficulty_score", 0)
+            score_res.setdefault("final_decision", "Pending")
+            score_res.setdefault("product", basic_data.get("product_name", "Product"))
+            
+            scores = [ScoreCard(**score_res)]
+            single_data = await process_single_url_deep(url, provider=provider, markdown_content=markdown_content)
+            response_data = CompareResponseData(single_data=single_data, scores=scores)
+            template_type = "single"
+            msg = "分析完成"
         else:
-            logger.info(f"📊 [竞品分析] 检测到多个链接 ({len(unique_urls)}) → 进入矩阵对比模式")
             tasks = [process_single_url(url, provider=provider) for url in unique_urls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            valid_products = []
-            errors = []
-            for i, res in enumerate(results):
-                if isinstance(res, Exception):
-                    errors.append(f"Failed on {urls[i]}: {str(res)}")
-                else:
-                    valid_products.append(res)
+            valid_products = [r for r in results if not isinstance(r, Exception)]
             if not valid_products:
-                return CompareResponse(status="error", message=f"所有 URL 处理均失败。 错误信息: {'; '.join(errors)}")
-            comparison_data = None
-            comprehensive_evaluation = []
-            recommendation_list = []
-            if len(valid_products) > 1:
-                comp_result = await asyncio.to_thread(compare_products, valid_products, provider=provider)
-                comparison_data = ComparisonSummary(
-                    market_position=comp_result.get("market_position", ""),
-                    competition_level=comp_result.get("competition_level", ""),
-                    winner_product=comp_result.get("winner_product", "")
-                )
-                for item in comp_result.get("comprehensive_evaluation", []):
-                    comprehensive_evaluation.append(EvalDetail(dimension=str(item.get("dimension", "")), detail=str(item.get("detail", ""))))
-                for item in comp_result.get("recommendation_list", []):
-                    recommendation_list.append(RecItem(action=str(item.get("action", "")), content=str(item.get("content", ""))))
+                return CompareResponse(status="error", message="处理失败")
+            
+            comp_result = await asyncio.to_thread(compare_products, valid_products, provider=provider)
+            comparison_data = ComparisonSummary(**{k: comp_result.get(k, "") for k in ["market_position", "competition_level", "winner_product"]})
+            
             score_tasks = [asyncio.to_thread(calculate_score, p, provider=provider) for p in valid_products]
             score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
             scores = []
-            for i, s_res in enumerate(score_results):
+            for s_res in score_results:
                 if not isinstance(s_res, Exception) and s_res:
-                    # 确保关键字段存在，防止 ScoreCard 实例化失败
-                    if "product" not in s_res: s_res["product"] = "N/A"
-                    if "opportunity_score" not in s_res: s_res["opportunity_score"] = 0
-                    if "difficulty_score" not in s_res: s_res["difficulty_score"] = 0
-                    if "final_decision" not in s_res: s_res["final_decision"] = "Pending ||| 待评估"
-                    if "sub_scores" not in s_res:
-                        s_res["sub_scores"] = {
-                            "opportunity": {"demand":0, "profit":0, "differentiation":0, "marketing":0},
-                            "difficulty": {"competition":0, "brand":0, "ads_cost":0, "barrier":0}
-                        }
-                    if "decision_details" not in s_res:
-                         s_res["decision_details"] = {"confidence": s_res.get("confidence", "medium"), "reason": s_res.get("decision_reason", "")}
-                    
-                    try:
-                        scores.append(ScoreCard(**s_res))
-                    except Exception as p_err:
-                        logger.error(f"❌ [评分] 实例化 ScoreCard 失败: {p_err}, Data: {s_res}")
+                    s_res.setdefault("product", "N/A")
+                    s_res.setdefault("opportunity_score", 0)
+                    s_res.setdefault("difficulty_score", 0)
+                    s_res.setdefault("final_decision", "Pending")
+                    if "decision_details" not in s_res: s_res["decision_details"] = {"confidence": "medium", "reason": ""}
+                    scores.append(ScoreCard(**s_res))
+            
             template_type = "matrix"
-            msg = f"成功分析了 {len(valid_products)} 个产品。"
+            msg = f"分析了 {len(valid_products)} 个产品"
             response_data = CompareResponseData(
                 products=[ProductCompareData(**p) for p in valid_products],
                 comparison=comparison_data,
-                comprehensive_evaluation=comprehensive_evaluation,
-                recommendation_list=recommendation_list,
+                comprehensive_evaluation=[EvalDetail(**e) for e in comp_result.get("comprehensive_evaluation", [])],
+                recommendation_list=[RecItem(**r) for r in comp_result.get("recommendation_list", [])],
                 scores=scores
             )
 
-        db_session = None
+        # 保存历史
+        db = SessionLocal()
         try:
-            from db import SessionLocal
-            db_session = SessionLocal()
-            pure_json_data = json.loads(response_data.model_dump_json())
-            new_hist = AnalysisHistory(query_url="; ".join(unique_urls), template_type=template_type, data=pure_json_data)
-            db_session.add(new_hist)
-            db_session.commit()
-            logger.info(f"💾 [系统] 竞品分析历史已保存 (ID: {new_hist.id})")
-        except Exception as db_err:
-            logger.error(f"❌ [数据库] 保存历史记录失败: {str(db_err)}")
+            pure_json = json.loads(response_data.model_dump_json())
+            new_hist = AnalysisHistory(query_url="; ".join(unique_urls), template_type=template_type, data=pure_json)
+            db.add(new_hist)
+            db.commit()
         finally:
-            if db_session:
-                db_session.close()
+            db.close()
 
-        final_res = CompareResponse(status="success", template_type=template_type, data=response_data, message=msg if 'msg' in locals() else "")
-        
-        # 写入防重缓存
-        try:
-            analysis_cache[cache_key] = (time.time(), final_res)
-        except: pass
-
+        final_res = CompareResponse(status="success", template_type=template_type, data=response_data, message=msg)
+        analysis_cache[cache_key] = (asyncio.get_event_loop().time(), final_res)
         return final_res
-
     except Exception as e:
-        logger.error(f"Unexpected error in /compare: {str(e)}")
-        return CompareResponse(status="error", message=f"An unexpected error occurred: {str(e)}")
+        logger.error(f"❌ [分析] 失败: {e}")
+        return CompareResponse(status="error", message=str(e))
+
+@app.post("/api/translate-text")
+async def api_translate_text(request: TranslationRequest):
+    """
+    文本翻译接口：支持单请求多语言批量处理
+    """
+    try:
+        # 整理目标语言列表
+        langs = request.target_langs or ([request.target_lang] if request.target_lang else ["English"])
+        
+        # 调用 AI 批量翻译
+        result_dict = await asyncio.to_thread(
+            AIService.translate_text_batch, 
+            text=request.text, 
+            target_langs=langs, 
+            provider=request.ai_provider
+        )
+        
+        return {
+            "status": "success",
+            "translations": result_dict,
+            # 兼容旧版
+            "translated_text": result_dict.get(langs[0], "") if langs else ""
+        }
+    except Exception as e:
+        logger.error(f"❌ [翻译] 失败: {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.post("/log")
 async def receive_frontend_log(data: dict):
-    """接收来自前端的日志并打印到后端终端"""
     message = data.get("message", "")
-    if message:
-        logger.info(f"🖥️ [前端] {message}")
+    if message: logger.info(f"🖥️ [前端] {message}")
     return {"status": "ok"}
 
 @app.get("/config")
 async def get_frontend_config():
-    """向前端提供配置信息（从 .env 读取）"""
-    logger.info("⚙️ [系统] 正在读取前端配置下发...")
-    from services.ai_service import AIService
-    from config import AI_PROVIDER, VERTEX_PROJECT_ID, VERTEX_LOCATION, FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY
-    
     config = {
         "AI_PROVIDER": AI_PROVIDER,
-        "API_KEY":     os.getenv("FRONTEND_API_KEY", ""),
-        "TEXT_MODEL":  os.getenv("FRONTEND_TEXT_MODEL", "gemini-3.1-flash-preview"),
+        "API_KEY": os.getenv("FRONTEND_API_KEY", ""),
+        "TEXT_MODEL": os.getenv("FRONTEND_TEXT_MODEL", "gemini-3.1-flash-preview"),
         "IMAGE_MODEL": os.getenv("FRONTEND_IMAGE_MODEL", "gemini-3.1-flash-image-preview"),
         "CONCURRENCY_LIMIT": FRONTEND_CONCURRENCY_LIMIT,
         "STAGGER_DELAY": FRONTEND_STAGGER_DELAY,
     }
-    
-    # 如果是 vertex 模式，提供必要的鉴权信息
     if AI_PROVIDER == "vertex":
         try:
             config["ACCESS_TOKEN"] = AIService._get_vertex_token()
             config["PROJECT_ID"] = VERTEX_PROJECT_ID
             config["LOCATION"] = VERTEX_LOCATION
-        except Exception as e:
-            logger.error(f"❌ [系统] 获取 Vertex Token 失败: {e}")
-            
-    logger.info(f"📡 [系统] 配置已成功下发 (Provider: {config['AI_PROVIDER']})")
+        except: pass
     return config
-
-# --- 历史记录通用 API ---
 
 @app.post("/api/history/{module}")
 async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
     try:
+        init_db() 
         if module == "listing":
             hist = ListingHistory(product_name=data.get("name"), platform=data.get("platform"), result=data.get("result"))
         elif module == "translation":
-            # 优化：将翻译后的图片存为文件
             res_data = data.get("result")
             if isinstance(res_data, str) and res_data.startswith("data:image"):
                 data["result"] = save_base64_image(res_data, "outputs")
-            
             hist = TranslationHistory(source_text=data.get("source_text"), target_lang=data.get("target_lang"), result=data.get("result"))
+        elif module == "text-translation":
+            res_val = data.get("result")
+            # 如果是批量结果（字典），转为 JSON 字符串存储
+            if isinstance(res_val, dict):
+                res_val = json.dumps(res_val, ensure_ascii=False)
+            hist = TextTranslationHistory(source_text=data.get("source_text"), target_lang=data.get("target_lang"), result=res_val)
         elif module == "render":
-            # 优化：将渲染的详情页图片存为文件
             img_data = data.get("image")
-            if img_data:
-                data["image"] = save_base64_image(img_data, "outputs")
-            
+            if img_data: data["image"] = save_base64_image(img_data, "outputs")
             hist = RenderHistory(task_name=data.get("name"), style=data.get("style"), image_base64=data.get("image"), metadata_info=data.get("metadata"))
-        elif module == "analysis": # 手动保存入口
+        elif module == "analysis":
             hist = AnalysisHistory(query_url=data.get("url"), template_type=data.get("type"), data=data.get("data"))
-        else:
-            return {"status": "error", "message": "Unknown module"}
+        else: return {"status": "error"}
         
         db.add(hist)
         db.commit()
         return {"status": "success", "id": hist.id}
     except Exception as e:
-        logger.error(f"Error saving history for {module}: {e}")
-        return {"status": "error", "message": str(e)}
+        logger.error(f"❌ [历史] 失败: {e}")
+        return {"status": "error"}
 
 @app.get("/api/history/{module}")
 async def get_history(module: str, db: Session = Depends(get_db)):
-    try:
-        if module == "analysis":
-            res = db.query(AnalysisHistory).order_by(AnalysisHistory.timestamp.desc()).all()
-        elif module == "listing":
-            res = db.query(ListingHistory).order_by(ListingHistory.timestamp.desc()).all()
-        elif module == "translation":
-            res = db.query(TranslationHistory).order_by(TranslationHistory.timestamp.desc()).all()
-        elif module == "render":
-            res = db.query(RenderHistory).order_by(RenderHistory.timestamp.desc()).all()
-        else:
-            return []
-        return res
-    except Exception as e:
-        logger.error(f"Error fetching history for {module}: {e}")
-        return []
+    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "render": RenderHistory}
+    model = mapping.get(module)
+    if not model: return []
+    return db.query(model).order_by(model.timestamp.desc()).all()
 
 @app.delete("/api/history/{module}/{id}")
 async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
-    try:
-        model = {
-            "analysis": AnalysisHistory,
-            "listing": ListingHistory,
-            "translation": TranslationHistory,
-            "render": RenderHistory
-        }.get(module)
-        if not model: return {"status": "error"}
-        
-        item = db.query(model).filter(model.id == id).first()
-        if item:
-            db.delete(item)
-            db.commit()
-        return {"status": "success"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "render": RenderHistory}
+    model = mapping.get(module)
+    if not model: return {"status": "error"}
+    item = db.query(model).filter(model.id == id).first()
+    if item:
+        db.delete(item)
+        db.commit()
+    return {"status": "success"}
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator
-from typing import List, Union, Any
+from typing import List, Union, Any, Optional
 
 # ============================
 # V2 Models
@@ -30,12 +30,6 @@ class ProductCompareData(BaseModel):
     @field_validator('strengths', 'weaknesses', mode='before')
     @classmethod
     def convert_strengths_weaknesses(cls, v: Any) -> str:
-        """兼容矩阵模式的字符串，也兼容深度分析返回的对象数组。
-        - str → 直接返回
-        - [{"point": ..., "detail": ...}, ...] → 拼接 point: detail
-        - [{"risk": ..., "detail": ...}, ...] → 拼接 risk: detail
-        - 其他 list → join
-        """
         if isinstance(v, str):
             return v
         if isinstance(v, list):
@@ -126,3 +120,9 @@ class CompareResponse(BaseModel):
     template_type: str = "matrix"  # "single" or "matrix"
     data: CompareResponseData | None = None
     message: str | None = None
+
+class TranslationRequest(BaseModel):
+    text: str
+    target_lang: Optional[str] = None
+    target_langs: Optional[List[str]] = None
+    ai_provider: str | None = None
