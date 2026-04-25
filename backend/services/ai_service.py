@@ -25,7 +25,7 @@ class AIService:
         if cls._session is None:
             cls._session = requests.Session()
             retry_strategy = Retry(
-                total=5,
+                total=10,
                 backoff_factor=2,
                 status_forcelist=[429, 500, 502, 503, 504],
                 allowed_methods=["POST"]
@@ -39,13 +39,13 @@ class AIService:
         return cls._session
 
     @classmethod
-    def _get_vertex_token(cls):
+    def _get_vertex_token(cls, force_refresh=False):
         """获取并自动刷新 Vertex AI 的鉴权 Token"""
-        if cls._vertex_token and time.time() < cls._token_expiry:
+        if not force_refresh and cls._vertex_token and time.time() < cls._token_expiry:
             return cls._vertex_token
         
         try:
-            logger.info(f"🔑 [Vertex] 正在刷新访问令牌 (Key: {VERTEX_KEY_PATH})...")
+            logger.info(f"🔑 [Vertex] 正在{'强制' if force_refresh else ''}刷新访问令牌 (Key: {VERTEX_KEY_PATH})...")
             credentials = service_account.Credentials.from_service_account_file(
                 VERTEX_KEY_PATH, 
                 scopes=['https://www.googleapis.com/auth/cloud-platform']
@@ -109,11 +109,19 @@ class AIService:
         return cls._send_request(url, headers, payload)
 
     @classmethod
-    def _send_request(cls, url: str, headers: dict, payload: dict, params: dict = None) -> str:
+    def _send_request(cls, url: str, headers: dict, payload: dict, params: dict = None, is_retry=False) -> str:
         session = cls._get_session()
         logger.info(f"📡 [AI调用] 正在发送 API 请求 (模型: {url.split('/')[-1].split(':')[0]})...")
         try:
             response = session.post(url, headers=headers, params=params, json=payload, timeout=180)
+            
+            # 如果报 401 且还没有重试过，且是 Vertex AI 请求
+            if response.status_code == 401 and not is_retry and "aiplatform.googleapis.com" in url:
+                logger.warning("🔑 [Vertex] Token 失效 (401)，正在强制刷新并重试一次...")
+                new_token = cls._get_vertex_token(force_refresh=True)
+                headers["Authorization"] = f"Bearer {new_token}"
+                return cls._send_request(url, headers, payload, params, is_retry=True)
+                
             response.raise_for_status()
             data = response.json()
             
