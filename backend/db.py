@@ -41,6 +41,15 @@ class TranslationHistory(Base):
     image_url = Column(Text, nullable=True) # 如果涉及图片
     result = Column(JSON)
 
+class TextTranslationHistory(Base):
+    __tablename__ = "text_translation_history"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.datetime.now)
+    source_text = Column(Text)
+    target_lang = Column(String(50))
+    context = Column(String(255), nullable=True)
+    result = Column(Text) # 直接存储翻译结果
+
 class RenderHistory(Base):
     __tablename__ = "render_history"
     id = Column(Integer, primary_key=True, index=True)

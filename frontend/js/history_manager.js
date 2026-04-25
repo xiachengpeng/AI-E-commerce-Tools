@@ -37,7 +37,7 @@ async function loadGlobalHistory(module) {
     // 更新 UI 状态
     document.querySelectorAll('.history-tab-btn').forEach(btn => {
         const modId = btn.id.replace('hist-tab-', '');
-        const map = { 'analysis': 'analysis', 'listing': 'listing', 'translation': 'translation', 'render': 'render' };
+        const map = { 'analysis': 'analysis', 'listing': 'listing', 'translation': 'translation', 'text-translation': 'text-translation', 'render': 'render' };
         btn.classList.toggle('active', map[modId] === module);
     });
 
@@ -63,7 +63,14 @@ async function loadGlobalHistory(module) {
                 '未命名任务';
 
             const time = item.timestamp ? new Date(item.timestamp).toLocaleString() : '未知时间';
-            const subInfo = item.platform ? `平台: ${item.platform}` : (item.target_lang ? `语言: ${item.target_lang}` : (item.style ? `风格: ${item.style}` : ''));
+            
+            let subInfo = item.platform ? `平台: ${item.platform}` : (item.target_lang ? `语言: ${item.target_lang}` : (item.style ? `风格: ${item.style}` : ''));
+            
+            // 针对文本翻译，把结果摘要放进去
+            if (module === 'text-translation' && item.result) {
+                const preview = typeof item.result === 'string' ? item.result : (item.result.translated_text || '');
+                subInfo += ` | 译文: ${preview.substring(0, 30)}${preview.length > 30 ? '...' : ''}`;
+            }
 
             // 提取缩略图 (针对翻译和渲染模块)
             let thumb = '';
@@ -76,10 +83,14 @@ async function loadGlobalHistory(module) {
                                 <img src="${imgSrc}" class="w-full h-full object-cover">
                              </div>`;
                 }
+            } else if (module === 'text-translation') {
+                thumb = `<div class="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0 text-indigo-500">
+                            <i class="ph-fill ph-text-t text-base"></i>
+                         </div>`;
             }
 
             return `
-                <div class="history-item p-3 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors flex gap-3" onclick="restoreHistoryItemByIndex('${module}', ${index})">
+                <div class="history-item p-3 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors flex items-center gap-3 group" onclick="restoreHistoryItemByIndex('${module}', ${index})">
                     ${thumb}
                     <div class="flex-1 min-w-0">
                         <div class="flex justify-between mb-1">
@@ -89,6 +100,12 @@ async function loadGlobalHistory(module) {
                         <div class="text-xs font-bold text-gray-800 truncate">${name}</div>
                         ${subInfo ? `<div class="text-[9px] text-gray-400 mt-1">${subInfo}</div>` : ''}
                     </div>
+                    <!-- 删除按钮：放在末尾 -->
+                    <button onclick="event.stopPropagation(); deleteHistoryItem('${module}', ${item.id})" 
+                            class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0" 
+                            title="删除此记录">
+                        <i class="ph ph-trash text-base"></i>
+                    </button>
                 </div>
             `;
         }).join('');
@@ -189,6 +206,51 @@ function restoreHistoryItemByIndex(module, index) {
             modal.classList.remove('hidden');
             showToast('已还原翻译历史', 'success');
         }
+    } else if (module === 'text-translation') {
+        switchMainTab('text-translate');
+        const input = document.getElementById('transInputText');
+        const container = document.getElementById('transResultsContainer');
+        const placeholder = document.getElementById('transResultPlaceholder');
+        
+        if (input) input.value = dataObj.source_text || '';
+        if (container) {
+            if (placeholder) placeholder.classList.add('hidden');
+            container.innerHTML = ''; // 清空当前结果
+            
+            // 判断结果是否为 JSON 字符串或对象（批量结果）
+            let resultsMap = {};
+            try {
+                if (typeof dataObj.result === 'string' && (dataObj.result.startsWith('{') || dataObj.result.startsWith('['))) {
+                    resultsMap = jsonParseSafe(dataObj.result);
+                } else if (typeof dataObj.result === 'object') {
+                    resultsMap = dataObj.result;
+                } else {
+                    // 单一结果，包装成 Map 以统一处理
+                    resultsMap = { [dataObj.target_lang || 'Target']: dataObj.result };
+                }
+            } catch (e) {
+                resultsMap = { [dataObj.target_lang || 'Target']: dataObj.result };
+            }
+
+            // 循环渲染所有语言卡片
+            Object.entries(resultsMap).forEach(([langName, text]) => {
+                const cardId = `res-card-hist-${Math.random().toString(36).substr(2, 9)}`;
+                const cardHtml = `
+                    <div id="${cardId}" class="bg-white rounded-xl border border-gray-100 p-6 shadow-sm hover:border-indigo-200 transition-all">
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest">${langName}</span>
+                            <button onclick="copySingleCard('${cardId}-content')" class="text-indigo-400 hover:text-indigo-600 transition-colors p-1 rounded-md hover:bg-indigo-50">
+                                <i class="ph ph-copy text-lg"></i>
+                            </button>
+                        </div>
+                        <div id="${cardId}-content" class="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">${text || ''}</div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', cardHtml);
+            });
+            
+            showToast('已还原文本翻译历史', 'success');
+        }
     }
 
     toggleGlobalHistory();
@@ -203,5 +265,25 @@ async function saveToHistory(module, data) {
         });
     } catch (e) {
         console.error('History save failed:', e);
+    }
+}
+
+async function deleteHistoryItem(module, id) {
+    if (!confirm('确定要删除这条记录吗？')) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/history/${module}/${id}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            showToast('记录已删除', 'success');
+            loadGlobalHistory(module); // 刷新列表
+        } else {
+            showToast('删除失败', 'error');
+        }
+    } catch (e) {
+        console.error('Delete history failed:', e);
+        showToast('删除失败', 'error');
     }
 }

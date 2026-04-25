@@ -57,13 +57,27 @@ async function fetchWithRetry(url, options, retries = 5) {
  * 复制文本到剪贴板
  */
 function copyText(inputId) {
-    let text = document.getElementById(inputId).value;
-    if (!text) return;
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    
+    // 兼容性获取：优先取 .value (input/textarea)，其次取 .innerText (div/span)
+    let text = el.value !== undefined ? el.value : el.innerText;
+    
+    if (!text) {
+        showToast('内容为空，无法复制', 'warning');
+        return;
+    }
+
     const textArea = document.createElement("textarea");
     textArea.value = text;
     document.body.appendChild(textArea);
     textArea.select();
-    try { document.execCommand('copy'); showToast('已复制到剪贴板', 'success'); } catch (e) { showToast('复制失败', 'error'); }
+    try { 
+        document.execCommand('copy'); 
+        showToast('已复制到剪贴板', 'success'); 
+    } catch (e) { 
+        showToast('复制失败', 'error'); 
+    }
     document.body.removeChild(textArea);
 }
 
@@ -114,4 +128,17 @@ function downloadImage(src, filename) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+}
+
+/**
+ * 安全解析 JSON
+ */
+function jsonParseSafe(str) {
+    if (typeof str === 'object' && str !== null) return str;
+    try {
+        return JSON.parse(str);
+    } catch (e) {
+        console.error("JSON Parse Error:", e, str);
+        return {};
+    }
 }
