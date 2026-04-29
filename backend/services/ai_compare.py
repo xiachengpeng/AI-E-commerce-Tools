@@ -1,8 +1,5 @@
-import requests
 import json
 import logging
-import time
-# from config import GEMINI_API_URL, GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +37,7 @@ PROMPT_TEMPLATE_COMPARE = """你是一名资深跨境电商选品专家。
 {products}
 """
 
+
 def _extract_json(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
@@ -51,13 +49,17 @@ def _extract_json(text: str) -> str:
         text = "\n".join(lines).strip()
     return text
 
+
 from .ai_service import AIService
 
-def compare_products(products_data: list, provider: str = None) -> dict:
-    prompt = PROMPT_TEMPLATE_COMPARE.replace("{products}", json.dumps(products_data, ensure_ascii=False, indent=2))
-    
+
+async def compare_products(products_data: list, provider: str = None) -> dict:
+    prompt = PROMPT_TEMPLATE_COMPARE.replace(
+        "{products}", json.dumps(products_data, ensure_ascii=False, indent=2)
+    )
+
     try:
-        json_str = AIService.call_ai(prompt, provider=provider)
+        json_str = await AIService.call_ai(prompt, provider=provider)
         parsed = json.loads(_extract_json(json_str))
         logger.info(f"AI Compare Result Parsed: {parsed}")
         if isinstance(parsed, list):
@@ -65,4 +67,4 @@ def compare_products(products_data: list, provider: str = None) -> dict:
         return parsed
     except Exception as e:
         logger.error(f"Failed to compare products: {str(e)}")
-        raise e
+        raise

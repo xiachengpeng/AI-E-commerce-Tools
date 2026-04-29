@@ -80,19 +80,19 @@ async def process_single_url(url: str, provider: str = None, markdown_content: s
     try:
         logger.info(f"🔍 [单品处理] 开始处理 URL: {url}")
         if not markdown_content:
-            markdown_content = await asyncio.to_thread(fetch_markdown, url)
+            markdown_content = await fetch_markdown(url)
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
             raise Exception("内容为空")
         if check_block(markdown_content):
             raise Exception("被拦截")
-            
+
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
             structured_data = parse_general(markdown_content)
-        
-        ai_result_json_str = await asyncio.to_thread(analyze_single_extract, structured_data, provider=provider)
+
+        ai_result_json_str = await analyze_single_extract(structured_data, provider=provider)
         parsed_data = json.loads(ai_result_json_str)
         
         p_data = structured_data.get("product_data", {})
@@ -107,13 +107,13 @@ async def process_single_url(url: str, provider: str = None, markdown_content: s
 async def process_single_url_deep(url: str, provider: str = None, markdown_content: str = None) -> dict:
     try:
         if not markdown_content:
-            markdown_content = await asyncio.to_thread(fetch_markdown, url)
+            markdown_content = await fetch_markdown(url)
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
             structured_data = parse_general(markdown_content)
-            
-        ai_result_json_str = await asyncio.to_thread(analyze_single_deep, structured_data, provider=provider)
+
+        ai_result_json_str = await analyze_single_deep(structured_data, provider=provider)
         return json.loads(ai_result_json_str)
     except Exception as e:
         logger.error(f"❌ [深度分析] 出错: {e}")
@@ -137,9 +137,9 @@ async def compare(request: CompareRequest):
         
         if len(unique_urls) == 1:
             url = unique_urls[0]
-            markdown_content = await asyncio.to_thread(fetch_markdown, url)
+            markdown_content = await fetch_markdown(url)
             basic_data = await process_single_url(url, provider=provider, markdown_content=markdown_content)
-            score_res = await asyncio.to_thread(calculate_score, basic_data, provider=provider)
+            score_res = await calculate_score(basic_data, provider=provider)
             
             # 补全 ScoreCard 所需字段
             if not score_res.get("decision_details"):
@@ -160,11 +160,11 @@ async def compare(request: CompareRequest):
             valid_products = [r for r in results if not isinstance(r, Exception)]
             if not valid_products:
                 return CompareResponse(status="error", message="处理失败")
-            
-            comp_result = await asyncio.to_thread(compare_products, valid_products, provider=provider)
+
+            comp_result = await compare_products(valid_products, provider=provider)
             comparison_data = ComparisonSummary(**{k: comp_result.get(k, "") for k in ["market_position", "competition_level", "winner_product"]})
             
-            score_tasks = [asyncio.to_thread(calculate_score, p, provider=provider) for p in valid_products]
+            score_tasks = [calculate_score(p, provider=provider) for p in valid_products]
             score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
             scores = []
             for s_res in score_results:
@@ -212,11 +212,10 @@ async def api_translate_text(request: TranslationRequest):
         # 整理目标语言列表
         langs = request.target_langs or ([request.target_lang] if request.target_lang else ["English"])
         
-        # 调用 AI 批量翻译
-        result_dict = await asyncio.to_thread(
-            AIService.translate_text_batch, 
-            text=request.text, 
-            target_langs=langs, 
+        # 调用 AI 批量翻译（异步）
+        result_dict = await AIService.translate_text_batch(
+            text=request.text,
+            target_langs=langs,
             provider=request.ai_provider
         )
         
