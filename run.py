@@ -3,11 +3,19 @@ import sys
 import os
 import time
 import webbrowser
+import io
 
-# Windows 终端强制 UTF-8 输出，避免 emoji 编码报错
+# 强制设置控制台输出为 UTF-8，防止 Windows 环境下的乱码
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    else:
+        # 兼容旧版 Python 3
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8')
+    else:
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 def run_app():
     root_dir = os.path.dirname(os.path.abspath(__file__))
