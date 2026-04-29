@@ -1,6 +1,7 @@
 fastapi
 uvicorn
-requests
+httpx
 pydantic
 python-dotenv
 sqlalchemy
+google-auth
