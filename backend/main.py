@@ -7,6 +7,7 @@ import json
 import logging
 import asyncio
 import os
+import re
 from typing import List, Union, Any, Optional
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
@@ -23,7 +24,11 @@ from services.ai_single import analyze_single_extract, analyze_single_deep
 from services.ai_compare import compare_products
 from services.scoring import calculate_score
 from services.ai_service import AIService
-from config import GEMINI_API_KEY, AI_PROVIDER, VERTEX_PROJECT_ID, VERTEX_LOCATION, FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY
+from config import (
+    GEMINI_API_KEY, AI_PROVIDER, VERTEX_PROJECT_ID, VERTEX_LOCATION,
+    FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
+    CORS_ORIGINS, MAX_URL_LENGTH,
+)
 from db import init_db, get_db, SessionLocal, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, RenderHistory
 
 # 加载配置
@@ -39,7 +44,7 @@ app = FastAPI(title="AI Competitor Analyzer V2")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -119,6 +124,21 @@ async def process_single_url_deep(url: str, provider: str = None, markdown_conte
         logger.error(f"❌ [深度分析] 出错: {e}")
         raise e
 
+# --- 校验 ---
+_URL_PATTERN = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)
+
+
+def validate_url(url: str) -> str | None:
+    """校验 URL 格式与长度，返回错误信息或 None"""
+    if not url or not url.strip():
+        return "URL 不能为空"
+    if len(url) > MAX_URL_LENGTH:
+        return f"URL 长度超过限制 ({MAX_URL_LENGTH} 字符)"
+    if not _URL_PATTERN.match(url.strip()):
+        return f"URL 格式无效: {url[:80]}"
+    return None
+
+
 # --- 缓存 ---
 analysis_cache = {}
 
@@ -128,6 +148,13 @@ async def compare(request: CompareRequest):
         urls = request.urls
         provider = request.ai_provider
         unique_urls = list(dict.fromkeys([u.strip() for u in urls if u.strip()]))
+
+        # URL 格式校验
+        for u in unique_urls:
+            err = validate_url(u)
+            if err:
+                return CompareResponse(status="error", message=err)
+
         cache_key = f"{';'.join(sorted(unique_urls))}_{provider}"
         
         if cache_key in analysis_cache:
