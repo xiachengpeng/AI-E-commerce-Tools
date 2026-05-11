@@ -1,9 +1,5 @@
-import requests
 import json
 import logging
-import time
-import time
-# from config import GEMINI_API_URL, GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +89,7 @@ PROMPT_TEMPLATE_DEEP = """你是一名顶级跨境电商产品分析师，专注
 市场反馈数据: {market_data}
 """
 
+
 def _extract_json(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
@@ -104,22 +101,26 @@ def _extract_json(text: str) -> str:
         text = "\n".join(lines).strip()
     return text
 
+
 from .ai_service import AIService
 
-def _call_ai_service(prompt: str, provider: str = None) -> str:
-    """封装调用 AIService 的逻辑"""
-    raw_text = AIService.call_ai(prompt, provider=provider)
+
+async def _call_ai_service(prompt: str, provider: str = None) -> str:
+    """封装调用 AIService 的异步逻辑"""
+    raw_text = await AIService.call_ai(prompt, provider=provider)
     logger.info(f"AI Result: {raw_text[:200]}...")
     return _extract_json(raw_text)
 
-def analyze_single_extract(structured_data: dict, provider: str = None) -> str:
+
+async def analyze_single_extract(structured_data: dict, provider: str = None) -> str:
     product_data = json.dumps(structured_data.get("product_data", {}), ensure_ascii=False)
     market_data = json.dumps(structured_data.get("market_data", {}), ensure_ascii=False)
     prompt = PROMPT_TEMPLATE_EXTRACT.replace("{product_data}", product_data).replace("{market_data}", market_data)
-    return _call_ai_service(prompt, provider=provider)
+    return await _call_ai_service(prompt, provider=provider)
 
-def analyze_single_deep(structured_data: dict, provider: str = None) -> str:
+
+async def analyze_single_deep(structured_data: dict, provider: str = None) -> str:
     product_data = json.dumps(structured_data.get("product_data", {}), ensure_ascii=False)
     market_data = json.dumps(structured_data.get("market_data", {}), ensure_ascii=False)
     prompt = PROMPT_TEMPLATE_DEEP.replace("{product_data}", product_data).replace("{market_data}", market_data)
-    return _call_ai_service(prompt, provider=provider)
+    return await _call_ai_service(prompt, provider=provider)
