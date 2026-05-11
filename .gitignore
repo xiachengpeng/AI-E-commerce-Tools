@@ -28,6 +28,9 @@ config.local.py
 *.pdf
 AI_Analysis_Report_*.html
 
+# Local debug scripts / secrets
+debug/
+
 # OS
 .DS_Store
 Thumbs.db
