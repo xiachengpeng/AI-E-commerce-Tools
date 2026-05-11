@@ -8,6 +8,7 @@ from typing import List, Union, Any, Optional
 class CompareRequest(BaseModel):
     urls: List[str]
     ai_provider: str | None = None # 可选，支持 "gemini" 或 "vertex"
+    force_refresh: bool = False
 
 class ProductCompareData(BaseModel):
     product_name: str
@@ -15,10 +16,13 @@ class ProductCompareData(BaseModel):
     core_selling_points: List[str]
     target_audience: List[str]
     use_scenarios: List[str] = []
+    age_range: str | None = None
+    target_countries: List[str] = []
     strengths: str
     weaknesses: str
     reviews_count: str = "0"
     voc_analysis: Any = None # Pros/Cons/Sentiment
+    source_url: str | None = None
 
     @field_validator('product_name', 'price', mode='before')
     @classmethod
@@ -114,6 +118,7 @@ class CompareResponseData(BaseModel):
     recommendation_list: List[RecItem] = []
     scores: List[ScoreCard] = []
     single_data: Any = None  # Populated for single-product deep dive
+    url_statuses: List[dict] = []
 
 class CompareResponse(BaseModel):
     status: str
