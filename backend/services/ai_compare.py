@@ -5,14 +5,16 @@ logger = logging.getLogger(__name__)
 
 PROMPT_TEMPLATE_COMPARE = """你是一名资深跨境电商选品专家。
 
-请对以下多个产品进行横向对比分析，并基于数据给出明确的投资建议。
+请对以下多个产品进行横向对比分析，并基于产品数据和投资评分给出明确建议。
 
 规则：
 1. 必须输出严格的 JSON 格式。
 2. 不可编造数据，可基于已有信息进行合理推断。
-3. 必须给出明确的结论，winner_product 必须是产品名称或链接中可识别的产品标识。
-4. 所有文本内容（除 JSON 键名外），必须严格采用 "中文内容 ||| 英文内容" 格式。
-5. 每个维度的 detail 要简洁精准，不超过 30 字（中文部分）。
+3. winner_product 必须严格选择 investment_score 最高的产品。
+4. investment_score = opportunity_score + (100 - difficulty_score)，机会分越高越好，进入难度越低越好。
+5. recommendation_list 必须与 winner_product 保持一致，不能推荐低分高难度产品作为主推。
+6. 所有文本内容（除 JSON 键名外），必须严格采用 "中文内容 ||| 英文内容" 格式。
+7. 每个维度的 detail 要简洁精准，不超过 30 字（中文部分）。
 
 输出结构（严格遵守，comprehensive_evaluation 和 recommendation_list 必须是数组）：
 {

@@ -1,5 +1,6 @@
 import re
 import logging
+from urllib.parse import urlparse, unquote
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +10,10 @@ MAX_LIMIT = {
     "bullets": 3000,
     "description": 3000,
     "reviews": 8000,
-    "qa": 3000
+    "qa": 3000,
+    "general_context": 24000,
+    "general_before_title": 1200,
+    "general_after_title": 22000,
 }
 
 def extract_title(md: str) -> str:
@@ -107,13 +111,111 @@ def parse_amazon(md: str) -> dict:
     logger.info(f"Amazon parsing complete. Title: {title[:50]}..., Reviews count: {len(reviews)}")
     return structured_data
 
-def parse_general(md: str) -> dict:
+_BOILERPLATE_PATTERNS = [
+    r"sign in",
+    r"register",
+    r"forgot password",
+    r"password is required",
+    r"email is required",
+    r"please enter a valid email",
+    r"reset password",
+    r"subscribe to get latest offers",
+    r"location\.reload",
+    r"class\s+\w+\s+extends\s+",
+    r"SPZ\.defineElement",
+    r"@private",
+]
+
+
+def _slug_terms(url: str | None) -> list[str]:
+    if not url:
+        return []
+    path = unquote(urlparse(url).path)
+    slug = path.rstrip("/").split("/")[-1]
+    terms = [t.lower() for t in re.split(r"[-_\W]+", slug) if len(t) > 2]
+    return terms
+
+
+def _clean_general_lines(md: str) -> list[str]:
+    lines = []
+    for raw in md.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("*   [") or line.startswith("[!["):
+            continue
+        if len(line) > 1000:
+            continue
+        lowered = line.lower()
+        if any(re.search(pattern, lowered, re.IGNORECASE) for pattern in _BOILERPLATE_PATTERNS):
+            continue
+        lines.append(line)
+    return lines
+
+
+def _score_title_candidate(line: str, terms: list[str]) -> int:
+    normalized = re.sub(r"[^a-z0-9]+", " ", line.lower())
+    score = sum(1 for term in terms if term in normalized)
+    if line.startswith("#"):
+        score += 2
+    if 8 <= len(line) <= 120:
+        score += 1
+    if line.startswith("!") or line.startswith("[") or "http" in normalized:
+        score -= 2
+    return score
+
+
+def _find_general_title(lines: list[str], url: str | None) -> tuple[str, int]:
+    terms = _slug_terms(url)
+    best_title = ""
+    best_idx = -1
+    best_score = 0
+
+    for idx, line in enumerate(lines):
+        candidate = line.lstrip("#").strip()
+        if not candidate or candidate.lower() in {"home", "shop", "contact", "about"}:
+            continue
+        score = _score_title_candidate(line, terms)
+        if score > best_score:
+            best_title = candidate
+            best_idx = idx
+            best_score = score
+
+    if best_title and best_score >= max(2, min(3, len(terms))):
+        return best_title, best_idx
+
+    for idx, line in enumerate(lines):
+        candidate = line.lstrip("#").strip()
+        if 20 <= len(candidate) <= 140 and not candidate.startswith(("!", "[")):
+            return candidate, idx
+
+    return extract_title(md="\n".join(lines)), 0
+
+
+def _build_general_context(lines: list[str], title_idx: int) -> str:
+    if title_idx < 0:
+        text = "\n".join(lines)
+        return text[:MAX_LIMIT["general_context"]]
+
+    prefix = "\n".join(lines[:title_idx])
+    product_and_after = "\n".join(lines[title_idx:])
+    prefix = prefix[-MAX_LIMIT["general_before_title"]:]
+    product_and_after = product_and_after[:MAX_LIMIT["general_after_title"]]
+    return f"{prefix}\n{product_and_after}".strip()[:MAX_LIMIT["general_context"]]
+
+
+def parse_general(md: str, url: str | None = None) -> dict:
+    lines = _clean_general_lines(md)
+    title, title_idx = _find_general_title(lines, url)
+    context = _build_general_context(lines, title_idx)
+
     return {
         "product_data": {
-            "title": extract_title(md),
-            "price": extract_price(md),
-            "bullets": md[:3000],
-            "description": ""
+            "title": title[:MAX_LIMIT["title"]],
+            "price": extract_price(context)[:MAX_LIMIT["price"]],
+            "bullets": context,
+            "description": context,
+            "source_url": url or "",
         },
         "market_data": {
             "reviews": [],

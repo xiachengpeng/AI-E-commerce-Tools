@@ -5,3 +5,4 @@ pydantic
 python-dotenv
 sqlalchemy
 google-auth
+google-genai

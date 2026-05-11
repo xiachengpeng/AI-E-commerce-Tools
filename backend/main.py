@@ -25,7 +25,7 @@ from services.ai_compare import compare_products
 from services.scoring import calculate_score
 from services.ai_service import AIService
 from config import (
-    GEMINI_API_KEY, AI_PROVIDER, VERTEX_PROJECT_ID, VERTEX_LOCATION,
+    AI_PROVIDER,
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
@@ -81,6 +81,50 @@ def save_base64_image(base64_str: str, folder: str = "outputs") -> str:
         logger.error(f"❌ [系统] 保存图片失败: {e}")
         return base64_str
 
+
+def normalize_ai_json_object(value: Any) -> dict:
+    """兼容 AI 偶尔把对象包成单元素数组返回的情况。"""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        if value and isinstance(value[0], dict):
+            return value[0]
+        return {}
+    return {}
+
+
+def _coerce_score(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def investment_score(score: dict) -> int:
+    """机会越高越好，进入难度越低越好。"""
+    return _coerce_score(score.get("opportunity_score")) + (100 - _coerce_score(score.get("difficulty_score")))
+
+
+def best_product_index_by_scores(scores: list[dict]) -> int:
+    if not scores:
+        return -1
+    return max(range(len(scores)), key=lambda idx: investment_score(scores[idx]))
+
+
+def align_comparison_winner(comp_result: dict, products: list[dict], scores: list[dict]) -> dict:
+    """用确定性评分规则校准 winner，避免横向分析与评分卡互相矛盾。"""
+    if not comp_result or not products or len(products) != len(scores):
+        return comp_result
+
+    winner_idx = best_product_index_by_scores(scores)
+    if winner_idx < 0:
+        return comp_result
+
+    winner_name = products[winner_idx].get("product_name") or scores[winner_idx].get("product") or ""
+    if winner_name:
+        comp_result["winner_product"] = winner_name
+    return comp_result
+
 async def process_single_url(url: str, provider: str = None, markdown_content: str = None) -> dict:
     try:
         logger.info(f"🔍 [单品处理] 开始处理 URL: {url}")
@@ -95,10 +139,10 @@ async def process_single_url(url: str, provider: str = None, markdown_content: s
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
-            structured_data = parse_general(markdown_content)
+            structured_data = parse_general(markdown_content, url=url)
 
         ai_result_json_str = await analyze_single_extract(structured_data, provider=provider)
-        parsed_data = json.loads(ai_result_json_str)
+        parsed_data = normalize_ai_json_object(json.loads(ai_result_json_str))
         
         p_data = structured_data.get("product_data", {})
         if not parsed_data.get("price") and p_data.get("price"): parsed_data["price"] = p_data["price"]
@@ -116,10 +160,10 @@ async def process_single_url_deep(url: str, provider: str = None, markdown_conte
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
-            structured_data = parse_general(markdown_content)
+            structured_data = parse_general(markdown_content, url=url)
 
         ai_result_json_str = await analyze_single_deep(structured_data, provider=provider)
-        return json.loads(ai_result_json_str)
+        return normalize_ai_json_object(json.loads(ai_result_json_str))
     except Exception as e:
         logger.error(f"❌ [深度分析] 出错: {e}")
         raise e
@@ -188,20 +232,36 @@ async def compare(request: CompareRequest):
             if not valid_products:
                 return CompareResponse(status="error", message="处理失败")
 
-            comp_result = await compare_products(valid_products, provider=provider)
-            comparison_data = ComparisonSummary(**{k: comp_result.get(k, "") for k in ["market_position", "competition_level", "winner_product"]})
-            
             score_tasks = [calculate_score(p, provider=provider) for p in valid_products]
             score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
             scores = []
-            for s_res in score_results:
+            score_dicts = []
+            scored_products = []
+            for product, s_res in zip(valid_products, score_results):
                 if not isinstance(s_res, Exception) and s_res:
                     s_res.setdefault("product", "N/A")
                     s_res.setdefault("opportunity_score", 0)
                     s_res.setdefault("difficulty_score", 0)
                     s_res.setdefault("final_decision", "Pending")
                     if "decision_details" not in s_res: s_res["decision_details"] = {"confidence": "medium", "reason": ""}
+                    score_dicts.append(s_res)
+                    scored_products.append(product)
                     scores.append(ScoreCard(**s_res))
+
+            compare_input = []
+            for product, score in zip(scored_products, score_dicts):
+                enriched = dict(product)
+                enriched["investment_scores"] = {
+                    "opportunity_score": _coerce_score(score.get("opportunity_score")),
+                    "difficulty_score": _coerce_score(score.get("difficulty_score")),
+                    "investment_score": investment_score(score),
+                    "final_decision": score.get("final_decision", ""),
+                }
+                compare_input.append(enriched)
+
+            comp_result = await compare_products(compare_input or valid_products, provider=provider)
+            comp_result = align_comparison_winner(comp_result, scored_products, score_dicts)
+            comparison_data = ComparisonSummary(**{k: comp_result.get(k, "") for k in ["market_position", "competition_level", "winner_product"]})
             
             template_type = "matrix"
             msg = f"分析了 {len(valid_products)} 个产品"
@@ -256,6 +316,27 @@ async def api_translate_text(request: TranslationRequest):
         logger.error(f"❌ [翻译] 失败: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.post("/api/ai/generate")
+async def api_ai_generate(data: dict):
+    """
+    前端通用 AI 调用代理。
+    前端继续传旧版 REST 风格 payload，后端统一转为 google-genai SDK 调用。
+    """
+    try:
+        model_id = data.get("model")
+        payload = data.get("payload", {})
+        provider = data.get("provider")
+        if not model_id:
+            return {"error": {"message": "model 不能为空"}}
+        return await AIService.generate_content(
+            model_id=model_id,
+            payload=payload,
+            provider=provider,
+        )
+    except Exception as e:
+        logger.error(f"❌ [AI代理] 调用失败: {e}")
+        return {"error": {"message": str(e)}}
+
 @app.post("/log")
 async def receive_frontend_log(data: dict):
     message = data.get("message", "")
@@ -266,18 +347,11 @@ async def receive_frontend_log(data: dict):
 async def get_frontend_config():
     config = {
         "AI_PROVIDER": AI_PROVIDER,
-        "API_KEY": os.getenv("FRONTEND_API_KEY", ""),
         "TEXT_MODEL": os.getenv("FRONTEND_TEXT_MODEL", "gemini-3.1-flash-preview"),
         "IMAGE_MODEL": os.getenv("FRONTEND_IMAGE_MODEL", "gemini-3.1-flash-image-preview"),
         "CONCURRENCY_LIMIT": FRONTEND_CONCURRENCY_LIMIT,
         "STAGGER_DELAY": FRONTEND_STAGGER_DELAY,
     }
-    if AI_PROVIDER == "vertex":
-        try:
-            config["ACCESS_TOKEN"] = AIService._get_vertex_token()
-            config["PROJECT_ID"] = VERTEX_PROJECT_ID
-            config["LOCATION"] = VERTEX_LOCATION
-        except: pass
     return config
 
 @app.post("/api/history/{module}")

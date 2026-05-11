@@ -1,136 +1,158 @@
 """
-测试 AIService —— 核心 AI 调用与重试逻辑
+测试 AIService —— google-genai SDK 调用封装
 """
 import json
 import pytest
-import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.ai_service import AIService
-from tests.conftest import make_ai_response, make_http_response
 
 
-# 每次测试前重置客户端单例，避免测试间污染
 @pytest.fixture(autouse=True)
 def reset_client():
-    AIService._client = None
-    AIService._vertex_token = None
-    AIService._token_expiry = 0
+    AIService._clients = {}
     yield
-    AIService._client = None
+    AIService._clients = {}
 
 
-# ============================================================
-# call_ai — 正常路径
-# ============================================================
+def make_sdk_response(parts):
+    content = MagicMock()
+    content.role = "model"
+    content.parts = parts
+
+    candidate = MagicMock()
+    candidate.content = content
+
+    response = MagicMock()
+    response.candidates = [candidate]
+    return response
+
+
+def make_text_part(text):
+    part = MagicMock()
+    part.thought = False
+    part.text = text
+    part.inline_data = None
+    return part
+
+
+def make_image_part(mime_type="image/png", data=b"aaaa"):
+    inline_data = MagicMock()
+    inline_data.mime_type = mime_type
+    inline_data.data = data
+
+    part = MagicMock()
+    part.thought = False
+    part.text = None
+    part.inline_data = inline_data
+    return part
+
 
 @pytest.mark.asyncio
-async def test_call_ai_gemini_success():
-    """Gemini 正常调用：返回 AI 文本"""
-    mock_resp = make_http_response(200, make_ai_response("Hello, World"))
+async def test_call_ai_success():
+    """文本调用：返回第一段文本"""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = make_sdk_response([
+        make_text_part("Hello, World")
+    ])
 
-    with patch.object(AIService, "_get_client") as mock_get:
-        mock_client = MagicMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(return_value=mock_resp)
-        mock_get.return_value = mock_client
-
+    with patch.object(AIService, "_get_client", return_value=mock_client):
         result = await AIService.call_ai("test prompt", provider="gemini")
-        assert result == "Hello, World"
-        mock_client.post.assert_called_once()
+
+    assert result == "Hello, World"
+    mock_client.models.generate_content.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_call_ai_json_output():
-    """Gemini 调用：返回 JSON 字符串"""
+    """JSON 调用：保留 JSON 字符串"""
     json_str = '{"key": "value"}'
-    mock_resp = make_http_response(200, make_ai_response(json_str))
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = make_sdk_response([
+        make_text_part(json_str)
+    ])
 
-    with patch.object(AIService, "_get_client") as mock_get:
-        mock_client = MagicMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(return_value=mock_resp)
-        mock_get.return_value = mock_client
+    with patch.object(AIService, "_get_client", return_value=mock_client):
+        result = await AIService.call_ai(
+            "json prompt",
+            provider="gemini",
+            response_mime_type="application/json",
+        )
 
-        result = await AIService.call_ai("json prompt", provider="gemini",
-                                         response_mime_type="application/json")
-        assert result == json_str
+    assert result == json_str
 
-
-# ============================================================
-# call_ai — 重试逻辑
-# ============================================================
 
 @pytest.mark.asyncio
-async def test_call_ai_retry_on_429():
-    """HTTP 429 → 自动重试后成功"""
-    fail_resp = make_http_response(429)
-    ok_resp = make_http_response(200, make_ai_response("recovered"))
+async def test_generate_content_image_response_shape():
+    """图片响应：转换成前端兼容的 inlineData 结构"""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = make_sdk_response([
+        make_image_part(data=b"image-bytes")
+    ])
 
-    with patch.object(AIService, "_get_client") as mock_get:
-        mock_client = MagicMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(side_effect=[fail_resp, ok_resp])
-        mock_get.return_value = mock_client
+    payload = {
+        "contents": [{
+            "role": "user",
+            "parts": [
+                {"text": "generate image"},
+                {"inlineData": {"mimeType": "image/jpeg", "data": "YWFhYQ=="}},
+            ],
+        }],
+        "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+    }
 
-        # 临时缩短重试等待时间
-        with patch.object(AIService, "_MAX_RETRIES", 3):
-            result = await AIService.call_ai("test", provider="gemini")
-            assert result == "recovered"
-            assert mock_client.post.call_count == 2
+    with patch.object(AIService, "_get_client", return_value=mock_client):
+        result = await AIService.generate_content("gemini-test", payload, provider="vertex")
+
+    inline_data = result["candidates"][0]["content"]["parts"][0]["inlineData"]
+    assert inline_data["mimeType"] == "image/png"
+    assert inline_data["data"] == "aW1hZ2UtYnl0ZXM="
+
+
+@pytest.mark.asyncio
+async def test_call_ai_retries_then_success():
+    """SDK 异常 → 指数退避后重试成功"""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = [
+        RuntimeError("rate limited"),
+        make_sdk_response([make_text_part("recovered")]),
+    ]
+
+    with patch.object(AIService, "_get_client", return_value=mock_client):
+        with patch.object(AIService, "_MAX_RETRIES", 2):
+            with patch("services.ai_service.time.sleep", return_value=None):
+                result = await AIService.call_ai("test", provider="gemini")
+
+    assert result == "recovered"
+    assert mock_client.models.generate_content.call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_call_ai_retry_exhausted():
-    """所有重试都失败 → 抛出异常"""
-    fail_resp = make_http_response(500)
+    """所有 SDK 调用失败 → 抛出最后异常"""
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = RuntimeError("boom")
 
-    with patch.object(AIService, "_get_client") as mock_get:
-        mock_client = MagicMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(return_value=fail_resp)
-        mock_get.return_value = mock_client
-
+    with patch.object(AIService, "_get_client", return_value=mock_client):
         with patch.object(AIService, "_MAX_RETRIES", 2):
-            with pytest.raises(httpx.HTTPStatusError):
-                await AIService.call_ai("test", provider="gemini")
+            with patch("services.ai_service.time.sleep", return_value=None):
+                with pytest.raises(RuntimeError):
+                    await AIService.call_ai("test", provider="gemini")
 
-
-@pytest.mark.asyncio
-async def test_call_ai_no_retry_on_401_gemini():
-    """Gemini 401 不应重试（只有 Vertex 才重试 401）"""
-    fail_resp = make_http_response(401)
-
-    with patch.object(AIService, "_get_client") as mock_get:
-        mock_client = MagicMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(return_value=fail_resp)
-        mock_get.return_value = mock_client
-
-        with patch.object(AIService, "_MAX_RETRIES", 2):
-            with pytest.raises(httpx.HTTPStatusError):
-                await AIService.call_ai("test", provider="gemini")
-            # 不重试 401，只调一次
-            assert mock_client.post.call_count == 1
-
-
-# ============================================================
-# call_ai — 错误响应
-# ============================================================
 
 @pytest.mark.asyncio
 async def test_call_ai_empty_candidates():
     """响应无 candidates → ValueError"""
-    empty_resp = make_http_response(200, {"candidates": []})
+    response = MagicMock()
+    response.candidates = []
 
-    with patch.object(AIService, "_get_client") as mock_get:
-        mock_client = MagicMock(spec=httpx.AsyncClient)
-        mock_client.post = AsyncMock(return_value=empty_resp)
-        mock_get.return_value = mock_client
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = response
 
-        with patch.object(AIService, "_MAX_RETRIES", 1):
-            with pytest.raises(ValueError):
-                await AIService.call_ai("test", provider="gemini")
+    with patch.object(AIService, "_get_client", return_value=mock_client):
+        with pytest.raises(ValueError):
+            await AIService.call_ai("test", provider="gemini")
 
-
-# ============================================================
-# translate_text_batch
-# ============================================================
 
 @pytest.mark.asyncio
 async def test_translate_text_batch_success():
@@ -142,8 +164,8 @@ async def test_translate_text_batch_success():
         result = await AIService.translate_text_batch(
             "你好", ["English", "Japanese", "French"], provider="gemini"
         )
-        assert result == lang_map
-        assert result["English"] == "Hello"
+
+    assert result == lang_map
 
 
 @pytest.mark.asyncio
@@ -156,8 +178,9 @@ async def test_translate_text_batch_json_with_markdown():
         result = await AIService.translate_text_batch(
             "你好", ["English", "German"], provider="gemini"
         )
-        assert result["English"] == "Hello"
-        assert result["German"] == "Hallo"
+
+    assert result["English"] == "Hello"
+    assert result["German"] == "Hallo"
 
 
 @pytest.mark.asyncio
@@ -167,5 +190,6 @@ async def test_translate_text_batch_parse_failure():
         result = await AIService.translate_text_batch(
             "你好", ["English"], provider="gemini"
         )
-        assert "English" in result
-        assert "翻译失败" in result["English"]
+
+    assert "English" in result
+    assert "翻译失败" in result["English"]

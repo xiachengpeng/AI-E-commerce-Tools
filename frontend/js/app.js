@@ -6,9 +6,6 @@ let API_KEY = "";
 let TEXT_MODEL  = "";
 let IMAGE_MODEL = "";
 let AI_PROVIDER = "gemini";
-let ACCESS_TOKEN = "";
-let PROJECT_ID = "";
-let LOCATION = "";
 
 let CONCURRENCY_LIMIT = 2;
 let STAGGER_DELAY = 2000;
@@ -38,9 +35,6 @@ async function loadConfig() {
         TEXT_MODEL   = cfg.TEXT_MODEL;
         IMAGE_MODEL  = cfg.IMAGE_MODEL;
         AI_PROVIDER  = cfg.AI_PROVIDER || "gemini";
-        ACCESS_TOKEN = cfg.ACCESS_TOKEN || "";
-        PROJECT_ID   = cfg.PROJECT_ID || "";
-        LOCATION     = cfg.LOCATION || "";
         
         if (cfg.CONCURRENCY_LIMIT) CONCURRENCY_LIMIT = cfg.CONCURRENCY_LIMIT;
         if (cfg.STAGGER_DELAY) STAGGER_DELAY = cfg.STAGGER_DELAY;
@@ -60,20 +54,15 @@ async function callAI(modelId, payload) {
     const logMsg = `正在调用模型: ${modelId} (${AI_PROVIDER})`;
     console.log(`%c[AI请求] ${logMsg}`, "color: #0891b2; font-weight: bold;");
     remoteLog(logMsg);
-    let url = "";
-    let headers = { "Content-Type": "application/json" };
 
-    if (AI_PROVIDER === "vertex") {
-        url = `https://aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${modelId}:generateContent`;
-        headers["Authorization"] = `Bearer ${ACCESS_TOKEN}`;
-    } else {
-        url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${API_KEY}`;
-    }
-
-    return await fetchWithRetry(url, {
+    return await fetchWithRetry(`${API_BASE}/api/ai/generate`, {
         method: 'POST',
-        headers: headers,
-        body: JSON.stringify(payload)
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            model: modelId,
+            provider: AI_PROVIDER,
+            payload
+        })
     });
 }
 

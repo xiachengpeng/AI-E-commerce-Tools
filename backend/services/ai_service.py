@@ -2,9 +2,11 @@ import json
 import logging
 import asyncio
 import time
-import httpx
-from google.oauth2 import service_account
-from google.auth.transport.requests import Request
+import random
+import os
+import base64
+from google import genai
+from google.genai import types
 from config import (
     GEMINI_API_KEY, GEMINI_MODEL_ID,
     AI_PROVIDER, VERTEX_PROJECT_ID, VERTEX_LOCATION, VERTEX_KEY_PATH
@@ -14,50 +16,33 @@ logger = logging.getLogger(__name__)
 
 
 class AIService:
-    _vertex_token = None
-    _token_expiry = 0
-    _client: httpx.AsyncClient | None = None
+    _clients = {}
 
     # Retry config
-    _MAX_RETRIES = 10
+    _MAX_RETRIES = 7
+    _BASE_DELAY = 2
     _BACKOFF_FACTOR = 2
-    _RETRY_STATUSES = {429, 500, 502, 503, 504}
 
     @classmethod
-    def _get_client(cls) -> httpx.AsyncClient:
-        """获取可复用的异步 HTTP 客户端（连接池）"""
-        if cls._client is None:
-            cls._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(180.0, connect=30.0),
-                limits=httpx.Limits(
-                    max_connections=20,
-                    max_keepalive_connections=10,
-                    keepalive_expiry=120,
-                ),
-            )
-        return cls._client
+    def _get_client(cls, provider: str):
+        """获取 google-genai 客户端，调用方式参考 debug 目录测试脚本。"""
+        provider = (provider or AI_PROVIDER).lower()
+        if provider in cls._clients:
+            return cls._clients[provider]
 
-    @classmethod
-    def _get_vertex_token(cls, force_refresh=False):
-        """获取并自动刷新 Vertex AI 的鉴权 Token（同步，调用频率极低）"""
-        if not force_refresh and cls._vertex_token and time.time() < cls._token_expiry:
-            return cls._vertex_token
-
-        try:
-            logger.info(f"🔑 [Vertex] 正在{'强制' if force_refresh else ''}刷新访问令牌...")
-            credentials = service_account.Credentials.from_service_account_file(
-                VERTEX_KEY_PATH,
-                scopes=['https://www.googleapis.com/auth/cloud-platform']
+        if provider == "vertex":
+            if VERTEX_KEY_PATH and os.path.exists(VERTEX_KEY_PATH):
+                os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", VERTEX_KEY_PATH)
+            client = genai.Client(
+                vertexai=True,
+                project=VERTEX_PROJECT_ID,
+                location=VERTEX_LOCATION,
             )
-            auth_request = Request()
-            credentials.refresh(auth_request)
-            cls._vertex_token = credentials.token
-            # Token 通常有效期为 1 小时，提前 5 分钟刷新
-            cls._token_expiry = time.time() + 3300
-            return cls._vertex_token
-        except Exception as e:
-            logger.error(f"❌ [Vertex] 获取鉴权令牌失败: {e}")
-            raise
+        else:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+
+        cls._clients[provider] = client
+        return client
 
     @classmethod
     async def call_ai(cls, prompt: str, provider: str = None, model_id: str = None,
@@ -70,111 +55,139 @@ class AIService:
         :param response_mime_type: 响应格式，默认为 "application/json"
         """
         provider = (provider or AI_PROVIDER).lower()
-
-        if provider == "vertex":
-            return await cls._call_vertex(prompt, model_id or GEMINI_MODEL_ID, response_mime_type)
-        else:
-            return await cls._call_gemini(prompt, model_id or GEMINI_MODEL_ID, response_mime_type)
-
-    @classmethod
-    async def _call_gemini(cls, prompt: str, model_id: str, response_mime_type: str) -> str:
-        """异步调用 Google AI Studio (Gemini API)"""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
-        params = {"key": GEMINI_API_KEY}
-        headers = {"Content-Type": "application/json"}
-
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"responseMimeType": response_mime_type}
+            "generationConfig": {"responseMimeType": response_mime_type},
         }
-
-        return await cls._send_request(url, headers, payload, params=params)
+        response = await cls.generate_content(
+            model_id=model_id or GEMINI_MODEL_ID,
+            payload=payload,
+            provider=provider,
+        )
+        candidates = response.get("candidates", [])
+        if not candidates:
+            raise ValueError(f"No candidates in AI response: {response}")
+        parts = candidates[0].get("content", {}).get("parts", [])
+        if not parts:
+            raise ValueError(f"No parts in AI candidate: {response}")
+        return parts[0].get("text", "")
 
     @classmethod
-    async def _call_vertex(cls, prompt: str, model_id: str, response_mime_type: str) -> str:
-        """异步调用 Google Cloud Vertex AI"""
-        token = cls._get_vertex_token()
-        url = (f"https://aiplatform.googleapis.com/v1/projects/{VERTEX_PROJECT_ID}"
-               f"/locations/{VERTEX_LOCATION}/publishers/google/models/{model_id}:generateContent")
+    async def generate_content(cls, model_id: str, payload: dict, provider: str = None) -> dict:
+        """通用 generate_content 入口，返回兼容前端旧 REST 结构的字典。"""
+        provider = (provider or AI_PROVIDER).lower()
+        model_id = model_id or GEMINI_MODEL_ID
+        logger.info(f"📡 [AI调用] 发送 SDK 请求 (provider={provider}, model={model_id})")
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"responseMimeType": response_mime_type}
-        }
-
-        return await cls._send_request(url, headers, payload)
+        response = await asyncio.to_thread(
+            cls._generate_content_sync,
+            provider,
+            model_id,
+            cls._convert_contents(payload.get("contents", [])),
+            cls._convert_generation_config(payload.get("generationConfig") or payload.get("config") or {}),
+        )
+        return cls._response_to_dict(response)
 
     @classmethod
-    async def _send_request(cls, url: str, headers: dict, payload: dict,
-                            params: dict = None) -> str:
-        """
-        异步发送请求，带指数退避重试
-        """
-        client = cls._get_client()
-        model_name = url.split('/')[-1].split(':')[0]
-        logger.info(f"📡 [AI调用] 发送 API 请求 (模型: {model_name})...")
-
-        last_exception = None
+    def _generate_content_sync(cls, provider: str, model_id: str, contents, config):
+        client = cls._get_client(provider)
+        last_error = None
         for attempt in range(cls._MAX_RETRIES):
             try:
-                response = await client.post(url, headers=headers, params=params, json=payload)
-
-                # 401 → Token 失效，强制刷新后重试一次（仅 Vertex）
-                if response.status_code == 401 and "aiplatform.googleapis.com" in url:
-                    logger.warning("🔑 [Vertex] Token 失效 (401)，正在强制刷新并重试...")
-                    new_token = cls._get_vertex_token(force_refresh=True)
-                    headers["Authorization"] = f"Bearer {new_token}"
-                    return await cls._send_request(url, headers, payload, params)
-
-                response.raise_for_status()
-                data = response.json()
-
-                candidates = data.get("candidates", [])
-                if not candidates:
-                    raise ValueError(f"No candidates in AI response: {data}")
-
-                content = candidates[0].get("content", {})
-                parts = content.get("parts", [])
-                if not parts:
-                    raise ValueError(f"No parts in AI candidate: {data}")
-
-                return parts[0].get("text", "")
-
-            except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.RequestError) as e:
-                last_exception = e
-                status = getattr(e, 'response', None)
-                status_code = status.status_code if status else 0
-
-                # 只有可重试的状态码才继续
-                if status_code in cls._RETRY_STATUSES or isinstance(e, (httpx.TimeoutException, httpx.RequestError)):
-                    if attempt < cls._MAX_RETRIES - 1:
-                        sleep_time = min(cls._BACKOFF_FACTOR * (2 ** attempt), 120)
-                        logger.warning(
-                            f"⏳ [AI调用] 请求失败 (HTTP {status_code or 'connection error'}), "
-                            f"{sleep_time}s 后重试 ({attempt + 1}/{cls._MAX_RETRIES})..."
-                        )
-                        await asyncio.sleep(sleep_time)
-                        continue
-
-                # 非可重试错误立即抛出
-                if status_code == 401:
-                    logger.error(f"❌ [AI调用] 鉴权失败 (401): {response.text}")
-                else:
-                    logger.error(f"❌ [AI调用] HTTP 错误: {e}")
-                raise
-
+                return client.models.generate_content(
+                    model=model_id,
+                    contents=contents,
+                    config=config,
+                )
             except Exception as e:
-                last_exception = e
-                logger.error(f"❌ [AI调用] 意外错误: {e}")
-                raise
+                last_error = e
+                if attempt == cls._MAX_RETRIES - 1:
+                    logger.error(f"❌ [AI调用] 连续 {cls._MAX_RETRIES} 次请求失败: {e}")
+                    raise
+                delay = cls._BASE_DELAY * (cls._BACKOFF_FACTOR ** attempt) + random.uniform(0, 1)
+                logger.warning(
+                    f"⏳ [AI调用] 请求失败，{delay:.2f}s 后重试 "
+                    f"({attempt + 1}/{cls._MAX_RETRIES - 1}): {e}"
+                )
+                time.sleep(delay)
+        raise last_error or RuntimeError("AI调用失败：重试耗尽")
 
-        # 所有重试耗尽
-        raise last_exception or RuntimeError("AI调用失败：重试耗尽")
+    @staticmethod
+    def _convert_contents(contents):
+        if isinstance(contents, str):
+            return contents
+        converted = []
+        for content in contents or []:
+            if isinstance(content, str):
+                converted.append(content)
+                continue
+            parts = []
+            for part in content.get("parts", []):
+                if "text" in part:
+                    parts.append(part["text"])
+                    continue
+                inline_data = part.get("inlineData") or part.get("inline_data")
+                if inline_data:
+                    data = inline_data.get("data", "")
+                    if isinstance(data, str):
+                        data = base64.b64decode(data)
+                    parts.append(types.Part.from_bytes(
+                        data=data,
+                        mime_type=inline_data.get("mimeType") or inline_data.get("mime_type"),
+                    ))
+            converted.append(types.Content(
+                role=content.get("role", "user"),
+                parts=[p if isinstance(p, types.Part) else types.Part(text=p) for p in parts],
+            ))
+        return converted
+
+    @staticmethod
+    def _convert_generation_config(config: dict):
+        if not config:
+            return None
+
+        image_config = config.get("imageConfig") or config.get("image_config")
+        converted_image_config = None
+        if image_config:
+            converted_image_config = types.ImageConfig(
+                aspect_ratio=image_config.get("aspectRatio") or image_config.get("aspect_ratio"),
+                image_size=image_config.get("imageSize") or image_config.get("image_size"),
+            )
+
+        return types.GenerateContentConfig(
+            response_mime_type=config.get("responseMimeType") or config.get("response_mime_type"),
+            response_modalities=config.get("responseModalities") or config.get("response_modalities"),
+            image_config=converted_image_config,
+        )
+
+    @staticmethod
+    def _response_to_dict(response) -> dict:
+        result = {"candidates": []}
+        for candidate in response.candidates or []:
+            parts = []
+            for part in candidate.content.parts or []:
+                if getattr(part, "thought", False):
+                    continue
+                if getattr(part, "text", None):
+                    parts.append({"text": part.text})
+                inline_data = getattr(part, "inline_data", None)
+                if inline_data:
+                    data = inline_data.data
+                    if isinstance(data, bytes):
+                        data = base64.b64encode(data).decode("utf-8")
+                    parts.append({
+                        "inlineData": {
+                            "mimeType": inline_data.mime_type,
+                            "data": data,
+                        }
+                    })
+            result["candidates"].append({
+                "content": {
+                    "role": getattr(candidate.content, "role", "model"),
+                    "parts": parts,
+                }
+            })
+        return result
 
     @classmethod
     async def translate_text_batch(cls, text: str, target_langs: list, provider: str = None) -> dict:
