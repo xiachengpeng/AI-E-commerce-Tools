@@ -1,8 +1,5 @@
-import requests
 import json
 import logging
-import time
-# from config import GEMINI_API_URL, GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +61,7 @@ PROMPT_TEMPLATE_SCORE = """你是一名资深跨境电商投资评估专家。
 {product}
 """
 
+
 def _extract_json(text: str) -> str:
     text = text.strip()
     if text.startswith("```"):
@@ -75,18 +73,20 @@ def _extract_json(text: str) -> str:
         text = "\n".join(lines).strip()
     return text
 
+
 from .ai_service import AIService
 
-def calculate_score(product_data: dict, provider: str = None) -> dict:
+
+async def calculate_score(product_data: dict, provider: str = None) -> dict:
     prompt = PROMPT_TEMPLATE_SCORE.replace(
         "{product}", json.dumps(product_data, ensure_ascii=False, indent=2)
     )
     try:
-        json_str = AIService.call_ai(prompt, provider=provider)
+        json_str = await AIService.call_ai(prompt, provider=provider)
         parsed = json.loads(_extract_json(json_str))
         if isinstance(parsed, list):
             return {}
         return parsed
     except Exception as e:
         logger.error(f"Failed to calculate score: {str(e)}")
-        raise e
+        raise

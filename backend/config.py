@@ -20,9 +20,17 @@ VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "ornate-rarity-493511-p5")
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
 VERTEX_KEY_PATH = os.getenv("VERTEX_KEY_PATH", r"D:\Workspace\miyao\hezihua0215 Gemini API Key\ornate-rarity-493511-p5-6759bce81d52.json")
 
+# CORS 配置
+# 开发环境默认放行本地前端；生产环境应通过环境变量显式指定域名
+_CORS_DEFAULT = os.getenv("CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080")
+CORS_ORIGINS = [o.strip() for o in _CORS_DEFAULT.split(",") if o.strip()]
+
 # 前端并发配置
 FRONTEND_CONCURRENCY_LIMIT = int(os.getenv("FRONTEND_CONCURRENCY_LIMIT", "2"))
 FRONTEND_STAGGER_DELAY = int(os.getenv("FRONTEND_STAGGER_DELAY", "2000"))
+
+# URL 校验
+MAX_URL_LENGTH = int(os.getenv("MAX_URL_LENGTH", "2048"))
 
 if not GEMINI_API_KEY and AI_PROVIDER == "gemini":
     raise EnvironmentError("GEMINI_API_KEY 未配置，请在 backend/.env 文件中设置。")
