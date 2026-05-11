@@ -20,7 +20,7 @@ def _get_client() -> httpx.AsyncClient:
     return _client
 
 
-async def fetch_markdown(url: str) -> str:
+async def fetch_markdown(url: str, max_age: int = 3600) -> str:
     """
     异步调用 Firecrawl API 抓取页面并返回 Markdown 内容。
     """
@@ -30,7 +30,7 @@ async def fetch_markdown(url: str) -> str:
         "onlyMainContent": False,
         "includeTags": [],
         "excludeTags": [],
-        "maxAge": 3600,
+        "maxAge": max_age,
         "headers": {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                           "AppleWebKit/537.36 (KHTML, like Gecko) "

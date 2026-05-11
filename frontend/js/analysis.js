@@ -245,6 +245,18 @@
         return xp_parseConfidenceBadge(xp_parseBold(xp_getI18nText(text)));
     }
 
+    function xp_isRecommendDecision(decision) {
+        const text = String(decision || '').toLowerCase();
+        if (text.includes('不建议') || text.includes('not recommend') || text.includes('not recommended')) return false;
+        return text.includes('强烈建议') || text.includes('优先') || text.includes('建议进入') || text.includes('recommend');
+    }
+
+    function xp_investmentScore(scoreObj) {
+        const opp = Number(scoreObj?.opportunity_score || 0);
+        const diff = Number(scoreObj?.difficulty_score || 0);
+        return opp + (100 - diff);
+    }
+
     function xp_showError(errorMsg, message) {
         errorMsg.textContent = typeof message === 'string' ? xp_getI18nText(message) : message;
         errorMsg.classList.remove('xp-hidden');
@@ -316,7 +328,7 @@
             const response = await fetch(XP_API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ urls: rawUrls })
+                body: JSON.stringify({ urls: rawUrls, force_refresh: true })
             });
             const resData = await response.json();
             if (resData.status === 'success') {
@@ -397,7 +409,7 @@
                 const diffClass = dScore >= 80 ? 'xp-diff-high' : (dScore >= 50 ? 'xp-diff-mid' : 'xp-diff-low');
                 const diffLabel = xp_currentLang === 'zh' ? (dScore >= 80 ? '极高难度' : (dScore >= 50 ? '中等难度' : '低难度')) : (dScore >= 80 ? 'High' : (dScore >= 50 ? 'Medium' : 'Low'));
                 const decision = xp_getI18nText(scoreObj.final_decision || '-');
-                const isWinner = decision.includes('优先') || decision.toLowerCase().includes('recommend');
+                const isWinner = xp_isRecommendDecision(decision);
                 const decisionClass = isWinner ? 'xp-decision-winner' : 'xp-decision-neutral';
                 const decisionReason = xp_processText(scoreObj.decision_details ? (scoreObj.decision_details.reason || '') : '');
 
@@ -560,7 +572,7 @@
 
     // ─── 矩阵对比模板 ─────────────────────────────────────────────────────────
     function xp_renderMatrixTemplate(data) {
-        const { products, comparison, comprehensive_evaluation, recommendation_list, scores } = data;
+        const { products, comparison, comprehensive_evaluation, recommendation_list, scores, url_statuses } = data;
         const scoresContainer = xp_getEl('xp-scoresContainer');
         const comparisonContainer = xp_getEl('xp-comparisonContainer');
         const compWinner = xp_getEl('xp-compWinner');
@@ -580,6 +592,30 @@
                 const name = xp_getI18nText(p.product_name || '').toLowerCase();
                 if (name && winnerName.includes(name.substring(0, 10))) xp_winnerIndex = i;
             });
+        }
+        if (xp_winnerIndex < 0 && scores && scores.length === (products || []).length) {
+            let bestScore = -Infinity;
+            scores.forEach((scoreObj, i) => {
+                const score = xp_investmentScore(scoreObj);
+                if (score > bestScore) {
+                    bestScore = score;
+                    xp_winnerIndex = i;
+                }
+            });
+        }
+
+        document.getElementById('xp-url-status-warning')?.remove();
+        const failedStatuses = (url_statuses || []).filter(s => s.status !== 'success' || s.score_status === 'error');
+        if (failedStatuses.length > 0 && comparisonContainer) {
+            const warningHtml = failedStatuses.map(s => {
+                const msg = s.message || s.score_message || '处理失败';
+                return `<div class="xp-url-status-item"><strong>${xp_truncateUrl(s.url || '')}</strong>：${xp_processText(msg)}</div>`;
+            }).join('');
+            comparisonContainer.insertAdjacentHTML('beforebegin', `
+                <div id="xp-url-status-warning" class="xp-card" style="border:1px solid #f59e0b;background:#fffbeb;color:#92400e;margin-bottom:16px;">
+                    <div style="font-weight:800;margin-bottom:8px;">部分链接未完整参与分析</div>
+                    ${warningHtml}
+                </div>`);
         }
 
         // 评分卡
@@ -601,7 +637,7 @@
                 const diffLabel = xp_currentLang === 'zh' ? diffLabels[diffKey].zh : diffLabels[diffKey].en;
                 const diffClass = `xp-diff-${diffKey}`;
                 const decision = xp_getI18nText(scoreObj.final_decision || "N/A");
-                const decisionClass = decision.toLowerCase().includes('recommend') || decision.includes('建议') ? 'xp-decision-recommend' : 'xp-decision-caution';
+                const decisionClass = xp_isRecommendDecision(decision) ? 'xp-decision-recommend' : 'xp-decision-caution';
                 const decisionReason = xp_processText(scoreObj.decision_details?.reason || "");
 
                 let evalHtml = '';

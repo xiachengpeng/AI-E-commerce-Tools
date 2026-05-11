@@ -10,6 +10,7 @@ from main import app
 from main import (
     align_comparison_winner,
     best_product_index_by_scores,
+    build_consistent_recommendations,
     investment_score,
     normalize_ai_json_object,
 )
@@ -55,6 +56,31 @@ def test_align_comparison_winner_overrides_ai_contradiction():
     result = align_comparison_winner(comp_result, products, scores)
 
     assert result["winner_product"] == "泳池 ||| Pool"
+
+
+def test_build_consistent_recommendations_uses_score_winner():
+    products = [
+        {"product_name": "泳池 ||| Pool"},
+        {"product_name": "庭院伞 ||| Patio Umbrella"},
+    ]
+    scores = [
+        {
+            "opportunity_score": 81,
+            "difficulty_score": 50,
+            "decision_details": {"reason": "社媒传播强 ||| Strong social media potential"},
+        },
+        {
+            "opportunity_score": 52,
+            "difficulty_score": 83,
+            "decision_details": {"reason": "物流风险高 ||| High logistics risk"},
+        },
+    ]
+
+    recommendations = build_consistent_recommendations(products, scores)
+
+    assert recommendations[0]["action"].startswith("主推建议")
+    assert "泳池" in recommendations[0]["content"]
+    assert "庭院伞" in recommendations[1]["content"]
 
 
 # ============================================================

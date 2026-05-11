@@ -125,11 +125,47 @@ def align_comparison_winner(comp_result: dict, products: list[dict], scores: lis
         comp_result["winner_product"] = winner_name
     return comp_result
 
-async def process_single_url(url: str, provider: str = None, markdown_content: str = None) -> dict:
+
+def build_consistent_recommendations(products: list[dict], scores: list[dict]) -> list[dict]:
+    """基于最终评分生成一致的操盘建议，避免 AI 横向建议与 Winner 打架。"""
+    if not products or not scores or len(products) != len(scores):
+        return []
+
+    winner_idx = best_product_index_by_scores(scores)
+    if winner_idx < 0:
+        return []
+
+    winner = products[winner_idx]
+    winner_score = scores[winner_idx]
+    winner_name = winner.get("product_name") or winner_score.get("product") or "Winner"
+    reason = (winner_score.get("decision_details") or {}).get("reason", "")
+
+    highest_difficulty_idx = max(range(len(scores)), key=lambda idx: _coerce_score(scores[idx].get("difficulty_score")))
+    risk_product = products[highest_difficulty_idx]
+    risk_score = scores[highest_difficulty_idx]
+    risk_name = risk_product.get("product_name") or risk_score.get("product") or "High-risk product"
+
+    return [
+        {
+            "action": "主推建议 ||| Primary recommendation",
+            "content": f"优先验证 {winner_name}，它在机会分与进入难度的综合投资分中排名最高。{reason} ||| Prioritize validating {winner_name}; it ranks highest by combined opportunity and entry-difficulty score. {reason}",
+        },
+        {
+            "action": "风险控制 ||| Risk control",
+            "content": f"谨慎处理 {risk_name}，它的进入难度最高，需要先验证物流、供给、售后或投放成本。 ||| Treat {risk_name} cautiously; it has the highest entry difficulty and needs validation on logistics, supply, after-sales, or acquisition cost.",
+        },
+        {
+            "action": "下一步验证 ||| Next validation step",
+            "content": "建议先小预算测试 Winner 的点击率、加购率与真实采购/履约成本，再决定是否放大。 ||| Run a small-budget test for the winner's CTR, add-to-cart rate, and real sourcing/fulfillment cost before scaling.",
+        },
+    ]
+
+
+async def process_single_url(url: str, provider: str = None, markdown_content: str = None, force_refresh: bool = False) -> dict:
     try:
         logger.info(f"🔍 [单品处理] 开始处理 URL: {url}")
         if not markdown_content:
-            markdown_content = await fetch_markdown(url)
+            markdown_content = await fetch_markdown(url, max_age=0 if force_refresh else 3600)
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
             raise Exception("内容为空")
@@ -143,6 +179,7 @@ async def process_single_url(url: str, provider: str = None, markdown_content: s
 
         ai_result_json_str = await analyze_single_extract(structured_data, provider=provider)
         parsed_data = normalize_ai_json_object(json.loads(ai_result_json_str))
+        parsed_data["source_url"] = url
         
         p_data = structured_data.get("product_data", {})
         if not parsed_data.get("price") and p_data.get("price"): parsed_data["price"] = p_data["price"]
@@ -153,17 +190,19 @@ async def process_single_url(url: str, provider: str = None, markdown_content: s
         logger.error(f"❌ [单品处理] 出错: {e}")
         raise e
 
-async def process_single_url_deep(url: str, provider: str = None, markdown_content: str = None) -> dict:
+async def process_single_url_deep(url: str, provider: str = None, markdown_content: str = None, force_refresh: bool = False) -> dict:
     try:
         if not markdown_content:
-            markdown_content = await fetch_markdown(url)
+            markdown_content = await fetch_markdown(url, max_age=0 if force_refresh else 3600)
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
             structured_data = parse_general(markdown_content, url=url)
 
         ai_result_json_str = await analyze_single_deep(structured_data, provider=provider)
-        return normalize_ai_json_object(json.loads(ai_result_json_str))
+        result = normalize_ai_json_object(json.loads(ai_result_json_str))
+        result["source_url"] = url
+        return result
     except Exception as e:
         logger.error(f"❌ [深度分析] 出错: {e}")
         raise e
@@ -191,6 +230,7 @@ async def compare(request: CompareRequest):
     try:
         urls = request.urls
         provider = request.ai_provider
+        force_refresh = request.force_refresh
         unique_urls = list(dict.fromkeys([u.strip() for u in urls if u.strip()]))
 
         # URL 格式校验
@@ -201,14 +241,14 @@ async def compare(request: CompareRequest):
 
         cache_key = f"{';'.join(sorted(unique_urls))}_{provider}"
         
-        if cache_key in analysis_cache:
+        if not force_refresh and cache_key in analysis_cache:
             cached_time, cached_res = analysis_cache[cache_key]
             if asyncio.get_event_loop().time() - cached_time < 30:
                 return cached_res
         
         if len(unique_urls) == 1:
             url = unique_urls[0]
-            markdown_content = await fetch_markdown(url)
+            markdown_content = await fetch_markdown(url, max_age=0 if force_refresh else 3600)
             basic_data = await process_single_url(url, provider=provider, markdown_content=markdown_content)
             score_res = await calculate_score(basic_data, provider=provider)
             
@@ -222,22 +262,35 @@ async def compare(request: CompareRequest):
             
             scores = [ScoreCard(**score_res)]
             single_data = await process_single_url_deep(url, provider=provider, markdown_content=markdown_content)
-            response_data = CompareResponseData(single_data=single_data, scores=scores)
+            response_data = CompareResponseData(
+                single_data=single_data,
+                scores=scores,
+                url_statuses=[{"url": url, "status": "success", "product_name": basic_data.get("product_name", "")}],
+            )
             template_type = "single"
             msg = "分析完成"
         else:
-            tasks = [process_single_url(url, provider=provider) for url in unique_urls]
+            tasks = [process_single_url(url, provider=provider, force_refresh=force_refresh) for url in unique_urls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            valid_products = [r for r in results if not isinstance(r, Exception)]
+            valid_products = []
+            url_statuses = []
+            for url, result in zip(unique_urls, results):
+                if isinstance(result, Exception):
+                    url_statuses.append({"url": url, "status": "error", "message": str(result)})
+                else:
+                    valid_products.append(result)
+                    url_statuses.append({"url": url, "status": "success", "product_name": result.get("product_name", "")})
             if not valid_products:
-                return CompareResponse(status="error", message="处理失败")
+                return CompareResponse(status="error", message="所有 URL 均处理失败", data=CompareResponseData(url_statuses=url_statuses))
 
             score_tasks = [calculate_score(p, provider=provider) for p in valid_products]
             score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
             scores = []
             score_dicts = []
             scored_products = []
-            for product, s_res in zip(valid_products, score_results):
+            for idx, (product, s_res) in enumerate(zip(valid_products, score_results)):
+                source_url = product.get("source_url", "")
+                matching_status = next((s for s in url_statuses if s.get("url") == source_url), None)
                 if not isinstance(s_res, Exception) and s_res:
                     s_res.setdefault("product", "N/A")
                     s_res.setdefault("opportunity_score", 0)
@@ -247,6 +300,12 @@ async def compare(request: CompareRequest):
                     score_dicts.append(s_res)
                     scored_products.append(product)
                     scores.append(ScoreCard(**s_res))
+                    if matching_status is not None:
+                        matching_status["score_status"] = "success"
+                else:
+                    if matching_status is not None:
+                        matching_status["score_status"] = "error"
+                        matching_status["score_message"] = str(s_res) if isinstance(s_res, Exception) else "评分结果为空"
 
             compare_input = []
             for product, score in zip(scored_products, score_dicts):
@@ -261,6 +320,9 @@ async def compare(request: CompareRequest):
 
             comp_result = await compare_products(compare_input or valid_products, provider=provider)
             comp_result = align_comparison_winner(comp_result, scored_products, score_dicts)
+            consistent_recommendations = build_consistent_recommendations(scored_products, score_dicts)
+            if consistent_recommendations:
+                comp_result["recommendation_list"] = consistent_recommendations
             comparison_data = ComparisonSummary(**{k: comp_result.get(k, "") for k in ["market_position", "competition_level", "winner_product"]})
             
             template_type = "matrix"
@@ -270,7 +332,8 @@ async def compare(request: CompareRequest):
                 comparison=comparison_data,
                 comprehensive_evaluation=[EvalDetail(**e) for e in comp_result.get("comprehensive_evaluation", [])],
                 recommendation_list=[RecItem(**r) for r in comp_result.get("recommendation_list", [])],
-                scores=scores
+                scores=scores,
+                url_statuses=url_statuses,
             )
 
         # 保存历史
