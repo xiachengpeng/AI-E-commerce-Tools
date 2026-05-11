@@ -7,8 +7,54 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 
 from main import app
+from main import (
+    align_comparison_winner,
+    best_product_index_by_scores,
+    investment_score,
+    normalize_ai_json_object,
+)
 
 client = TestClient(app)
+
+
+def test_normalize_ai_json_object_accepts_single_item_list():
+    """AI 偶尔返回 [{...}] 时，后端应兼容为对象。"""
+    result = normalize_ai_json_object([{"product_name": "Pool"}])
+    assert result == {"product_name": "Pool"}
+
+
+def test_normalize_ai_json_object_rejects_non_object_list():
+    """非对象数组不应继续被当成产品对象处理。"""
+    result = normalize_ai_json_object(["bad"])
+    assert result == {}
+
+
+def test_best_product_index_uses_opportunity_and_difficulty():
+    """赢家规则：机会越高越好，难度越低越好。"""
+    scores = [
+        {"opportunity_score": 81, "difficulty_score": 50},
+        {"opportunity_score": 52, "difficulty_score": 83},
+    ]
+    assert investment_score(scores[0]) == 131
+    assert investment_score(scores[1]) == 69
+    assert best_product_index_by_scores(scores) == 0
+
+
+def test_align_comparison_winner_overrides_ai_contradiction():
+    """横向分析若与评分卡矛盾，后端按确定性投资分校准 Winner。"""
+    comp_result = {"winner_product": "庭院伞 ||| Patio Umbrella"}
+    products = [
+        {"product_name": "泳池 ||| Pool"},
+        {"product_name": "庭院伞 ||| Patio Umbrella"},
+    ]
+    scores = [
+        {"opportunity_score": 81, "difficulty_score": 50},
+        {"opportunity_score": 52, "difficulty_score": 83},
+    ]
+
+    result = align_comparison_winner(comp_result, products, scores)
+
+    assert result["winner_product"] == "泳池 ||| Pool"
 
 
 # ============================================================
@@ -41,7 +87,8 @@ def test_compare_url_too_long():
 
 def test_compare_valid_url_accepted():
     """合法 URL 通过校验，不会被 URL 格式错误拒绝"""
-    resp = client.post("/compare", json={"urls": ["https://example.com/product"]})
+    with patch("main.fetch_markdown", new=AsyncMock(side_effect=Exception("stop after validation"))):
+        resp = client.post("/compare", json={"urls": ["https://example.com/product"]})
     data = resp.json()
     # 不管后续处理成功还是失败，都不应该是 URL 格式错误
     assert "URL 格式无效" not in data.get("message", "")
@@ -78,6 +125,24 @@ def test_config_endpoint():
     assert "AI_PROVIDER" in data
     assert "TEXT_MODEL" in data
     assert "IMAGE_MODEL" in data
+    assert "API_KEY" not in data
+    assert "ACCESS_TOKEN" not in data
+
+
+def test_ai_generate_endpoint():
+    """POST /api/ai/generate 通过后端代理调用模型"""
+    result = {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}
+    with patch("services.ai_service.AIService.generate_content",
+               new=AsyncMock(return_value=result)) as mock_generate:
+        resp = client.post("/api/ai/generate", json={
+            "model": "gemini-test",
+            "provider": "vertex",
+            "payload": {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]},
+        })
+
+    assert resp.status_code == 200
+    assert resp.json() == result
+    mock_generate.assert_awaited_once()
 
 
 # ============================================================

@@ -13,11 +13,10 @@ AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")
 # Gemini 默认配置
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL_ID = os.getenv("GEMINI_MODEL_ID", "gemini-3.1-pro-preview")
-GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL_ID}:generateContent"
 
-# Vertex AI 默认配置 (参考 world_concurrent.py)
-VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "ornate-rarity-493511-p5")
-VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "us-central1")
+# Vertex AI 默认配置
+VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "project-926fcb81-e62c-4158-927")
+VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "global")
 VERTEX_KEY_PATH = os.getenv("VERTEX_KEY_PATH", r"D:\Workspace\miyao\hezihua0215 Gemini API Key\ornate-rarity-493511-p5-6759bce81d52.json")
 
 # CORS 配置
