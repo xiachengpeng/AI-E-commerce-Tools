@@ -82,6 +82,30 @@ def save_base64_image(base64_str: str, folder: str = "outputs") -> str:
         return base64_str
 
 
+def persist_render_metadata_images(metadata: Any) -> Any:
+    """把详情页项目 metadata 里的大图也落盘，避免历史库反复存 base64。"""
+    if not isinstance(metadata, dict):
+        return metadata
+
+    if isinstance(metadata.get("finalImage"), str):
+        metadata["finalImage"] = save_base64_image(metadata["finalImage"], "outputs")
+
+    modules = metadata.get("modules")
+    if isinstance(modules, list):
+        for module in modules:
+            if isinstance(module, dict) and isinstance(module.get("imageSrc"), str):
+                module["imageSrc"] = save_base64_image(module["imageSrc"], "outputs")
+
+    uploaded_images = metadata.get("uploadedImages")
+    if isinstance(uploaded_images, list):
+        for image in uploaded_images:
+            if isinstance(image, dict) and isinstance(image.get("base64"), str):
+                image["base64"] = save_base64_image(image["base64"], "outputs")
+            image.pop("data", None)
+
+    return metadata
+
+
 def normalize_ai_json_object(value: Any) -> dict:
     """兼容 AI 偶尔把对象包成单元素数组返回的情况。"""
     if isinstance(value, dict):
@@ -437,7 +461,10 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
         elif module == "render":
             img_data = data.get("image")
             if img_data: data["image"] = save_base64_image(img_data, "outputs")
-            hist = RenderHistory(task_name=data.get("name"), style=data.get("style"), image_base64=data.get("image"), metadata_info=data.get("metadata"))
+            metadata = persist_render_metadata_images(data.get("metadata"))
+            if isinstance(metadata, dict) and data.get("image"):
+                metadata["finalImage"] = data.get("image")
+            hist = RenderHistory(task_name=data.get("name"), style=data.get("style"), image_base64=data.get("image"), metadata_info=metadata)
         elif module == "analysis":
             hist = AnalysisHistory(query_url=data.get("url"), template_type=data.get("type"), data=data.get("data"))
         else: return {"status": "error"}

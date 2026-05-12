@@ -37,16 +37,13 @@
         const exportBtn = xp_getEl('xp-exportBtn');
         const appTitle = xp_getEl('xp-appTitle');
         const copyAllBtn = xp_getEl('xp-copyAllBtn');
+        const clearAllBtn = xp_getEl('xp-clearAllBtn');
 
         if (!analyzeBtn) return; // 防止重复初始化
 
         // 标题点击重置
         appTitle.addEventListener('click', () => {
-            xp_urlsArray = [];
-            if (urlInputField) urlInputField.value = '';
-            const tags = tagsList.querySelectorAll('.xp-url-tag');
-            tags.forEach(tag => tag.remove());
-            xp_updateCounter(urlCounter, urlInputField);
+            xp_clearAllUrls(tagsList, urlInputField, urlCounter);
             if (resultSection) resultSection.classList.add('xp-hidden');
             localStorage.removeItem(XP_STORAGE_KEY);
             localStorage.removeItem(XP_STORAGE_URLS_KEY);
@@ -62,14 +59,15 @@
             if (xp_urlsArray.length === 0) return;
             navigator.clipboard.writeText(xp_urlsArray.join('\n')).then(() => {
                 copyAllBtn.classList.add('xp-success');
-                copyAllBtn.querySelector('.xp-copy-icon').textContent = '✅';
-                copyAllBtn.querySelector('.xp-copy-text').textContent = '已复制';
                 setTimeout(() => {
                     copyAllBtn.classList.remove('xp-success');
-                    copyAllBtn.querySelector('.xp-copy-icon').textContent = '📋';
-                    copyAllBtn.querySelector('.xp-copy-text').textContent = '复制全部';
-                }, 2000);
+                }, 1400);
             });
+        });
+
+        // 清空所有链接
+        clearAllBtn.addEventListener('click', () => {
+            xp_clearAllUrls(tagsList, urlInputField, urlCounter);
         });
 
         // 语言切换
@@ -167,6 +165,16 @@
                 urlInputField.placeholder = '输入URL回车添加，支持批量粘贴';
             }
         }
+    }
+
+    function xp_clearAllUrls(tagsList, urlInputField, urlCounter) {
+        xp_urlsArray = [];
+        if (urlInputField) urlInputField.value = '';
+        if (tagsList) {
+            tagsList.querySelectorAll('.xp-url-tag').forEach(tag => tag.remove());
+        }
+        xp_updateCounter(urlCounter, urlInputField);
+        if (urlInputField) urlInputField.focus();
     }
 
     function xp_truncateUrl(url) {
@@ -315,14 +323,16 @@
         }
 
         xp_hideError(errorMsg);
-        resultSection.classList.add('xp-hidden');
-        xp_currentResponse = null;
+        const hasExistingResult = !!xp_currentResponse;
+        if (!hasExistingResult) {
+            resultSection.classList.add('xp-hidden');
+        }
         xp_winnerIndex = -1;
-        localStorage.removeItem(XP_STORAGE_KEY);
-        localStorage.removeItem(XP_STORAGE_URLS_KEY);
         loadingSection.classList.remove('xp-hidden');
         analyzeBtn.disabled = true;
-        analyzeBtn.innerHTML = '正在解构中... <div class="xp-spinner" style="width:15px;height:15px;border-width:2px;display:inline-block;"></div>';
+        analyzeBtn.innerHTML = hasExistingResult
+            ? '正在刷新... <div class="xp-spinner" style="width:15px;height:15px;border-width:2px;display:inline-block;"></div>'
+            : '正在解构中... <div class="xp-spinner" style="width:15px;height:15px;border-width:2px;display:inline-block;"></div>';
 
         try {
             const response = await fetch(XP_API_URL, {

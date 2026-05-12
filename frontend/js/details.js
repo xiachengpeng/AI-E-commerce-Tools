@@ -1,5 +1,223 @@
 
 // ====== 详情页模块配置逻辑 ======
+const DETAIL_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+const DETAIL_MAX_TASKS = 24;
+const DETAIL_MAX_UPLOAD_IMAGES = 6;
+
+function detailEscapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    }[ch]));
+}
+
+function getSelectedOptionLabel(selectId) {
+    const select = document.getElementById(selectId);
+    return select?.options?.[select.selectedIndex]?.text || select?.value || '';
+}
+
+function normalizeAspectRatio(value) {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+    if (!match) return null;
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    if (width > 50 || height > 50) return null;
+    return `${width}:${height}`;
+}
+
+function getDetailConfig() {
+    let ratioVal = document.getElementById('aspectRatioSelect')?.value || '1:1';
+    if (ratioVal === 'custom') {
+        ratioVal = `${document.getElementById('customRatioW')?.value || ''}:${document.getElementById('customRatioH')?.value || ''}`;
+    }
+    const aspectRatio = normalizeAspectRatio(ratioVal);
+    if (!aspectRatio) {
+        showToast('请填写有效的宽高比，例如 3:4', 'error');
+        return null;
+    }
+
+    const region = document.getElementById('regionSelect')?.value || 'Global Market';
+    return {
+        imageStyle: document.getElementById('imageStyleSelect')?.value || '',
+        imageStyleLabel: getSelectedOptionLabel('imageStyleSelect'),
+        platform: document.getElementById('platformSelect')?.value || '',
+        platformLabel: getSelectedOptionLabel('platformSelect'),
+        region,
+        regionLabel: getSelectedOptionLabel('regionSelect'),
+        marketTone: MARKET_TONE_MAP?.[region] || MARKET_TONE_MAP?.["Global Market"] || '',
+        language: document.getElementById('languageSelect')?.value || 'English',
+        languageLabel: getSelectedOptionLabel('languageSelect'),
+        aspectRatio,
+        marketingTheme: document.getElementById('marketingThemeSelect')?.value || 'none',
+        marketingThemeLabel: getSelectedOptionLabel('marketingThemeSelect')
+    };
+}
+
+function setModuleStatus(uniqueId, status, message = '') {
+    const badge = document.getElementById(`status-badge-${uniqueId}`);
+    if (!badge) return;
+    const styles = {
+        pending: 'bg-slate-100 text-slate-500 border-slate-200',
+        loading: 'bg-blue-50 text-blue-600 border-blue-100',
+        success: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+        fallback: 'bg-amber-50 text-amber-700 border-amber-100',
+        error: 'bg-red-50 text-red-600 border-red-100'
+    };
+    const labels = {
+        pending: '等待中',
+        loading: '生成中',
+        success: '已完成',
+        fallback: '降级图',
+        error: '失败'
+    };
+    badge.className = `text-[10px] font-black px-2 py-0.5 rounded-full border ${styles[status] || styles.pending}`;
+    badge.textContent = message || labels[status] || labels.pending;
+}
+
+function getModuleSeo(uniqueId) {
+    return {
+        titleTarget: document.getElementById(`seo-title-target-${uniqueId}`)?.value || '',
+        titleZh: document.getElementById(`seo-title-zh-${uniqueId}`)?.value || '',
+        altTarget: document.getElementById(`alt-text-target-${uniqueId}`)?.value || '',
+        altZh: document.getElementById(`alt-text-zh-${uniqueId}`)?.value || ''
+    };
+}
+
+function setModuleSeo(uniqueId, seo = {}) {
+    const fields = {
+        [`seo-title-target-${uniqueId}`]: seo.titleTarget || seo.seoTitle?.target || '',
+        [`seo-title-zh-${uniqueId}`]: seo.titleZh || seo.seoTitle?.zh || '',
+        [`alt-text-target-${uniqueId}`]: seo.altTarget || seo.altText?.target || '',
+        [`alt-text-zh-${uniqueId}`]: seo.altZh || seo.altText?.zh || ''
+    };
+    Object.entries(fields).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    });
+}
+
+function getModuleImageSrc(uniqueId) {
+    return document.getElementById(`content-mod-${uniqueId}`)?.querySelector('img')?.src || '';
+}
+
+function validateSortedIds(sortedIds, expectedIds) {
+    if (!Array.isArray(sortedIds)) return null;
+    const expected = new Set(expectedIds);
+    const clean = [];
+    sortedIds.forEach(id => {
+        if (expected.has(id) && !clean.includes(id)) clean.push(id);
+    });
+    expectedIds.forEach(id => {
+        if (!clean.includes(id)) clean.push(id);
+    });
+    return clean.length === expectedIds.length ? clean : null;
+}
+
+function parseImageDataUrl(dataUrl) {
+    if (!dataUrl || !dataUrl.includes(',')) return null;
+    return {
+        mimeType: dataUrl.split(';')[0].split(':')[1],
+        data: dataUrl.split(',')[1]
+    };
+}
+
+async function imageUrlToDataUrl(src) {
+    if (!src || src.startsWith('data:image')) return src;
+    const response = await fetch(formatImgSrc(src));
+    if (!response.ok) throw new Error(`图片读取失败: ${response.status}`);
+    const blob = await response.blob();
+    return await fileToDataUrl(blob);
+}
+
+async function ensureInlineImageData(image) {
+    if (!image) return null;
+    if (image.data && image.mimeType) return image;
+    const dataUrl = await imageUrlToDataUrl(image.base64 || image.imageSrc || '');
+    const parsed = parseImageDataUrl(dataUrl);
+    if (!parsed) return null;
+    return {
+        ...image,
+        base64: dataUrl,
+        mimeType: parsed.mimeType,
+        data: parsed.data
+    };
+}
+
+function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function getPrimaryUploadedImage() {
+    if (Array.isArray(currentUploadedImages) && currentUploadedImages.length) {
+        return currentUploadedImages[0];
+    }
+    return currentUploadedBase64 ? {
+        id: 'primary_legacy',
+        name: '主图',
+        base64: currentUploadedBase64,
+        isPrimary: true,
+        ...parseImageDataUrl(currentUploadedBase64)
+    } : null;
+}
+
+function getAngleUploadedImages() {
+    return Array.isArray(currentUploadedImages) ? currentUploadedImages.slice(1) : [];
+}
+
+function renderUploadedImagePreviews() {
+    const container = document.getElementById('imagePreviewContainer');
+    if (!container) return;
+
+    if (!currentUploadedImages.length) {
+        container.innerHTML = '';
+        container.classList.add('hidden');
+        container.classList.remove('flex');
+        return;
+    }
+
+    container.classList.remove('hidden');
+    container.classList.add('flex');
+    container.innerHTML = currentUploadedImages.map((img, index) => `
+        <div class="w-[84px] h-[84px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group shadow-inner">
+            <img src="${detailEscapeHtml(img.base64)}" alt="${detailEscapeHtml(img.name || 'Product')}" class="w-full h-full object-cover">
+            <span class="absolute left-1 bottom-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-black/60 text-white">${index === 0 ? '主图' : `角度${index}`}</span>
+            ${index > 0 ? `<button onclick="setPrimaryImage(${index})" title="设为主图"
+                class="absolute left-1 top-1 bg-white/90 text-blue-600 rounded px-1.5 py-0.5 text-[9px] font-black opacity-0 group-hover:opacity-100 transition-opacity">主图</button>` : ''}
+            <button onclick="removeImage(${index})"
+                class="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"><i
+                    class="ph ph-x text-xs"></i></button>
+        </div>
+    `).join('');
+}
+
+function setPrimaryImage(index) {
+    if (!Array.isArray(currentUploadedImages) || index <= 0 || index >= currentUploadedImages.length) return;
+    const [selected] = currentUploadedImages.splice(index, 1);
+    currentUploadedImages.unshift(selected);
+    currentUploadedImages = currentUploadedImages.map((img, idx) => ({ ...img, isPrimary: idx === 0 }));
+    currentUploadedBase64 = currentUploadedImages[0]?.base64 || null;
+    renderUploadedImagePreviews();
+    showToast('已设为主图', 'success');
+}
+
+function getImagesForTask(task) {
+    const primaryImage = globalGenContext.primaryImage;
+    const angleImages = globalGenContext.angleImages || [];
+    const isAngleModule = task.id === 'm4';
+    if (!isAngleModule) return primaryImage ? [primaryImage] : [];
+    return primaryImage ? [primaryImage, ...angleImages].slice(0, 6) : [];
+}
+
 function initModules() {
     const grid = document.getElementById('moduleGrid');
     if (!grid) return;
@@ -58,26 +276,71 @@ function toggleCustomRatio() {
 }
 
 // ====== 图像上传处理 ======
-function handleImageUpload(event) {
-    const file = event.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = e => {
-            currentUploadedBase64 = e.target.result;
-            document.getElementById('uploadedImagePreview').src = currentUploadedBase64;
-            document.getElementById('imagePreviewContainer').classList.remove('hidden');
-            document.getElementById('imagePreviewContainer').classList.add('flex');
-            showToast('主图素材上传成功', 'success');
+async function handleImageUpload(event) {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+    const remainingSlots = DETAIL_MAX_UPLOAD_IMAGES - currentUploadedImages.length;
+    if (remainingSlots <= 0) {
+        showToast(`最多上传 ${DETAIL_MAX_UPLOAD_IMAGES} 张素材`, 'warning');
+        event.target.value = '';
+        return;
+    }
+    const selectedFiles = files.slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+        showToast(`最多保留 ${DETAIL_MAX_UPLOAD_IMAGES} 张素材，已自动忽略多余图片`, 'warning');
+    }
+
+    const validFiles = [];
+    for (const file of selectedFiles) {
+        if (!file.type.startsWith('image/')) {
+            showToast('请上传图片文件', 'error');
+            event.target.value = '';
+            return;
         }
-        reader.readAsDataURL(file);
+        if (file.size > DETAIL_IMAGE_MAX_BYTES) {
+            showToast('图片过大，请压缩到 8MB 以内', 'error');
+            event.target.value = '';
+            return;
+        }
+        validFiles.push(file);
+    }
+
+    try {
+        const uploaded = await Promise.all(validFiles.map(async (file) => {
+            const base64 = await fileToDataUrl(file);
+            return {
+                id: `detail_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                name: file.name,
+                base64,
+                isPrimary: false,
+                ...parseImageDataUrl(base64)
+            };
+        }));
+        currentUploadedImages = [...currentUploadedImages, ...uploaded]
+            .slice(0, DETAIL_MAX_UPLOAD_IMAGES)
+            .map((img, index) => ({ ...img, isPrimary: index === 0 }));
+        currentUploadedBase64 = currentUploadedImages[0]?.base64 || null;
+        renderUploadedImagePreviews();
+        const angleCount = Math.max(0, currentUploadedImages.length - 1);
+        showToast(angleCount ? `已上传 ${currentUploadedImages.length} 张素材，多角度图将优先使用角度素材` : '主图素材上传成功', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('图片读取失败', 'error');
+    } finally {
+        event.target.value = '';
     }
 }
 
-function removeImage() {
-    currentUploadedBase64 = null;
+function removeImage(index = null) {
+    if (index === null || index === undefined) {
+        currentUploadedImages = [];
+    } else {
+        currentUploadedImages.splice(index, 1);
+        currentUploadedImages = currentUploadedImages.map((img, idx) => ({ ...img, isPrimary: idx === 0 }));
+    }
+    currentUploadedBase64 = currentUploadedImages[0]?.base64 || null;
     document.getElementById('imageUpload').value = '';
-    document.getElementById('imagePreviewContainer').classList.add('hidden');
-    document.getElementById('imagePreviewContainer').classList.remove('flex');
+    renderUploadedImagePreviews();
 }
 
 // ====== 生成逻辑 ======
@@ -119,8 +382,14 @@ async function generateSellingPoints() {
 - 输出为清晰结构化文本（不要markdown格式）
 
 请基于图片内容进行合理推断，不要编造明显不符合图片的信息。` }];
-    if (currentUploadedBase64) {
-        parts.push({ inlineData: { mimeType: currentUploadedBase64.split(';')[0].split(':')[1], data: currentUploadedBase64.split(',')[1] } });
+    const sellingPointImages = [getPrimaryUploadedImage(), ...getAngleUploadedImages().slice(0, 2)].filter(Boolean);
+    if (sellingPointImages.length) {
+        if (sellingPointImages.length > 1) {
+            parts[0].text += `\n\n我同时提供了 ${sellingPointImages.length} 张商品素材。第一张是主图，后续为角度/细节参考。请综合判断，但不要把不同角度误认为不同产品。`;
+        }
+        sellingPointImages.forEach(img => {
+            parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+        });
     } else { showToast('未上传图片，将仅使用预设文案测试', 'info'); }
 
     try {
@@ -144,6 +413,8 @@ async function generateSellingPoints() {
 async function generateSEOMetadata(task, sellingPoints) {
     const prompt = `你是一个专业的电商SEO专家。我正在为电商详情页的“${task.title}”模块生成一张商品图片。
 产品核心信息：${sellingPoints.substring(0, 300)}
+目标平台：${globalGenContext?.config?.platformLabel || globalGenContext?.config?.platform || '跨境电商'}
+目标市场：${globalGenContext?.config?.regionLabel || globalGenContext?.config?.region || '全球'}
 
 请用【English】为这张图片配发SEO数据，并提供【中文对照】：
 1. seoTitle：简短且包含核心关键词的图片标题。
@@ -168,59 +439,62 @@ async function generateSEOMetadata(task, sellingPoints) {
 
             const titleData = getVal(data.seoTitle);
             const altData = getVal(data.altText);
-
-            const tTarget = document.getElementById(`seo-title-target-${task.uniqueId}`);
-            const tZh = document.getElementById(`seo-title-zh-${task.uniqueId}`);
-            const aTarget = document.getElementById(`alt-text-target-${task.uniqueId}`);
-            const aZh = document.getElementById(`alt-text-zh-${task.uniqueId}`);
-
-            if (tTarget) tTarget.value = titleData.target;
-            if (tZh) tZh.value = titleData.zh;
-            if (aTarget) aTarget.value = altData.target;
-            if (aZh) aZh.value = altData.zh;
+            const seo = {
+                titleTarget: titleData.target,
+                titleZh: titleData.zh,
+                altTarget: altData.target,
+                altZh: altData.zh
+            };
+            setModuleSeo(task.uniqueId, seo);
+            task.seo = seo;
             remoteLog(`模块 [${task.title}] SEO 元数据生成成功`);
+            return seo;
         }
     } catch (e) {
         console.warn("SEO Gen Fail:", e);
         remoteLog(`模块 [${task.title}] SEO 生成失败: ${e.message}`);
     }
+    return null;
 }
 
 async function generateAIPage() {
     const activeModules = modules.filter(m => m.active);
     if (!activeModules.length) { showToast('请至少选择一个模块', 'error'); return; }
-    if (!currentUploadedBase64) { showToast('请先上传一张主图素材', 'error'); return; }
+    const primaryImage = getPrimaryUploadedImage();
+    const angleImages = getAngleUploadedImages();
+    if (!primaryImage) { showToast('请先上传一张主图素材', 'error'); return; }
+    const totalTaskCount = activeModules.reduce((sum, mod) => sum + (mod.count || 1), 0);
+    if (totalTaskCount > DETAIL_MAX_TASKS) {
+        showToast(`当前共 ${totalTaskCount} 张，建议控制在 ${DETAIL_MAX_TASKS} 张以内`, 'error');
+        return;
+    }
 
     const sellingPoints = document.getElementById('sellingPointsText').value;
     if (!sellingPoints) { showToast('请填写核心卖点', 'error'); return; }
 
-    const startMsg = `开始详情页全案生成流程 | 模块总数: ${activeModules.length} | 并发控制: ${CONCURRENCY_LIMIT}`;
+    const startMsg = `开始详情页全案生成流程 | 出图总数: ${totalTaskCount} | 并发控制: ${CONCURRENCY_LIMIT}`;
     console.log(`%c[详情页] ${startMsg}`, "color: #4f46e5; font-weight: bold;");
     remoteLog(startMsg);
 
-    let ratioVal = document.getElementById('aspectRatioSelect').value;
-    if (ratioVal === 'custom') ratioVal = `${document.getElementById('customRatioW').value}:${document.getElementById('customRatioH').value}`;
-
-    const config = {
-        imageStyle: document.getElementById('imageStyleSelect').value,
-        platform: document.getElementById('platformSelect').value,
-        language: document.getElementById('languageSelect').value,
-        aspectRatio: ratioVal,
-        marketingTheme: document.getElementById('marketingThemeSelect').value
-    };
-
-    const base64Data = currentUploadedBase64.split(',')[1];
-    const mimeType = currentUploadedBase64.split(';')[0].split(':')[1];
+    const config = getDetailConfig();
+    if (!config) return;
 
     globalGenContext = {
-        base64Data, mimeType, sellingPoints, config, tasks: {},
+        base64Data: primaryImage.data,
+        mimeType: primaryImage.mimeType,
+        primaryImage,
+        angleImages,
+        uploadedImages: [primaryImage, ...angleImages],
+        sellingPoints,
+        config,
+        tasks: {},
         longImageOrder: []
     };
 
     let taskQueue = [];
     activeModules.forEach(mod => {
         for (let i = 0; i < mod.count; i++) {
-            const task = { ...mod, uniqueId: `${mod.id}_${i}`, displayTitle: mod.count > 1 ? `${mod.title} 0${i + 1}` : mod.title, variant: i, totalVariants: mod.count };
+            const task = { ...mod, uniqueId: `${mod.id}_${i}`, displayTitle: mod.count > 1 ? `${mod.title} 0${i + 1}` : mod.title, variant: i, totalVariants: mod.count, status: 'pending' };
             taskQueue.push(task);
             globalGenContext.tasks[task.uniqueId] = task;
             globalGenContext.longImageOrder.push(task.uniqueId);
@@ -241,11 +515,12 @@ async function generateAIPage() {
                 <div class="bg-gray-50/80 px-5 py-3 border-b border-gray-100 flex justify-between items-center backdrop-blur">
                     <div class="flex items-center gap-2">
                         <span class="w-1.5 h-4 bg-blue-500 rounded-full"></span>
-                        <span class="font-bold text-gray-700 text-sm">${task.displayTitle}</span>
+                        <span class="font-bold text-gray-700 text-sm">${detailEscapeHtml(task.displayTitle)}</span>
+                        <span id="status-badge-${task.uniqueId}" class="text-[10px] font-black px-2 py-0.5 rounded-full border bg-slate-100 text-slate-500 border-slate-200">等待中</span>
                     </div>
                     <div class="flex items-center gap-2">
-                        <span class="text-xs text-gray-400 mr-2">${task.subtitle}</span>
-                        <button id="regen-btn-${task.uniqueId}" onclick="generateSingleWrap('${task.uniqueId}', true)" class="hidden flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-500 hover:text-blue-600 transition-colors shadow-sm" title="重绘图像"><i class="ph ph-arrows-clockwise text-sm"></i></button>
+                        <span class="text-xs text-gray-400 mr-2">${detailEscapeHtml(task.subtitle)}</span>
+                        <button id="regen-btn-${task.uniqueId}" onclick="generateSingleWrap('${task.uniqueId}')" class="hidden flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-500 hover:text-blue-600 transition-colors shadow-sm" title="重绘图像并刷新 SEO"><i class="ph ph-arrows-clockwise text-sm"></i></button>
                     </div>
                 </div>
                 <div id="content-mod-${task.uniqueId}" class="p-6 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iMTAiIGN5PSIxMCIgcj0iMSIgZmlsbD0iI2YxZjFmMSIvPjwvc3ZnPg==')]" style="aspect-ratio: ${ratioStr}; min-height: 200px;">
@@ -289,6 +564,9 @@ async function generateAIPage() {
 
     const activeTasks = [];
     let completedCount = 0;
+    let successCount = 0;
+    let fallbackCount = 0;
+    let errorCount = 0;
 
     for (let i = 0; i < taskQueue.length; i++) {
         if (activeTasks.length >= CONCURRENCY_LIMIT) {
@@ -302,12 +580,17 @@ async function generateAIPage() {
 
         const taskPromise = (async () => {
             try {
-                await generateSingleWrap(task.uniqueId);
+                const result = await generateSingleWrap(task.uniqueId);
+                if (result?.status === 'success') successCount++;
+                else if (result?.status === 'fallback') fallbackCount++;
+                else errorCount++;
                 const finishMsg = `模块 [${task.title}] 渲染成功`;
                 console.log(`%c[详情页] ${finishMsg}`, "color: #10b981;");
                 remoteLog(finishMsg);
             } catch (e) {
+                errorCount++;
                 console.error(`Task ${task.uniqueId} failed:`, e);
+                setModuleStatus(task.uniqueId, 'error');
                 remoteLog(`模块 [${task.title}] 渲染异常: ${e.message}`);
             } finally {
                 completedCount++;
@@ -328,8 +611,9 @@ async function generateAIPage() {
 
     await Promise.all(activeTasks);
     btn.innerHTML = origBtnHtml; btn.disabled = false;
-    showToast('全案模块生成完毕！', 'success');
-    remoteLog(`详情页全案生成结束`);
+    const summary = `生成完成：成功 ${successCount}，降级 ${fallbackCount}，失败 ${errorCount}`;
+    showToast(summary, errorCount ? 'warning' : (fallbackCount ? 'warning' : 'success'));
+    remoteLog(`详情页全案生成结束 | ${summary}`);
 }
 
 async function generateSingleWrap(uniqueId, skipSEO = false) {
@@ -340,25 +624,50 @@ async function generateSingleWrap(uniqueId, skipSEO = false) {
     const contentDiv = document.getElementById(`content-mod-${uniqueId}`);
     if (!contentDiv) return;
 
+    setModuleStatus(uniqueId, 'loading');
+    task.status = 'loading';
+    task.error = '';
     contentDiv.innerHTML = `<span class="loader border-blue-500 border-t-transparent w-8 h-8 mb-3"></span><span class="text-sm text-gray-500 font-medium">AI引擎构图中...</span>`;
     document.getElementById(`regen-btn-${uniqueId}`)?.classList.add('hidden');
     contentDiv.classList.add('p-6', 'flex-col', 'items-center', 'justify-center');
+    contentDiv.style.padding = '';
 
-    const { base64Data, mimeType, sellingPoints, config } = globalGenContext;
+    const { sellingPoints, config } = globalGenContext;
+    const taskImages = (await Promise.all(getImagesForTask(task).map(img => ensureInlineImageData(img)))).filter(Boolean);
+    if (!taskImages.length) {
+        throw new Error('缺少可用的商品图片素材');
+    }
+    const isAngleModule = task.id === 'm4';
+    const hasAngleReferences = isAngleModule && (globalGenContext.angleImages || []).length > 0;
 
-    const themeContext = config.marketingTheme !== 'none' ? `5. Marketing Theme: ${config.marketingTheme} - It is CRITICAL to integrate this theme naturally into the visual.` : '';
+    const themeContext = config.marketingTheme !== 'none' ? `6. Marketing Theme: ${config.marketingTheme} - It is CRITICAL to integrate this theme naturally into the visual.` : '';
+    const variationRule = task.totalVariants > 1 ? `7. Variation: version ${task.variant + 1}/${task.totalVariants}. Make it unique while staying consistent with the same product.` : '';
+    const angleRule = isAngleModule
+        ? (hasAngleReferences
+            ? `9. Multi-angle mode: I provided real angle reference images after the first primary image. Use these references faithfully to build a multi-angle collage. Do not hallucinate different product variants.`
+            : `9. Multi-angle mode: Only one primary image is provided. Generate plausible front, side, back, detail, and perspective views from the primary image while preserving the exact product identity, proportions, materials, and colors.`)
+        : '';
 
     let prompt = `Task: Professional e-commerce section for "${task.title}". Req: ${task.prompt}. Context: ${sellingPoints.substring(0, 150)}.
 CONSTRAINTS:
 1. Target Platform: ${config.platform}
-2. Language: ALL text MUST be ${config.language}
-3. Aspect Ratio: ${config.aspectRatio}
-4. Aesthetic Style: ${config.imageStyle} - CRITICAL to follow this vibe.
+2. Target Market: ${config.region}. Local tone: ${config.marketTone}
+3. Language: ALL visible text MUST be ${config.language}
+4. Aspect Ratio: ${config.aspectRatio}
+5. Aesthetic Style: ${config.imageStyle} - CRITICAL to follow this vibe.
 ${themeContext}
-${task.totalVariants > 1 ? `6. Variation: version ${task.variant + 1}/${task.totalVariants}. Make it unique.` : ''}`;
+${variationRule}
+8. Keep the source product identity, shape, material, color, and key details stable. Do not invent logos, certifications, medical claims, or impossible performance promises.
+${angleRule}`;
 
-    let parts = [{ text: prompt }, { inlineData: { mimeType, data: base64Data } }];
-    const payload = { contents: [{ role: "user", parts: parts }], generationConfig: { responseModalities: ['IMAGE'] } };
+    let parts = [{ text: prompt }, ...taskImages.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } }))];
+    const payload = {
+        contents: [{ role: "user", parts: parts }],
+        generationConfig: {
+            responseModalities: ['IMAGE'],
+            imageConfig: { aspectRatio: config.aspectRatio }
+        }
+    };
 
     try {
         const promises = [callAI(IMAGE_MODEL, payload)];
@@ -375,38 +684,86 @@ ${task.totalVariants > 1 ? `6. Variation: version ${task.variant + 1}/${task.tot
             contentDiv.innerHTML = `<img src="${generatedSrc}" class="w-full h-full object-cover">`;
             contentDiv.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
             contentDiv.style.padding = '0';
+            task.imageSrc = generatedSrc;
+            task.status = 'success';
+            task.isFallback = false;
+            setModuleStatus(uniqueId, 'success');
         } else throw new Error("No image data in response");
 
     } catch (error) {
         console.warn(`[Fallback] Module rendering via code CSS:`, error);
         remoteLog(`模块 [${task.title}] 触发 Fallback 渲染`);
-        renderMockModule(contentDiv, task, sellingPoints, config, currentUploadedBase64);
+        if (isAngleModule && taskImages.length > 1) {
+            renderMultiAngleFallback(contentDiv, task, sellingPoints, config, taskImages);
+        } else {
+            renderMockModule(contentDiv, task, sellingPoints, config, taskImages[0]?.base64 || currentUploadedBase64);
+        }
         if (!skipSEO) {
             await generateSEOMetadata(task, sellingPoints);
         }
+        task.imageSrc = getModuleImageSrc(uniqueId);
+        task.status = 'fallback';
+        task.isFallback = true;
+        task.error = error.message || String(error);
+        setModuleStatus(uniqueId, 'fallback');
     }
 
     document.getElementById(`regen-btn-${uniqueId}`)?.classList.remove('hidden');
+    task.seo = getModuleSeo(uniqueId);
+    return { status: task.status, task };
 }
 
 function renderMockModule(container, task, points, config, imgSrc) {
     if (!container) return;
     const ratioStr = config.aspectRatio.replace(':', '/');
-    const themeTag = config.marketingTheme !== 'none' ? `<div class="absolute top-4 left-4 bg-orange-500 text-white text-[9px] font-black px-2 py-1 rounded shadow-lg uppercase tracking-tighter z-10 animate-bounce">${config.marketingTheme} EDITION</div>` : '';
+    const themeTag = config.marketingTheme !== 'none' ? `<div class="absolute top-4 left-4 bg-orange-500 text-white text-[9px] font-black px-2 py-1 rounded shadow-lg uppercase tracking-tighter z-10">${detailEscapeHtml(config.marketingThemeLabel || config.marketingTheme)}</div>` : '';
+    const safeTitle = detailEscapeHtml(task.title);
+    const safePoints = detailEscapeHtml(points.substring(0, 80));
+    const safeStyle = detailEscapeHtml((config.imageStyleLabel || config.imageStyle || '').split(',')[0]);
+    const safePlatform = detailEscapeHtml(config.platformLabel || config.platform);
+    const safeImg = detailEscapeHtml(imgSrc || '');
 
     let content = `<div class="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-slate-50 to-slate-100 relative overflow-hidden">
         ${themeTag}
-        <img src="${imgSrc}" class="h-3/5 object-contain drop-shadow-2xl mb-6 max-w-full transform hover:scale-105 transition-transform duration-700">
-        <h3 class="text-xl font-black text-slate-800 tracking-wider uppercase">${task.title}</h3>
+        <img src="${safeImg}" class="h-3/5 object-contain drop-shadow-2xl mb-6 max-w-full transform hover:scale-105 transition-transform duration-700">
+        <h3 class="text-xl font-black text-slate-800 tracking-wider uppercase">${safeTitle}</h3>
         <div class="w-12 h-1 bg-blue-500 my-3 rounded-full"></div>
-        <p class="text-[10px] text-slate-500 mt-1 max-w-xs leading-relaxed font-medium">${points.substring(0, 80)}...</p>
+        <p class="text-[10px] text-slate-500 mt-1 max-w-xs leading-relaxed font-medium">${safePoints}...</p>
         <div class="mt-6 flex items-center gap-2">
-            <span class="px-3 py-1 bg-white border border-slate-200 rounded-full text-[9px] font-black text-slate-400 uppercase tracking-widest">${config.imageStyle.split(',')[0]}</span>
+            <span class="px-3 py-1 bg-white border border-slate-200 rounded-full text-[9px] font-black text-slate-400 uppercase tracking-widest">${safeStyle}</span>
             <span class="w-1 h-1 rounded-full bg-slate-300"></span>
-            <span class="text-[9px] font-black text-blue-500 uppercase">${config.platform}</span>
+            <span class="text-[9px] font-black text-blue-500 uppercase">${safePlatform}</span>
         </div>
     </div>`;
     container.innerHTML = `<div class="w-full h-full overflow-hidden" style="aspect-ratio: ${ratioStr};">${content}</div>`;
+    container.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
+    container.style.padding = '0';
+}
+
+function renderMultiAngleFallback(container, task, points, config, images) {
+    if (!container || !images.length) return;
+    const ratioStr = config.aspectRatio.replace(':', '/');
+    const safeTitle = detailEscapeHtml(task.title);
+    const safePoints = detailEscapeHtml(points.substring(0, 70));
+    const safeTheme = detailEscapeHtml(config.marketingThemeLabel || '');
+    const tiles = images.slice(0, 6).map((img, index) => `
+        <div class="relative bg-white rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+            <img src="${detailEscapeHtml(img.base64)}" class="w-full h-full object-contain p-2">
+            <span class="absolute left-2 bottom-2 bg-slate-900/70 text-white text-[9px] font-black px-2 py-0.5 rounded">${index === 0 ? '主视角' : `角度 ${index}`}</span>
+        </div>
+    `).join('');
+
+    container.innerHTML = `
+        <div class="w-full h-full bg-slate-50 p-5 flex flex-col gap-4" style="aspect-ratio: ${ratioStr};">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-xl font-black text-slate-800 tracking-wide">${safeTitle}</div>
+                    <div class="text-[10px] text-slate-500 mt-1 max-w-lg">${safePoints}...</div>
+                </div>
+                ${safeTheme ? `<span class="text-[9px] font-black text-orange-600 bg-orange-50 border border-orange-100 rounded px-2 py-1">${safeTheme}</span>` : ''}
+            </div>
+            <div class="grid grid-cols-3 gap-3 flex-1 min-h-0">${tiles}</div>
+        </div>`;
     container.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
     container.style.padding = '0';
 }
@@ -456,6 +813,138 @@ async function downloadAllModules() {
     showToast('全部下载完毕！', 'success');
 }
 
+function collectCurrentRenderProject(finalImage = '') {
+    if (!globalGenContext) return null;
+    const taskEntries = Object.entries(globalGenContext.tasks || {});
+    const modulesSnapshot = taskEntries.map(([id, task]) => ({
+        id,
+        title: task.title,
+        subtitle: task.subtitle,
+        displayTitle: task.displayTitle,
+        prompt: task.prompt,
+        variant: task.variant,
+        totalVariants: task.totalVariants,
+        status: task.status || 'pending',
+        isFallback: !!task.isFallback,
+        error: task.error || '',
+        imageSrc: getModuleImageSrc(id) || task.imageSrc || '',
+        seo: getModuleSeo(id)
+    }));
+    return {
+        version: 2,
+        kind: 'detail-page-project',
+        finalImage,
+        uploadedImages: (globalGenContext.uploadedImages || []).map(img => ({
+            id: img.id,
+            name: img.name,
+            base64: img.base64,
+            mimeType: img.mimeType,
+            isPrimary: !!img.isPrimary
+        })),
+        sellingPoints: globalGenContext.sellingPoints || '',
+        config: globalGenContext.config || {},
+        longImageOrder: (globalGenContext.longImageOrder || []).slice(),
+        modules: modulesSnapshot
+    };
+}
+
+function renderRestoredDetailProject(project, fallbackImage = '') {
+    if (!project || project.kind !== 'detail-page-project' || !Array.isArray(project.modules)) return false;
+
+    const restoredImages = Array.isArray(project.uploadedImages)
+        ? project.uploadedImages.map((img, index) => {
+            const base64 = formatImgSrc(img.base64 || img.imageSrc || '');
+            const parsed = parseImageDataUrl(base64) || {};
+            return {
+                ...img,
+                base64,
+                mimeType: img.mimeType || parsed.mimeType || '',
+                data: img.data || parsed.data || '',
+                isPrimary: index === 0
+            };
+        }).filter(img => img.base64).slice(0, DETAIL_MAX_UPLOAD_IMAGES)
+        : [];
+    currentUploadedImages = restoredImages;
+    currentUploadedBase64 = restoredImages[0]?.base64 || null;
+    renderUploadedImagePreviews();
+
+    const restoredTasks = {};
+    const order = Array.isArray(project.longImageOrder) && project.longImageOrder.length
+        ? project.longImageOrder
+        : project.modules.map(mod => mod.id);
+
+    globalGenContext = {
+        base64Data: '',
+        mimeType: '',
+        primaryImage: restoredImages[0] || null,
+        angleImages: restoredImages.slice(1),
+        uploadedImages: restoredImages,
+        sellingPoints: project.sellingPoints || '',
+        config: project.config || { aspectRatio: '1:1', marketingTheme: 'none' },
+        tasks: restoredTasks,
+        longImageOrder: order
+    };
+
+    const sellingInput = document.getElementById('sellingPointsText');
+    if (sellingInput) sellingInput.value = project.sellingPoints || '';
+
+    const showcaseArea = document.getElementById('showcaseArea');
+    const resultArea = document.getElementById('resultArea');
+    const container = document.getElementById('modulesResultContainer');
+    if (!container || !resultArea) return false;
+
+    showcaseArea?.classList.add('hidden');
+    resultArea.classList.remove('hidden');
+    resultArea.classList.add('flex');
+    container.innerHTML = '';
+
+    const ratioStr = (project.config?.aspectRatio || '1:1').replace(':', '/');
+    project.modules.forEach(mod => {
+        const task = { ...mod, uniqueId: mod.id, active: true };
+        restoredTasks[mod.id] = task;
+        const imageSrc = mod.imageSrc || fallbackImage || project.finalImage || '';
+        container.insertAdjacentHTML('beforeend', `
+            <div id="result-mod-${detailEscapeHtml(mod.id)}" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col group">
+                <div class="bg-gray-50/80 px-5 py-3 border-b border-gray-100 flex justify-between items-center backdrop-blur">
+                    <div class="flex items-center gap-2">
+                        <span class="w-1.5 h-4 bg-blue-500 rounded-full"></span>
+                        <span class="font-bold text-gray-700 text-sm">${detailEscapeHtml(mod.displayTitle || mod.title || '详情模块')}</span>
+                        <span id="status-badge-${detailEscapeHtml(mod.id)}" class="text-[10px] font-black px-2 py-0.5 rounded-full border bg-slate-100 text-slate-500 border-slate-200">等待中</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-gray-400 mr-2">${detailEscapeHtml(mod.subtitle || '')}</span>
+                    </div>
+                </div>
+                <div id="content-mod-${detailEscapeHtml(mod.id)}" class="relative bg-white" style="aspect-ratio: ${ratioStr}; min-height: 200px; padding: 0;">
+                    ${imageSrc ? `<img src="${detailEscapeHtml(formatImgSrc(imageSrc))}" class="w-full h-full object-cover">` : '<div class="w-full h-full flex items-center justify-center text-xs text-gray-400">暂无模块图片</div>'}
+                </div>
+                <div class="border-t border-gray-100 bg-slate-50 p-4 flex flex-col gap-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-1.5"><i class="ph-fill ph-link text-blue-500"></i><span class="text-xs font-black text-gray-700 uppercase tracking-widest">SEO Meta-Data</span></div>
+                        <button onclick="downloadModule('${detailEscapeHtml(mod.id)}', '${detailEscapeHtml(mod.displayTitle || mod.title || '详情模块')}')" class="text-xs flex items-center gap-1 text-gray-500 hover:text-indigo-600 font-bold bg-white border border-gray-200 px-2 py-1 rounded shadow-sm transition-all active:scale-95"><i class="ph ph-download-simple"></i> 单存</button>
+                    </div>
+                    <div class="flex flex-col gap-2.5">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-bold text-gray-400 w-6">Title</span>
+                            <input type="text" id="seo-title-target-${detailEscapeHtml(mod.id)}" class="flex-1 text-xs px-2 py-1.5 border border-gray-200 rounded bg-white shadow-inner" readonly>
+                            <input type="text" id="seo-title-zh-${detailEscapeHtml(mod.id)}" class="flex-1 text-xs px-2 py-1.5 border border-gray-200 rounded bg-white shadow-inner text-gray-500" readonly>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <span class="text-[10px] font-bold text-gray-400 w-6 mt-1">Alt</span>
+                            <textarea id="alt-text-target-${detailEscapeHtml(mod.id)}" class="flex-1 text-xs px-2 py-1.5 border border-gray-200 rounded bg-white shadow-inner resize-none hide-scroll" rows="2" readonly></textarea>
+                            <textarea id="alt-text-zh-${detailEscapeHtml(mod.id)}" class="flex-1 text-xs px-2 py-1.5 border border-gray-200 rounded bg-white shadow-inner resize-none hide-scroll text-gray-500" rows="2" readonly></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>`);
+        setModuleSeo(mod.id, mod.seo || {});
+        setModuleStatus(mod.id, mod.status || (mod.isFallback ? 'fallback' : 'success'));
+    });
+
+    renderSortableList();
+    return true;
+}
+
 // ====== 长图拖拽排版台逻辑 ======
 function openLongImageBuilder() {
     if (!globalGenContext || !globalGenContext.longImageOrder.length) {
@@ -487,8 +976,8 @@ function renderSortableList() {
         li.innerHTML = `
             <i class="ph ph-dots-six-vertical text-gray-400 text-lg"></i>
             <div class="flex-1 min-w-0">
-                <div class="text-xs font-bold text-gray-700 truncate">${task.displayTitle}</div>
-                <div class="text-[10px] text-gray-400 truncate">${task.subtitle}</div>
+                <div class="text-xs font-bold text-gray-700 truncate">${detailEscapeHtml(task.displayTitle)}</div>
+                <div class="text-[10px] text-gray-400 truncate">${detailEscapeHtml(task.subtitle)}</div>
             </div>
         `;
 
@@ -499,7 +988,7 @@ function renderSortableList() {
 
         li.addEventListener('dragend', () => {
             setTimeout(() => {
-                draggedItem.classList.remove('ghost-item');
+                draggedItem?.classList.remove('ghost-item');
                 draggedItem = null;
                 updatePreviewOrder();
             }, 0);
@@ -515,7 +1004,7 @@ function renderSortableList() {
         });
         li.addEventListener('drop', function () {
             this.classList.remove('border-indigo-500', 'bg-indigo-50/50');
-            if (this !== draggedItem) {
+            if (draggedItem && this !== draggedItem) {
                 const allItems = [...list.children];
                 const curPos = allItems.indexOf(draggedItem);
                 const dropPos = allItems.indexOf(this);
@@ -584,9 +1073,13 @@ async function aiSortLongImage() {
         if (text) {
             const sortedIds = JSON.parse(text);
             if (Array.isArray(sortedIds)) {
-                globalGenContext.longImageOrder = sortedIds;
+                const currentIds = globalGenContext.longImageOrder.slice();
+                const safeOrder = validateSortedIds(sortedIds, currentIds);
+                if (!safeOrder) throw new Error('AI 返回的排序结果不完整');
+                const changed = safeOrder.some((id, idx) => id !== sortedIds[idx]) || safeOrder.length !== sortedIds.length;
+                globalGenContext.longImageOrder = safeOrder;
                 renderSortableList();
-                showToast('AI 智能排序已应用', 'success');
+                showToast(changed ? 'AI 排序已应用，已自动补齐缺失模块' : 'AI 智能排序已应用', 'success');
             }
         }
     } catch (err) { console.error(err); showToast('AI 排序失败', 'error'); }
@@ -619,12 +1112,14 @@ async function executeLongImageDownload() {
         link.click();
         showToast(`导出成功`, 'success');
 
+        const finalImage = finalCanvas.toDataURL('image/jpeg', 0.6);
+        const project = collectCurrentRenderProject(finalImage);
         // 存档全案
         saveToHistory('render', {
             name: `全案详情页_${ts}`,
-            style: globalGenContext?.config?.imageStyle || '默认',
-            image: finalCanvas.toDataURL('image/jpeg', 0.6),
-            metadata: { count: globalGenContext?.longImageOrder?.length || 0 }
+            style: globalGenContext?.config?.imageStyleLabel || globalGenContext?.config?.imageStyle || '默认',
+            image: finalImage,
+            metadata: project || { count: globalGenContext?.longImageOrder?.length || 0 }
         });
     } catch (e) { showToast('导出失败', 'error'); }
     finally { btn.innerHTML = origHTML; btn.disabled = false; }

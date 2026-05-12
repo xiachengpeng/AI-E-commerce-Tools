@@ -75,7 +75,7 @@ async function loadGlobalHistory(module) {
             // 提取缩略图 (针对翻译和渲染模块)
             let thumb = '';
             if (module === 'render' || module === 'translation') {
-                const imgData = item.image_base64 || item.result || item.data;
+                const imgData = item.image_base64 || item.result || item.data || item.metadata_info?.finalImage;
                 let imgSrc = formatImgSrc(typeof imgData === 'string' ? imgData : (imgData && imgData.image));
                 
                 if (imgSrc) {
@@ -114,7 +114,7 @@ async function loadGlobalHistory(module) {
     }
 }
 
-function restoreHistoryItemByIndex(module, index) {
+async function restoreHistoryItemByIndex(module, index) {
     const dataObj = _history_cache[index];
     if (!dataObj) return;
 
@@ -166,13 +166,24 @@ function restoreHistoryItemByIndex(module, index) {
     } else if (module === 'render') {
         switchMainTab('generate');
 
+        const metadata = dataObj.metadata_info || dataObj.metadata || {};
+        let imgData = dataObj.image_base64 || responseObj;
+        if (imgData && typeof imgData === 'object') {
+            imgData = imgData.image_base64 || imgData.image || imgData.data || imgData.finalImage || '';
+        }
+        const finalSrc = formatImgSrc(imgData || metadata.finalImage);
+
+        if (metadata && metadata.kind === 'detail-page-project' && typeof renderRestoredDetailProject === 'function') {
+            const restored = renderRestoredDetailProject(metadata, finalSrc);
+            if (restored) {
+                showToast('已还原详情页项目', 'success');
+                toggleGlobalHistory();
+                return;
+            }
+        }
+
         const previewContainer = document.getElementById('longImageCanvas');
         if (previewContainer) {
-            let imgData = dataObj.image_base64 || responseObj;
-            if (imgData && typeof imgData === 'object') {
-                imgData = imgData.image_base64 || imgData.image || imgData.data || imgData;
-            }
-            const finalSrc = formatImgSrc(imgData);
             previewContainer.innerHTML = `<img src="${finalSrc}" class="w-full shadow-2xl rounded-lg">`;
             document.getElementById('showcaseArea').classList.add('hidden');
             document.getElementById('resultArea').classList.remove('hidden');
