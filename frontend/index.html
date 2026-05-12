@@ -430,6 +430,9 @@
                         <label class="block text-[10px] font-bold text-gray-500 mb-1">目标市场 (启用超本地化语境)</label>
                         <select id="listingRegionSelect"
                             class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-gray-50 mb-3"></select>
+                        <label class="block text-[10px] font-bold text-gray-500 mb-1">目标语言</label>
+                        <select id="listingLanguageSelect"
+                            class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-gray-50 mb-3"></select>
                         <label class="block text-[10px] font-bold text-gray-500 mb-1">目标平台与调性</label>
                         <select id="listingStyleSelect"
                             class="w-full text-xs border border-indigo-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-indigo-50/50 text-indigo-900 font-medium mb-2 shadow-sm"></select>
@@ -472,6 +475,8 @@
                 </div>
 
                 <div id="listingResults" class="hidden flex-col gap-6 max-w-4xl mx-auto p-8 pb-10 fade-in w-full">
+                    <div id="listingRuleWarnings" class="hidden bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl p-4 text-sm"></div>
+
                     <div
                         class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 relative group transition-all hover:shadow-md hover:border-indigo-300">
                         <div class="flex items-center justify-between mb-4">

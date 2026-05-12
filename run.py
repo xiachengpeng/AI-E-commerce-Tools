@@ -4,6 +4,7 @@ import os
 import time
 import webbrowser
 import io
+import socket
 
 # 强制设置控制台输出为 UTF-8，防止 Windows 环境下的乱码
 if sys.platform == "win32":
@@ -17,6 +18,12 @@ if sys.platform == "win32":
     else:
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
+def is_port_available(host, port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex((host, port)) != 0
+
+
 def run_app():
     root_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.join(root_dir, "backend")
@@ -24,9 +31,16 @@ def run_app():
 
     print("🚀 正在启动 AI 竞品分析工具...")
 
+    if not is_port_available("127.0.0.1", 8000):
+        print("❌ 后端端口 8000 已被占用。请先关闭旧的后端服务后再运行 python run.py。")
+        return
+    if not is_port_available("127.0.0.1", 8080):
+        print("❌ 前端端口 8080 已被占用。请先关闭旧的前端服务后再运行 python run.py。")
+        return
+
     # 1. 启动后端 (Uvicorn) - 竞品分析服务 端口 8000
     backend_process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000",
+        [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000",
          "--app-dir", backend_dir],
         cwd=backend_dir,
         env={**os.environ, "PYTHONPATH": backend_dir}

@@ -125,10 +125,12 @@ window.onload = async () => {
     
     fillSelect('listingMarketingThemeSelect', MARKETING_THEMES);
     fillSelect('listingRegionSelect', REGION_OPTIONS);
+    fillSelect('listingLanguageSelect', LANGUAGE_OPTIONS);
 
     console.log("[System] Initializing modules...");
     if (typeof initModules === 'function') initModules();
     if (typeof initTransLangTags === 'function') initTransLangTags();
+    if (typeof initListingControls === 'function') initListingControls();
     if (typeof loadHistoryToList === 'function') loadHistoryToList();
     
     console.log("[System] Switching to initial tab...");

@@ -131,3 +131,58 @@ class TranslationRequest(BaseModel):
     target_lang: Optional[str] = None
     target_langs: Optional[List[str]] = None
     ai_provider: str | None = None
+
+
+class ListingGenerateRequest(BaseModel):
+    name: str
+    points: str
+    keywords: str | None = None
+    platform: str
+    region: str
+    marketing_theme: str | None = None
+    marketing_theme_label: str | None = None
+    target_language: str | None = None
+    ai_provider: str | None = None
+
+    @field_validator('name', 'points', 'platform', 'region')
+    @classmethod
+    def strip_required_text(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator('keywords', 'marketing_theme', 'marketing_theme_label', 'target_language', mode='before')
+    @classmethod
+    def strip_optional_text(cls, v: Any) -> Any:
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator('name')
+    @classmethod
+    def limit_name(cls, v: str) -> str:
+        if len(v) > 200:
+            raise ValueError("产品名称过长")
+        return v
+
+    @field_validator('points')
+    @classmethod
+    def limit_points(cls, v: str) -> str:
+        if len(v) > 5000:
+            raise ValueError("核心卖点内容过长")
+        return v
+
+    @field_validator('keywords')
+    @classmethod
+    def limit_keywords(cls, v: str | None) -> str | None:
+        if v and len(v) > 1000:
+            raise ValueError("关键词内容过长")
+        return v
+
+
+class ListingImageExtractRequest(BaseModel):
+    image_data: str
+    ai_provider: str | None = None
+
+
+class ListingComplianceRequest(BaseModel):
+    listing: dict
+    platform: str | None = None
+    region: str | None = None
+    ai_provider: str | None = None
