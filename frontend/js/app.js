@@ -11,6 +11,7 @@ let CONCURRENCY_LIMIT = 2;
 let STAGGER_DELAY = 2000;
 
 let currentUploadedBase64 = null;
+let currentUploadedImages = [];
 let currentListingUploadedBase64 = null;
 let globalGenContext = null; 
 let currentListingDataText = null; 

@@ -55,7 +55,7 @@ class RenderHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime, default=datetime.datetime.now)
     task_name = Column(String(255))
-    style = Column(String(50))
+    style = Column(Text)
     image_base64 = Column(Text) # 存储生成的图片
     metadata_info = Column(JSON) # 包含文案等信息
 

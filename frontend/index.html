@@ -88,10 +88,14 @@
                         </div>
                         <div class="xp-input-info-bar">
                             <div id="xp-urlCounter" class="xp-url-counter">已添加 0/5 个竞品链接</div>
-                            <button id="xp-copyAllBtn" class="xp-copy-all-btn" title="复制全部链接">
-                                <span class="xp-copy-icon">📋</span>
-                                <span class="xp-copy-text">复制全部</span>
-                            </button>
+                            <div class="xp-input-actions">
+                                <button id="xp-copyAllBtn" class="xp-icon-action-btn xp-copy-all-btn" title="复制全部链接" aria-label="复制全部链接">
+                                    <span class="xp-copy-icon" aria-hidden="true"></span>
+                                </button>
+                                <button id="xp-clearAllBtn" class="xp-icon-action-btn xp-clear-all-btn" title="清空全部链接" aria-label="清空全部链接">
+                                    <span class="xp-clear-icon" aria-hidden="true"></span>
+                                </button>
+                            </div>
                         </div>
                         <button id="xp-analyzeBtn" class="xp-analyze-btn">
                             <span>分析对比</span><span>→</span>
@@ -246,23 +250,20 @@
                 class="w-[340px] bg-white border-r border-gray-200 flex flex-col h-full z-10 flex-shrink-0 relative shadow-sm">
                 <div class="flex-1 overflow-y-auto custom-scrollbar p-5 pb-24">
                     <div class="mb-4">
-                        <div class="flex items-center text-sm font-bold mb-3">上传主图素材 <i
+                        <div class="flex items-center text-sm font-bold mb-3">上传主图 / 角度素材 <i
                                 class="ph ph-question text-gray-400 ml-1 cursor-help"></i></div>
-                        <div class="flex gap-3">
+                        <div class="flex gap-3 flex-wrap">
                             <div id="imagePreviewContainer"
-                                class="w-[84px] h-[84px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group hidden shadow-inner">
-                                <img id="uploadedImagePreview" src="" alt="Product" class="w-full h-full object-cover">
-                                <button onclick="removeImage()"
-                                    class="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"><i
-                                        class="ph ph-x text-xs"></i></button>
+                                class="hidden flex gap-2 flex-wrap">
                             </div>
                             <label for="imageUpload"
                                 class="w-[84px] h-[84px] rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:bg-gray-100 hover:border-blue-400 transition-all">
                                 <i class="ph ph-plus text-gray-400 text-xl"></i>
-                                <input type="file" id="imageUpload" class="hidden" accept="image/*"
+                                <input type="file" id="imageUpload" class="hidden" accept="image/*" multiple
                                     onchange="handleImageUpload(event)">
                             </label>
                         </div>
+                        <div id="uploadImageHint" class="text-[10px] text-gray-400 mt-2">最多 6 张。第一张作为主图，后续图片优先供“多角度图”使用；悬停缩略图可设为主图。</div>
                     </div>
 
                     <div class="mb-6">
