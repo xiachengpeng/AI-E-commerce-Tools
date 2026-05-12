@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 from models.request import (
     CompareRequest, CompareResponse, CompareResponseData, ProductCompareData,
     ComparisonSummary, ScoreCard, EvalDetail, RecItem,
-    TranslationRequest
+    TranslationRequest,
+    ListingGenerateRequest, ListingImageExtractRequest, ListingComplianceRequest,
 )
 from services.firecrawl import fetch_markdown
 from services.cleaner import clean_content, check_block
@@ -24,6 +25,11 @@ from services.ai_single import analyze_single_extract, analyze_single_deep
 from services.ai_compare import compare_products
 from services.scoring import calculate_score
 from services.ai_service import AIService
+from services.listing_service import (
+    generate_listing,
+    extract_listing_inputs,
+    check_listing_compliance,
+)
 from config import (
     AI_PROVIDER,
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
@@ -401,6 +407,38 @@ async def api_translate_text(request: TranslationRequest):
         }
     except Exception as e:
         logger.error(f"❌ [翻译] 失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/listing/generate")
+async def api_listing_generate(request: ListingGenerateRequest):
+    try:
+        if not request.name.strip() or not request.points.strip():
+            return {"status": "error", "message": "产品名称与核心卖点不能为空"}
+        data = await generate_listing(request)
+        return {"status": "success", "data": data}
+    except Exception as e:
+        logger.error(f"❌ [Listing] 生成失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/listing/extract")
+async def api_listing_extract(request: ListingImageExtractRequest):
+    try:
+        data = await extract_listing_inputs(request)
+        return {"status": "success", "data": data}
+    except Exception as e:
+        logger.error(f"❌ [Listing] 视觉提取失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/listing/compliance")
+async def api_listing_compliance(request: ListingComplianceRequest):
+    try:
+        data = await check_listing_compliance(request)
+        return {"status": "success", "data": data}
+    except Exception as e:
+        logger.error(f"❌ [Listing] 合规审查失败: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.post("/api/ai/generate")

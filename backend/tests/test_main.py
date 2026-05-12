@@ -171,6 +171,61 @@ def test_ai_generate_endpoint():
     mock_generate.assert_awaited_once()
 
 
+def test_listing_generate_endpoint():
+    result = {"title": {"target": "Lamp", "zh": "灯"}}
+    with patch("main.generate_listing", new=AsyncMock(return_value=result)) as mock_generate:
+        resp = client.post("/api/listing/generate", json={
+            "name": "吊灯",
+            "points": "藤编\n暖光",
+            "platform": "Amazon",
+            "region": "US Market",
+        })
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+    assert resp.json()["data"]["title"]["target"] == "Lamp"
+    mock_generate.assert_awaited_once()
+
+
+def test_listing_generate_rejects_missing_required_fields():
+    resp = client.post("/api/listing/generate", json={
+        "name": "",
+        "points": "",
+        "platform": "Amazon",
+        "region": "US Market",
+    })
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "error"
+
+
+def test_listing_extract_endpoint():
+    result = {"name": "吊灯", "points": "卖点1\n卖点2", "keywords": "吊灯, 藤编灯"}
+    image = "data:image/png;base64,YWFhYQ=="
+    with patch("main.extract_listing_inputs", new=AsyncMock(return_value=result)) as mock_extract:
+        resp = client.post("/api/listing/extract", json={"image_data": image})
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+    assert resp.json()["data"]["name"] == "吊灯"
+    assert resp.json()["data"]["keywords"] == "吊灯, 藤编灯"
+    mock_extract.assert_awaited_once()
+
+
+def test_listing_compliance_endpoint():
+    result = {"overall_level": "low", "summary": "风险较低", "risks": [], "rewrite_suggestions": []}
+    with patch("main.check_listing_compliance", new=AsyncMock(return_value=result)) as mock_check:
+        resp = client.post("/api/listing/compliance", json={
+            "listing": {"title": {"target": "Lamp", "zh": "灯"}},
+            "platform": "Amazon",
+            "region": "US Market",
+        })
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["overall_level"] == "low"
+    mock_check.assert_awaited_once()
+
+
 # ============================================================
 # Log 端点
 # ============================================================

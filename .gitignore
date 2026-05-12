@@ -28,8 +28,16 @@ config.local.py
 *.pdf
 AI_Analysis_Report_*.html
 
+# Local databases
+backend/history.db
+backend/*.db
+
 # Local debug scripts / secrets
 debug/
+
+# Local agent/tool state
+.claude/
+.codex-run-logs/
 
 # OS
 .DS_Store
