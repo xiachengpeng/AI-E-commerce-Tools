@@ -38,6 +38,7 @@ debug/
 # Local agent/tool state
 .claude/
 .codex-run-logs/
+.worktrees/
 
 # OS
 .DS_Store
