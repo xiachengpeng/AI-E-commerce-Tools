@@ -17,6 +17,7 @@ from models.request import (
     ComparisonSummary, ScoreCard, EvalDetail, RecItem,
     TranslationRequest,
     ListingGenerateRequest, ListingImageExtractRequest, ListingComplianceRequest,
+    AdCopyGenerateRequest,
 )
 from services.firecrawl import fetch_markdown
 from services.cleaner import clean_content, check_block
@@ -30,6 +31,7 @@ from services.listing_service import (
     extract_listing_inputs,
     check_listing_compliance,
 )
+from services.ads_service import generate_ad_copy
 from config import (
     AI_PROVIDER,
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
@@ -439,6 +441,16 @@ async def api_listing_compliance(request: ListingComplianceRequest):
         return {"status": "success", "data": data}
     except Exception as e:
         logger.error(f"❌ [Listing] 合规审查失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/ads/generate")
+async def api_ads_generate(request: AdCopyGenerateRequest):
+    try:
+        data = await generate_ad_copy(request)
+        return {"status": "success", "data": data}
+    except Exception as e:
+        logger.error(f"❌ [广告文案] 生成失败: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.post("/api/ai/generate")
