@@ -51,6 +51,10 @@
             <i class="ph ph-article"></i><span>Listing</span>
         </button>
 
+        <button id="tab-ads" onclick="switchMainTab('ads')" class="side-tab" title="广告文案">
+            <i class="ph ph-megaphone"></i><span>广告文案</span>
+        </button>
+
         <button id="tab-translate" onclick="switchMainTab('translate')" class="side-tab" title="图片翻译">
             <i class="ph ph-image"></i><span>图片翻译</span>
         </button>
@@ -597,6 +601,89 @@
         </div>
 
         <!-- ============================================== -->
+        <!-- 视图：广告文案 (VIEW: ADS) -->
+        <!-- ============================================== -->
+        <div id="view-ads" class="hidden flex-1 overflow-hidden flex bg-[#f8fafc]">
+            <div class="w-[360px] bg-white border-r border-gray-200 flex flex-col h-full shrink-0 shadow-sm z-10">
+                <div class="p-5 border-b border-gray-100">
+                    <div class="flex items-center gap-2">
+                        <div class="bg-orange-100 p-1.5 rounded-lg text-orange-600"><i
+                                class="ph ph-megaphone text-lg"></i></div>
+                        <h2 class="text-base font-black text-gray-800 tracking-tight">广告文案生成</h2>
+                    </div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-5 custom-scrollbar">
+                    <div class="flex items-center text-xs font-bold text-gray-700 mb-2">商品图片 <span
+                            class="text-red-500 ml-1">*</span></div>
+                    <div class="flex gap-3 mb-5">
+                        <div id="adsImagePreviewContainer"
+                            class="w-[72px] h-[72px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group hidden shadow-inner">
+                            <img id="adsUploadedImagePreview" src="" class="w-full h-full object-cover">
+                            <button onclick="removeAdsImage()"
+                                class="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"><i
+                                    class="ph ph-x text-[10px]"></i></button>
+                        </div>
+                        <label for="adsImageUpload"
+                            class="w-[72px] h-[72px] rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:bg-gray-100 hover:border-orange-400 transition-all">
+                            <i class="ph ph-image text-gray-400 text-xl"></i>
+                            <input type="file" id="adsImageUpload" class="hidden" accept="image/*"
+                                onchange="handleAdsImageUpload(event)">
+                        </label>
+                    </div>
+
+                    <label class="block text-xs font-bold text-gray-700 mb-2">广告类型</label>
+                    <div class="grid grid-cols-2 gap-2 mb-5">
+                        <label
+                            class="flex items-center gap-2 text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-2.5 cursor-pointer">
+                            <input type="checkbox" class="ads-platform-checkbox accent-orange-600" value="facebook"
+                                checked> Facebook
+                        </label>
+                        <label
+                            class="flex items-center gap-2 text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg p-2.5 cursor-pointer">
+                            <input type="checkbox" class="ads-platform-checkbox accent-orange-600" value="google"
+                                checked> Google
+                        </label>
+                    </div>
+
+                    <label class="block text-[10px] font-bold text-gray-500 mb-1">目标市场</label>
+                    <select id="adsRegionSelect"
+                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-orange-500 bg-gray-50 mb-3"></select>
+                    <label class="block text-[10px] font-bold text-gray-500 mb-1">目标语言</label>
+                    <select id="adsLanguageSelect"
+                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-orange-500 bg-gray-50 mb-3"></select>
+                    <label class="block text-[10px] font-bold text-gray-500 mb-1">营销节点/主题</label>
+                    <select id="adsMarketingThemeSelect"
+                        class="w-full text-xs border border-orange-200 rounded-lg p-2.5 outline-none focus:border-orange-500 bg-orange-50 text-orange-700 font-medium mb-3 shadow-sm"></select>
+                </div>
+                <div class="p-4 bg-white border-t border-gray-200 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
+                    <button id="btnGenerateAds" onclick="generateAdsCopy()"
+                        class="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 shadow-md">
+                        <i class="ph ph-magic-wand text-lg"></i> 生成广告文案
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto bg-[#f8fafc] custom-scrollbar">
+                <div
+                    class="w-full sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm flex justify-between items-center px-8 py-3.5">
+                    <div class="flex items-center gap-3">
+                        <h2 class="text-lg font-black text-gray-800">广告文案结果</h2>
+                        <div
+                            class="flex items-center gap-1.5 text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
+                            <i class="ph-fill ph-sparkle"></i> 9种创意角度
+                        </div>
+                    </div>
+                </div>
+                <div id="adsEmpty"
+                    class="flex-1 flex flex-col items-center justify-center text-gray-400 opacity-80 min-h-[400px]">
+                    <i class="ph ph-megaphone text-6xl mb-4 text-orange-200"></i>
+                    <p class="text-sm font-medium">上传商品图片，选择平台后生成广告文案</p>
+                </div>
+                <div id="adsResults" class="hidden flex-col gap-5 max-w-5xl mx-auto p-8 pb-10 fade-in w-full"></div>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
         <!-- 视图：图片翻译 (VIEW: TRANSLATE) -->
         <!-- ============================================== -->
         <div id="view-translate" class="hidden flex-1 overflow-hidden flex flex-col bg-slate-50">
@@ -961,6 +1048,7 @@
     <script src="js/app.js"></script>
     <script src="js/details.js"></script>
     <script src="js/listing.js"></script>
+    <script src="js/ads.js"></script>
     <script src="js/translate.js"></script>
     <script src="js/text_translate.js"></script>
     <script src="js/history_manager.js"></script>
