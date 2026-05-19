@@ -150,8 +150,8 @@ def test_config_endpoint():
     assert resp.status_code == 200
     data = resp.json()
     assert "AI_PROVIDER" in data
-    assert "TEXT_MODEL" in data
-    assert "IMAGE_MODEL" in data
+    assert data["TEXT_MODEL"] == "gemini-3.1-pro-preview"
+    assert data["IMAGE_MODEL"] == "gemini-3.1-flash-image-preview"
     assert "API_KEY" not in data
     assert "ACCESS_TOKEN" not in data
 
