@@ -1,12 +1,12 @@
 from services.ads_service import _ads_model_id, normalize_ad_copy_result
 
 
-def test_ads_model_defaults_to_flash_image_model(monkeypatch):
+def test_ads_model_defaults_to_pro_preview_for_image_recognition(monkeypatch):
     monkeypatch.delenv("FRONTEND_VISION_MODEL", raising=False)
     monkeypatch.delenv("FRONTEND_IMAGE_MODEL", raising=False)
     monkeypatch.delenv("FRONTEND_TEXT_MODEL", raising=False)
 
-    assert _ads_model_id() == "gemini-3.1-flash-image-preview"
+    assert _ads_model_id() == "gemini-3.1-pro-preview"
 
 
 def test_normalize_ad_copy_result_fills_all_styles_and_selected_platforms():

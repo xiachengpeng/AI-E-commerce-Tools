@@ -25,9 +25,8 @@ AD_STYLE_DEFINITIONS = [
 def _ads_model_id() -> str:
     return (
         os.getenv("FRONTEND_VISION_MODEL")
-        or os.getenv("FRONTEND_IMAGE_MODEL")
         or os.getenv("FRONTEND_TEXT_MODEL")
-        or "gemini-3.1-flash-image-preview"
+        or "gemini-3.1-pro-preview"
         or GEMINI_MODEL_ID
     )
 

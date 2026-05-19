@@ -484,7 +484,7 @@ async def receive_frontend_log(data: dict):
 async def get_frontend_config():
     config = {
         "AI_PROVIDER": AI_PROVIDER,
-        "TEXT_MODEL": os.getenv("FRONTEND_TEXT_MODEL", "gemini-3.1-flash-preview"),
+        "TEXT_MODEL": os.getenv("FRONTEND_TEXT_MODEL", "gemini-3.1-pro-preview"),
         "IMAGE_MODEL": os.getenv("FRONTEND_IMAGE_MODEL", "gemini-3.1-flash-image-preview"),
         "CONCURRENCY_LIMIT": FRONTEND_CONCURRENCY_LIMIT,
         "STAGGER_DELAY": FRONTEND_STAGGER_DELAY,
