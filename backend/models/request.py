@@ -186,3 +186,39 @@ class ListingComplianceRequest(BaseModel):
     platform: str | None = None
     region: str | None = None
     ai_provider: str | None = None
+
+
+class AdCopyGenerateRequest(BaseModel):
+    image_data: str
+    platforms: List[str]
+    region: str
+    target_language: str | None = None
+    marketing_theme: str | None = None
+    marketing_theme_label: str | None = None
+    ai_provider: str | None = None
+
+    @field_validator("image_data", "region")
+    @classmethod
+    def strip_required_text(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("target_language", "marketing_theme", "marketing_theme_label", mode="before")
+    @classmethod
+    def strip_optional_text(cls, v: Any) -> Any:
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("platforms")
+    @classmethod
+    def validate_platforms(cls, v: List[str]) -> List[str]:
+        allowed = {"facebook", "google"}
+        normalized = []
+        for item in v:
+            platform = str(item).strip().lower()
+            if platform:
+                normalized.append(platform)
+        if not normalized:
+            raise ValueError("至少选择一个广告平台")
+        invalid = [item for item in normalized if item not in allowed]
+        if invalid:
+            raise ValueError(f"不支持的广告平台: {', '.join(invalid)}")
+        return list(dict.fromkeys(normalized))

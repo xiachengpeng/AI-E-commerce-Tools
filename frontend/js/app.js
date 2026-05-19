@@ -126,11 +126,15 @@ window.onload = async () => {
     fillSelect('listingMarketingThemeSelect', MARKETING_THEMES);
     fillSelect('listingRegionSelect', REGION_OPTIONS);
     fillSelect('listingLanguageSelect', LANGUAGE_OPTIONS);
+    fillSelect('adsMarketingThemeSelect', MARKETING_THEMES);
+    fillSelect('adsRegionSelect', REGION_OPTIONS);
+    fillSelect('adsLanguageSelect', LANGUAGE_OPTIONS);
 
     console.log("[System] Initializing modules...");
     if (typeof initModules === 'function') initModules();
     if (typeof initTransLangTags === 'function') initTransLangTags();
     if (typeof initListingControls === 'function') initListingControls();
+    if (typeof initAdsControls === 'function') initAdsControls();
     if (typeof loadHistoryToList === 'function') loadHistoryToList();
     
     console.log("[System] Switching to initial tab...");

@@ -1,6 +1,7 @@
 """
 集成测试 —— FastAPI /compare 端点 + URL 校验 + CORS
 """
+import base64
 import json
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -149,8 +150,8 @@ def test_config_endpoint():
     assert resp.status_code == 200
     data = resp.json()
     assert "AI_PROVIDER" in data
-    assert "TEXT_MODEL" in data
-    assert "IMAGE_MODEL" in data
+    assert data["TEXT_MODEL"] == "gemini-3.1-pro-preview"
+    assert data["IMAGE_MODEL"] == "gemini-3.1-flash-image-preview"
     assert "API_KEY" not in data
     assert "ACCESS_TOKEN" not in data
 
@@ -224,6 +225,36 @@ def test_listing_compliance_endpoint():
     assert resp.status_code == 200
     assert resp.json()["data"]["overall_level"] == "low"
     mock_check.assert_awaited_once()
+
+
+def test_ads_generate_rejects_missing_platforms():
+    image = "data:image/png;base64," + base64.b64encode(b"fake").decode()
+    resp = client.post("/api/ads/generate", json={
+        "image_data": image,
+        "platforms": [],
+        "region": "US Market",
+        "target_language": "English",
+    })
+
+    assert resp.status_code == 422
+
+
+def test_ads_generate_endpoint():
+    image = "data:image/png;base64," + base64.b64encode(b"fake").decode()
+    result = {"product": {"name": {"target": "Lamp", "zh": "灯"}}, "styles": []}
+
+    with patch("main.generate_ad_copy", new=AsyncMock(return_value=result)) as mock_generate:
+        resp = client.post("/api/ads/generate", json={
+            "image_data": image,
+            "platforms": ["facebook", "google"],
+            "region": "US Market",
+            "target_language": "English",
+        })
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+    assert resp.json()["data"]["product"]["name"]["target"] == "Lamp"
+    mock_generate.assert_awaited_once()
 
 
 # ============================================================
