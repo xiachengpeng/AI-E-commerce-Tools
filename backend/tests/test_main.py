@@ -15,6 +15,7 @@ from main import (
     best_product_index_by_scores,
     build_consistent_recommendations,
     investment_score,
+    normalize_input_url,
     normalize_ai_json_object,
 )
 
@@ -103,6 +104,12 @@ def test_compare_invalid_url_format():
     data = resp.json()
     assert data["status"] == "error"
     assert "URL 格式无效" in data["message"]
+
+
+def test_normalize_input_url_accepts_bare_domain():
+    assert normalize_input_url("fineboo.com") == "https://fineboo.com"
+    assert normalize_input_url("example.com/products/a") == "https://example.com/products/a"
+    assert normalize_input_url("https://example.com") == "https://example.com"
 
 
 def test_compare_url_too_long():
@@ -264,7 +271,8 @@ def test_ads_generate_endpoint():
     image = "data:image/png;base64," + base64.b64encode(b"fake").decode()
     result = {"product": {"name": {"target": "Lamp", "zh": "灯"}}, "styles": []}
 
-    with patch("main.generate_ad_copy", new=AsyncMock(return_value=result)) as mock_generate:
+    with patch("main.generate_ad_copy", new=AsyncMock(return_value=result)) as mock_generate, \
+         patch("main.persist_ads_history") as mock_persist:
         resp = client.post("/api/ads/generate", json={
             "image_data": image,
             "platforms": ["facebook", "google"],
@@ -276,6 +284,7 @@ def test_ads_generate_endpoint():
     assert resp.json()["status"] == "success"
     assert resp.json()["data"]["product"]["name"]["target"] == "Lamp"
     mock_generate.assert_awaited_once()
+    mock_persist.assert_called_once()
 
 
 # ============================================================

@@ -50,6 +50,18 @@ class TextTranslationHistory(Base):
     context = Column(String(255), nullable=True)
     result = Column(Text) # 直接存储翻译结果
 
+class AdsHistory(Base):
+    __tablename__ = "ads_history"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.datetime.now)
+    product_name = Column(String(255))
+    platforms = Column(String(255))
+    region = Column(String(100))
+    target_lang = Column(String(50))
+    marketing_theme = Column(String(255), nullable=True)
+    image_url = Column(Text, nullable=True)
+    result = Column(JSON)
+
 class RenderHistory(Base):
     __tablename__ = "render_history"
     id = Column(Integer, primary_key=True, index=True)

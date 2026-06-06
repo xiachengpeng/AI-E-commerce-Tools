@@ -231,6 +231,7 @@ async function generateAdsCopy() {
             marketing_theme_label: themeOpt.options[themeOpt.selectedIndex].text
         });
         renderAdsData(data);
+        showToast('广告文案已生成', 'success');
     } catch (err) {
         showToast('广告文案生成失败: ' + err.message, 'error');
     } finally {

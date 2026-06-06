@@ -37,7 +37,7 @@ from config import (
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
-from db import init_db, get_db, SessionLocal, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, RenderHistory
+from db import init_db, get_db, SessionLocal, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory
 
 # 加载配置
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
@@ -133,6 +133,48 @@ def persist_render_metadata_images(metadata: Any) -> Any:
             image.pop("data", None)
 
     return metadata
+
+
+def _text_pair_primary(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return (
+            value.get("target")
+            or value.get("zh")
+            or value.get("English")
+            or value.get("Chinese")
+            or value.get("text")
+            or value.get("copy")
+            or ""
+        )
+    return ""
+
+
+def _ads_product_name(data: dict) -> str:
+    product = data.get("product") if isinstance(data, dict) else {}
+    if not isinstance(product, dict):
+        return "广告文案"
+    return _text_pair_primary(product.get("name")) or "广告文案"
+
+
+def persist_ads_history(request: AdCopyGenerateRequest, data: dict) -> None:
+    db = SessionLocal()
+    try:
+        image_url = save_base64_image(request.image_data, "outputs")
+        hist = AdsHistory(
+            product_name=_ads_product_name(data),
+            platforms=", ".join(request.platforms),
+            region=request.region,
+            target_lang=request.target_language,
+            marketing_theme=request.marketing_theme_label or request.marketing_theme,
+            image_url=image_url,
+            result=data,
+        )
+        db.add(hist)
+        db.commit()
+    finally:
+        db.close()
 
 
 def normalize_ai_json_object(value: Any) -> dict:
@@ -262,6 +304,21 @@ async def process_single_url_deep(url: str, provider: str = None, markdown_conte
 
 # --- 校验 ---
 _URL_PATTERN = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)
+_BARE_DOMAIN_PATTERN = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?:/[^\s]*)?$",
+    re.IGNORECASE,
+)
+
+
+def normalize_input_url(url: str) -> str:
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if re.match(r"^https?://", url, re.IGNORECASE):
+        return url
+    if _BARE_DOMAIN_PATTERN.match(url):
+        return f"https://{url}"
+    return url
 
 
 def validate_url(url: str) -> str | None:
@@ -284,7 +341,7 @@ async def compare(request: CompareRequest):
         urls = request.urls
         provider = request.ai_provider
         force_refresh = request.force_refresh
-        unique_urls = list(dict.fromkeys([u.strip() for u in urls if u.strip()]))
+        unique_urls = list(dict.fromkeys([normalize_input_url(u) for u in urls if u.strip()]))
 
         # URL 格式校验
         for u in unique_urls:
@@ -469,6 +526,7 @@ async def api_listing_compliance(request: ListingComplianceRequest):
 async def api_ads_generate(request: AdCopyGenerateRequest):
     try:
         data = await generate_ad_copy(request)
+        persist_ads_history(request, data)
         return {"status": "success", "data": data}
     except Exception as e:
         logger.error(f"❌ [广告文案] 生成失败: {e}")
@@ -529,6 +587,21 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
             if isinstance(res_val, dict):
                 res_val = json.dumps(res_val, ensure_ascii=False)
             hist = TextTranslationHistory(source_text=data.get("source_text"), target_lang=data.get("target_lang"), result=res_val)
+        elif module == "ads":
+            img_data = data.get("image_data")
+            image_url = save_base64_image(img_data, "outputs") if img_data else None
+            platforms = data.get("platforms") or []
+            if isinstance(platforms, list):
+                platforms = ", ".join(platforms)
+            hist = AdsHistory(
+                product_name=data.get("product_name"),
+                platforms=platforms,
+                region=data.get("region"),
+                target_lang=data.get("target_lang"),
+                marketing_theme=data.get("marketing_theme"),
+                image_url=image_url,
+                result=data.get("result"),
+            )
         elif module == "render":
             img_data = data.get("image")
             if img_data: data["image"] = save_base64_image(img_data, "outputs")
@@ -549,14 +622,14 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
 
 @app.get("/api/history/{module}")
 async def get_history(module: str, db: Session = Depends(get_db)):
-    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "render": RenderHistory}
+    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory}
     model = mapping.get(module)
     if not model: return []
     return db.query(model).order_by(model.timestamp.desc()).all()
 
 @app.delete("/api/history/{module}/{id}")
 async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
-    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "render": RenderHistory}
+    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory}
     model = mapping.get(module)
     if not model: return {"status": "error"}
     item = db.query(model).filter(model.id == id).first()

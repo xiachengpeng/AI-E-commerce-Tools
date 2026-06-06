@@ -66,7 +66,7 @@
 }
 .history-tabs {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 4px;
     padding: 12px;
     background: #f1f5f9;
@@ -118,4 +118,17 @@
 .history-item-del:hover {
     background: #fee2e2;
     color: #ef4444;
+}
+
+.ads-primary-btn {
+    min-height: 42px;
+    background: #ea580c !important;
+    color: #ffffff !important;
+}
+.ads-primary-btn:hover {
+    background: #c2410c !important;
+}
+.ads-primary-btn:disabled {
+    opacity: 0.75;
+    cursor: not-allowed;
 }
