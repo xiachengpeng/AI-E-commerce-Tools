@@ -37,7 +37,7 @@ async function loadGlobalHistory(module) {
     // 更新 UI 状态
     document.querySelectorAll('.history-tab-btn').forEach(btn => {
         const modId = btn.id.replace('hist-tab-', '');
-        const map = { 'analysis': 'analysis', 'listing': 'listing', 'translation': 'translation', 'text-translation': 'text-translation', 'render': 'render' };
+        const map = { 'analysis': 'analysis', 'listing': 'listing', 'translation': 'translation', 'text-translation': 'text-translation', 'ads': 'ads', 'render': 'render' };
         btn.classList.toggle('active', map[modId] === module);
     });
 
@@ -70,12 +70,14 @@ async function loadGlobalHistory(module) {
             if (module === 'text-translation' && item.result) {
                 const preview = typeof item.result === 'string' ? item.result : (item.result.translated_text || '');
                 subInfo += ` | 译文: ${preview.substring(0, 30)}${preview.length > 30 ? '...' : ''}`;
+            } else if (module === 'ads') {
+                subInfo = [item.platforms, item.region, item.target_lang].filter(Boolean).join(' / ');
             }
 
             // 提取缩略图 (针对翻译和渲染模块)
             let thumb = '';
-            if (module === 'render' || module === 'translation') {
-                const imgData = item.image_base64 || item.result || item.data || item.metadata_info?.finalImage;
+            if (module === 'render' || module === 'translation' || module === 'ads') {
+                const imgData = item.image_url || item.image_base64 || item.result || item.data || item.metadata_info?.finalImage;
                 let imgSrc = formatImgSrc(typeof imgData === 'string' ? imgData : (imgData && imgData.image));
                 
                 if (imgSrc) {
@@ -161,6 +163,26 @@ async function restoreHistoryItemByIndex(module, index) {
             if (typeof renderListingData === 'function') {
                 renderListingData(responseObj);
                 showToast('Listing 历史已恢复', 'success');
+            }
+        }, 150);
+    } else if (module === 'ads') {
+        switchMainTab('ads');
+        if (!responseObj || typeof responseObj !== 'object') {
+            showToast('该广告文案历史记录数据格式已失效', 'error');
+            return;
+        }
+        setTimeout(() => {
+            if (typeof renderAdsData === 'function') {
+                renderAdsData(responseObj);
+                const imageSrc = formatImgSrc(dataObj.image_url);
+                if (imageSrc) {
+                    currentAdsUploadedBase64 = imageSrc;
+                    const preview = document.getElementById('adsUploadedImagePreview');
+                    const previewWrap = document.getElementById('adsImagePreviewContainer');
+                    if (preview) preview.src = imageSrc;
+                    if (previewWrap) previewWrap.classList.remove('hidden');
+                }
+                showToast('广告文案历史已恢复', 'success');
             }
         }, 150);
     } else if (module === 'render') {

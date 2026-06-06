@@ -191,8 +191,18 @@
         }
     }
 
+    function xp_normalizeUrl(url) {
+        url = (url || '').trim();
+        if (!url) return '';
+        if (/^https?:\/\//i.test(url)) return url;
+        if (/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?:\/[^\s]*)?$/i.test(url)) {
+            return `https://${url}`;
+        }
+        return url;
+    }
+
     function xp_addUrlTag(url, tagsList, urlInputField, urlCounter) {
-        url = url.trim();
+        url = xp_normalizeUrl(url);
         if (!url || xp_urlsArray.includes(url) || xp_urlsArray.length >= XP_MAX_URLS) return;
         xp_urlsArray.push(url);
         const tag = document.createElement('div');
@@ -311,7 +321,7 @@
     // ─── 分析流程 ─────────────────────────────────────────────────────────────
     async function xp_handleAnalyze(analyzeBtn, urlInputField, tagsList, urlCounter, errorMsg, loadingSection, resultSection) {
         let rawUrls = [...xp_urlsArray];
-        const pendingUrl = urlInputField.value.trim();
+        const pendingUrl = xp_normalizeUrl(urlInputField.value);
         if (pendingUrl && !rawUrls.includes(pendingUrl)) {
             rawUrls.push(pendingUrl);
             xp_addUrlTag(pendingUrl, tagsList, urlInputField, urlCounter);
