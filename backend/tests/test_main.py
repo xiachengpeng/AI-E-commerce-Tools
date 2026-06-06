@@ -3,12 +3,14 @@
 """
 import base64
 import json
+import os
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 
 from main import app
 from main import (
+    STATIC_DIR,
     align_comparison_winner,
     best_product_index_by_scores,
     build_consistent_recommendations,
@@ -138,6 +140,25 @@ def test_cors_headers():
     assert resp.status_code in (200, 405)
     if "access-control-allow-origin" in resp.headers:
         assert resp.headers["access-control-allow-origin"] == "http://localhost:8080"
+
+
+def test_static_asset_cors_headers():
+    """静态图片给 html2canvas/fetch 跨端口读取时必须带 CORS 头。"""
+    outputs_dir = os.path.join(STATIC_DIR, "outputs")
+    os.makedirs(outputs_dir, exist_ok=True)
+    file_path = os.path.join(outputs_dir, "cors-test.png")
+    with open(file_path, "wb") as f:
+        f.write(base64.b64decode("iVBORw0KGgo="))
+
+    resp = client.get(
+        "/static/outputs/cors-test.png",
+        headers={"Origin": "http://localhost:8080"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] == "http://localhost:8080"
+    assert resp.headers["cross-origin-resource-policy"] == "cross-origin"
+    assert resp.headers["cache-control"] == "no-store"
 
 
 # ============================================================

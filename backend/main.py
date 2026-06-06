@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import base64
@@ -57,6 +57,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_static_asset_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        origin = request.headers.get("origin")
+        if origin and (origin in CORS_ORIGINS or "*" in CORS_ORIGINS):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            vary = response.headers.get("Vary")
+            if not vary:
+                response.headers["Vary"] = "Origin"
+            elif "origin" not in vary.lower():
+                response.headers["Vary"] = f"{vary}, Origin"
+        response.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Cross-Origin-Resource-Policy"] = "cross-origin"
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 
 # 挂载静态文件目录
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
