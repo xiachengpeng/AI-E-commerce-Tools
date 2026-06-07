@@ -23,6 +23,8 @@ const context = loadFrontendContext();
 assert.strictEqual(typeof context.buildDetailPageBrief, 'function');
 assert.strictEqual(typeof context.buildModuleGenerationPrompt, 'function');
 assert.strictEqual(typeof context.getModuleContentRole, 'function');
+assert.strictEqual(typeof context.buildSellingPointsExtractionPrompt, 'function');
+assert.strictEqual(typeof context.buildSEOMetadataPrompt, 'function');
 
 const config = {
     platform: 'Independent Website',
@@ -49,6 +51,12 @@ assert.match(brief, /one clear conversion job/i);
 assert.match(brief, /Do not invent/i);
 assert.match(brief, /Avoid medical/i);
 assert.match(brief, /maximum 3 bullets/i);
+
+const extractionPrompt = context.buildSellingPointsExtractionPrompt(3);
+assert.match(extractionPrompt, /known facts/i);
+assert.match(extractionPrompt, /Do not invent/i);
+assert.match(extractionPrompt, /avoid weight-loss, medical, body-transformation/i);
+assert.match(extractionPrompt, /specifications/i);
 
 const firstBenefit = {
     id: 'm2',
@@ -81,6 +89,11 @@ const specPrompt = context.buildModuleGenerationPrompt({
 }, sellingPoints, config);
 assert.match(specPrompt, /Use only facts from the supplied selling points/i);
 assert.doesNotMatch(specPrompt, /burn fat|transform your body|medical recovery/i);
+
+const seoPrompt = context.buildSEOMetadataPrompt({ title: '详细规格表' }, sellingPoints, config);
+assert.match(seoPrompt, /Do not add unsupported claims/i);
+assert.match(seoPrompt, /avoid medical, body transformation, fat loss/i);
+assert.doesNotMatch(seoPrompt, /burn fat|transform your body|medical recovery/i);
 
 const activeDefaults = context.MODULES_CONFIG
     .filter(mod => mod.active)

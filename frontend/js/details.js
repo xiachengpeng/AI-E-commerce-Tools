@@ -86,6 +86,32 @@ Global strategy:
 - Mobile readability rule: avoid crowded layouts, long tables with tiny text, repeated badges, and dense poster-style stacking.`;
 }
 
+function buildSellingPointsExtractionPrompt(imageCount = 1) {
+    const multiImageNote = imageCount > 1
+        ? `I provided ${imageCount} product images. The first image is the primary product image and the rest are angle/detail references. Treat them as the same product unless clearly impossible.`
+        : 'I provided one primary product image.';
+    return `You are a senior cross-border e-commerce product strategist and visual merchandising copywriter.
+
+Analyze the supplied product image(s) and extract a factual, conversion-ready product brief for detail-page generation.
+${multiImageNote}
+
+Output these sections in clear plain text:
+1. Product name: concise and e-commerce friendly.
+2. Product type and core use: explain what it is in one sentence.
+3. Known facts: list visible or supplied facts only, including material, structure, controls, accessories, app/remote support, dimensions, capacity, speed, warranty, certifications, or specifications only when visible or provided.
+4. Core selling points: 3-4 bullets. Each bullet must use "feature + user value" and avoid vague quality words.
+5. Target users: specific user groups.
+6. Use scenarios: specific everyday contexts.
+7. Unknown or risky claims to avoid: list claims that should not be invented for this product.
+
+Rules:
+- Do not invent specifications, certifications, warranty terms, medical effects, measured performance, or app features.
+- Use cautious wording for inferred benefits.
+- For wellness, fitness, beauty, recovery, or health products, avoid weight-loss, medical, body-transformation, pain-treatment, or guaranteed-result claims.
+- Prefer practical, verifiable benefits over hype words such as ultimate, revolutionary, transform, miracle, best, or guaranteed.
+- Do not use markdown tables.`;
+}
+
 function getModuleContentRole(task = {}) {
     const variant = Number(task.variant || 0);
     const roles = {
@@ -112,6 +138,29 @@ function getModuleContentRole(task = {}) {
         return benefitRoles[Math.min(variant, benefitRoles.length - 1)];
     }
     return roles[task.id] || 'Focused section: communicate one specific buying reason with clear proof and restrained copy.';
+}
+
+function buildSEOMetadataPrompt(task, sellingPoints, config = {}) {
+    return `You are an e-commerce SEO specialist. I am generating one product detail-page image module named "${task.title}".
+Product information: ${compactDetailText(sellingPoints, 500)}
+Target platform: ${config.platformLabel || config.platform || 'cross-border e-commerce'}
+Target market: ${config.regionLabel || config.region || 'Global Market'}
+
+Create SEO metadata in English with Chinese reference text:
+1. seoTitle: short image title containing the core product keyword.
+2. altText: accessible, descriptive image alt text.
+
+Rules:
+- Do not add unsupported claims, fake specifications, certifications, warranty terms, awards, or exact performance data.
+- For wellness, fitness, beauty, recovery, or health products, avoid medical, body transformation, fat loss, treatment, cure, or guaranteed-result wording.
+- Keep the title natural and under 70 characters.
+- Keep alt text descriptive and under 160 characters.
+
+Return strict JSON only:
+{
+  "seoTitle": {"target": "English Title", "zh": "中文对照标题"},
+  "altText": {"target": "English Alt Text", "zh": "中文对照alt描述"}
+}`;
 }
 
 function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdjustment = '') {
@@ -444,35 +493,8 @@ async function generateSellingPoints() {
     btn.innerHTML = '<span class="loader w-3 h-3 border-2 border-blue-500 border-t-transparent mr-1"></span> 生成中...';
     btn.disabled = true;
 
-    let parts = [{
-        text: `你是一名资深跨境电商运营与视觉营销文案专家，擅长将产品视觉信息转化为高转化详情页内容。
-
-请基于我提供的商品图片，对产品进行专业分析，并输出适用于独立站/跨境电商详情页的“核心卖点文案”。
-
-【分析要求】
-1. 仔细观察图片，准确识别：
-   - 商品类型
-   - 材质/做工
-   - 外观设计特点
-   - 核心功能及使用方式
-2. 结合电商用户视角，挖掘真实使用价值，而非表面描述
-
-【输出内容】
-1. 商品名称（简洁、具备电商属性）
-2. 核心卖点（3-4点，条列形式）
-   - 每一点需具备“功能 + 用户价值”表达（避免空泛）
-   - 突出差异化与解决问题能力
-3. 适用人群（明确细分人群）
-4. 使用场景（具体生活或使用情境）
-
-【写作要求】
-- 语言具有销售力与说服力（偏向转化导向）
-- 符合跨境电商（Shopify / Amazon / TikTok）的表达风格
-- 避免空洞词汇，如“高品质”“优质”等无具体支撑描述
-- 输出为清晰结构化文本（不要markdown格式）
-
-请基于图片内容进行合理推断，不要编造明显不符合图片的信息。` }];
     const sellingPointImages = [getPrimaryUploadedImage(), ...getAngleUploadedImages().slice(0, 2)].filter(Boolean);
+    let parts = [{ text: buildSellingPointsExtractionPrompt(sellingPointImages.length || 1) }];
     if (sellingPointImages.length) {
         if (sellingPointImages.length > 1) {
             parts[0].text += `\n\n我同时提供了 ${sellingPointImages.length} 张商品素材。第一张是主图，后续为角度/细节参考。请综合判断，但不要把不同角度误认为不同产品。`;
@@ -501,20 +523,7 @@ async function generateSellingPoints() {
 }
 
 async function generateSEOMetadata(task, sellingPoints) {
-    const prompt = `你是一个专业的电商SEO专家。我正在为电商详情页的“${task.title}”模块生成一张商品图片。
-产品核心信息：${sellingPoints.substring(0, 300)}
-目标平台：${globalGenContext?.config?.platformLabel || globalGenContext?.config?.platform || '跨境电商'}
-目标市场：${globalGenContext?.config?.regionLabel || globalGenContext?.config?.region || '全球'}
-
-请用【English】为这张图片配发SEO数据，并提供【中文对照】：
-1. seoTitle：简短且包含核心关键词的图片标题。
-2. altText：用于无障碍浏览及搜索引擎抓取的图片 Alt 属性文本。
-
-必须严格返回JSON结构，不要输出任何 Markdown 标记，直接输出：
-{
-  "seoTitle": {"target": "English Title", "zh": "中文对照标题"},
-  "altText": {"target": "English Alt Text", "zh": "中文对照alt描述"}
-}`;
+    const prompt = buildSEOMetadataPrompt(task, sellingPoints, globalGenContext?.config || {});
 
     try {
         remoteLog(`正在为模块 [${task.title}] 生成 SEO 元数据...`);
