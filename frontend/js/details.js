@@ -3,7 +3,9 @@
 const DETAIL_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const DETAIL_MAX_TASKS = 24;
 const DETAIL_MAX_UPLOAD_IMAGES = 6;
+let currentStrategyPreviewContext = null;
 
+// 转义 HTML 特殊字符，避免用户输入或 AI 文案插入页面时破坏 DOM。
 function detailEscapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({
         '&': '&amp;',
@@ -14,11 +16,47 @@ function detailEscapeHtml(value) {
     }[ch]));
 }
 
+// 获取 select 当前选中项的展示文案，用于保存配置和拼接提示词。
 function getSelectedOptionLabel(selectId) {
     const select = document.getElementById(selectId);
     return select?.options?.[select.selectedIndex]?.text || select?.value || '';
 }
 
+// 解析详情页视觉风格，兼容固定选项和用户手动输入的自定义风格。
+function resolveDetailImageStyle({ selectedValue = '', selectedLabel = '', customValue = '' } = {}) {
+    const value = String(selectedValue || '').trim();
+    const label = String(selectedLabel || '').trim();
+    const custom = String(customValue || '').replace(/\s+/g, ' ').trim();
+    if (value !== 'custom') {
+        return { value, label: label || value, isCustom: false, error: '' };
+    }
+    if (!custom) {
+        return { value: '', label: label || '自定义风格', isCustom: true, error: '请输入自定义风格' };
+    }
+    return {
+        value: custom,
+        label: `自定义风格：${custom}`,
+        isCustom: true,
+        error: ''
+    };
+}
+
+// 根据风格下拉状态显示或隐藏自定义风格输入框。
+function toggleCustomImageStyle() {
+    const style = resolveDetailImageStyle({
+        selectedValue: document.getElementById('imageStyleSelect')?.value || '',
+        selectedLabel: getSelectedOptionLabel('imageStyleSelect'),
+        customValue: document.getElementById('customImageStyleInput')?.value || ''
+    });
+    const container = document.getElementById('customImageStyleContainer');
+    if (!container) return;
+    container.classList.toggle('hidden', !style.isCustom);
+    if (style.isCustom) {
+        document.getElementById('customImageStyleInput')?.focus();
+    }
+}
+
+// 校验并标准化宽高比字符串，返回模型可识别的 "宽:高" 格式。
 function normalizeAspectRatio(value) {
     const raw = String(value || '').trim();
     const match = raw.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
@@ -30,6 +68,7 @@ function normalizeAspectRatio(value) {
     return `${width}:${height}`;
 }
 
+// 汇总详情页生成所需的全局配置，包括风格、平台、市场、语言、比例和营销主题。
 function getDetailConfig() {
     let ratioVal = document.getElementById('aspectRatioSelect')?.value || '1:1';
     if (ratioVal === 'custom') {
@@ -42,9 +81,20 @@ function getDetailConfig() {
     }
 
     const region = document.getElementById('regionSelect')?.value || 'Global Market';
+    const imageStyle = resolveDetailImageStyle({
+        selectedValue: document.getElementById('imageStyleSelect')?.value || '',
+        selectedLabel: getSelectedOptionLabel('imageStyleSelect'),
+        customValue: document.getElementById('customImageStyleInput')?.value || ''
+    });
+    if (imageStyle.error) {
+        showToast(imageStyle.error, 'error');
+        document.getElementById('customImageStyleInput')?.focus();
+        return null;
+    }
     return {
-        imageStyle: document.getElementById('imageStyleSelect')?.value || '',
-        imageStyleLabel: getSelectedOptionLabel('imageStyleSelect'),
+        imageStyle: imageStyle.value,
+        imageStyleLabel: imageStyle.label,
+        imageStyleIsCustom: imageStyle.isCustom,
         platform: document.getElementById('platformSelect')?.value || '',
         platformLabel: getSelectedOptionLabel('platformSelect'),
         region,
@@ -54,10 +104,13 @@ function getDetailConfig() {
         languageLabel: getSelectedOptionLabel('languageSelect'),
         aspectRatio,
         marketingTheme: document.getElementById('marketingThemeSelect')?.value || 'none',
-        marketingThemeLabel: getSelectedOptionLabel('marketingThemeSelect')
+        marketingThemeLabel: getSelectedOptionLabel('marketingThemeSelect'),
+        productFacts: document.getElementById('productFactsText')?.value.trim() || '',
+        forbiddenClaims: document.getElementById('forbiddenClaimsText')?.value.trim() || ''
     };
 }
 
+// 压缩长文本中的空白并截断到指定长度，避免提示词过长。
 function compactDetailText(value, maxLength = 900) {
     return String(value || '')
         .replace(/\s+/g, ' ')
@@ -65,16 +118,38 @@ function compactDetailText(value, maxLength = 900) {
         .slice(0, maxLength);
 }
 
+// 按需生成产品事实和禁用词上下文，供各类提示词复用。
+function buildProductGuardrails(config = {}) {
+    const facts = compactDetailText(config.productFacts || '', 900);
+    const forbidden = compactDetailText(config.forbiddenClaims || '', 700);
+    const sections = [];
+    if (facts) {
+        sections.push(`Confirmed product facts:\n${facts}`);
+    }
+    if (forbidden) {
+        sections.push(`User-forbidden claims and wording:\n${forbidden}`);
+    }
+    return sections.join('\n\n');
+}
+
+// 获取给模型使用的英文模块名称，避免 UI 中文标题进入完整 Prompt。
+function getPromptModuleTitle(task = {}) {
+    return compactDetailText(task.promptTitle || task.promptName || task.id || 'Detail Page Section', 120);
+}
+
+// 构建整套详情页的全局策略 brief，约束模块分工、合规、文案密度和视觉真实性。
 function buildDetailPageBrief(sellingPoints, config = {}) {
     const productInfo = compactDetailText(sellingPoints, 900);
-    const platform = config.platformLabel || config.platform || 'cross-border e-commerce';
-    const market = config.regionLabel || config.region || 'Global Market';
-    const style = config.imageStyleLabel || config.imageStyle || 'clean e-commerce';
+    const platform = config.platform || 'cross-border e-commerce';
+    const market = config.region || 'Global Market';
+    const style = config.imageStyle || 'clean e-commerce';
+    const guardrails = buildProductGuardrails(config);
     return `DETAIL PAGE BRIEF
 Product information: ${productInfo}
 Target platform: ${platform}
 Target market: ${market}
 Visual style: ${style}
+${guardrails ? `\n${guardrails}` : ''}
 
 Global strategy:
 - Each section has one clear conversion job. Do not make every image repeat the full product story.
@@ -86,14 +161,17 @@ Global strategy:
 - Mobile readability rule: avoid crowded layouts, long tables with tiny text, repeated badges, and dense poster-style stacking.`;
 }
 
-function buildSellingPointsExtractionPrompt(imageCount = 1) {
+// 构建 AI 帮写卖点时使用的图片理解提示词，要求输出事实、卖点、场景和风险项。
+function buildSellingPointsExtractionPrompt(imageCount = 1, productFacts = '', forbiddenClaims = '') {
     const multiImageNote = imageCount > 1
         ? `I provided ${imageCount} product images. The first image is the primary product image and the rest are angle/detail references. Treat them as the same product unless clearly impossible.`
         : 'I provided one primary product image.';
+    const guardrails = buildProductGuardrails({ productFacts, forbiddenClaims });
     return `You are a senior cross-border e-commerce product strategist and visual merchandising copywriter.
 
 Analyze the supplied product image(s) and extract a factual, conversion-ready product brief for detail-page generation.
 ${multiImageNote}
+${guardrails ? `\n${guardrails}` : ''}
 
 Output these sections in clear plain text:
 1. Product name: concise and e-commerce friendly.
@@ -112,6 +190,7 @@ Rules:
 - Do not use markdown tables.`;
 }
 
+// 根据模块 ID 和序号返回当前模块的转化职责，避免不同图片重复讲同一件事。
 function getModuleContentRole(task = {}) {
     const variant = Number(task.variant || 0);
     const roles = {
@@ -140,11 +219,97 @@ function getModuleContentRole(task = {}) {
     return roles[task.id] || 'Focused section: communicate one specific buying reason with clear proof and restrained copy.';
 }
 
+// 根据模块 ID 和序号返回中文策略说明，供生成前预览阅读和修改方向。
+function getModuleStrategyCn(task = {}) {
+    const variant = Number(task.variant || 0);
+    const strategies = {
+        m1: {
+            goal: '首屏让用户立刻看懂这是什么产品、适合谁、核心好处是什么。',
+            visual: '产品主体要大，标题短，最多 2-3 个可信卖点，不要堆满参数。',
+            avoid: '避免空泛口号、过度震撼词、看不清产品主体。'
+        },
+        m3: {
+            goal: '用真实场景唤醒需求，让用户想象自己怎么用。',
+            visual: '场景要可信，产品比例真实，人物姿态自然，文字少。',
+            avoid: '避免夸张健身效果、AI 感人物、产品尺寸失真。'
+        },
+        m4: {
+            goal: '展示外观和角度，降低用户看不清结构的疑虑。',
+            visual: '用主图和角度素材做清晰拼图，突出正面、侧面、细节。',
+            avoid: '避免生成不同型号、不同颜色或不一致外观。'
+        },
+        m5: {
+            goal: '强化生活方式和空间氛围，提高代入感。',
+            visual: '画面干净、有真实空间感，少量文案辅助即可。',
+            avoid: '避免只有氛围没有产品，也避免过度装饰。'
+        },
+        m6: {
+            goal: '证明材质、做工或关键细节，让用户觉得产品可信。',
+            visual: '放大控制区、表面材质、结构、接口、跑带等可见细节。',
+            avoid: '避免编造看不到的工艺、认证或材质。'
+        },
+        m7: {
+            goal: '表达产品定位和调性，适合独立站品牌感页面。',
+            visual: '更像编辑排版，克制文字，强调品牌气质和使用价值。',
+            avoid: '避免虚构品牌历史、使命或奖项。'
+        },
+        m8: {
+            goal: '说明尺寸、收纳或空间占用，消除放不下的顾虑。',
+            visual: '用测量线、比例参照、收纳示意表达明确尺寸。',
+            avoid: '没有确定尺寸时不要编具体数字。'
+        },
+        m9: {
+            goal: '客观说明为什么选它，而不是单纯贬低普通产品。',
+            visual: '用简洁对比表呈现功能、便利性、收纳、控制方式等差异。',
+            avoid: '避免绝对化胜出、夸张优越性表达、无依据对比。'
+        },
+        m10: {
+            goal: '集中展示确定参数，用事实消除下单前顾虑。',
+            visual: '规格表要清楚、大字、少行，只展示已知事实。',
+            avoid: '避免编造承重、速度、功率、认证、保修等参数。'
+        },
+        m11: {
+            goal: '建立信任，降低售后、配送、维护和购买风险。',
+            visual: '可展示保修、客服、包装清单、维护便利等已知内容。',
+            avoid: '避免虚构认证、保修年限、退换政策。'
+        },
+        m12: {
+            goal: '降低使用门槛，让用户知道买回去怎么开始用。',
+            visual: '用 3-4 步流程图说明开机、模式、收纳、维护。',
+            avoid: '避免复杂说明书式小字。'
+        }
+    };
+    if (task.id === 'm2') {
+        const goals = [
+            ['主卖点证明', '讲最核心的日常使用价值，例如办公走路、轻运动、空间不占用。'],
+            ['第二功能证明', '讲辅助功能，例如震动模式、App/遥控、控制体验。'],
+            ['拥有成本证明', '讲收纳、静音、耐用、维护方便等购买后价值。'],
+            ['细节信任证明', '讲控制区、防滑表面、结构细节或多模式便利性。'],
+            ['人群匹配证明', '讲适合居家办公、小户型、轻运动人群等。']
+        ];
+        const selected = goals[Math.min(variant, goals.length - 1)];
+        return {
+            goal: `${selected[0]}：${selected[1]}`,
+            visual: '只讲一个购买理由，标题短，最多三个大号信息点。',
+            avoid: '避免每张核心卖点图都重复同一套 2-in-1 话术。'
+        };
+    }
+    return strategies[task.id] || {
+        goal: '围绕一个明确购买理由组织这一张图。',
+        visual: '产品清晰、文案克制、层级明确。',
+        avoid: '避免重复、堆字和无依据承诺。'
+    };
+}
+
+// 构建模块 SEO 标题和 Alt 文案的提示词，并限制编造参数或高风险功效表述。
 function buildSEOMetadataPrompt(task, sellingPoints, config = {}) {
-    return `You are an e-commerce SEO specialist. I am generating one product detail-page image module named "${task.title}".
+    const guardrails = buildProductGuardrails(config);
+    const moduleTitle = getPromptModuleTitle(task);
+    return `You are an e-commerce SEO specialist. I am generating one product detail-page image module named "${moduleTitle}".
 Product information: ${compactDetailText(sellingPoints, 500)}
-Target platform: ${config.platformLabel || config.platform || 'cross-border e-commerce'}
-Target market: ${config.regionLabel || config.region || 'Global Market'}
+Target platform: ${config.platform || 'cross-border e-commerce'}
+Target market: ${config.region || 'Global Market'}
+${guardrails ? `\n${guardrails}` : ''}
 
 Create SEO metadata in English with Chinese reference text:
 1. seoTitle: short image title containing the core product keyword.
@@ -163,8 +328,10 @@ Return strict JSON only:
 }`;
 }
 
+// 拼接最终发给图片模型的模块级提示词，融合模块职责、卖点、配置、合规和重绘要求。
 function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdjustment = '') {
     const brief = buildDetailPageBrief(sellingPoints, config);
+    const moduleTitle = getPromptModuleTitle(task);
     const themeContext = config.marketingTheme && config.marketingTheme !== 'none'
         ? `Marketing theme: ${config.marketingTheme}. Integrate it lightly without overwhelming the product.`
         : 'Marketing theme: none. Keep the layout evergreen and product-led.';
@@ -175,7 +342,7 @@ function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdj
         ? `User repaint instruction: ${promptAdjustment}. Apply it while preserving product identity, section role, compliance, and readability.`
         : '';
 
-    return `Task: Generate one professional e-commerce detail-page section for "${task.title}".
+    return `Task: Generate one professional e-commerce detail-page section for "${moduleTitle}".
 Module request: ${task.prompt}
 Module role: ${getModuleContentRole(task)}
 
@@ -197,6 +364,137 @@ Section constraints:
 ${repaintRule}`.trim();
 }
 
+// 构建策略预览里展示的短模块请求和完整最终提示词，避免把两者混为一谈。
+function buildStrategyPromptPreview(task, sellingPoints, config = {}) {
+    const moduleRequest = String(task?.prompt || '').trim();
+    return {
+        moduleRequest,
+        fullPrompt: buildModuleGenerationPrompt({ ...task, prompt: moduleRequest }, sellingPoints, config)
+    };
+}
+
+// 根据已启用模块生成出图前策略任务列表，每个任务对应最终要生成的一张图。
+function buildStrategyTasks(activeModules = [], sellingPoints = '', config = {}) {
+    const tasks = [];
+    activeModules.forEach(mod => {
+        for (let i = 0; i < (mod.count || 1); i++) {
+            const task = {
+                ...mod,
+                uniqueId: `${mod.id}_${i}`,
+                displayTitle: mod.count > 1 ? `${mod.title} 0${i + 1}` : mod.title,
+                variant: i,
+                totalVariants: mod.count || 1,
+                role: getModuleContentRole({ ...mod, variant: i, totalVariants: mod.count || 1 }),
+                strategyCn: getModuleStrategyCn({ ...mod, variant: i, totalVariants: mod.count || 1 }),
+                status: 'pending'
+            };
+            task.strategySummary = compactDetailText(`${task.role} ${sellingPoints}`, 260);
+            tasks.push(task);
+        }
+    });
+    return tasks;
+}
+
+// 把策略预览里手动编辑的 prompt 覆盖到任务列表，保持原任务对象不被直接修改。
+function applyStrategyOverrides(tasks = [], overrides = {}) {
+    return tasks.map(task => {
+        const override = String(overrides?.[task.uniqueId] || '').trim();
+        return override ? { ...task, prompt: override, promptOverride: override } : { ...task };
+    });
+}
+
+// 根据模块状态、SEO 文案、prompt 和禁用词做本地质检，给出轻量问题标签。
+function assessModuleQuality(task = {}, config = {}) {
+    const issues = [];
+    const text = [
+        task.title,
+        task.displayTitle,
+        task.prompt,
+        task.repaintPrompt,
+        task.seo?.titleTarget,
+        task.seo?.altTarget,
+        task.seo?.titleZh,
+        task.seo?.altZh
+    ].filter(Boolean).join(' ').toLowerCase();
+    const forbidden = compactDetailText(config.forbiddenClaims || '', 700).toLowerCase();
+    const forbiddenTerms = forbidden
+        .split(/[,，\n;/]+/)
+        .map(item => item.replace(/do not mention|不要写|禁止|do not|不要/gi, '').trim())
+        .filter(item => item.length >= 3);
+
+    forbiddenTerms.forEach(term => {
+        if (term && text.includes(term.toLowerCase())) {
+            issues.push({ code: 'forbidden-claim', level: 'danger', label: '禁用词风险', text: `出现禁用表达：${term}` });
+        }
+    });
+    if (/burn fat|medical recovery|fda|cure|pain relief|guaranteed result/i.test(text)) {
+        issues.push({ code: 'forbidden-claim', level: 'danger', label: '高风险功效', text: '可能包含疗效、认证或保证类高风险表达' });
+    }
+    if (/tiny text|dense|fine print|paragraph|many labels|信息密集|小字/i.test(text)) {
+        issues.push({ code: 'dense-text', level: 'warning', label: '小字/拥挤', text: '可能出现文字过密或小字不可读' });
+    }
+    if (task.status === 'fallback' || task.isFallback) {
+        issues.push({ code: 'fallback', level: 'warning', label: '降级图', text: '图片模型失败后使用了本地降级图' });
+    }
+    if (!task.imageSrc) {
+        issues.push({ code: 'missing-image', level: 'danger', label: '缺图', text: '该模块还没有可导出的图片' });
+    }
+    if ((task.title || '').includes('规格') && !compactDetailText(config.productFacts || '', 900)) {
+        issues.push({ code: 'missing-facts', level: 'warning', label: '缺少事实', text: '规格模块缺少明确产品事实，容易空泛或编造' });
+    }
+    if (!issues.length) {
+        issues.push({ code: 'usable', level: 'success', label: '可用', text: '未发现明显本地规则风险' });
+    }
+    return { issues };
+}
+
+// 按质检问题生成可直接放进重绘输入框的英文重绘建议。
+function buildPromptRewriteSuggestion(task = {}, issues = [], config = {}) {
+    const actions = [
+        `Regenerate "${task.title || task.displayTitle || 'this module'}" with the same product identity.`
+    ];
+    if (issues.some(issue => issue.code === 'dense-text')) {
+        actions.push('Reduce text density: use one short headline, one short subheadline, and no more than three large readable callouts.');
+    }
+    if (issues.some(issue => issue.code === 'forbidden-claim')) {
+        actions.push('Remove all forbidden or unsupported claims.');
+    }
+    if (issues.some(issue => issue.code === 'missing-facts')) {
+        actions.push('Use only confirmed facts; omit unknown specification rows instead of inventing values.');
+    }
+    const guardrails = buildProductGuardrails(config);
+    if (guardrails) actions.push(guardrails);
+    actions.push('Keep the layout clean, mobile-readable, and conversion-focused.');
+    return actions.join('\n');
+}
+
+// 导出长图前检查模块完整性、降级图、缺图、重复模块和事实/禁用词风险。
+function buildExportChecklist(tasks = [], config = {}) {
+    const checklist = [];
+    if (!tasks.length) {
+        return [{ level: 'danger', text: '没有可导出的模块' }];
+    }
+    const titles = new Map();
+    tasks.forEach(task => {
+        const title = task.title || task.displayTitle || task.id;
+        titles.set(title, (titles.get(title) || 0) + 1);
+        if (!task.imageSrc) checklist.push({ level: 'danger', text: `${title} 缺少图片` });
+        if (task.status === 'fallback' || task.isFallback) checklist.push({ level: 'warning', text: `${title} 是 fallback 降级图` });
+        const quality = assessModuleQuality(task, config);
+        quality.issues
+            .filter(issue => issue.level !== 'success')
+            .forEach(issue => checklist.push({ level: issue.level, text: `${title}: ${issue.text}` }));
+    });
+    titles.forEach((count, title) => {
+        if (count > 1) checklist.push({ level: 'info', text: `${title} 有 ${count} 张，导出前确认是否重复` });
+    });
+    if (!compactDetailText(config.productFacts || '', 900)) {
+        checklist.push({ level: 'info', text: '未填写产品事实/参数，规格和对比信息可能偏泛' });
+    }
+    return checklist.length ? checklist : [{ level: 'success', text: '导出检查未发现明显问题' }];
+}
+
+// 更新单个模块卡片的状态徽标，例如生成中、已完成、降级图或失败。
 function setModuleStatus(uniqueId, status, message = '') {
     const badge = document.getElementById(`status-badge-${uniqueId}`);
     if (!badge) return;
@@ -218,6 +516,7 @@ function setModuleStatus(uniqueId, status, message = '') {
     badge.textContent = message || labels[status] || labels.pending;
 }
 
+// 从页面表单读取某个模块当前的 SEO 标题和 Alt 文案。
 function getModuleSeo(uniqueId) {
     return {
         titleTarget: document.getElementById(`seo-title-target-${uniqueId}`)?.value || '',
@@ -227,6 +526,7 @@ function getModuleSeo(uniqueId) {
     };
 }
 
+// 把生成或恢复的 SEO 标题和 Alt 文案写回模块表单。
 function setModuleSeo(uniqueId, seo = {}) {
     const fields = {
         [`seo-title-target-${uniqueId}`]: seo.titleTarget || seo.seoTitle?.target || '',
@@ -240,10 +540,107 @@ function setModuleSeo(uniqueId, seo = {}) {
     });
 }
 
+// 获取指定模块当前显示图片的 src，用于下载、长图排版和历史保存。
 function getModuleImageSrc(uniqueId) {
     return document.getElementById(`content-mod-${uniqueId}`)?.querySelector('img')?.src || '';
 }
 
+// 获取指定模块重绘输入框中的附加提示词。
+function getModulePromptAdjustment(uniqueId) {
+    return document.getElementById(`regen-prompt-${uniqueId}`)?.value.trim() || '';
+}
+
+// 设置模块重绘控件的忙碌状态，防止重复提交并同步按钮文案。
+function setPromptControlsBusy(uniqueId, busy) {
+    const promptInput = document.getElementById(`regen-prompt-${uniqueId}`);
+    const submitBtn = document.getElementById(`regen-submit-${uniqueId}`);
+    if (promptInput) promptInput.disabled = busy;
+    if (submitBtn) {
+        submitBtn.disabled = busy;
+        submitBtn.innerHTML = busy
+            ? '<span class="loader border-white border-t-transparent w-3 h-3"></span><span>重绘中</span>'
+            : '<i class="ph ph-magic-wand text-sm"></i><span>按提示重绘</span>';
+    }
+}
+
+// 渲染单个模块下方的 Prompt Repaint 输入区和提交按钮。
+function renderPromptRegenerationControls(uniqueId) {
+    const safeId = detailEscapeHtml(uniqueId);
+    return `
+        <div class="border-t border-gray-100 bg-white px-4 py-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-1.5 min-w-0">
+                    <i class="ph ph-magic-wand text-blue-500"></i>
+                    <span class="text-xs font-black text-gray-700 uppercase tracking-widest">Prompt Repaint</span>
+                </div>
+                <button id="regen-submit-${safeId}" onclick="regenerateModuleWithPrompt('${safeId}')" class="flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 px-3 py-1.5 rounded shadow-sm transition-all active:scale-95 whitespace-nowrap">
+                    <i class="ph ph-magic-wand text-sm"></i><span>按提示重绘</span>
+                </button>
+            </div>
+            <textarea id="regen-prompt-${safeId}" class="w-full text-xs leading-relaxed px-3 py-2 border border-gray-200 rounded bg-slate-50 outline-none focus:border-blue-400 focus:bg-white resize-none" rows="2" placeholder="输入想调整的画面要求，例如：背景换成厨房使用场景，产品主体更大，光线更自然"></textarea>
+        </div>`;
+}
+
+// 渲染模块本地质检结果和重绘建议入口。
+function renderModuleQualityPanel(uniqueId) {
+    const task = globalGenContext?.tasks?.[uniqueId];
+    const container = document.getElementById(`quality-panel-${uniqueId}`);
+    if (!task || !container) return;
+    const quality = assessModuleQuality(task, globalGenContext?.config || {});
+    container.innerHTML = `
+        <div class="flex items-center justify-between gap-2">
+            <div class="flex flex-wrap gap-1.5">
+                ${quality.issues.map(issue => {
+                    const cls = issue.level === 'danger'
+                        ? 'bg-red-50 text-red-600 border-red-100'
+                        : issue.level === 'warning'
+                            ? 'bg-amber-50 text-amber-700 border-amber-100'
+                            : issue.level === 'success'
+                                ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                : 'bg-slate-50 text-slate-500 border-slate-100';
+                    return `<span title="${detailEscapeHtml(issue.text)}" class="text-[10px] font-bold px-2 py-1 rounded border ${cls}">${detailEscapeHtml(issue.label)}</span>`;
+                }).join('')}
+            </div>
+            <button onclick="fillRewriteSuggestion('${detailEscapeHtml(uniqueId)}')" class="text-[10px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-100 px-2 py-1 rounded">重绘建议</button>
+        </div>`;
+}
+
+// 根据本地质检结果生成重绘提示词，并填入当前模块的重绘输入框。
+function fillRewriteSuggestion(uniqueId) {
+    const task = globalGenContext?.tasks?.[uniqueId];
+    if (!task) return;
+    const quality = assessModuleQuality(task, globalGenContext?.config || {});
+    const suggestion = buildPromptRewriteSuggestion(task, quality.issues, globalGenContext?.config || {});
+    const input = document.getElementById(`regen-prompt-${uniqueId}`);
+    if (input) {
+        input.value = suggestion;
+        input.focus();
+    }
+    showToast('已生成重绘建议', 'success');
+}
+
+// 按用户输入的重绘提示词重新生成单个模块图片和 SEO。
+async function regenerateModuleWithPrompt(uniqueId) {
+    const promptAdjustment = getModulePromptAdjustment(uniqueId);
+    if (!promptAdjustment) {
+        showToast('请输入重绘提示词', 'warning');
+        document.getElementById(`regen-prompt-${uniqueId}`)?.focus();
+        return;
+    }
+
+    setPromptControlsBusy(uniqueId, true);
+    try {
+        await generateSingleWrap(uniqueId, false, promptAdjustment);
+        showToast('已按提示重绘', 'success');
+    } catch (error) {
+        console.error(error);
+        showToast('重绘失败', 'error');
+    } finally {
+        setPromptControlsBusy(uniqueId, false);
+    }
+}
+
+// 校验 AI 返回的长图排序 ID，去重、过滤非法 ID，并自动补齐遗漏模块。
 function validateSortedIds(sortedIds, expectedIds) {
     if (!Array.isArray(sortedIds)) return null;
     const expected = new Set(expectedIds);
@@ -257,6 +654,7 @@ function validateSortedIds(sortedIds, expectedIds) {
     return clean.length === expectedIds.length ? clean : null;
 }
 
+// 解析 data URL 图片，拆出 MIME 类型和 base64 数据。
 function parseImageDataUrl(dataUrl) {
     if (!dataUrl || !dataUrl.includes(',')) return null;
     return {
@@ -265,6 +663,7 @@ function parseImageDataUrl(dataUrl) {
     };
 }
 
+// 把远程或本地图片 URL 转成 data URL，方便作为模型内联图片输入。
 async function imageUrlToDataUrl(src) {
     if (!src || src.startsWith('data:image')) return src;
     const response = await fetch(formatImgSrc(src));
@@ -273,6 +672,7 @@ async function imageUrlToDataUrl(src) {
     return await fileToDataUrl(blob);
 }
 
+// 确保图片对象包含模型调用需要的 mimeType 和 base64 data 字段。
 async function ensureInlineImageData(image) {
     if (!image) return null;
     if (image.data && image.mimeType) return image;
@@ -287,6 +687,7 @@ async function ensureInlineImageData(image) {
     };
 }
 
+// 读取浏览器 File/Blob 并转换为 data URL。
 function fileToDataUrl(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -296,6 +697,7 @@ function fileToDataUrl(file) {
     });
 }
 
+// 获取当前主图素材，兼容新版多图数组和旧版单图字段。
 function getPrimaryUploadedImage() {
     if (Array.isArray(currentUploadedImages) && currentUploadedImages.length) {
         return currentUploadedImages[0];
@@ -309,10 +711,12 @@ function getPrimaryUploadedImage() {
     } : null;
 }
 
+// 获取除主图以外的角度或细节素材。
 function getAngleUploadedImages() {
     return Array.isArray(currentUploadedImages) ? currentUploadedImages.slice(1) : [];
 }
 
+// 渲染已上传素材的缩略图、主图标记、设为主图按钮和删除按钮。
 function renderUploadedImagePreviews() {
     const container = document.getElementById('imagePreviewContainer');
     if (!container) return;
@@ -327,9 +731,21 @@ function renderUploadedImagePreviews() {
     container.classList.remove('hidden');
     container.classList.add('flex');
     container.innerHTML = currentUploadedImages.map((img, index) => `
-        <div class="w-[84px] h-[84px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group shadow-inner">
-            <img src="${detailEscapeHtml(img.base64)}" alt="${detailEscapeHtml(img.name || 'Product')}" class="w-full h-full object-cover">
-            <span class="absolute left-1 bottom-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-black/60 text-white">${index === 0 ? '主图' : `角度${index}`}</span>
+        <div class="w-[112px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group shadow-inner p-1">
+            <div class="relative w-full h-[82px] overflow-hidden rounded bg-white">
+                <img src="${detailEscapeHtml(img.base64)}" alt="${detailEscapeHtml(img.name || 'Product')}" class="w-full h-full object-cover">
+                <span class="absolute left-1 bottom-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-black/60 text-white">${index === 0 ? '主图' : `素材${index}`}</span>
+            </div>
+            <select onchange="updateImageRole(${index}, this.value)" class="mt-1 w-full text-[10px] border border-gray-200 rounded bg-white px-1 py-0.5 outline-none">
+                ${[
+                    ['primary', '主图'],
+                    ['angle', '角度/外观'],
+                    ['detail', '细节/材质'],
+                    ['scene', '场景参考'],
+                    ['spec', '尺寸/参数'],
+                    ['package', '包装/配件']
+                ].map(([value, label]) => `<option value="${value}" ${(img.role || (index === 0 ? 'primary' : 'angle')) === value ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
             ${index > 0 ? `<button onclick="setPrimaryImage(${index})" title="设为主图"
                 class="absolute left-1 top-1 bg-white/90 text-blue-600 rounded px-1.5 py-0.5 text-[9px] font-black opacity-0 group-hover:opacity-100 transition-opacity">主图</button>` : ''}
             <button onclick="removeImage(${index})"
@@ -339,24 +755,44 @@ function renderUploadedImagePreviews() {
     `).join('');
 }
 
+// 更新某张上传素材的角色，用于后续按模块优先选择参考图。
+function updateImageRole(index, role) {
+    if (!Array.isArray(currentUploadedImages) || !currentUploadedImages[index]) return;
+    currentUploadedImages[index] = { ...currentUploadedImages[index], role };
+    if (index === 0 && role !== 'primary') {
+        currentUploadedImages[index].role = 'primary';
+        showToast('第一张固定为主图角色', 'info');
+    }
+    renderUploadedImagePreviews();
+}
+
+// 将某张角度素材移动为主图，并重新渲染上传预览。
 function setPrimaryImage(index) {
     if (!Array.isArray(currentUploadedImages) || index <= 0 || index >= currentUploadedImages.length) return;
     const [selected] = currentUploadedImages.splice(index, 1);
     currentUploadedImages.unshift(selected);
-    currentUploadedImages = currentUploadedImages.map((img, idx) => ({ ...img, isPrimary: idx === 0 }));
+    currentUploadedImages = currentUploadedImages.map((img, idx) => ({ ...img, isPrimary: idx === 0, role: idx === 0 ? 'primary' : (img.role === 'primary' ? 'angle' : img.role || 'angle') }));
     currentUploadedBase64 = currentUploadedImages[0]?.base64 || null;
     renderUploadedImagePreviews();
     showToast('已设为主图', 'success');
 }
 
+// 根据模块类型选择传给模型的图片素材，多角度模块会带上更多角度参考图。
 function getImagesForTask(task) {
     const primaryImage = globalGenContext.primaryImage;
     const angleImages = globalGenContext.angleImages || [];
-    const isAngleModule = task.id === 'm4';
-    if (!isAngleModule) return primaryImage ? [primaryImage] : [];
-    return primaryImage ? [primaryImage, ...angleImages].slice(0, 6) : [];
+    const byRole = role => angleImages.filter(img => img.role === role);
+    let preferred = [];
+    if (task.id === 'm3' || task.id === 'm5') preferred = byRole('scene');
+    else if (task.id === 'm6') preferred = byRole('detail');
+    else if (task.id === 'm8' || task.id === 'm10') preferred = byRole('spec');
+    else if (task.id === 'm11') preferred = byRole('package');
+    else if (task.id === 'm4') preferred = byRole('angle');
+    const fallback = task.id === 'm4' ? angleImages : [];
+    return primaryImage ? [primaryImage, ...preferred, ...fallback].slice(0, 6) : [];
 }
 
+// 初始化模块选择网格，显示模块卡片、启用状态和张数控制。
 function initModules() {
     const grid = document.getElementById('moduleGrid');
     if (!grid) return;
@@ -391,11 +827,114 @@ function initModules() {
     });
 }
 
+// 获取当前已启用模块对应的策略任务，并合并手动 prompt 覆盖。
+function getCurrentStrategyTasks() {
+    const config = getDetailConfig();
+    if (!config) return null;
+    const sellingPoints = document.getElementById('sellingPointsText')?.value || '';
+    const activeModules = modules.filter(m => m.active);
+    return applyStrategyOverrides(
+        buildStrategyTasks(activeModules, sellingPoints, config),
+        typeof detailStrategyOverrides === 'object' ? detailStrategyOverrides : {}
+    );
+}
+
+// 打开生成前策略预览弹窗，允许编辑每个模块本次使用的 prompt。
+function openStrategyPreview() {
+    const modal = document.getElementById('detailStrategyModal');
+    if (modal && modal.parentElement !== document.body) {
+        document.body.appendChild(modal);
+    }
+    const tasks = getCurrentStrategyTasks();
+    if (!tasks || !tasks.length) {
+        showToast('请至少选择一个模块', 'error');
+        return;
+    }
+    const container = document.getElementById('detailStrategyContent');
+    if (!container) return;
+    const config = getDetailConfig();
+    const sellingPoints = document.getElementById('sellingPointsText')?.value.trim() || '';
+    currentStrategyPreviewContext = { tasks, sellingPoints, config };
+    container.innerHTML = tasks.map(task => {
+        const promptPreview = buildStrategyPromptPreview(task, sellingPoints, config || {});
+        return `
+        <div class="border border-gray-200 rounded-xl p-4 bg-white shadow-sm">
+            <div class="flex items-start justify-between gap-3 mb-3">
+                <div>
+                    <div class="text-sm font-black text-gray-800">${detailEscapeHtml(task.displayTitle)}</div>
+                    <div class="text-[11px] text-gray-600 mt-1 leading-relaxed">${detailEscapeHtml(task.strategyCn?.goal || '')}</div>
+                </div>
+                <span class="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-1 rounded">${detailEscapeHtml(task.subtitle || '')}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+                <div class="bg-slate-50 border border-slate-100 rounded-lg p-3">
+                    <div class="text-[10px] font-black text-slate-400 mb-1">画面方向</div>
+                    <div class="text-xs text-slate-700 leading-relaxed">${detailEscapeHtml(task.strategyCn?.visual || '')}</div>
+                </div>
+                <div class="bg-red-50/50 border border-red-100 rounded-lg p-3">
+                    <div class="text-[10px] font-black text-red-400 mb-1">避免事项</div>
+                    <div class="text-xs text-red-700 leading-relaxed">${detailEscapeHtml(task.strategyCn?.avoid || '')}</div>
+                </div>
+            </div>
+            <details class="group">
+                <summary class="cursor-pointer text-[11px] font-bold text-blue-600 hover:text-blue-700 select-none">编辑模块请求</summary>
+                <div class="mt-2 text-[10px] font-bold text-gray-400">这段是模块方向，会被拼进下面的完整最终 Prompt。</div>
+                <textarea data-strategy-id="${detailEscapeHtml(task.uniqueId)}" rows="3"
+                    oninput="updateStrategyFullPrompt('${detailEscapeHtml(task.uniqueId)}')"
+                    class="mt-1 w-full text-xs leading-relaxed border border-gray-200 rounded-lg p-3 outline-none focus:border-blue-500 resize-none bg-slate-50">${detailEscapeHtml(promptPreview.moduleRequest)}</textarea>
+            </details>
+            <details class="group mt-3">
+                <summary class="cursor-pointer text-[11px] font-bold text-slate-600 hover:text-slate-800 select-none">查看完整最终 Prompt</summary>
+                <div class="mt-2 text-[10px] font-bold text-gray-400">这是实际发送给图片模型的完整提示词预览，包含商品信息、平台、风格、禁用词和生成约束。</div>
+                <textarea data-full-prompt-id="${detailEscapeHtml(task.uniqueId)}" rows="10" readonly
+                    class="mt-1 w-full text-xs leading-relaxed border border-gray-200 rounded-lg p-3 outline-none bg-gray-50 text-gray-600 resize-y">${detailEscapeHtml(promptPreview.fullPrompt)}</textarea>
+            </details>
+        </div>
+    `;
+    }).join('');
+    modal?.classList.remove('hidden');
+}
+
+// 根据当前编辑的模块请求实时刷新完整最终 Prompt 预览。
+function updateStrategyFullPrompt(uniqueId) {
+    const context = currentStrategyPreviewContext;
+    if (!context) return;
+    const task = context.tasks.find(item => item.uniqueId === uniqueId);
+    const moduleField = document.querySelector(`[data-strategy-id="${CSS.escape(uniqueId)}"]`);
+    const fullField = document.querySelector(`[data-full-prompt-id="${CSS.escape(uniqueId)}"]`);
+    if (!task || !moduleField || !fullField) return;
+    const promptPreview = buildStrategyPromptPreview(
+        { ...task, prompt: moduleField.value },
+        context.sellingPoints,
+        context.config || {}
+    );
+    fullField.value = promptPreview.fullPrompt;
+}
+
+// 关闭生成前策略预览弹窗。
+function closeStrategyPreview() {
+    document.getElementById('detailStrategyModal')?.classList.add('hidden');
+}
+
+// 应用策略预览里编辑过的模块 prompt 覆盖。
+function applyStrategyPreview() {
+    const fields = document.querySelectorAll('[data-strategy-id]');
+    fields.forEach(field => {
+        const id = field.dataset.strategyId;
+        const value = field.value.trim();
+        if (id && value) detailStrategyOverrides[id] = value;
+    });
+    closeStrategyPreview();
+    showToast('已应用本次生成策略', 'success');
+}
+
+// 切换某个详情页模块的启用状态。
 function toggleModule(id) {
     const mod = modules.find(m => m.id === id);
     if (mod) { mod.active = !mod.active; initModules(); }
 }
 
+// 调整模块生成张数，并限制在允许范围内。
 function updateModuleCount(id, delta) {
     const mod = modules.find(m => m.id === id);
     if (mod) {
@@ -404,6 +943,7 @@ function updateModuleCount(id, delta) {
     }
 }
 
+// 根据比例下拉状态显示或隐藏自定义宽高比输入区。
 function toggleCustomRatio() {
     const select = document.getElementById('aspectRatioSelect');
     const container = document.getElementById('customRatioContainer');
@@ -415,6 +955,7 @@ function toggleCustomRatio() {
 }
 
 // ====== 图像上传处理 ======
+// 处理用户上传的主图和角度素材，完成类型/大小校验、base64 转换和预览刷新。
 async function handleImageUpload(event) {
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
@@ -457,7 +998,7 @@ async function handleImageUpload(event) {
         }));
         currentUploadedImages = [...currentUploadedImages, ...uploaded]
             .slice(0, DETAIL_MAX_UPLOAD_IMAGES)
-            .map((img, index) => ({ ...img, isPrimary: index === 0 }));
+            .map((img, index) => ({ ...img, isPrimary: index === 0, role: index === 0 ? 'primary' : img.role || 'angle' }));
         currentUploadedBase64 = currentUploadedImages[0]?.base64 || null;
         renderUploadedImagePreviews();
         const angleCount = Math.max(0, currentUploadedImages.length - 1);
@@ -470,12 +1011,13 @@ async function handleImageUpload(event) {
     }
 }
 
+// 删除单张或全部上传素材，并同步主图状态和预览。
 function removeImage(index = null) {
     if (index === null || index === undefined) {
         currentUploadedImages = [];
     } else {
         currentUploadedImages.splice(index, 1);
-        currentUploadedImages = currentUploadedImages.map((img, idx) => ({ ...img, isPrimary: idx === 0 }));
+        currentUploadedImages = currentUploadedImages.map((img, idx) => ({ ...img, isPrimary: idx === 0, role: idx === 0 ? 'primary' : (img.role === 'primary' ? 'angle' : img.role || 'angle') }));
     }
     currentUploadedBase64 = currentUploadedImages[0]?.base64 || null;
     document.getElementById('imageUpload').value = '';
@@ -483,6 +1025,7 @@ function removeImage(index = null) {
 }
 
 // ====== 生成逻辑 ======
+// 调用文本模型从上传图片中提取产品事实、核心卖点、适用人群、场景和风险提示。
 async function generateSellingPoints() {
     const logMsg = "开始提取核心卖点...";
     console.log(`%c[详情页] ${logMsg}`, "color: #6366f1; font-weight: bold;");
@@ -494,7 +1037,9 @@ async function generateSellingPoints() {
     btn.disabled = true;
 
     const sellingPointImages = [getPrimaryUploadedImage(), ...getAngleUploadedImages().slice(0, 2)].filter(Boolean);
-    let parts = [{ text: buildSellingPointsExtractionPrompt(sellingPointImages.length || 1) }];
+    const productFacts = document.getElementById('productFactsText')?.value.trim() || '';
+    const forbiddenClaims = document.getElementById('forbiddenClaimsText')?.value.trim() || '';
+    let parts = [{ text: buildSellingPointsExtractionPrompt(sellingPointImages.length || 1, productFacts, forbiddenClaims) }];
     if (sellingPointImages.length) {
         if (sellingPointImages.length > 1) {
             parts[0].text += `\n\n我同时提供了 ${sellingPointImages.length} 张商品素材。第一张是主图，后续为角度/细节参考。请综合判断，但不要把不同角度误认为不同产品。`;
@@ -522,6 +1067,7 @@ async function generateSellingPoints() {
     }
 }
 
+// 调用文本模型为单个详情页模块生成 SEO 标题和 Alt 文案。
 async function generateSEOMetadata(task, sellingPoints) {
     const prompt = buildSEOMetadataPrompt(task, sellingPoints, globalGenContext?.config || {});
 
@@ -556,6 +1102,7 @@ async function generateSEOMetadata(task, sellingPoints) {
     return null;
 }
 
+// 启动整套详情页生成流程：校验输入、创建任务队列、并发生成模块并渲染结果区。
 async function generateAIPage() {
     const activeModules = modules.filter(m => m.active);
     if (!activeModules.length) { showToast('请至少选择一个模块', 'error'); return; }
@@ -590,14 +1137,13 @@ async function generateAIPage() {
         longImageOrder: []
     };
 
-    let taskQueue = [];
-    activeModules.forEach(mod => {
-        for (let i = 0; i < mod.count; i++) {
-            const task = { ...mod, uniqueId: `${mod.id}_${i}`, displayTitle: mod.count > 1 ? `${mod.title} 0${i + 1}` : mod.title, variant: i, totalVariants: mod.count, status: 'pending' };
-            taskQueue.push(task);
-            globalGenContext.tasks[task.uniqueId] = task;
-            globalGenContext.longImageOrder.push(task.uniqueId);
-        }
+    let taskQueue = applyStrategyOverrides(
+        buildStrategyTasks(activeModules, sellingPoints, config),
+        typeof detailStrategyOverrides === 'object' ? detailStrategyOverrides : {}
+    );
+    taskQueue.forEach(task => {
+        globalGenContext.tasks[task.uniqueId] = task;
+        globalGenContext.longImageOrder.push(task.uniqueId);
     });
 
     document.getElementById('showcaseArea').classList.add('hidden');
@@ -625,6 +1171,8 @@ async function generateAIPage() {
                 <div id="content-mod-${task.uniqueId}" class="p-6 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iMTAiIGN5PSIxMCIgcj0iMSIgZmlsbD0iI2YxZjFmMSIvPjwvc3ZnPg==')]" style="aspect-ratio: ${ratioStr}; min-height: 200px;">
                     <span class="loader border-blue-500 border-t-transparent w-8 h-8 mb-3"></span><span class="text-sm text-gray-500 font-medium tracking-wide">AI引擎构图中...</span>
                 </div>
+                ${renderPromptRegenerationControls(task.uniqueId)}
+                <div id="quality-panel-${task.uniqueId}" class="border-t border-gray-100 bg-white px-4 py-3"></div>
                 <div class="border-t border-gray-100 bg-slate-50 p-4 flex flex-col gap-3">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-1.5"><i class="ph-fill ph-link text-blue-500"></i><span class="text-xs font-black text-gray-700 uppercase tracking-widest">SEO Meta-Data</span></div>
@@ -715,11 +1263,16 @@ async function generateAIPage() {
     remoteLog(`详情页全案生成结束 | ${summary}`);
 }
 
-async function generateSingleWrap(uniqueId, skipSEO = false) {
+// 生成或重绘单个详情页模块图片，失败时降级为本地 HTML/CSS 占位图。
+async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = '') {
     const task = globalGenContext.tasks[uniqueId];
     if (!task) return;
 
     remoteLog(`开始渲染模块: ${task.title}`);
+    if (promptAdjustment) {
+        task.repaintPrompt = promptAdjustment;
+        remoteLog(`模块 [${task.title}] 使用自定义提示词重绘`);
+    }
     const contentDiv = document.getElementById(`content-mod-${uniqueId}`);
     if (!contentDiv) return;
 
@@ -745,7 +1298,7 @@ async function generateSingleWrap(uniqueId, skipSEO = false) {
             : `9. Multi-angle mode: Only one primary image is provided. Generate plausible front, side, back, detail, and perspective views from the primary image while preserving the exact product identity, proportions, materials, and colors.`)
         : '';
 
-    let prompt = buildModuleGenerationPrompt(task, sellingPoints, config);
+    let prompt = buildModuleGenerationPrompt(task, sellingPoints, config, promptAdjustment);
     if (angleRule) prompt += `\n${angleRule}`;
 
     let parts = [{ text: prompt }, ...taskImages.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } }))];
@@ -798,9 +1351,11 @@ async function generateSingleWrap(uniqueId, skipSEO = false) {
 
     document.getElementById(`regen-btn-${uniqueId}`)?.classList.remove('hidden');
     task.seo = getModuleSeo(uniqueId);
+    renderModuleQualityPanel(uniqueId);
     return { status: task.status, task };
 }
 
+// 在图片模型失败时渲染通用降级模块，保证页面仍有可下载的占位图。
 function renderMockModule(container, task, points, config, imgSrc) {
     if (!container) return;
     const ratioStr = config.aspectRatio.replace(':', '/');
@@ -828,6 +1383,7 @@ function renderMockModule(container, task, points, config, imgSrc) {
     container.style.padding = '0';
 }
 
+// 在多角度模块失败时用上传素材渲染本地多角度拼图降级图。
 function renderMultiAngleFallback(container, task, points, config, images) {
     if (!container || !images.length) return;
     const ratioStr = config.aspectRatio.replace(':', '/');
@@ -856,6 +1412,7 @@ function renderMultiAngleFallback(container, task, points, config, images) {
     container.style.padding = '0';
 }
 
+// 从结果区返回详情页生成首页展示区。
 function resetView() {
     document.getElementById('resultArea').classList.add('hidden');
     document.getElementById('resultArea').classList.remove('flex');
@@ -863,6 +1420,7 @@ function resetView() {
     setTimeout(() => { document.getElementById('showcaseArea').classList.remove('opacity-0'); }, 50);
 }
 
+// 将单个模块 DOM 用 html2canvas 打包成图片并下载。
 async function downloadModule(modId, modTitle, isBatch = false) {
     const el = document.getElementById(`content-mod-${modId}`);
     if (!el) return;
@@ -889,6 +1447,7 @@ async function downloadModule(modId, modTitle, isBatch = false) {
     } catch (e) { console.error(e); if (!isBatch) showToast('下载失败', 'error'); }
 }
 
+// 依次下载当前项目里的所有已生成模块图片。
 async function downloadAllModules() {
     if (!globalGenContext || !Object.keys(globalGenContext.tasks).length) return;
     showToast('开始批量打包，请耐心等待...', 'info');
@@ -901,6 +1460,7 @@ async function downloadAllModules() {
     showToast('全部下载完毕！', 'success');
 }
 
+// 收集当前详情页项目快照，用于历史保存和后续恢复。
 function collectCurrentRenderProject(finalImage = '') {
     if (!globalGenContext) return null;
     const taskEntries = Object.entries(globalGenContext.tasks || {});
@@ -915,6 +1475,7 @@ function collectCurrentRenderProject(finalImage = '') {
         status: task.status || 'pending',
         isFallback: !!task.isFallback,
         error: task.error || '',
+        repaintPrompt: task.repaintPrompt || getModulePromptAdjustment(id),
         imageSrc: getModuleImageSrc(id) || task.imageSrc || '',
         seo: getModuleSeo(id)
     }));
@@ -927,15 +1488,19 @@ function collectCurrentRenderProject(finalImage = '') {
             name: img.name,
             base64: img.base64,
             mimeType: img.mimeType,
-            isPrimary: !!img.isPrimary
+            isPrimary: !!img.isPrimary,
+            role: img.role || ''
         })),
         sellingPoints: globalGenContext.sellingPoints || '',
+        productFacts: globalGenContext.config?.productFacts || '',
+        forbiddenClaims: globalGenContext.config?.forbiddenClaims || '',
         config: globalGenContext.config || {},
         longImageOrder: (globalGenContext.longImageOrder || []).slice(),
         modules: modulesSnapshot
     };
 }
 
+// 从历史记录恢复详情页项目，包括素材、模块图片、SEO、顺序和重绘提示词。
 function renderRestoredDetailProject(project, fallbackImage = '') {
     if (!project || project.kind !== 'detail-page-project' || !Array.isArray(project.modules)) return false;
 
@@ -948,7 +1513,8 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
                 base64,
                 mimeType: img.mimeType || parsed.mimeType || '',
                 data: img.data || parsed.data || '',
-                isPrimary: index === 0
+                isPrimary: index === 0,
+                role: index === 0 ? 'primary' : img.role || 'angle'
             };
         }).filter(img => img.base64).slice(0, DETAIL_MAX_UPLOAD_IMAGES)
         : [];
@@ -975,6 +1541,10 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
 
     const sellingInput = document.getElementById('sellingPointsText');
     if (sellingInput) sellingInput.value = project.sellingPoints || '';
+    const factsInput = document.getElementById('productFactsText');
+    if (factsInput) factsInput.value = project.productFacts || project.config?.productFacts || '';
+    const forbiddenInput = document.getElementById('forbiddenClaimsText');
+    if (forbiddenInput) forbiddenInput.value = project.forbiddenClaims || project.config?.forbiddenClaims || '';
 
     const showcaseArea = document.getElementById('showcaseArea');
     const resultArea = document.getElementById('resultArea');
@@ -1001,11 +1571,14 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
                     </div>
                     <div class="flex items-center gap-2">
                         <span class="text-xs text-gray-400 mr-2">${detailEscapeHtml(mod.subtitle || '')}</span>
+                        <button id="regen-btn-${detailEscapeHtml(mod.id)}" onclick="generateSingleWrap('${detailEscapeHtml(mod.id)}')" class="flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-500 hover:text-blue-600 transition-colors shadow-sm" title="重绘图像并刷新 SEO"><i class="ph ph-arrows-clockwise text-sm"></i></button>
                     </div>
                 </div>
                 <div id="content-mod-${detailEscapeHtml(mod.id)}" class="relative bg-white" style="aspect-ratio: ${ratioStr}; min-height: 200px; padding: 0;">
                     ${imageSrc ? `<img src="${detailEscapeHtml(formatImgSrc(imageSrc))}" class="w-full h-full object-cover">` : '<div class="w-full h-full flex items-center justify-center text-xs text-gray-400">暂无模块图片</div>'}
                 </div>
+                ${renderPromptRegenerationControls(mod.id)}
+                <div id="quality-panel-${detailEscapeHtml(mod.id)}" class="border-t border-gray-100 bg-white px-4 py-3"></div>
                 <div class="border-t border-gray-100 bg-slate-50 p-4 flex flex-col gap-3">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-1.5"><i class="ph-fill ph-link text-blue-500"></i><span class="text-xs font-black text-gray-700 uppercase tracking-widest">SEO Meta-Data</span></div>
@@ -1026,7 +1599,10 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
                 </div>
             </div>`);
         setModuleSeo(mod.id, mod.seo || {});
+        const promptInput = document.getElementById(`regen-prompt-${mod.id}`);
+        if (promptInput) promptInput.value = mod.repaintPrompt || '';
         setModuleStatus(mod.id, mod.status || (mod.isFallback ? 'fallback' : 'success'));
+        renderModuleQualityPanel(mod.id);
     });
 
     renderSortableList();
@@ -1034,6 +1610,7 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
 }
 
 // ====== 长图拖拽排版台逻辑 ======
+// 打开长图排版台，并在打开前刷新模块排序列表和预览画布。
 function openLongImageBuilder() {
     if (!globalGenContext || !globalGenContext.longImageOrder.length) {
         showToast('尚未生成任何模块', 'error'); return;
@@ -1042,10 +1619,12 @@ function openLongImageBuilder() {
     document.getElementById('longImageBuilderModal').classList.remove('hidden');
 }
 
+// 关闭长图排版台弹窗。
 function closeLongImageBuilder() {
     document.getElementById('longImageBuilderModal').classList.add('hidden');
 }
 
+// 渲染可拖拽模块列表和长图预览画布。
 function renderSortableList() {
     const list = document.getElementById('sortableList');
     const canvas = document.getElementById('longImageCanvas');
@@ -1118,6 +1697,7 @@ function renderSortableList() {
     });
 }
 
+// 根据拖拽后的列表顺序更新全局长图顺序和预览图片顺序。
 function updatePreviewOrder() {
     const list = document.getElementById('sortableList');
     const newOrder = [...list.children].map(li => li.dataset.id);
@@ -1131,6 +1711,49 @@ function updatePreviewOrder() {
     });
 }
 
+// 渲染导出前检查结果，提示缺图、降级图、重复和潜在风险。
+function renderExportChecklist() {
+    const panel = document.getElementById('exportChecklistPanel');
+    if (!panel || !globalGenContext) return;
+    const tasks = (globalGenContext.longImageOrder || [])
+        .map(id => globalGenContext.tasks[id])
+        .filter(Boolean);
+    const checklist = buildExportChecklist(tasks, globalGenContext.config || {});
+    panel.classList.remove('hidden');
+    panel.innerHTML = `
+        <div class="font-black text-slate-700 mb-2 flex items-center gap-1.5"><i class="ph ph-shield-check"></i> 导出检查</div>
+        <div class="flex flex-col gap-1.5">
+            ${checklist.map(item => {
+                const cls = item.level === 'danger'
+                    ? 'text-red-600'
+                    : item.level === 'warning'
+                        ? 'text-amber-700'
+                        : item.level === 'success'
+                            ? 'text-emerald-600'
+                            : 'text-slate-500';
+                return `<div class="${cls}">• ${detailEscapeHtml(item.text)}</div>`;
+            }).join('')}
+        </div>`;
+}
+
+// 导出当前详情页项目 JSON，便于以后重新载入或排查生成配置。
+function exportCurrentProjectJson() {
+    const project = collectCurrentRenderProject('');
+    if (!project) {
+        showToast('没有可导出的详情页项目', 'error');
+        return;
+    }
+    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    const ts = Date.now();
+    link.download = `AI详情页项目_${ts}.json`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    showToast('项目 JSON 已导出', 'success');
+}
+
+// 调用文本模型按高转化详情页逻辑重新排序长图模块。
 async function aiSortLongImage() {
     if (!globalGenContext || !globalGenContext.longImageOrder.length) return;
     const btn = document.getElementById('aiSortBtn');
@@ -1142,10 +1765,12 @@ async function aiSortLongImage() {
         const task = globalGenContext.tasks[id];
         return { id: id, title: task.title, subtitle: task.subtitle };
     });
+    const guardrails = buildProductGuardrails(globalGenContext.config || {});
 
     const prompt = `你是一个资深跨境电商运营与高转化详情页架构专家。
 目前我有以下详情页模块需要组合成一张长图。请根据“高转化营销逻辑”（如 AIDA 模型）对这些模块进行最优排序。
 产品卖点背景：${globalGenContext.sellingPoints.substring(0, 300)}
+${guardrails ? `产品事实与禁用约束：\n${guardrails}\n` : ''}
 待排序模块列表：${JSON.stringify(modulesToSort)}
 任务要求：
 1. 必须返回所有输入的模块 ID，不能遗漏。
@@ -1174,6 +1799,7 @@ async function aiSortLongImage() {
     finally { btn.innerHTML = origHtml; btn.disabled = false; }
 }
 
+// 将长图排版台中的预览画布导出为 PNG/JPG，并保存到历史记录。
 async function executeLongImageDownload() {
     const canvasEl = document.getElementById('longImageCanvas');
     const format = document.getElementById('exportQualitySelect').value;
@@ -1182,6 +1808,7 @@ async function executeLongImageDownload() {
 
     btn.disabled = true;
     btn.innerHTML = '<i class="ph ph-spinner animate-spin text-lg"></i> 渲染中...';
+    renderExportChecklist();
 
     try {
         await new Promise(r => setTimeout(r, 300));

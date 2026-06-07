@@ -3,18 +3,18 @@
 // ==========================================
 
 const MODULES_CONFIG = [
-    { id: 'm1', title: '首屏主视觉', subtitle: '传递核心价值', active: true, count: 1, prompt: "Create a clear hero section that immediately explains what the product is, who it is for, and the primary benefit. Use one short headline, one short support line, and up to three proof-oriented callouts." },
-    { id: 'm2', title: '核心卖点图', subtitle: '突出卖点优势', active: true, count: 1, prompt: "Create a focused benefit infographic. Each version must cover a different buying reason, with no repeated headline angle across variants." },
-    { id: 'm3', title: '使用场景图', subtitle: '呈现真实使用场景', active: true, count: 1, prompt: "Create a believable lifestyle usage scene with realistic product scale, natural lighting, and a single user context. Avoid exaggerated fitness transformations." },
-    { id: 'm4', title: '多角度图', subtitle: '多角度呈现外观', active: false, count: 1, prompt: "Create a layout showing a collage of different angle views of the product on a clean studio background." },
-    { id: 'm5', title: '场景氛围图', subtitle: '展示使用场景', active: false, count: 1, prompt: "Create an atmospheric lifestyle shot with warm lighting, setting a mood that perfectly fits the product's aesthetic." },
-    { id: 'm6', title: '商品细节图', subtitle: '放大材质与工艺', active: false, count: 1, prompt: "Create a macro close-up shot highlighting the premium material, texture, and exquisite craftsmanship of the product." },
-    { id: 'm7', title: '品牌故事图', subtitle: '传达品牌理念', active: false, count: 1, prompt: "Create an editorial layout with a brand story aesthetic, combining the product with lifestyle elements and elegant text space." },
-    { id: 'm8', title: '尺寸/容量/尺码图', subtitle: '展示规格信息', active: false, count: 1, prompt: "Create a technical drawing or infographic style image showing exact dimensions, size proportions, or capacity with measurement lines." },
-    { id: 'm9', title: '效果对比图', subtitle: '对比展示优势', active: true, count: 1, prompt: "Create an objective comparison table between a single-function alternative and this product. Use factual feature rows, not exaggerated superiority claims." },
-    { id: 'm10', title: '详细规格表', subtitle: '展示详细参数', active: true, count: 1, prompt: "Create a clean specification section. Only show parameters that are present in the supplied product information or clearly visible in the reference image." },
-    { id: 'm11', title: '售后保障图', subtitle: '增强购买信心', active: true, count: 1, prompt: "Create a trust-building after-sales section using warranty, support, shipping, returns, maintenance, or package-list cues only when provided. Do not invent certifications." },
-    { id: 'm12', title: '使用建议图', subtitle: '指导正确使用', active: false, count: 1, prompt: "Create an instructional step-by-step guide or usage tips layout showing how to properly use or maintain the product with clear visual cues." }
+    { id: 'm1', title: '首屏认知', promptTitle: 'Hero Product Understanding', subtitle: '让用户秒懂产品', active: true, count: 1, prompt: "Create a clear hero section that immediately explains what the product is, who it is for, and the primary benefit. Use one short headline, one short support line, and up to three proof-oriented callouts." },
+    { id: 'm2', title: '核心功能证明', promptTitle: 'Core Benefit Proof', subtitle: '给出购买理由', active: true, count: 1, prompt: "Create a focused benefit infographic. Each version must cover a different buying reason, with no repeated headline angle across variants." },
+    { id: 'm3', title: '场景/痛点唤醒', promptTitle: 'Usage Scenario and Pain Point', subtitle: '展示真实使用需求', active: true, count: 1, prompt: "Create a believable lifestyle usage scene with realistic product scale, natural lighting, and a single user context. Avoid exaggerated fitness transformations." },
+    { id: 'm4', title: '外观/多角度证明', promptTitle: 'Appearance and Multi-Angle Proof', subtitle: '降低看不清疑虑', active: false, count: 1, prompt: "Create a layout showing a collage of different angle views of the product on a clean studio background." },
+    { id: 'm5', title: '生活方式氛围', promptTitle: 'Lifestyle Atmosphere', subtitle: '强化使用代入感', active: false, count: 1, prompt: "Create an atmospheric lifestyle shot with warm lighting, setting a mood that perfectly fits the product's aesthetic." },
+    { id: 'm6', title: '细节/材质证明', promptTitle: 'Detail and Material Proof', subtitle: '放大关键做工', active: false, count: 1, prompt: "Create a macro close-up shot highlighting the premium material, texture, and exquisite craftsmanship of the product." },
+    { id: 'm7', title: '品牌/定位表达', promptTitle: 'Brand Positioning Expression', subtitle: '建立产品调性', active: false, count: 1, prompt: "Create an editorial layout with a brand story aesthetic, combining the product with lifestyle elements and elegant text space." },
+    { id: 'm8', title: '尺寸/收纳证明', promptTitle: 'Size and Storage Proof', subtitle: '消除空间疑虑', active: false, count: 1, prompt: "Create a technical drawing or infographic style image showing exact dimensions, size proportions, or capacity with measurement lines." },
+    { id: 'm9', title: '对比差异证明', promptTitle: 'Objective Comparison Proof', subtitle: '说明为什么选它', active: true, count: 1, prompt: "Create an objective comparison table between a single-function alternative and this product. Use factual feature rows, not exaggerated superiority claims." },
+    { id: 'm10', title: '参数规格确认', promptTitle: 'Specification Confirmation', subtitle: '用事实消除顾虑', active: true, count: 1, prompt: "Create a clean specification section. Only show parameters that are present in the supplied product information or clearly visible in the reference image." },
+    { id: 'm11', title: '信任/售后背书', promptTitle: 'Trust and After-Sales Support', subtitle: '降低下单风险', active: true, count: 1, prompt: "Create a trust-building after-sales section using warranty, support, shipping, returns, maintenance, or package-list cues only when provided. Do not invent certifications." },
+    { id: 'm12', title: '使用/维护指引', promptTitle: 'Usage and Maintenance Guide', subtitle: '降低使用门槛', active: false, count: 1, prompt: "Create an instructional step-by-step guide or usage tips layout showing how to properly use or maintain the product with clear visual cues." }
 ];
 
 if (typeof globalThis !== 'undefined') {
@@ -24,8 +24,15 @@ if (typeof globalThis !== 'undefined') {
 const PLATFORM_OPTIONS = [
     { value: "Independent Website (Shopify-like, highly aesthetic, minimalist, lifestyle-focused)", label: "独立站" },
     { value: "Amazon (clean white background, highly informative, feature-focused)",               label: "亚马逊" },
-    { value: "Taobao (vibrant, promotional, colorful, high-density text)",                         label: "淘宝" }
+    { value: "Walmart Marketplace (trustworthy, value-focused, practical, clear retail presentation)", label: "Walmart" },
+    { value: "eBay (deal-oriented, clear product condition, value and buyer confidence focused)", label: "eBay" },
+    { value: "Etsy (handcrafted, boutique, story-led, warm and creative marketplace style)", label: "Etsy" },
+    { value: "TikTok Shop (mobile-first, bold hook, social-commerce energy, fast benefit clarity)", label: "TikTok Shop" }
 ];
+
+if (typeof globalThis !== 'undefined') {
+    globalThis.PLATFORM_OPTIONS = PLATFORM_OPTIONS;
+}
 
 const REGION_OPTIONS = [
     { value: "US Market",           label: "美国 (US)" },
@@ -39,14 +46,14 @@ const REGION_OPTIONS = [
 ];
 
 const MARKET_TONE_MAP = {
-    "US Market": "极具煽动性，直接展示核心利益点，略带激进的促销感，自信且引人注目。",
-    "European Market": "严谨优雅，强调环保、可持续性、高品质和设计感，措辞清晰高级。",
-    "UK Market": "礼貌克制，略带巧妙的幽默感，注重性价比与实用性，专业而亲和。",
-    "Japan Market": "极端严谨，注重细节和参数说明，措辞极其礼貌，强调信任感和安心感。",
-    "Southeast Asia Market": "色彩鲜艳，情绪高昂，善用FOMO(错失恐惧)心理，促销感极强。",
-    "Middle East Market": "奢华尊贵，尊重传统，强调产品带来的地位感和高端体验。",
-    "Australian Market": "轻松随性，注重生活方式的融入，实用导向，亲切友好。",
-    "Global Market": "中立、专业、普适性强、清晰明了。"
+    "US Market": "Direct, benefit-led, confident, conversion-focused, but factual and compliant.",
+    "European Market": "Refined, design-conscious, quality-focused, sustainability-aware, clear and restrained.",
+    "UK Market": "Polite, practical, value-aware, lightly witty, professional and approachable.",
+    "Japan Market": "Precise, detail-oriented, trust-building, polite, calm, and reassurance-focused.",
+    "Southeast Asia Market": "Bright, energetic, promotion-aware, urgency-driven, but still factual.",
+    "Middle East Market": "Premium, dignified, elegant, comfort-focused, and respectful of lifestyle context.",
+    "Australian Market": "Relaxed, practical, lifestyle-led, friendly, and straightforward.",
+    "Global Market": "Neutral, professional, broadly understandable, clear, and practical."
 };
 
 const LANGUAGE_OPTIONS = [
@@ -75,8 +82,25 @@ const IMAGE_STYLE_OPTIONS = [
     { value: "Trendy, vibrant, TikTok viral style, energetic, bold", label: "TikTok爆款" },
     { value: "Light luxury, elegant, glossy, high-fashion aesthetic", label: "轻奢风" },
     { value: "Tech-focused, cyberpunk, modern, neon accents", label: "科技风" },
-    { value: "Natural, organic, warm, cozy, lifestyle photography", label: "自然原木" }
+    { value: "Natural, organic, warm, cozy, lifestyle photography", label: "自然原木" },
+    { value: "Amazon infographic style, clean white background, structured callouts", label: "亚马逊信息图风" },
+    { value: "Shopify premium lifestyle style, editorial product photography, elegant spacing", label: "Shopify高级生活方式风" },
+    { value: "Realistic home interior scene, natural daylight, credible product scale", label: "家居场景实拍风" },
+    { value: "Professional fitness equipment style, clean studio, restrained performance cues", label: "运动健身专业风" },
+    { value: "Health and wellness trust style, calm colors, compliant supportive messaging", label: "健康护理克制风" },
+    { value: "Beauty and personal care premium style, soft lighting, refined editorial layout", label: "美妆个护高级风" },
+    { value: "Industrial technical specification style, precise diagrams, clean measurement layout", label: "工业参数说明风" },
+    { value: "Outdoor rugged gear style, durable materials, practical adventure context", label: "户外硬核装备风" },
+    { value: "Mother and baby soft trust style, warm gentle palette, safety-focused layout", label: "母婴柔和信任风" },
+    { value: "Office productivity style, organized workspace, efficient professional atmosphere", label: "办公效率风" },
+    { value: "Black and gold premium style, luxury contrast, restrained dramatic lighting", label: "黑金高端风" },
+    { value: "White background parameter chart style, clear product cutouts, concise labels", label: "白底参数图风" },
+    { value: "custom", label: "自定义风格" }
 ];
+
+if (typeof globalThis !== 'undefined') {
+    globalThis.IMAGE_STYLE_OPTIONS = IMAGE_STYLE_OPTIONS;
+}
 
 const MARKETING_THEMES = [
     { value: "none", label: "无营销主题 (常规)" },

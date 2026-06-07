@@ -16,6 +16,7 @@ let currentListingUploadedBase64 = null;
 let globalGenContext = null; 
 let currentListingDataText = null; 
 let draggedItem = null;
+let detailStrategyOverrides = {};
 
 const modules = MODULES_CONFIG.map(m => ({ ...m }));
 
@@ -131,6 +132,7 @@ window.onload = async () => {
     fillSelect('adsLanguageSelect', LANGUAGE_OPTIONS);
 
     console.log("[System] Initializing modules...");
+    if (typeof toggleCustomImageStyle === 'function') toggleCustomImageStyle();
     if (typeof initModules === 'function') initModules();
     if (typeof initTransLangTags === 'function') initTransLangTags();
     if (typeof initListingControls === 'function') initListingControls();

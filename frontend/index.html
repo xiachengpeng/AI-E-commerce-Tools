@@ -277,9 +277,17 @@
 
                         <div class="grid grid-cols-2 gap-2 mb-2">
                             <select id="imageStyleSelect"
+                                onchange="toggleCustomImageStyle()"
                                 class="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:border-blue-500 outline-none bg-gray-50 font-medium"></select>
                             <select id="platformSelect"
                                 class="w-full text-xs border border-gray-200 rounded-md px-2 py-1.5 focus:border-blue-500 outline-none bg-gray-50"></select>
+                        </div>
+                        <div id="customImageStyleContainer"
+                            class="hidden mb-2 bg-blue-50/50 p-2 rounded-md border border-blue-100">
+                            <input type="text" id="customImageStyleInput"
+                                class="w-full text-xs border border-gray-200 rounded px-2 py-1.5 outline-none focus:border-blue-500"
+                                placeholder="输入自定义风格，例如：Nordic home office style, soft daylight">
+                            <div class="text-[10px] text-gray-500 mt-1">会直接写入生成提示词，请描述画面氛围、场景、配色和质感。</div>
                         </div>
                         <div class="grid grid-cols-2 gap-2 mb-2">
                             <select id="regionSelect"
@@ -315,6 +323,20 @@
                         <textarea id="sellingPointsText" rows="5"
                             class="w-full text-xs text-gray-600 border border-gray-200 rounded-lg p-3 focus:border-blue-500 outline-none bg-white resize-none leading-relaxed"
                             placeholder="输入商品名称及特色，或点击 AI 帮写自动提取素材内容..."></textarea>
+                        <div class="grid grid-cols-2 gap-2 mt-2">
+                            <div>
+                                <div class="text-[10px] font-bold text-gray-500 mb-1">产品事实 / 参数</div>
+                                <textarea id="productFactsText" rows="3"
+                                    class="w-full text-xs text-gray-600 border border-gray-200 rounded-lg p-2 focus:border-blue-500 outline-none bg-white resize-none leading-relaxed"
+                                    placeholder="确定信息，例如：300 lbs 承重、0.6-3.8 mph、12档震动、含遥控器"></textarea>
+                            </div>
+                            <div>
+                                <div class="text-[10px] font-bold text-gray-500 mb-1">禁用词 / 禁止表达</div>
+                                <textarea id="forbiddenClaimsText" rows="3"
+                                    class="w-full text-xs text-gray-600 border border-gray-200 rounded-lg p-2 focus:border-blue-500 outline-none bg-white resize-none leading-relaxed"
+                                    placeholder="不要写 burn fat / medical recovery / FDA / 疗效保证 等"></textarea>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="mb-4">
@@ -324,6 +346,10 @@
                 </div>
 
                 <div class="absolute bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200">
+                    <button id="strategyPreviewBtn" onclick="openStrategyPreview()"
+                        class="w-full mb-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 font-medium py-2 rounded-lg text-xs transition-colors flex items-center justify-center gap-2 shadow-sm">
+                        <i class="ph ph-list-checks text-base"></i> 生成前策略预览
+                    </button>
                     <button id="generateBtn" onclick="generateAIPage()"
                         class="w-full bg-[#3b82f6] hover:bg-blue-600 text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 shadow-sm">
                         <i class="ph ph-magic-wand text-lg"></i> 生成跨平台详情页
@@ -872,14 +898,38 @@
                             <option value="jpeg">极速版 (JPG)</option>
                         </select>
                         <button id="aiSortBtn" onclick="aiSortLongImage()" class="flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-lg transition-colors border border-indigo-100 shadow-sm"><i class="ph ph-sparkle"></i> AI 智能排序</button>
+                        <button onclick="renderExportChecklist()" class="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 px-3 py-2 rounded-lg transition-colors border border-slate-100 shadow-sm"><i class="ph ph-shield-check"></i> 导出检查</button>
                     </div>
                     <div class="flex gap-3">
+                        <button onclick="exportCurrentProjectJson()"
+                            class="px-4 py-2.5 rounded-xl text-sm font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100">导出项目JSON</button>
                         <button onclick="closeLongImageBuilder()"
                             class="px-5 py-2.5 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-100">取消</button>
                         <button onclick="executeLongImageDownload()" id="btnDownloadLong"
                             class="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-md">
                             <i class="ph ph-download-simple text-lg"></i> 导出长图
                         </button>
+                    </div>
+                </div>
+                <div id="exportChecklistPanel" class="hidden px-6 py-4 border-t border-gray-100 bg-slate-50 text-xs"></div>
+            </div>
+        </div>
+
+        <!-- 详情页策略预览 -->
+        <div id="detailStrategyModal"
+            class="hidden fixed inset-0 z-[260] flex items-start sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-2 sm:p-4 overflow-hidden">
+            <div class="bg-white w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col min-h-0"
+                style="max-height: calc(100dvh - 16px);">
+                <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-shrink-0">
+                    <h3 class="font-black text-gray-800 text-lg flex items-center gap-2"><i class="ph-fill ph-list-checks text-blue-500"></i> 生成前策略预览</h3>
+                    <button onclick="closeStrategyPreview()" class="text-gray-400 hover:text-red-500"><i class="ph ph-x text-xl"></i></button>
+                </div>
+                <div id="detailStrategyContent" class="p-5 overflow-y-auto custom-scrollbar flex flex-col gap-3 bg-white flex-1 min-h-0"></div>
+                <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center flex-shrink-0">
+                    <div class="text-[10px] text-gray-400">这里改的是本次生成的模块 prompt，不会改代码里的默认配置。</div>
+                    <div class="flex gap-2">
+                        <button onclick="closeStrategyPreview()" class="px-4 py-2 rounded-lg text-xs font-bold text-gray-500 hover:bg-gray-100">取消</button>
+                        <button onclick="applyStrategyPreview()" class="px-4 py-2 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700">应用策略</button>
                     </div>
                 </div>
             </div>

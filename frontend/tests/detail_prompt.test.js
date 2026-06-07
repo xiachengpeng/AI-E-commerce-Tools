@@ -23,8 +23,16 @@ const context = loadFrontendContext();
 assert.strictEqual(typeof context.buildDetailPageBrief, 'function');
 assert.strictEqual(typeof context.buildModuleGenerationPrompt, 'function');
 assert.strictEqual(typeof context.getModuleContentRole, 'function');
+assert.strictEqual(typeof context.getModuleStrategyCn, 'function');
 assert.strictEqual(typeof context.buildSellingPointsExtractionPrompt, 'function');
 assert.strictEqual(typeof context.buildSEOMetadataPrompt, 'function');
+assert.strictEqual(typeof context.resolveDetailImageStyle, 'function');
+assert.strictEqual(typeof context.buildStrategyTasks, 'function');
+assert.strictEqual(typeof context.buildStrategyPromptPreview, 'function');
+assert.strictEqual(typeof context.applyStrategyOverrides, 'function');
+assert.strictEqual(typeof context.assessModuleQuality, 'function');
+assert.strictEqual(typeof context.buildPromptRewriteSuggestion, 'function');
+assert.strictEqual(typeof context.buildExportChecklist, 'function');
 
 const config = {
     platform: 'Independent Website',
@@ -45,22 +53,45 @@ const sellingPoints = [
     'App synced progress and remote control',
     'Quiet motor, non-slip belt, compact profile'
 ].join('\n');
+const productFacts = [
+    'Max load: 300 lbs',
+    'Speed range: 0.6-3.8 mph',
+    'Includes remote control'
+].join('\n');
+const forbiddenClaims = [
+    'Do not mention burn fat',
+    'Do not mention medical recovery',
+    'Do not invent FDA certification'
+].join('\n');
 
-const brief = context.buildDetailPageBrief(sellingPoints, config);
+const factConfig = { ...config, productFacts, forbiddenClaims };
+const brief = context.buildDetailPageBrief(sellingPoints, factConfig);
 assert.match(brief, /one clear conversion job/i);
 assert.match(brief, /Do not invent/i);
 assert.match(brief, /Avoid medical/i);
 assert.match(brief, /maximum 3 bullets/i);
+assert.match(brief, /Confirmed product facts/i);
+assert.match(brief, /Max load: 300 lbs/i);
+assert.match(brief, /User-forbidden claims/i);
+assert.match(brief, /Do not mention burn fat/i);
+assert.match(brief, /Independent Website/i);
+assert.match(brief, /US Market/i);
+assert.match(brief, /High-end minimalist/i);
+assert.doesNotMatch(brief, /独立站|美国 \(US\)|高端极简/);
 
-const extractionPrompt = context.buildSellingPointsExtractionPrompt(3);
+const extractionPrompt = context.buildSellingPointsExtractionPrompt(3, productFacts, forbiddenClaims);
 assert.match(extractionPrompt, /known facts/i);
 assert.match(extractionPrompt, /Do not invent/i);
 assert.match(extractionPrompt, /avoid weight-loss, medical, body-transformation/i);
 assert.match(extractionPrompt, /specifications/i);
+assert.match(extractionPrompt, /Confirmed product facts/i);
+assert.match(extractionPrompt, /Speed range: 0.6-3.8 mph/i);
+assert.match(extractionPrompt, /User-forbidden claims/i);
 
 const firstBenefit = {
     id: 'm2',
     title: '核心卖点图',
+    promptTitle: 'Core Benefit Proof',
     subtitle: '突出卖点优势',
     prompt: 'benefits',
     variant: 0,
@@ -68,8 +99,8 @@ const firstBenefit = {
 };
 const secondBenefit = { ...firstBenefit, variant: 1 };
 
-const firstPrompt = context.buildModuleGenerationPrompt(firstBenefit, sellingPoints, config);
-const secondPrompt = context.buildModuleGenerationPrompt(secondBenefit, sellingPoints, config);
+const firstPrompt = context.buildModuleGenerationPrompt(firstBenefit, sellingPoints, factConfig);
+const secondPrompt = context.buildModuleGenerationPrompt(secondBenefit, sellingPoints, factConfig);
 
 assert.match(firstPrompt, /Module role:/);
 assert.match(firstPrompt, /Do NOT repeat the same angle/i);
@@ -78,26 +109,138 @@ assert.match(firstPrompt, /Forbidden claims/i);
 assert.notStrictEqual(firstPrompt, secondPrompt);
 assert.match(firstPrompt, /under-desk|core daily-use/i);
 assert.match(secondPrompt, /vibration|secondary function/i);
+assert.match(firstPrompt, /Max load: 300 lbs/i);
+assert.match(firstPrompt, /Do not mention medical recovery/i);
+assert.doesNotMatch(firstPrompt, /独立站|美国 \(US\)|高端极简/);
+assert.match(firstPrompt, /Core Benefit Proof/);
+assert.doesNotMatch(firstPrompt, /核心卖点图|核心功能证明/);
 
 const specPrompt = context.buildModuleGenerationPrompt({
     id: 'm10',
     title: '详细规格表',
+    promptTitle: 'Specification Confirmation',
     subtitle: '展示详细参数',
     prompt: 'specs',
     variant: 0,
     totalVariants: 1
-}, sellingPoints, config);
+}, sellingPoints, factConfig);
 assert.match(specPrompt, /Use only facts from the supplied selling points/i);
-assert.doesNotMatch(specPrompt, /burn fat|transform your body|medical recovery/i);
+assert.match(specPrompt, /Speed range: 0.6-3.8 mph/i);
+assert.match(specPrompt, /Do not mention burn fat/i);
 
-const seoPrompt = context.buildSEOMetadataPrompt({ title: '详细规格表' }, sellingPoints, config);
+const seoPrompt = context.buildSEOMetadataPrompt({ title: '详细规格表' }, sellingPoints, factConfig);
 assert.match(seoPrompt, /Do not add unsupported claims/i);
 assert.match(seoPrompt, /avoid medical, body transformation, fat loss/i);
-assert.doesNotMatch(seoPrompt, /burn fat|transform your body|medical recovery/i);
+assert.match(seoPrompt, /Max load: 300 lbs/i);
+assert.match(seoPrompt, /Do not invent FDA certification/i);
+
+const englishSeoPrompt = context.buildSEOMetadataPrompt({
+    title: '核心功能证明',
+    promptTitle: 'Core Benefit Proof'
+}, sellingPoints, factConfig);
+assert.match(englishSeoPrompt, /Core Benefit Proof/);
+assert.doesNotMatch(englishSeoPrompt, /核心功能证明/);
 
 const activeDefaults = context.MODULES_CONFIG
     .filter(mod => mod.active)
     .map(mod => mod.id);
 assert.strictEqual(JSON.stringify(activeDefaults), JSON.stringify(['m1', 'm2', 'm3', 'm9', 'm10', 'm11']));
+
+const styleLabels = context.IMAGE_STYLE_OPTIONS.map(opt => opt.label);
+assert(styleLabels.includes('亚马逊信息图风'));
+assert(styleLabels.includes('Shopify高级生活方式风'));
+assert(styleLabels.includes('自定义风格'));
+
+const platformLabels = context.PLATFORM_OPTIONS.map(opt => opt.label);
+assert(platformLabels.includes('独立站'));
+assert(platformLabels.includes('亚马逊'));
+assert(platformLabels.includes('Walmart'));
+assert(platformLabels.includes('TikTok Shop'));
+assert(!platformLabels.includes('淘宝'));
+assert(!context.PLATFORM_OPTIONS.some(opt => /Taobao|淘宝/i.test(`${opt.value} ${opt.label}`)));
+
+const builtInStyle = context.resolveDetailImageStyle({
+    selectedValue: 'Amazon infographic style, clean white background, structured callouts',
+    selectedLabel: '亚马逊信息图风',
+    customValue: ''
+});
+assert.strictEqual(JSON.stringify(builtInStyle), JSON.stringify({
+    value: 'Amazon infographic style, clean white background, structured callouts',
+    label: '亚马逊信息图风',
+    isCustom: false,
+    error: ''
+}));
+
+const customStyle = context.resolveDetailImageStyle({
+    selectedValue: 'custom',
+    selectedLabel: '自定义风格',
+    customValue: 'Nordic home office style, soft daylight, calm productivity'
+});
+assert.strictEqual(JSON.stringify(customStyle), JSON.stringify({
+    value: 'Nordic home office style, soft daylight, calm productivity',
+    label: '自定义风格：Nordic home office style, soft daylight, calm productivity',
+    isCustom: true,
+    error: ''
+}));
+
+const emptyCustomStyle = context.resolveDetailImageStyle({
+    selectedValue: 'custom',
+    selectedLabel: '自定义风格',
+    customValue: '  '
+});
+assert.strictEqual(emptyCustomStyle.error, '请输入自定义风格');
+
+const strategyTasks = context.buildStrategyTasks([
+    { id: 'm1', title: '首屏主视觉', promptTitle: 'Hero Product Understanding', subtitle: '传递核心价值', prompt: 'hero', count: 1 },
+    { id: 'm2', title: '核心卖点图', promptTitle: 'Core Benefit Proof', subtitle: '突出卖点优势', prompt: 'benefit', count: 2 }
+], sellingPoints, factConfig);
+assert.strictEqual(strategyTasks.length, 3);
+assert.strictEqual(strategyTasks[0].uniqueId, 'm1_0');
+assert.strictEqual(strategyTasks[0].promptTitle, 'Hero Product Understanding');
+assert.match(strategyTasks[0].role, /Hero/i);
+assert.match(strategyTasks[0].strategyCn.goal, /立刻看懂/);
+assert.match(strategyTasks[1].strategyCn.avoid, /重复/);
+assert.match(strategyTasks[1].prompt, /benefit/i);
+
+const strategyPreviewPrompt = context.buildStrategyPromptPreview(strategyTasks[0], sellingPoints, factConfig);
+assert.strictEqual(strategyPreviewPrompt.moduleRequest, 'hero');
+assert.match(strategyPreviewPrompt.fullPrompt, /Task: Generate one professional e-commerce detail-page section/i);
+assert.match(strategyPreviewPrompt.fullPrompt, /Module request: hero/i);
+assert.match(strategyPreviewPrompt.fullPrompt, /Confirmed product facts/i);
+assert.match(strategyPreviewPrompt.fullPrompt, /Hero Product Understanding/);
+assert.doesNotMatch(strategyPreviewPrompt.fullPrompt, /首屏主视觉|首屏认知/);
+assert(strategyPreviewPrompt.fullPrompt.length > strategyPreviewPrompt.moduleRequest.length * 5);
+
+const overriddenTasks = context.applyStrategyOverrides(strategyTasks, {
+    m1_0: 'Use a clear white-background hero with larger product.',
+    m2_1: 'Focus only on storage and quiet motor.'
+});
+assert.match(overriddenTasks[0].prompt, /larger product/i);
+assert.match(overriddenTasks[2].prompt, /storage and quiet motor/i);
+assert.strictEqual(strategyTasks[0].prompt, 'hero');
+
+const quality = context.assessModuleQuality({
+    status: 'success',
+    title: '详细规格表',
+    prompt: 'Create dense tiny text with FDA certification and burn fat claims',
+    seo: { altTarget: 'Walking pad with FDA burn fat result' },
+    imageSrc: 'data:image/png;base64,abc'
+}, factConfig);
+assert(quality.issues.some(issue => issue.code === 'forbidden-claim'));
+assert(quality.issues.some(issue => issue.code === 'dense-text'));
+
+const rewrite = context.buildPromptRewriteSuggestion({
+    title: '详细规格表',
+    prompt: 'dense tiny text'
+}, quality.issues, factConfig);
+assert.match(rewrite, /reduce text density/i);
+assert.match(rewrite, /Do not mention burn fat/i);
+
+const checklist = context.buildExportChecklist([
+    { id: 'm1_0', title: '首屏主视觉', status: 'success', imageSrc: 'data:image/png;base64,a', seo: {} },
+    { id: 'm10_0', title: '详细规格表', status: 'fallback', imageSrc: '', seo: {} }
+], factConfig);
+assert(checklist.some(item => item.level === 'warning'));
+assert(checklist.some(item => /fallback|降级/i.test(item.text)));
 
 console.log('detail prompt tests passed');
