@@ -58,6 +58,96 @@ function getDetailConfig() {
     };
 }
 
+function compactDetailText(value, maxLength = 900) {
+    return String(value || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, maxLength);
+}
+
+function buildDetailPageBrief(sellingPoints, config = {}) {
+    const productInfo = compactDetailText(sellingPoints, 900);
+    const platform = config.platformLabel || config.platform || 'cross-border e-commerce';
+    const market = config.regionLabel || config.region || 'Global Market';
+    const style = config.imageStyleLabel || config.imageStyle || 'clean e-commerce';
+    return `DETAIL PAGE BRIEF
+Product information: ${productInfo}
+Target platform: ${platform}
+Target market: ${market}
+Visual style: ${style}
+
+Global strategy:
+- Each section has one clear conversion job. Do not make every image repeat the full product story.
+- Build a compact page flow: hero, focused benefits, believable usage, objective comparison, factual specs, and trust.
+- Text density rule: one short headline, one short supporting line, maximum 3 bullets or callouts, large readable type, no tiny paragraph blocks.
+- Evidence rule: Do not invent specifications, certifications, warranty terms, app functions, speed, load capacity, dimensions, or awards.
+- Compliance rule: Avoid medical outcomes, body-transformation promises, fat-loss promises, guaranteed results, absolute superlatives, and unverifiable performance claims.
+- Visual realism rule: keep source product identity, proportions, material, color, and scale stable. Avoid fake perspective, unrealistic human posture, and mismatched shadows.
+- Mobile readability rule: avoid crowded layouts, long tables with tiny text, repeated badges, and dense poster-style stacking.`;
+}
+
+function getModuleContentRole(task = {}) {
+    const variant = Number(task.variant || 0);
+    const roles = {
+        m1: 'Hero: immediately state what the product is, the primary user benefit, and 2-3 proof points. Avoid vague revolution/ultimate language.',
+        m3: 'Lifestyle scene: show one believable use case with realistic scale, natural lighting, and minimal overlay text.',
+        m4: 'Multi-angle proof: show real product angles or faithful inferred views. Focus on appearance and construction, not marketing promises.',
+        m5: 'Lifestyle mood: communicate fit with the user environment using quiet visual cues and very little text.',
+        m6: 'Detail close-up: highlight material, texture, controls, belt, surface, seams, ports, or build details visible in the reference.',
+        m7: 'Brand story: express product positioning with restrained editorial copy and no unsupported origin or mission claims.',
+        m8: 'Size and dimensions: show scale, measurements, or storage footprint only if present in supplied information or visible reference cues.',
+        m9: 'Comparison: use an objective feature table. Compare functions and convenience, not inflated superiority claims.',
+        m10: 'Specifications: Use only facts from the supplied selling points or visible reference image. If a value is unknown, omit that row.',
+        m11: 'Trust: show after-sales, support, maintenance, shipping, returns, or package-list reassurance only if supported by supplied information.',
+        m12: 'Usage guide: show a clear step-by-step use or maintenance flow with simple icons and minimal text.'
+    };
+    if (task.id === 'm2') {
+        const benefitRoles = [
+            'Benefit 1: core daily-use angle such as under-desk walking, compact home movement, or the main practical use case.',
+            'Benefit 2: secondary function angle such as vibration mode, relaxation support, app/remote convenience, or control experience.',
+            'Benefit 3: ownership angle such as easy storage, quiet operation, durable surface, or space-saving setup.',
+            'Benefit 4: design/detail angle such as controls, non-slip surface, build quality, or multi-mode convenience.',
+            'Benefit 5: audience angle such as home office users, apartment users, or light daily activity users.'
+        ];
+        return benefitRoles[Math.min(variant, benefitRoles.length - 1)];
+    }
+    return roles[task.id] || 'Focused section: communicate one specific buying reason with clear proof and restrained copy.';
+}
+
+function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdjustment = '') {
+    const brief = buildDetailPageBrief(sellingPoints, config);
+    const themeContext = config.marketingTheme && config.marketingTheme !== 'none'
+        ? `Marketing theme: ${config.marketingTheme}. Integrate it lightly without overwhelming the product.`
+        : 'Marketing theme: none. Keep the layout evergreen and product-led.';
+    const variationRule = task.totalVariants > 1
+        ? `Variant rule: this is version ${Number(task.variant || 0) + 1}/${task.totalVariants}. Do NOT repeat the same angle, headline, visual composition, or callout set used by sibling variants.`
+        : 'Variant rule: one focused version only.';
+    const repaintRule = promptAdjustment
+        ? `User repaint instruction: ${promptAdjustment}. Apply it while preserving product identity, section role, compliance, and readability.`
+        : '';
+
+    return `Task: Generate one professional e-commerce detail-page section for "${task.title}".
+Module request: ${task.prompt}
+Module role: ${getModuleContentRole(task)}
+
+${brief}
+
+Section constraints:
+- Target Platform: ${config.platform || 'cross-border e-commerce'}
+- Target Market: ${config.region || 'Global Market'}
+- Local tone: ${config.marketTone || 'clear, practical, trust-building'}
+- Language: ALL visible text MUST be ${config.language || 'English'}.
+- Aspect Ratio: ${config.aspectRatio || '1:1'}.
+- Aesthetic Style: ${config.imageStyle || 'clean premium e-commerce'}.
+- ${themeContext}
+- ${variationRule}
+- Text density: max 1 headline, max 1 subheadline, maximum 3 bullets/callouts, no dense fine print.
+- Forbidden claims: no clinical outcomes, no body-shape guarantees, no guaranteed measurable results, no fake certifications, no invented parameters.
+- Layout: one primary visual idea, clear hierarchy, readable mobile text, consistent typography, no overstuffed poster collage.
+- Product fidelity: preserve the exact source product shape, material, color, proportions, and visible details.
+${repaintRule}`.trim();
+}
+
 function setModuleStatus(uniqueId, status, message = '') {
     const badge = document.getElementById(`status-badge-${uniqueId}`);
     if (!badge) return;
@@ -640,25 +730,14 @@ async function generateSingleWrap(uniqueId, skipSEO = false) {
     const isAngleModule = task.id === 'm4';
     const hasAngleReferences = isAngleModule && (globalGenContext.angleImages || []).length > 0;
 
-    const themeContext = config.marketingTheme !== 'none' ? `6. Marketing Theme: ${config.marketingTheme} - It is CRITICAL to integrate this theme naturally into the visual.` : '';
-    const variationRule = task.totalVariants > 1 ? `7. Variation: version ${task.variant + 1}/${task.totalVariants}. Make it unique while staying consistent with the same product.` : '';
     const angleRule = isAngleModule
         ? (hasAngleReferences
             ? `9. Multi-angle mode: I provided real angle reference images after the first primary image. Use these references faithfully to build a multi-angle collage. Do not hallucinate different product variants.`
             : `9. Multi-angle mode: Only one primary image is provided. Generate plausible front, side, back, detail, and perspective views from the primary image while preserving the exact product identity, proportions, materials, and colors.`)
         : '';
 
-    let prompt = `Task: Professional e-commerce section for "${task.title}". Req: ${task.prompt}. Context: ${sellingPoints.substring(0, 150)}.
-CONSTRAINTS:
-1. Target Platform: ${config.platform}
-2. Target Market: ${config.region}. Local tone: ${config.marketTone}
-3. Language: ALL visible text MUST be ${config.language}
-4. Aspect Ratio: ${config.aspectRatio}
-5. Aesthetic Style: ${config.imageStyle} - CRITICAL to follow this vibe.
-${themeContext}
-${variationRule}
-8. Keep the source product identity, shape, material, color, and key details stable. Do not invent logos, certifications, medical claims, or impossible performance promises.
-${angleRule}`;
+    let prompt = buildModuleGenerationPrompt(task, sellingPoints, config);
+    if (angleRule) prompt += `\n${angleRule}`;
 
     let parts = [{ text: prompt }, ...taskImages.map(img => ({ inlineData: { mimeType: img.mimeType, data: img.data } }))];
     const payload = {

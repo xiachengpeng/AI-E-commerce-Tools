@@ -3,19 +3,23 @@
 // ==========================================
 
 const MODULES_CONFIG = [
-    { id: 'm1', title: '首屏主视觉', subtitle: '传递核心价值', active: true, count: 1, prompt: "Create a high-impact hero banner with cinematic lighting, showcasing the product in the center with a premium background." },
-    { id: 'm2', title: '核心卖点图', subtitle: '突出卖点优势', active: true, count: 3, prompt: "Create an infographic style layout highlighting key selling points with modern typography and icons next to the product." },
-    { id: 'm3', title: '使用场景图', subtitle: '呈现真实使用场景', active: false, count: 1, prompt: "Create lifestyle photography showing the product being used in a real-world scenario or natural environment." },
+    { id: 'm1', title: '首屏主视觉', subtitle: '传递核心价值', active: true, count: 1, prompt: "Create a clear hero section that immediately explains what the product is, who it is for, and the primary benefit. Use one short headline, one short support line, and up to three proof-oriented callouts." },
+    { id: 'm2', title: '核心卖点图', subtitle: '突出卖点优势', active: true, count: 1, prompt: "Create a focused benefit infographic. Each version must cover a different buying reason, with no repeated headline angle across variants." },
+    { id: 'm3', title: '使用场景图', subtitle: '呈现真实使用场景', active: true, count: 1, prompt: "Create a believable lifestyle usage scene with realistic product scale, natural lighting, and a single user context. Avoid exaggerated fitness transformations." },
     { id: 'm4', title: '多角度图', subtitle: '多角度呈现外观', active: false, count: 1, prompt: "Create a layout showing a collage of different angle views of the product on a clean studio background." },
     { id: 'm5', title: '场景氛围图', subtitle: '展示使用场景', active: false, count: 1, prompt: "Create an atmospheric lifestyle shot with warm lighting, setting a mood that perfectly fits the product's aesthetic." },
     { id: 'm6', title: '商品细节图', subtitle: '放大材质与工艺', active: false, count: 1, prompt: "Create a macro close-up shot highlighting the premium material, texture, and exquisite craftsmanship of the product." },
     { id: 'm7', title: '品牌故事图', subtitle: '传达品牌理念', active: false, count: 1, prompt: "Create an editorial layout with a brand story aesthetic, combining the product with lifestyle elements and elegant text space." },
     { id: 'm8', title: '尺寸/容量/尺码图', subtitle: '展示规格信息', active: false, count: 1, prompt: "Create a technical drawing or infographic style image showing exact dimensions, size proportions, or capacity with measurement lines." },
-    { id: 'm9', title: '效果对比图', subtitle: '对比展示优势', active: false, count: 1, prompt: "Create a split-screen comparison layout highlighting the clear advantages of the product." },
-    { id: 'm10', title: '详细规格表', subtitle: '展示详细参数', active: false, count: 1, prompt: "Create a clean, modern specification data visualization or structured layout with tech-inspired graphics." },
-    { id: 'm11', title: '售后保障图', subtitle: '增强购买信心', active: false, count: 1, prompt: "Create a trust-building infographic highlighting after-sales service, warranty, and customer support with secure icons and reassuring layout." },
+    { id: 'm9', title: '效果对比图', subtitle: '对比展示优势', active: true, count: 1, prompt: "Create an objective comparison table between a single-function alternative and this product. Use factual feature rows, not exaggerated superiority claims." },
+    { id: 'm10', title: '详细规格表', subtitle: '展示详细参数', active: true, count: 1, prompt: "Create a clean specification section. Only show parameters that are present in the supplied product information or clearly visible in the reference image." },
+    { id: 'm11', title: '售后保障图', subtitle: '增强购买信心', active: true, count: 1, prompt: "Create a trust-building after-sales section using warranty, support, shipping, returns, maintenance, or package-list cues only when provided. Do not invent certifications." },
     { id: 'm12', title: '使用建议图', subtitle: '指导正确使用', active: false, count: 1, prompt: "Create an instructional step-by-step guide or usage tips layout showing how to properly use or maintain the product with clear visual cues." }
 ];
+
+if (typeof globalThis !== 'undefined') {
+    globalThis.MODULES_CONFIG = MODULES_CONFIG;
+}
 
 const PLATFORM_OPTIONS = [
     { value: "Independent Website (Shopify-like, highly aesthetic, minimalist, lifestyle-focused)", label: "独立站" },
