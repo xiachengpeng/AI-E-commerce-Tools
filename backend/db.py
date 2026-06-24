@@ -1,6 +1,6 @@
 import datetime
 import json
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
@@ -70,6 +70,36 @@ class RenderHistory(Base):
     style = Column(Text)
     image_base64 = Column(Text) # 存储生成的图片
     metadata_info = Column(JSON) # 包含文案等信息
+
+class SquareRedrawBatch(Base):
+    __tablename__ = "square_redraw_batches"
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+    status = Column(String(30), default="queued", index=True)
+    output_dir = Column(Text)
+    zip_path = Column(Text, nullable=True)
+
+class SquareRedrawItem(Base):
+    __tablename__ = "square_redraw_items"
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, ForeignKey("square_redraw_batches.id"), index=True)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+    source_filename = Column(String(255))
+    source_mime_type = Column(String(100))
+    source_width = Column(Integer, nullable=True)
+    source_height = Column(Integer, nullable=True)
+    status = Column(String(30), default="queued", index=True)
+    retry_count = Column(Integer, default=0)
+    source_url = Column(Text, nullable=True)
+    output_url = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.retry_count is None:
+            self.retry_count = 0
 
 # 创建所有表
 def init_db():
