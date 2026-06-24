@@ -1,6 +1,6 @@
 import datetime
 import json
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
@@ -13,6 +13,19 @@ engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
     connect_args={"check_same_thread": False, "timeout": 30} # 增加到30秒超时
 )
+
+def enable_sqlite_foreign_keys(db_engine):
+    if db_engine.dialect.name != "sqlite":
+        return
+
+    @event.listens_for(db_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+
+enable_sqlite_foreign_keys(engine)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

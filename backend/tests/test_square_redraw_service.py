@@ -1,9 +1,19 @@
 import datetime
 
+import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from db import Base, SquareRedrawBatch, SquareRedrawItem
+from db import Base, SquareRedrawBatch, SquareRedrawItem, enable_sqlite_foreign_keys
+
+
+def make_test_session(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'square_redraw.db'}")
+    enable_sqlite_foreign_keys(engine)
+    Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    return Session()
 
 
 def test_square_redraw_models_are_registered():
@@ -13,11 +23,7 @@ def test_square_redraw_models_are_registered():
 
 
 def test_square_redraw_model_defaults_are_persisted(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'square_redraw.db'}")
-    Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base.metadata.create_all(bind=engine)
-
-    session = Session()
+    session = make_test_session(tmp_path)
     try:
         batch = SquareRedrawBatch(output_dir="/tmp/out")
         session.add(batch)
@@ -40,5 +46,21 @@ def test_square_redraw_model_defaults_are_persisted(tmp_path):
         assert item.retry_count == 0
         assert isinstance(batch.created_at, datetime.datetime)
         assert item.batch_id == batch.id
+    finally:
+        session.close()
+
+
+def test_square_redraw_item_requires_existing_batch(tmp_path):
+    session = make_test_session(tmp_path)
+    try:
+        item = SquareRedrawItem(
+            batch_id=999,
+            source_filename="dress.jpg",
+            source_mime_type="image/jpeg",
+        )
+        session.add(item)
+
+        with pytest.raises(IntegrityError):
+            session.flush()
     finally:
         session.close()
