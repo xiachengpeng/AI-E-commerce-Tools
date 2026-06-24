@@ -83,7 +83,7 @@ class SquareRedrawBatch(Base):
 class SquareRedrawItem(Base):
     __tablename__ = "square_redraw_items"
     id = Column(Integer, primary_key=True, index=True)
-    batch_id = Column(Integer, ForeignKey("square_redraw_batches.id"), index=True)
+    batch_id = Column(Integer, ForeignKey("square_redraw_batches.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.datetime.now)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
     source_filename = Column(String(255))
@@ -95,11 +95,6 @@ class SquareRedrawItem(Base):
     source_url = Column(Text, nullable=True)
     output_url = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        if self.retry_count is None:
-            self.retry_count = 0
 
 # 创建所有表
 def init_db():
