@@ -95,6 +95,21 @@ def test_square_redraw_request_accepts_one_image():
     assert len(request.images) == 1
 
 
+def test_square_redraw_request_strips_required_text():
+    image_data = f"  {make_data_url()}  "
+    request = SquareRedrawBatchRequest(images=[{
+        "filename": "  dress.jpg  ",
+        "image_data": image_data,
+    }])
+    assert request.images[0].filename == "dress.jpg"
+    assert request.images[0].image_data == image_data.strip()
+
+
+def test_square_redraw_request_rejects_empty_images():
+    with pytest.raises(ValueError, match="至少上传 1 张"):
+        SquareRedrawBatchRequest(images=[])
+
+
 def test_square_redraw_request_rejects_more_than_100_images():
     images = [{
         "filename": f"image-{idx}.jpg",

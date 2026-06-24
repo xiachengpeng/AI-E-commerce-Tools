@@ -7,7 +7,6 @@ from PIL import Image
 
 
 MAX_SQUARE_REDRAW_BATCH_SIZE = 100
-SUPPORTED_IMAGE_MIME_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
 SQUARE_REDRAW_PROMPT = """Redraw the uploaded image into a perfect 1:1 square format.
 
 Keep the original subject, clothing, composition, lighting, colors, textures, and visual style unchanged.
@@ -38,7 +37,8 @@ def decode_image_data_url(image_data: str) -> tuple[str, bytes]:
     if not match:
         raise ValueError("请上传有效的图片 data URL")
     mime_type = match.group(1).lower()
-    if mime_type not in SUPPORTED_IMAGE_MIME_TYPES:
+    supported_mime_types = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+    if mime_type not in supported_mime_types:
         raise ValueError("不支持的图片格式")
     try:
         data = base64.b64decode(encoded, validate=True)
