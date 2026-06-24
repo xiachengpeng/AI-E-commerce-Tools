@@ -222,3 +222,28 @@ class AdCopyGenerateRequest(BaseModel):
         if invalid:
             raise ValueError(f"不支持的广告平台: {', '.join(invalid)}")
         return list(dict.fromkeys(normalized))
+
+
+class SquareRedrawImageInput(BaseModel):
+    filename: str
+    image_data: str
+    width: int | None = None
+    height: int | None = None
+
+    @field_validator("filename", "image_data")
+    @classmethod
+    def strip_required_text(cls, v: str) -> str:
+        return v.strip()
+
+
+class SquareRedrawBatchRequest(BaseModel):
+    images: List[SquareRedrawImageInput]
+
+    @field_validator("images")
+    @classmethod
+    def validate_images(cls, v: List[SquareRedrawImageInput]) -> List[SquareRedrawImageInput]:
+        if not v:
+            raise ValueError("请至少上传 1 张图片")
+        if len(v) > 100:
+            raise ValueError("每批最多 100 张图片")
+        return v
