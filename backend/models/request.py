@@ -230,10 +230,35 @@ class SquareRedrawImageInput(BaseModel):
     width: int | None = None
     height: int | None = None
 
-    @field_validator("filename", "image_data")
+    @field_validator("filename")
     @classmethod
-    def strip_required_text(cls, v: str) -> str:
-        return v.strip()
+    def strip_required_filename(cls, v: str) -> str:
+        value = v.strip()
+        if not value:
+            raise ValueError("文件名不能为空")
+        return value
+
+    @field_validator("image_data")
+    @classmethod
+    def strip_required_image_data(cls, v: str) -> str:
+        value = v.strip()
+        if not value:
+            raise ValueError("图片数据不能为空")
+        return value
+
+    @field_validator("width")
+    @classmethod
+    def validate_width(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("宽度必须大于 0")
+        return v
+
+    @field_validator("height")
+    @classmethod
+    def validate_height(cls, v: int | None) -> int | None:
+        if v is not None and v <= 0:
+            raise ValueError("高度必须大于 0")
+        return v
 
 
 class SquareRedrawBatchRequest(BaseModel):

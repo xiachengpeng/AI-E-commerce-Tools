@@ -14,6 +14,7 @@ from services.square_redraw_service import (
     MAX_SQUARE_REDRAW_BATCH_SIZE,
     decode_image_data_url,
     image_size_from_bytes,
+    mime_extension,
     safe_output_basename,
 )
 
@@ -114,6 +115,52 @@ def test_decode_image_data_url_returns_mime_and_bytes():
 def test_decode_image_data_url_rejects_non_image_data():
     with pytest.raises(ValueError, match="图片 data URL"):
         decode_image_data_url("not-an-image")
+
+
+def test_decode_image_data_url_rejects_disguised_non_image_bytes():
+    encoded = base64.b64encode(b"hello").decode("utf-8")
+    with pytest.raises(ValueError, match="图片数据无效"):
+        decode_image_data_url(f"data:image/png;base64,{encoded}")
+
+
+def test_decode_image_data_url_rejects_unsupported_mime_type():
+    encoded = base64.b64encode(b"<svg></svg>").decode("utf-8")
+    with pytest.raises(ValueError, match="不支持的图片格式"):
+        decode_image_data_url(f"data:image/svg+xml;base64,{encoded}")
+
+
+def test_square_redraw_request_rejects_empty_required_text():
+    with pytest.raises(ValueError, match="文件名不能为空"):
+        SquareRedrawBatchRequest(images=[{
+            "filename": "  ",
+            "image_data": make_data_url(),
+        }])
+    with pytest.raises(ValueError, match="图片数据不能为空"):
+        SquareRedrawBatchRequest(images=[{
+            "filename": "dress.jpg",
+            "image_data": "  ",
+        }])
+
+
+def test_square_redraw_request_rejects_non_positive_dimensions():
+    with pytest.raises(ValueError, match="宽度必须大于 0"):
+        SquareRedrawBatchRequest(images=[{
+            "filename": "dress.jpg",
+            "image_data": make_data_url(),
+            "width": 0,
+        }])
+    with pytest.raises(ValueError, match="高度必须大于 0"):
+        SquareRedrawBatchRequest(images=[{
+            "filename": "dress.jpg",
+            "image_data": make_data_url(),
+            "height": -1,
+        }])
+
+
+def test_mime_extension_returns_supported_extensions():
+    assert mime_extension("image/jpeg") == "jpg"
+    assert mime_extension("image/png") == "png"
+    assert mime_extension("image/webp") == "webp"
 
 
 def test_safe_output_basename_removes_path_and_extension():
