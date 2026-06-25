@@ -1,4 +1,5 @@
 import datetime
+import asyncio
 import base64
 import io
 
@@ -12,11 +13,15 @@ from db import Base, SquareRedrawBatch, SquareRedrawItem, enable_sqlite_foreign_
 from models.request import SquareRedrawBatchRequest
 from services.square_redraw_service import (
     MAX_SQUARE_REDRAW_BATCH_SIZE,
+    create_square_redraw_batch,
     decode_image_data_url,
     image_size_from_bytes,
     mime_extension,
+    process_square_redraw_batch,
     safe_output_basename,
+    serialize_square_redraw_batch,
 )
+from unittest.mock import AsyncMock, patch
 
 
 def make_data_url(width=10, height=20, fmt="PNG"):
@@ -181,3 +186,82 @@ def test_mime_extension_returns_supported_extensions():
 def test_safe_output_basename_removes_path_and_extension():
     assert safe_output_basename("../dress photo.JPG") == "dress-photo"
     assert safe_output_basename("图 1.png") == "image"
+
+
+def clear_square_redraw_tables():
+    from db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        Base.metadata.create_all(bind=db.get_bind())
+        db.query(SquareRedrawItem).delete()
+        db.query(SquareRedrawBatch).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_create_batch_marks_square_images_skipped():
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(images=[{
+        "filename": "square.png",
+        "image_data": make_data_url(40, 40),
+        "width": 40,
+        "height": 40,
+    }])
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+        data = serialize_square_redraw_batch(db, batch.id)
+        assert data["summary"]["total"] == 1
+        assert data["summary"]["skipped"] == 1
+        assert data["items"][0]["status"] == "skipped_square"
+        assert data["items"][0]["source_url"].startswith("/static/outputs/square-redraw/")
+    finally:
+        db.close()
+
+
+def test_process_non_square_uses_square_image_config():
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(images=[{
+        "filename": "portrait.png",
+        "image_data": make_data_url(40, 80),
+        "width": 40,
+        "height": 80,
+    }])
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+    finally:
+        db.close()
+
+    ai_response = {
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "inlineData": {
+                        "mimeType": "image/png",
+                        "data": base64.b64encode(b"fake-image").decode("utf-8"),
+                    }
+                }]
+            }
+        }]
+    }
+    with patch("services.square_redraw_service.AIService.generate_content", new=AsyncMock(return_value=ai_response)) as mock_ai:
+        asyncio.run(process_square_redraw_batch(batch.id))
+
+    payload = mock_ai.await_args.kwargs["payload"]
+    assert payload["generationConfig"]["responseModalities"] == ["IMAGE"]
+    assert payload["generationConfig"]["imageConfig"]["aspectRatio"] == "1:1"
+
+    db = SessionLocal()
+    try:
+        item = db.query(SquareRedrawItem).filter(SquareRedrawItem.batch_id == batch.id).one()
+        assert item.status == "done"
+        assert item.output_url.startswith("/static/outputs/square-redraw/")
+    finally:
+        db.close()
