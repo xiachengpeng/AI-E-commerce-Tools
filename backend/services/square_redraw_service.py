@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from config import FRONTEND_STAGGER_DELAY
+from config import FRONTEND_CONCURRENCY_LIMIT
 from db import SessionLocal, SquareRedrawBatch, SquareRedrawItem
 from services.ai_service import AIService
 
@@ -232,10 +232,14 @@ async def process_square_redraw_batch(batch_id: int) -> None:
     finally:
         db.close()
 
-    for index, item in enumerate(items):
-        await process_square_redraw_item(item.id)
-        if index < len(items) - 1 and FRONTEND_STAGGER_DELAY > 0:
-            await asyncio.sleep(FRONTEND_STAGGER_DELAY / 1000)
+    concurrency = max(1, FRONTEND_CONCURRENCY_LIMIT)
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def run_item(item_id: int) -> None:
+        async with semaphore:
+            await process_square_redraw_item(item_id)
+
+    await asyncio.gather(*(run_item(item.id) for item in items))
 
 
 async def process_square_redraw_item(item_id: int) -> None:

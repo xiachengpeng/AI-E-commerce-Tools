@@ -372,6 +372,51 @@ def test_process_uses_custom_target_aspect_ratio():
     assert "4:5" in payload["contents"][0]["parts"][0]["text"]
 
 
+def test_process_batch_runs_items_concurrently(monkeypatch):
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(images=[
+        {"filename": "portrait-1.png", "image_data": make_data_url(40, 80), "width": 40, "height": 80},
+        {"filename": "portrait-2.png", "image_data": make_data_url(40, 80), "width": 40, "height": 80},
+    ])
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+        batch_id = batch.id
+    finally:
+        db.close()
+
+    active = 0
+    max_active = 0
+
+    async def fake_generate_content(**kwargs):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.02)
+        active -= 1
+        return {
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "inlineData": {
+                            "mimeType": "image/png",
+                            "data": base64.b64encode(b"fake-image").decode("utf-8"),
+                        }
+                    }]
+                }
+            }]
+        }
+
+    monkeypatch.setattr("services.square_redraw_service.FRONTEND_CONCURRENCY_LIMIT", 2)
+    monkeypatch.setattr("services.square_redraw_service.AIService.generate_content", fake_generate_content)
+
+    asyncio.run(process_square_redraw_batch(batch_id))
+
+    assert max_active == 2
+
+
 def test_retry_failed_only_resets_failed_items():
     from db import SessionLocal
 

@@ -3,6 +3,7 @@ let squareRedrawBatchId = null;
 let squareRedrawPollingTimer = null;
 let squareRedrawFilter = 'all';
 let squareRedrawTargetAspectRatio = '1:1';
+let squareRedrawRenderSignature = '';
 const SQUARE_REDRAW_SUPPORTED_RATIOS = ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
 
 function initSquareRedrawControls() {
@@ -65,6 +66,7 @@ async function loadSquareRedrawFiles(files) {
     }
 
     squareRedrawBatchId = null;
+    squareRedrawRenderSignature = '';
     renderSquareRedrawList();
     updateSquareRedrawActions();
     showToast(`已添加 ${squareRedrawImages.length} 张图片`, 'success');
@@ -225,7 +227,7 @@ function renderSquareRedrawList() {
         const resultLabel = item.status === 'done' ? '点击查看前后对比' : '点击查看预览';
         const deleteDisabled = item.status === 'running' ? 'disabled' : '';
         return `
-            <div class="square-redraw-card fade-in">
+            <div class="square-redraw-card">
                 <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
                     class="square-redraw-thumb">
                     <img src="${preview}" alt="${escapeSquareRedrawHtml(item.filename)}">
@@ -331,6 +333,20 @@ function updateSquareRedrawActions() {
     if (downloadBtn) downloadBtn.disabled = !squareRedrawBatchId || (summary.done + summary.skipped === 0);
 }
 
+function squareRedrawBatchSignature(batchId, targetAspectRatio, images) {
+    return JSON.stringify({
+        batchId,
+        targetAspectRatio,
+        items: images.map(item => ({
+            id: item.id,
+            status: item.status,
+            output_url: item.output_url || '',
+            error_message: item.error_message || '',
+            retry_count: item.retry_count || 0,
+        })),
+    });
+}
+
 async function startSquareRedrawBatch() {
     if (!squareRedrawImages.length) {
         showToast('请先上传图片', 'error');
@@ -362,10 +378,9 @@ async function startSquareRedrawBatch() {
 }
 
 function applySquareRedrawBatch(batch) {
-    squareRedrawBatchId = batch.id;
-    squareRedrawTargetAspectRatio = batch.target_aspect_ratio || squareRedrawTargetAspectRatio || '1:1';
-    syncSquareRedrawTargetControls();
-    squareRedrawImages = (batch.items || []).map(item => ({
+    const nextBatchId = batch.id;
+    const nextTargetAspectRatio = batch.target_aspect_ratio || squareRedrawTargetAspectRatio || '1:1';
+    const nextImages = (batch.items || []).map(item => ({
         id: `server_${item.id}`,
         filename: item.filename,
         image_data: '',
@@ -376,7 +391,16 @@ function applySquareRedrawBatch(batch) {
         output_url: formatSquareRedrawUrl(item.output_url),
         error_message: item.error_message || '',
     }));
-    renderSquareRedrawList();
+
+    const nextSignature = squareRedrawBatchSignature(nextBatchId, nextTargetAspectRatio, nextImages);
+    squareRedrawBatchId = nextBatchId;
+    squareRedrawTargetAspectRatio = nextTargetAspectRatio;
+    squareRedrawImages = nextImages;
+    syncSquareRedrawTargetControls();
+    if (nextSignature !== squareRedrawRenderSignature) {
+        squareRedrawRenderSignature = nextSignature;
+        renderSquareRedrawList();
+    }
     updateSquareRedrawActions();
 }
 
@@ -391,6 +415,7 @@ async function removeSquareRedrawImage(itemId) {
     if (!squareRedrawBatchId || !String(itemId).startsWith('server_')) {
         squareRedrawImages = squareRedrawImages.filter(image => image.id !== itemId);
         if (!squareRedrawImages.length) squareRedrawBatchId = null;
+        squareRedrawRenderSignature = '';
         closeSquareRedrawPreview();
         renderSquareRedrawList();
         updateSquareRedrawActions();
