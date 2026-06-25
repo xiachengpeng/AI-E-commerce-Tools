@@ -1,0 +1,143 @@
+.square-redraw-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.square-redraw-card:hover {
+    border-color: #bfdbfe;
+    box-shadow: 0 6px 22px rgba(15, 23, 42, 0.05);
+}
+
+.square-redraw-thumb {
+    width: 56px;
+    height: 56px;
+    min-width: 56px;
+    max-width: 56px;
+    min-height: 56px;
+    max-height: 56px;
+    border-radius: 10px;
+    overflow: hidden;
+    flex: 0 0 56px;
+    background: #f1f5f9;
+    border: 1px solid #e5e7eb;
+    cursor: zoom-in;
+    position: relative;
+    display: block;
+    padding: 0;
+}
+
+.square-redraw-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: cover;
+}
+
+.square-redraw-thumb-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    opacity: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.18s;
+    pointer-events: none;
+}
+
+.square-redraw-thumb:hover .square-redraw-thumb-overlay {
+    opacity: 1;
+}
+
+.square-redraw-info {
+    min-width: 0;
+    flex: 1 1 auto;
+    text-align: left;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    cursor: zoom-in;
+}
+
+.square-redraw-title {
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 800;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.square-redraw-meta {
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 16px;
+    color: #94a3b8;
+}
+
+.square-redraw-badge {
+    white-space: nowrap;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 11px;
+    line-height: 14px;
+    font-weight: 900;
+}
+
+.square-redraw-badge-ready {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.square-redraw-badge-queued {
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.square-redraw-badge-running {
+    background: #eef2ff;
+    color: #4f46e5;
+}
+
+.square-redraw-badge-done {
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.square-redraw-badge-failed {
+    background: #fef2f2;
+    color: #dc2626;
+}
+
+.square-redraw-badge-skipped_square {
+    background: #fffbeb;
+    color: #b45309;
+}
+
+.square-redraw-preview-btn {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #cbd5e1;
+    background: transparent;
+    transition: color 0.2s, background 0.2s;
+    flex: 0 0 32px;
+}
+
+.square-redraw-preview-btn:hover {
+    color: #2563eb;
+    background: #eff6ff;
+}

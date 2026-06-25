@@ -119,15 +119,7 @@ function squareRedrawStatusLabel(status) {
 }
 
 function squareRedrawStatusBadgeClass(status) {
-    const classes = {
-        ready: 'bg-slate-100 text-slate-500',
-        queued: 'bg-blue-50 text-blue-600',
-        running: 'bg-indigo-50 text-indigo-600',
-        done: 'bg-emerald-50 text-emerald-700',
-        failed: 'bg-red-50 text-red-600',
-        skipped_square: 'bg-amber-50 text-amber-700',
-    };
-    return classes[status] || 'bg-slate-100 text-slate-500';
+    return `square-redraw-badge-${status || 'ready'}`;
 }
 
 function renderSquareRedrawList() {
@@ -151,22 +143,22 @@ function renderSquareRedrawList() {
         const statusClass = squareRedrawStatusBadgeClass(item.status);
         const resultLabel = item.status === 'done' ? '点击查看前后对比' : '点击查看预览';
         return `
-            <div class="bg-white border border-slate-200 hover:border-blue-200 hover:shadow-sm rounded-xl px-3 py-2.5 flex items-center gap-3 transition-all">
+            <div class="square-redraw-card fade-in">
                 <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
-                    class="relative w-14 h-14 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 cursor-zoom-in group border border-slate-100">
-                    <img src="${preview}" class="w-full h-full object-cover">
-                    <span class="absolute inset-0 bg-slate-900/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    class="square-redraw-thumb">
+                    <img src="${preview}" alt="${escapeSquareRedrawHtml(item.filename)}">
+                    <span class="square-redraw-thumb-overlay">
                         <i class="ph ph-arrows-out text-white text-lg"></i>
                     </span>
                 </button>
-                <button type="button" onclick="openSquareRedrawPreview('${item.id}')" class="min-w-0 flex-1 text-left">
-                    <div class="font-bold text-sm text-slate-800 truncate">${escapeSquareRedrawHtml(item.filename)}</div>
-                    <div class="text-[11px] text-slate-400 mt-0.5">${item.width || '-'} x ${item.height || '-'} · ${resultLabel}</div>
+                <button type="button" onclick="openSquareRedrawPreview('${item.id}')" class="square-redraw-info">
+                    <div class="square-redraw-title">${escapeSquareRedrawHtml(item.filename)}</div>
+                    <div class="square-redraw-meta">${item.width || '-'} x ${item.height || '-'} · ${resultLabel}</div>
                     ${error}
                 </button>
-                <span class="text-[11px] font-black px-2 py-1 rounded-lg ${statusClass} whitespace-nowrap">${squareRedrawStatusLabel(item.status)}</span>
+                <span class="square-redraw-badge ${statusClass}">${squareRedrawStatusLabel(item.status)}</span>
                 <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
-                    class="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看对比">
+                    class="square-redraw-preview-btn" title="查看对比">
                     <i class="ph ph-eye text-base"></i>
                 </button>
             </div>
