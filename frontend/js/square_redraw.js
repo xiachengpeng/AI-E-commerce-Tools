@@ -118,6 +118,18 @@ function squareRedrawStatusLabel(status) {
     return labels[status] || status;
 }
 
+function squareRedrawStatusBadgeClass(status) {
+    const classes = {
+        ready: 'bg-slate-100 text-slate-500',
+        queued: 'bg-blue-50 text-blue-600',
+        running: 'bg-indigo-50 text-indigo-600',
+        done: 'bg-emerald-50 text-emerald-700',
+        failed: 'bg-red-50 text-red-600',
+        skipped_square: 'bg-amber-50 text-amber-700',
+    };
+    return classes[status] || 'bg-slate-100 text-slate-500';
+}
+
 function renderSquareRedrawList() {
     const empty = document.getElementById('squareRedrawEmptyState');
     const list = document.getElementById('squareRedrawList');
@@ -136,20 +148,82 @@ function renderSquareRedrawList() {
     list.innerHTML = squareRedrawVisibleItems().map(item => {
         const preview = item.output_url ? formatSquareRedrawUrl(item.output_url) : item.source_url;
         const error = item.error_message ? `<div class="text-[11px] text-red-500 mt-1">${escapeSquareRedrawHtml(item.error_message)}</div>` : '';
+        const statusClass = squareRedrawStatusBadgeClass(item.status);
+        const resultLabel = item.status === 'done' ? '点击查看前后对比' : '点击查看预览';
         return `
-            <div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3">
-                <div class="w-20 h-20 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">
-                    <img src="${preview}" class="w-full h-full object-contain">
-                </div>
-                <div class="min-w-0 flex-1">
+            <div class="bg-white border border-slate-200 hover:border-blue-200 hover:shadow-sm rounded-xl px-3 py-2.5 flex items-center gap-3 transition-all">
+                <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
+                    class="relative w-14 h-14 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0 cursor-zoom-in group border border-slate-100">
+                    <img src="${preview}" class="w-full h-full object-cover">
+                    <span class="absolute inset-0 bg-slate-900/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <i class="ph ph-arrows-out text-white text-lg"></i>
+                    </span>
+                </button>
+                <button type="button" onclick="openSquareRedrawPreview('${item.id}')" class="min-w-0 flex-1 text-left">
                     <div class="font-bold text-sm text-slate-800 truncate">${escapeSquareRedrawHtml(item.filename)}</div>
-                    <div class="text-xs text-slate-400 mt-1">${item.width || '-'} x ${item.height || '-'}</div>
+                    <div class="text-[11px] text-slate-400 mt-0.5">${item.width || '-'} x ${item.height || '-'} · ${resultLabel}</div>
                     ${error}
-                </div>
-                <span class="text-[11px] font-black px-2 py-1 rounded-lg bg-slate-100 text-slate-600">${squareRedrawStatusLabel(item.status)}</span>
+                </button>
+                <span class="text-[11px] font-black px-2 py-1 rounded-lg ${statusClass} whitespace-nowrap">${squareRedrawStatusLabel(item.status)}</span>
+                <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
+                    class="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="查看对比">
+                    <i class="ph ph-eye text-base"></i>
+                </button>
             </div>
         `;
     }).join('');
+}
+
+function getSquareRedrawItem(itemId) {
+    return squareRedrawImages.find(item => item.id === itemId);
+}
+
+function openSquareRedrawPreview(itemId) {
+    const item = getSquareRedrawItem(itemId);
+    if (!item) return;
+
+    const modal = document.getElementById('squareRedrawPreviewModal');
+    const title = document.getElementById('squareRedrawPreviewTitle');
+    const sourceImg = document.getElementById('squareRedrawPreviewSourceImg');
+    const resultWrap = document.getElementById('squareRedrawPreviewResultWrap');
+    if (!modal || !title || !sourceImg || !resultWrap) return;
+
+    title.textContent = item.filename;
+    sourceImg.src = item.source_url;
+
+    let resultHtml = '';
+    if (item.status === 'done' && item.output_url) {
+        resultHtml = `<img src="${formatSquareRedrawUrl(item.output_url)}" class="w-full h-full object-contain">`;
+    } else if (item.status === 'skipped_square') {
+        resultHtml = `
+            <img src="${item.source_url}" class="w-full h-full object-contain">
+            <div class="absolute left-3 top-3 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700 border border-amber-100">已是 1:1，未重绘</div>
+        `;
+    } else if (item.status === 'failed') {
+        resultHtml = `
+            <div class="h-full min-h-[260px] flex flex-col items-center justify-center gap-2 text-center px-6 text-red-400">
+                <i class="ph ph-warning-circle text-4xl"></i>
+                <div class="text-sm font-black">生成失败</div>
+                <div class="text-xs text-red-300">${escapeSquareRedrawHtml(item.error_message || '请重跑失败项')}</div>
+            </div>
+        `;
+    } else {
+        resultHtml = `
+            <div class="h-full min-h-[260px] flex flex-col items-center justify-center gap-2 text-center text-slate-300">
+                <i class="ph ph-hourglass text-4xl"></i>
+                <div class="text-sm font-black">${squareRedrawStatusLabel(item.status)}</div>
+                <div class="text-xs">生成完成后这里会显示 1:1 方图</div>
+            </div>
+        `;
+    }
+
+    resultWrap.innerHTML = resultHtml;
+    document.getElementById('squareRedrawPreviewMeta').textContent = `${item.width || '-'} x ${item.height || '-'} · ${squareRedrawStatusLabel(item.status)}`;
+    modal.classList.remove('hidden');
+}
+
+function closeSquareRedrawPreview() {
+    document.getElementById('squareRedrawPreviewModal')?.classList.add('hidden');
 }
 
 function escapeSquareRedrawHtml(value) {
