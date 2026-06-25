@@ -18,11 +18,11 @@ from services.ai_service import AIService
 MAX_SQUARE_REDRAW_BATCH_SIZE = 100
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 SQUARE_OUTPUT_ROOT = os.path.join(STATIC_DIR, "outputs", "square-redraw")
-SQUARE_REDRAW_PROMPT = """Redraw the uploaded image into a perfect 1:1 square format.
+SQUARE_REDRAW_PROMPT_TEMPLATE = """Redraw the uploaded image into a perfect {aspect_ratio} format.
 
 Keep the original subject, clothing, composition, lighting, colors, textures, and visual style unchanged.
 
-Extend or intelligently reconstruct the missing areas if necessary to fit the square canvas.
+Extend or intelligently reconstruct the missing areas if necessary to fit the target canvas.
 
 Do not crop important elements.
 Do not cut off the model, clothing, accessories, or product.
@@ -35,7 +35,7 @@ Maintain:
 - photography style
 - commercial quality
 
-The final image should look like the original image was naturally photographed in a 1:1 square composition.
+The final image should look like the original image was naturally photographed in a {aspect_ratio} composition.
 
 High-end ecommerce photography, ultra realistic, Pinterest advertising quality."""
 
@@ -111,6 +111,13 @@ def summarize_items(items: list[SquareRedrawItem]) -> dict:
     }
 
 
+def image_matches_aspect_ratio(width: int | None, height: int | None, aspect_ratio: str) -> bool:
+    if not width or not height or ":" not in aspect_ratio:
+        return False
+    target_width, target_height = [int(part) for part in aspect_ratio.split(":", 1)]
+    return width * target_height == height * target_width
+
+
 def serialize_square_redraw_batch(db, batch_id: int) -> dict:
     batch = db.query(SquareRedrawBatch).filter(SquareRedrawBatch.id == batch_id).first()
     if not batch:
@@ -125,6 +132,7 @@ def serialize_square_redraw_batch(db, batch_id: int) -> dict:
     return {
         "id": batch.id,
         "status": batch.status,
+        "target_aspect_ratio": batch.target_aspect_ratio or "1:1",
         "created_at": batch.created_at.isoformat() if batch.created_at else None,
         "updated_at": batch.updated_at.isoformat() if batch.updated_at else None,
         "summary": summarize_items(items),
@@ -163,7 +171,8 @@ def _update_batch_status(db, batch_id: int) -> None:
 
 
 def create_square_redraw_batch(db, request) -> SquareRedrawBatch:
-    batch = SquareRedrawBatch(status="queued", output_dir=SQUARE_OUTPUT_ROOT)
+    target_aspect_ratio = request.target_aspect_ratio or "1:1"
+    batch = SquareRedrawBatch(status="queued", target_aspect_ratio=target_aspect_ratio, output_dir=SQUARE_OUTPUT_ROOT)
     db.add(batch)
     db.commit()
     db.refresh(batch)
@@ -182,7 +191,7 @@ def create_square_redraw_batch(db, request) -> SquareRedrawBatch:
             item.source_width = width
             item.source_height = height
             item.source_url = save_bytes_for_item(batch.id, image.filename, data, mime_type, "sources")
-            if width == height:
+            if image_matches_aspect_ratio(width, height, target_aspect_ratio):
                 item.status = "skipped_square"
         except Exception as exc:
             item.status = "failed"
@@ -242,19 +251,21 @@ async def process_square_redraw_item(item_id: int) -> None:
         db.commit()
         _update_batch_status(db, item.batch_id)
 
+        batch = db.query(SquareRedrawBatch).filter(SquareRedrawBatch.id == item.batch_id).first()
+        target_aspect_ratio = (batch.target_aspect_ratio if batch else None) or "1:1"
         source_bytes = _read_static_url_bytes(item.source_url)
         source_b64 = base64.b64encode(source_bytes).decode("utf-8")
         payload = {
             "contents": [{
                 "role": "user",
                 "parts": [
-                    {"text": SQUARE_REDRAW_PROMPT},
+                    {"text": SQUARE_REDRAW_PROMPT_TEMPLATE.format(aspect_ratio=target_aspect_ratio)},
                     {"inlineData": {"mimeType": item.source_mime_type, "data": source_b64}},
                 ],
             }],
             "generationConfig": {
                 "responseModalities": ["IMAGE"],
-                "imageConfig": {"aspectRatio": "1:1"},
+                "imageConfig": {"aspectRatio": target_aspect_ratio},
             },
         }
         response = await AIService.generate_content(model_id=_image_model_id(), payload=payload)
@@ -311,6 +322,25 @@ def retry_failed_square_redraw_items(db, batch_id: int) -> int:
     return len(failed_items)
 
 
+def delete_square_redraw_item(db, batch_id: int, item_id: int) -> None:
+    item = (
+        db.query(SquareRedrawItem)
+        .filter(
+            SquareRedrawItem.batch_id == batch_id,
+            SquareRedrawItem.id == item_id,
+        )
+        .first()
+    )
+    if not item:
+        raise ValueError("图片不存在")
+    if item.status == "running":
+        raise ValueError("图片正在处理中，暂不能删除")
+
+    db.delete(item)
+    db.commit()
+    _update_batch_status(db, batch_id)
+
+
 def _static_url_to_abs_path(static_url: str) -> str:
     if not static_url or not static_url.startswith("/static/"):
         raise ValueError("静态文件路径无效")
@@ -343,6 +373,7 @@ def build_square_redraw_zip(db, batch_id: int) -> str:
     zip_path = os.path.join(out_dir, f"square-redraw-{batch_id}.zip")
     manifest = {
         "batch_id": batch_id,
+        "target_aspect_ratio": batch.target_aspect_ratio or "1:1",
         "items": [{
             "filename": item.source_filename,
             "width": item.source_width,

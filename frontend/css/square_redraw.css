@@ -141,3 +141,27 @@
     color: #2563eb;
     background: #eff6ff;
 }
+
+.square-redraw-delete-btn {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #cbd5e1;
+    background: transparent;
+    transition: color 0.2s, background 0.2s;
+    flex: 0 0 32px;
+}
+
+.square-redraw-delete-btn:hover {
+    color: #dc2626;
+    background: #fef2f2;
+}
+
+.square-redraw-delete-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+}

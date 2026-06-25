@@ -334,6 +334,27 @@ def test_square_redraw_create_accepts_square_image():
     assert data["data"]["summary"]["skipped"] == 1
 
 
+def test_square_redraw_delete_item_updates_batch():
+    clear_square_redraw_route_tables()
+    create_resp = client.post("/api/square-redraw/batches", json={
+        "images": [{
+            "filename": "square.png",
+            "image_data": make_route_image(12, 12),
+            "width": 12,
+            "height": 12,
+        }]
+    })
+    create_data = create_resp.json()
+    batch_id = create_data["data"]["id"]
+    item_id = create_data["data"]["items"][0]["id"]
+
+    delete_resp = client.delete(f"/api/square-redraw/batches/{batch_id}/items/{item_id}")
+    delete_data = delete_resp.json()
+
+    assert delete_data["status"] == "success"
+    assert delete_data["data"]["summary"]["total"] == 0
+
+
 def test_square_redraw_get_missing_batch_returns_error():
     resp = client.get("/api/square-redraw/batches/999999")
     data = resp.json()

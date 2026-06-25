@@ -2,8 +2,11 @@ let squareRedrawImages = [];
 let squareRedrawBatchId = null;
 let squareRedrawPollingTimer = null;
 let squareRedrawFilter = 'all';
+let squareRedrawTargetAspectRatio = '1:1';
+const SQUARE_REDRAW_SUPPORTED_RATIOS = ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
 
 function initSquareRedrawControls() {
+    syncSquareRedrawTargetControls();
     renderSquareRedrawList();
     updateSquareRedrawActions();
 }
@@ -50,7 +53,7 @@ async function loadSquareRedrawFiles(files) {
                 image_data: dataUrl,
                 width: size.width,
                 height: size.height,
-                status: size.width === size.height ? 'skipped_square' : 'ready',
+                status: squareRedrawImageMatchesTarget(size.width, size.height) ? 'skipped_square' : 'ready',
                 source_url: dataUrl,
                 output_url: '',
                 error_message: '',
@@ -113,13 +116,91 @@ function squareRedrawStatusLabel(status) {
         running: '处理中',
         done: '完成',
         failed: '失败',
-        skipped_square: '已是 1:1，跳过',
+        skipped_square: '已符合目标，跳过',
     };
     return labels[status] || status;
 }
 
 function squareRedrawStatusBadgeClass(status) {
     return `square-redraw-badge-${status || 'ready'}`;
+}
+
+function parseSquareRedrawRatio(ratio = squareRedrawTargetAspectRatio) {
+    const parts = String(ratio || '1:1').split(':').map(part => Number(part));
+    if (parts.length !== 2 || parts.some(part => !Number.isFinite(part) || part <= 0)) return [1, 1];
+    return parts;
+}
+
+function squareRedrawImageMatchesTarget(width, height, ratio = squareRedrawTargetAspectRatio) {
+    if (!width || !height) return false;
+    const [targetWidth, targetHeight] = parseSquareRedrawRatio(ratio);
+    return width * targetHeight === height * targetWidth;
+}
+
+function syncSquareRedrawTargetControls() {
+    const select = document.getElementById('squareRedrawAspectSelect');
+    const widthInput = document.getElementById('squareRedrawTargetWidth');
+    const heightInput = document.getElementById('squareRedrawTargetHeight');
+    const [targetWidth, targetHeight] = parseSquareRedrawRatio();
+    if (select) select.value = SQUARE_REDRAW_SUPPORTED_RATIOS.includes(squareRedrawTargetAspectRatio) ? squareRedrawTargetAspectRatio : 'custom';
+    if (widthInput) widthInput.value = String(targetWidth);
+    if (heightInput) heightInput.value = String(targetHeight);
+}
+
+function refreshSquareRedrawLocalSkipStatuses() {
+    if (squareRedrawBatchId) return;
+    squareRedrawImages = squareRedrawImages.map(item => ({
+        ...item,
+        status: squareRedrawImageMatchesTarget(item.width, item.height) ? 'skipped_square' : 'ready',
+    }));
+}
+
+function setSquareRedrawAspectRatio(ratio) {
+    if (squareRedrawBatchId) {
+        showToast('当前批次已创建，如需改尺寸请重新上传一批图片', 'error');
+        syncSquareRedrawTargetControls();
+        return;
+    }
+    if (!SQUARE_REDRAW_SUPPORTED_RATIOS.includes(ratio)) return;
+    squareRedrawTargetAspectRatio = ratio;
+    syncSquareRedrawTargetControls();
+    refreshSquareRedrawLocalSkipStatuses();
+    renderSquareRedrawList();
+    updateSquareRedrawActions();
+}
+
+function applySquareRedrawCustomSize() {
+    if (squareRedrawBatchId) {
+        showToast('当前批次已创建，如需改尺寸请重新上传一批图片', 'error');
+        syncSquareRedrawTargetControls();
+        return;
+    }
+
+    const width = Number(document.getElementById('squareRedrawTargetWidth')?.value);
+    const height = Number(document.getElementById('squareRedrawTargetHeight')?.value);
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+        showToast('请输入有效的目标宽高', 'error');
+        return;
+    }
+    const divisor = gcdSquareRedraw(width, height);
+    const ratio = `${width / divisor}:${height / divisor}`;
+    if (!SQUARE_REDRAW_SUPPORTED_RATIOS.includes(ratio)) {
+        showToast(`暂不支持 ${ratio}，请选择常用比例`, 'error');
+        return;
+    }
+    setSquareRedrawAspectRatio(ratio);
+    showToast(`目标尺寸已设为 ${ratio}`, 'success');
+}
+
+function gcdSquareRedraw(a, b) {
+    let x = Math.abs(a);
+    let y = Math.abs(b);
+    while (y) {
+        const next = x % y;
+        x = y;
+        y = next;
+    }
+    return x || 1;
 }
 
 function renderSquareRedrawList() {
@@ -142,6 +223,7 @@ function renderSquareRedrawList() {
         const error = item.error_message ? `<div class="text-[11px] text-red-500 mt-1">${escapeSquareRedrawHtml(item.error_message)}</div>` : '';
         const statusClass = squareRedrawStatusBadgeClass(item.status);
         const resultLabel = item.status === 'done' ? '点击查看前后对比' : '点击查看预览';
+        const deleteDisabled = item.status === 'running' ? 'disabled' : '';
         return `
             <div class="square-redraw-card fade-in">
                 <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
@@ -160,6 +242,10 @@ function renderSquareRedrawList() {
                 <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
                     class="square-redraw-preview-btn" title="查看对比">
                     <i class="ph ph-eye text-base"></i>
+                </button>
+                <button type="button" onclick="removeSquareRedrawImage('${item.id}')" ${deleteDisabled}
+                    class="square-redraw-delete-btn" title="删除">
+                    <i class="ph ph-trash text-base"></i>
                 </button>
             </div>
         `;
@@ -189,7 +275,7 @@ function openSquareRedrawPreview(itemId) {
     } else if (item.status === 'skipped_square') {
         resultHtml = `
             <img src="${item.source_url}" class="w-full h-full object-contain">
-            <div class="absolute left-3 top-3 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700 border border-amber-100">已是 1:1，未重绘</div>
+            <div class="absolute left-3 top-3 rounded-lg bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700 border border-amber-100">已符合 ${squareRedrawTargetAspectRatio}，未重绘</div>
         `;
     } else if (item.status === 'failed') {
         resultHtml = `
@@ -210,7 +296,7 @@ function openSquareRedrawPreview(itemId) {
     }
 
     resultWrap.innerHTML = resultHtml;
-    document.getElementById('squareRedrawPreviewMeta').textContent = `${item.width || '-'} x ${item.height || '-'} · ${squareRedrawStatusLabel(item.status)}`;
+    document.getElementById('squareRedrawPreviewMeta').textContent = `${item.width || '-'} x ${item.height || '-'} · 目标 ${squareRedrawTargetAspectRatio} · ${squareRedrawStatusLabel(item.status)}`;
     modal.classList.remove('hidden');
 }
 
@@ -252,6 +338,7 @@ async function startSquareRedrawBatch() {
     }
 
     const payload = {
+        target_aspect_ratio: squareRedrawTargetAspectRatio,
         images: squareRedrawImages.map(item => ({
             filename: item.filename,
             image_data: item.image_data,
@@ -276,6 +363,8 @@ async function startSquareRedrawBatch() {
 
 function applySquareRedrawBatch(batch) {
     squareRedrawBatchId = batch.id;
+    squareRedrawTargetAspectRatio = batch.target_aspect_ratio || squareRedrawTargetAspectRatio || '1:1';
+    syncSquareRedrawTargetControls();
     squareRedrawImages = (batch.items || []).map(item => ({
         id: `server_${item.id}`,
         filename: item.filename,
@@ -289,6 +378,37 @@ function applySquareRedrawBatch(batch) {
     }));
     renderSquareRedrawList();
     updateSquareRedrawActions();
+}
+
+async function removeSquareRedrawImage(itemId) {
+    const item = getSquareRedrawItem(itemId);
+    if (!item) return;
+    if (item.status === 'running') {
+        showToast('图片正在处理中，暂不能删除', 'error');
+        return;
+    }
+
+    if (!squareRedrawBatchId || !String(itemId).startsWith('server_')) {
+        squareRedrawImages = squareRedrawImages.filter(image => image.id !== itemId);
+        if (!squareRedrawImages.length) squareRedrawBatchId = null;
+        closeSquareRedrawPreview();
+        renderSquareRedrawList();
+        updateSquareRedrawActions();
+        return;
+    }
+
+    const serverItemId = itemId.replace('server_', '');
+    const response = await fetch(`${API_BASE}/api/square-redraw/batches/${squareRedrawBatchId}/items/${serverItemId}`, {
+        method: 'DELETE',
+    });
+    const data = await response.json();
+    if (data.status !== 'success') {
+        showToast(data.message || '删除图片失败', 'error');
+        return;
+    }
+    closeSquareRedrawPreview();
+    applySquareRedrawBatch(data.data);
+    showToast('已删除图片', 'success');
 }
 
 function startSquareRedrawPolling() {

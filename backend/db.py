@@ -1,6 +1,6 @@
 import datetime
 import json
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, event
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, event, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
@@ -90,6 +90,7 @@ class SquareRedrawBatch(Base):
     created_at = Column(DateTime, default=datetime.datetime.now)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
     status = Column(String(30), default="queued", index=True)
+    target_aspect_ratio = Column(String(20), default="1:1")
     output_dir = Column(Text)
     zip_path = Column(Text, nullable=True)
 
@@ -112,6 +113,21 @@ class SquareRedrawItem(Base):
 # 创建所有表
 def init_db():
     Base.metadata.create_all(bind=engine)
+    migrate_square_redraw_tables()
+
+
+def migrate_square_redraw_tables():
+    if engine.dialect.name != "sqlite":
+        return
+
+    inspector = inspect(engine)
+    if "square_redraw_batches" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("square_redraw_batches")}
+    with engine.begin() as connection:
+        if "target_aspect_ratio" not in existing_columns:
+            connection.execute(text("ALTER TABLE square_redraw_batches ADD COLUMN target_aspect_ratio VARCHAR(20) DEFAULT '1:1'"))
 
 def get_db():
     db = SessionLocal()

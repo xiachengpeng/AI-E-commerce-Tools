@@ -36,6 +36,7 @@ from services.ads_service import generate_ad_copy
 from services.square_redraw_service import (
     build_square_redraw_zip,
     create_square_redraw_batch,
+    delete_square_redraw_item,
     process_square_redraw_batch,
     retry_failed_square_redraw_items,
     serialize_square_redraw_batch,
@@ -609,6 +610,16 @@ async def api_square_redraw_retry_failed(batch_id: int, db: Session = Depends(ge
         return {"status": "success", "data": serialize_square_redraw_batch(db, batch_id)}
     except Exception as e:
         logger.error(f"❌ [方图重绘] 重跑失败项失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.delete("/api/square-redraw/batches/{batch_id}/items/{item_id}")
+async def api_square_redraw_delete_item(batch_id: int, item_id: int, db: Session = Depends(get_db)):
+    try:
+        delete_square_redraw_item(db, batch_id, item_id)
+        return {"status": "success", "data": serialize_square_redraw_batch(db, batch_id)}
+    except Exception as e:
+        logger.error(f"❌ [方图重绘] 删除图片失败: {e}")
         return {"status": "error", "message": str(e)}
 
 

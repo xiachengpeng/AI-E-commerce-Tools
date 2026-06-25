@@ -20,7 +20,7 @@
 
     <!-- 核心样式 -->
     <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/square_redraw.css?v=20260625-square-redraw-thumb">
+    <link rel="stylesheet" href="css/square_redraw.css?v=20260625-square-redraw-size-delete">
     <link rel="stylesheet" href="css/analysis.css">
 
     <!-- 基础配置与工具 (必须优先加载) -->
@@ -725,7 +725,7 @@
                         <i class="ph ph-crop text-white text-base"></i>
                     </div>
                     <div>
-                        <div class="text-sm font-black tracking-tight text-slate-800 leading-none">AI 1:1 方图重绘</div>
+                        <div class="text-sm font-black tracking-tight text-slate-800 leading-none">AI 尺寸重绘</div>
                         <div id="squareRedrawSummary" class="flex gap-3 text-[10px] font-bold text-slate-400 mt-1"></div>
                     </div>
                 </div>
@@ -736,6 +736,30 @@
                     <input type="file" id="squareRedrawUpload" class="hidden" accept="image/*" multiple
                         onchange="handleSquareRedrawUpload(event)">
                 </label>
+
+                <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                    <span class="text-[10px] font-black text-slate-400 whitespace-nowrap">目标尺寸</span>
+                    <select id="squareRedrawAspectSelect" onchange="setSquareRedrawAspectRatio(this.value)"
+                        class="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-600 outline-none">
+                        <option value="1:1">1:1</option>
+                        <option value="4:5">4:5</option>
+                        <option value="3:4">3:4</option>
+                        <option value="2:3">2:3</option>
+                        <option value="5:4">5:4</option>
+                        <option value="4:3">4:3</option>
+                        <option value="3:2">3:2</option>
+                        <option value="9:16">9:16</option>
+                        <option value="16:9">16:9</option>
+                        <option value="21:9">21:9</option>
+                    </select>
+                    <input id="squareRedrawTargetWidth" type="number" min="1" value="1"
+                        class="w-14 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-600 outline-none">
+                    <span class="text-xs font-black text-slate-300">x</span>
+                    <input id="squareRedrawTargetHeight" type="number" min="1" value="1"
+                        class="w-14 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-600 outline-none">
+                    <button type="button" onclick="applySquareRedrawCustomSize()"
+                        class="text-[10px] font-black px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-200">应用</button>
+                </div>
 
                 <button id="squareRedrawStartBtn" onclick="startSquareRedrawBatch()" disabled
                     class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-black px-5 py-2 rounded-xl transition-colors">
@@ -771,7 +795,7 @@
                     ondragover="event.preventDefault()" ondrop="handleSquareRedrawDrop(event)">
                     <i class="ph ph-images text-5xl text-slate-300"></i>
                     <div class="mt-4 text-lg font-black text-slate-700">上传 1-100 张图片</div>
-                    <div class="mt-2 text-sm text-slate-400">已是 1:1 的图片会自动跳过并进入最终 ZIP</div>
+                    <div class="mt-2 text-sm text-slate-400">已符合目标比例的图片会自动跳过并进入最终 ZIP</div>
                 </div>
                 <div id="squareRedrawList" class="hidden max-w-5xl mx-auto flex flex-col gap-3"></div>
             </div>
@@ -1202,7 +1226,7 @@
     <script src="js/details.js"></script>
     <script src="js/listing.js"></script>
     <script src="js/ads.js"></script>
-    <script src="js/square_redraw.js?v=20260625-square-redraw-thumb"></script>
+    <script src="js/square_redraw.js?v=20260625-square-redraw-size-delete"></script>
     <script src="js/translate.js"></script>
     <script src="js/text_translate.js"></script>
     <script src="js/history_manager.js"></script>

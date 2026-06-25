@@ -18,6 +18,8 @@ from services.square_redraw_service import (
     MAX_SQUARE_REDRAW_BATCH_SIZE,
     create_square_redraw_batch,
     decode_image_data_url,
+    delete_square_redraw_item,
+    image_matches_aspect_ratio,
     image_size_from_bytes,
     mime_extension,
     process_square_redraw_batch,
@@ -103,6 +105,33 @@ def test_square_redraw_request_accepts_one_image():
         "height": 20,
     }])
     assert len(request.images) == 1
+    assert request.target_aspect_ratio == "1:1"
+
+
+def test_square_redraw_request_accepts_supported_target_aspect_ratio():
+    request = SquareRedrawBatchRequest(
+        target_aspect_ratio="1200:1600",
+        images=[{
+            "filename": "dress.jpg",
+            "image_data": make_data_url(),
+            "width": 10,
+            "height": 20,
+        }],
+    )
+    assert request.target_aspect_ratio == "3:4"
+
+
+def test_square_redraw_request_rejects_unsupported_target_aspect_ratio():
+    with pytest.raises(ValueError, match="暂不支持该目标比例"):
+        SquareRedrawBatchRequest(
+            target_aspect_ratio="6:5",
+            images=[{
+                "filename": "dress.jpg",
+                "image_data": make_data_url(),
+                "width": 10,
+                "height": 20,
+            }],
+        )
 
 
 def test_square_redraw_request_strips_required_text():
@@ -193,6 +222,12 @@ def test_safe_output_basename_removes_path_and_extension():
     assert safe_output_basename("图 1.png") == "image"
 
 
+def test_image_matches_aspect_ratio():
+    assert image_matches_aspect_ratio(1200, 1600, "3:4")
+    assert image_matches_aspect_ratio(40, 40, "1:1")
+    assert not image_matches_aspect_ratio(1200, 1500, "3:4")
+
+
 def clear_square_redraw_tables():
     from db import SessionLocal
 
@@ -224,6 +259,30 @@ def test_create_batch_marks_square_images_skipped():
         assert data["summary"]["skipped"] == 1
         assert data["items"][0]["status"] == "skipped_square"
         assert data["items"][0]["source_url"].startswith("/static/outputs/square-redraw/")
+    finally:
+        db.close()
+
+
+def test_create_batch_marks_target_ratio_images_skipped():
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(
+        target_aspect_ratio="3:4",
+        images=[{
+            "filename": "portrait.png",
+            "image_data": make_data_url(30, 40),
+            "width": 30,
+            "height": 40,
+        }],
+    )
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+        data = serialize_square_redraw_batch(db, batch.id)
+        assert data["target_aspect_ratio"] == "3:4"
+        assert data["summary"]["skipped"] == 1
+        assert data["items"][0]["status"] == "skipped_square"
     finally:
         db.close()
 
@@ -273,6 +332,46 @@ def test_process_non_square_uses_square_image_config():
         db.close()
 
 
+def test_process_uses_custom_target_aspect_ratio():
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(
+        target_aspect_ratio="4:5",
+        images=[{
+            "filename": "portrait.png",
+            "image_data": make_data_url(40, 80),
+            "width": 40,
+            "height": 80,
+        }],
+    )
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+        batch_id = batch.id
+    finally:
+        db.close()
+
+    ai_response = {
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "inlineData": {
+                        "mimeType": "image/png",
+                        "data": base64.b64encode(b"fake-image").decode("utf-8"),
+                    }
+                }]
+            }
+        }]
+    }
+    with patch("services.square_redraw_service.AIService.generate_content", new=AsyncMock(return_value=ai_response)) as mock_ai:
+        asyncio.run(process_square_redraw_batch(batch_id))
+
+    payload = mock_ai.await_args.kwargs["payload"]
+    assert payload["generationConfig"]["imageConfig"]["aspectRatio"] == "4:5"
+    assert "4:5" in payload["contents"][0]["parts"][0]["text"]
+
+
 def test_retry_failed_only_resets_failed_items():
     from db import SessionLocal
 
@@ -295,6 +394,28 @@ def test_retry_failed_only_resets_failed_items():
         assert items[0].status == "queued"
         assert items[0].retry_count == 1
         assert items[1].status == "skipped_square"
+    finally:
+        db.close()
+
+
+def test_delete_square_redraw_item_removes_non_running_item():
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(images=[{
+        "filename": "portrait.png",
+        "image_data": make_data_url(10, 20),
+        "width": 10,
+        "height": 20,
+    }])
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+        item = db.query(SquareRedrawItem).filter(SquareRedrawItem.batch_id == batch.id).one()
+        delete_square_redraw_item(db, batch.id, item.id)
+        data = serialize_square_redraw_batch(db, batch.id)
+        assert data["summary"]["total"] == 0
+        assert data["items"] == []
     finally:
         db.close()
 

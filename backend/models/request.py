@@ -1,3 +1,5 @@
+from math import gcd
+
 from pydantic import BaseModel, field_validator
 from typing import List, Union, Any, Optional
 
@@ -261,8 +263,23 @@ class SquareRedrawImageInput(BaseModel):
         return v
 
 
+SQUARE_REDRAW_SUPPORTED_ASPECT_RATIOS = {
+    "1:1",
+    "3:2",
+    "2:3",
+    "3:4",
+    "4:3",
+    "4:5",
+    "5:4",
+    "9:16",
+    "16:9",
+    "21:9",
+}
+
+
 class SquareRedrawBatchRequest(BaseModel):
     images: List[SquareRedrawImageInput]
+    target_aspect_ratio: str = "1:1"
 
     @field_validator("images")
     @classmethod
@@ -272,3 +289,23 @@ class SquareRedrawBatchRequest(BaseModel):
         if len(v) > 100:
             raise ValueError("每批最多 100 张图片")
         return v
+
+    @field_validator("target_aspect_ratio")
+    @classmethod
+    def validate_target_aspect_ratio(cls, v: str) -> str:
+        value = str(v or "1:1").strip().lower().replace("x", ":")
+        if ":" not in value:
+            raise ValueError("目标比例格式应为 宽:高，例如 1:1")
+        left, right = value.split(":", 1)
+        if not left.isdigit() or not right.isdigit():
+            raise ValueError("目标比例只能包含数字，例如 4:5")
+        width = int(left)
+        height = int(right)
+        if width <= 0 or height <= 0:
+            raise ValueError("目标比例必须大于 0")
+        factor = gcd(width, height)
+        normalized = f"{width // factor}:{height // factor}"
+        if normalized not in SQUARE_REDRAW_SUPPORTED_ASPECT_RATIOS:
+            supported = ", ".join(sorted(SQUARE_REDRAW_SUPPORTED_ASPECT_RATIOS))
+            raise ValueError(f"暂不支持该目标比例，支持: {supported}")
+        return normalized
