@@ -137,6 +137,7 @@ window.onload = async () => {
     if (typeof initTransLangTags === 'function') initTransLangTags();
     if (typeof initListingControls === 'function') initListingControls();
     if (typeof initAdsControls === 'function') initAdsControls();
+    if (typeof initSquareRedrawControls === 'function') initSquareRedrawControls();
     if (typeof loadHistoryToList === 'function') loadHistoryToList();
     
     console.log("[System] Switching to initial tab...");

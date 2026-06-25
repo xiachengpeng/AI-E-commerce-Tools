@@ -59,6 +59,10 @@
             <i class="ph ph-image"></i><span>图片翻译</span>
         </button>
 
+        <button id="tab-square-redraw" onclick="switchMainTab('square-redraw')" class="side-tab" title="方图重绘">
+            <i class="ph ph-crop"></i><span>方图重绘</span>
+        </button>
+
         <button id="tab-text-translate" onclick="switchMainTab('text-translate')" class="side-tab" title="文本翻译">
             <i class="ph ph-translate"></i><span>文本翻译</span>
         </button>
@@ -712,6 +716,66 @@
         <!-- ============================================== -->
         <!-- 视图：图片翻译 (VIEW: TRANSLATE) -->
         <!-- ============================================== -->
+        <div id="view-square-redraw" class="hidden flex-1 overflow-hidden flex flex-col bg-slate-50">
+            <div
+                class="flex-shrink-0 bg-white/80 backdrop-blur border-b border-slate-200 px-8 py-3.5 flex items-center gap-3 sticky top-0 z-30">
+                <div class="flex items-center gap-2.5 mr-4">
+                    <div class="bg-slate-900 p-1.5 rounded-xl shadow-md">
+                        <i class="ph ph-crop text-white text-base"></i>
+                    </div>
+                    <div>
+                        <div class="text-sm font-black tracking-tight text-slate-800 leading-none">AI 1:1 方图重绘</div>
+                        <div id="squareRedrawSummary" class="flex gap-3 text-[10px] font-bold text-slate-400 mt-1"></div>
+                    </div>
+                </div>
+
+                <label for="squareRedrawUpload"
+                    class="flex items-center gap-2 cursor-pointer bg-slate-900 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors shadow-md select-none">
+                    <i class="ph ph-upload-simple text-sm"></i> 上传图片
+                    <input type="file" id="squareRedrawUpload" class="hidden" accept="image/*" multiple
+                        onchange="handleSquareRedrawUpload(event)">
+                </label>
+
+                <button id="squareRedrawStartBtn" onclick="startSquareRedrawBatch()" disabled
+                    class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-black px-5 py-2 rounded-xl transition-colors">
+                    <i class="ph ph-play-circle text-sm"></i> 开始重绘
+                </button>
+                <button id="squareRedrawRetryBtn" onclick="retrySquareRedrawFailed()" disabled
+                    class="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-700 text-xs font-black px-4 py-2 rounded-xl transition-colors border border-amber-100">
+                    <i class="ph ph-arrows-clockwise text-sm"></i> 重跑失败
+                </button>
+                <button id="squareRedrawDownloadBtn" onclick="downloadSquareRedrawZip()" disabled
+                    class="ml-auto flex items-center gap-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-600 text-xs font-black px-4 py-2 rounded-xl transition-colors">
+                    <i class="ph ph-file-zip text-sm"></i> 下载 ZIP
+                </button>
+            </div>
+
+            <div class="px-8 pt-4 flex items-center gap-2 text-xs font-bold">
+                <button onclick="setSquareRedrawFilter('all')"
+                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">全部</button>
+                <button onclick="setSquareRedrawFilter('pending')"
+                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">待处理</button>
+                <button onclick="setSquareRedrawFilter('success')"
+                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">成功</button>
+                <button onclick="setSquareRedrawFilter('failed')"
+                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">失败</button>
+                <button onclick="setSquareRedrawFilter('skipped')"
+                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">已跳过</button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto custom-scrollbar px-8 py-6">
+                <div id="squareRedrawEmptyState"
+                    class="border-2 border-dashed border-slate-300 rounded-2xl p-16 bg-white text-center cursor-pointer"
+                    onclick="document.getElementById('squareRedrawUpload').click()"
+                    ondragover="event.preventDefault()" ondrop="handleSquareRedrawDrop(event)">
+                    <i class="ph ph-images text-5xl text-slate-300"></i>
+                    <div class="mt-4 text-lg font-black text-slate-700">上传 1-100 张图片</div>
+                    <div class="mt-2 text-sm text-slate-400">已是 1:1 的图片会自动跳过并进入最终 ZIP</div>
+                </div>
+                <div id="squareRedrawList" class="hidden max-w-5xl mx-auto flex flex-col gap-3"></div>
+            </div>
+        </div>
+
         <div id="view-translate" class="hidden flex-1 overflow-hidden flex flex-col bg-slate-50">
             <div
                 class="flex-shrink-0 bg-white/80 backdrop-blur border-b border-slate-200 px-8 py-3.5 flex items-center gap-4 sticky top-0 z-30">
@@ -1100,6 +1164,7 @@
     <script src="js/details.js"></script>
     <script src="js/listing.js"></script>
     <script src="js/ads.js"></script>
+    <script src="js/square_redraw.js"></script>
     <script src="js/translate.js"></script>
     <script src="js/text_translate.js"></script>
     <script src="js/history_manager.js"></script>
