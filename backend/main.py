@@ -18,6 +18,7 @@ from models.request import (
     TranslationRequest,
     ListingGenerateRequest, ListingImageExtractRequest, ListingComplianceRequest,
     AdCopyGenerateRequest,
+    SquareRedrawBatchRequest,
 )
 from services.firecrawl import fetch_markdown
 from services.cleaner import clean_content, check_block
@@ -32,6 +33,13 @@ from services.listing_service import (
     check_listing_compliance,
 )
 from services.ads_service import generate_ad_copy
+from services.square_redraw_service import (
+    build_square_redraw_zip,
+    create_square_redraw_batch,
+    process_square_redraw_batch,
+    retry_failed_square_redraw_items,
+    serialize_square_redraw_batch,
+)
 from config import (
     AI_PROVIDER,
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
@@ -569,6 +577,56 @@ async def get_frontend_config():
         "STAGGER_DELAY": FRONTEND_STAGGER_DELAY,
     }
     return config
+
+
+@app.post("/api/square-redraw/batches")
+async def api_square_redraw_create(request: SquareRedrawBatchRequest, db: Session = Depends(get_db)):
+    try:
+        batch = create_square_redraw_batch(db, request)
+        data = serialize_square_redraw_batch(db, batch.id)
+        if data["summary"]["queued"] > 0:
+            asyncio.create_task(process_square_redraw_batch(batch.id))
+        return {"status": "success", "data": data}
+    except Exception as e:
+        logger.error(f"❌ [方图重绘] 创建批次失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/square-redraw/batches/{batch_id}")
+async def api_square_redraw_get(batch_id: int, db: Session = Depends(get_db)):
+    try:
+        return {"status": "success", "data": serialize_square_redraw_batch(db, batch_id)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/square-redraw/batches/{batch_id}/retry-failed")
+async def api_square_redraw_retry_failed(batch_id: int, db: Session = Depends(get_db)):
+    try:
+        reset_count = retry_failed_square_redraw_items(db, batch_id)
+        if reset_count:
+            asyncio.create_task(process_square_redraw_batch(batch_id))
+        return {"status": "success", "data": serialize_square_redraw_batch(db, batch_id)}
+    except Exception as e:
+        logger.error(f"❌ [方图重绘] 重跑失败项失败: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/square-redraw/batches/{batch_id}/download")
+async def api_square_redraw_download(batch_id: int, db: Session = Depends(get_db)):
+    from fastapi.responses import FileResponse
+
+    try:
+        zip_path = build_square_redraw_zip(db, batch_id)
+        return FileResponse(
+            zip_path,
+            media_type="application/zip",
+            filename=f"square-redraw-{batch_id}.zip",
+        )
+    except Exception as e:
+        logger.error(f"❌ [方图重绘] 打包下载失败: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 @app.post("/api/history/{module}")
 async def save_history(module: str, data: dict, db: Session = Depends(get_db)):

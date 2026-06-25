@@ -288,6 +288,59 @@ def test_ads_generate_endpoint():
 
 
 # ============================================================
+# 方图重绘 API
+# ============================================================
+
+def make_route_image(width=10, height=20):
+    import io
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "white").save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+
+def clear_square_redraw_route_tables():
+    from db import SessionLocal, SquareRedrawBatch, SquareRedrawItem
+
+    db = SessionLocal()
+    try:
+        db.query(SquareRedrawItem).delete()
+        db.query(SquareRedrawBatch).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_square_redraw_create_rejects_empty_batch():
+    resp = client.post("/api/square-redraw/batches", json={"images": []})
+    assert resp.status_code in {200, 422}
+    data = resp.json()
+    assert data.get("status") == "error" or "detail" in data
+
+
+def test_square_redraw_create_accepts_square_image():
+    clear_square_redraw_route_tables()
+    resp = client.post("/api/square-redraw/batches", json={
+        "images": [{
+            "filename": "square.png",
+            "image_data": make_route_image(12, 12),
+            "width": 12,
+            "height": 12,
+        }]
+    })
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["data"]["summary"]["skipped"] == 1
+
+
+def test_square_redraw_get_missing_batch_returns_error():
+    resp = client.get("/api/square-redraw/batches/999999")
+    data = resp.json()
+    assert data["status"] == "error"
+
+
+# ============================================================
 # Log 端点
 # ============================================================
 
