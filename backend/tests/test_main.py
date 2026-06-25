@@ -355,6 +355,42 @@ def test_square_redraw_delete_item_updates_batch():
     assert delete_data["data"]["summary"]["total"] == 0
 
 
+def test_square_redraw_process_item_runs_single_task():
+    clear_square_redraw_route_tables()
+    create_resp = client.post("/api/square-redraw/batches", json={
+        "images": [{
+            "filename": "portrait.png",
+            "image_data": make_route_image(12, 24),
+            "width": 12,
+            "height": 24,
+        }]
+    })
+    create_data = create_resp.json()
+    batch_id = create_data["data"]["id"]
+    item_id = create_data["data"]["items"][0]["id"]
+    assert create_data["data"]["items"][0]["status"] == "queued"
+
+    ai_response = {
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "inlineData": {
+                        "mimeType": "image/png",
+                        "data": base64.b64encode(b"fake-image").decode("utf-8"),
+                    }
+                }]
+            }
+        }]
+    }
+    with patch("services.square_redraw_service.AIService.generate_content", new=AsyncMock(return_value=ai_response)):
+        process_resp = client.post(f"/api/square-redraw/batches/{batch_id}/items/{item_id}/process")
+
+    process_data = process_resp.json()
+    assert process_data["status"] == "success"
+    assert process_data["data"]["items"][0]["status"] == "done"
+    assert process_data["data"]["items"][0]["output_url"]
+
+
 def test_square_redraw_get_missing_batch_returns_error():
     resp = client.get("/api/square-redraw/batches/999999")
     data = resp.json()

@@ -1,9 +1,9 @@
 let squareRedrawImages = [];
 let squareRedrawBatchId = null;
-let squareRedrawPollingTimer = null;
 let squareRedrawFilter = 'all';
 let squareRedrawTargetAspectRatio = '1:1';
 let squareRedrawRenderSignature = '';
+let squareRedrawRunning = false;
 const SQUARE_REDRAW_SUPPORTED_RATIOS = ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
 
 function initSquareRedrawControls() {
@@ -328,9 +328,9 @@ function updateSquareRedrawActions() {
     const retryBtn = document.getElementById('squareRedrawRetryBtn');
     const downloadBtn = document.getElementById('squareRedrawDownloadBtn');
     const summary = squareRedrawSummary();
-    if (startBtn) startBtn.disabled = !squareRedrawImages.length;
-    if (retryBtn) retryBtn.disabled = !squareRedrawBatchId || summary.failed === 0;
-    if (downloadBtn) downloadBtn.disabled = !squareRedrawBatchId || (summary.done + summary.skipped === 0);
+    if (startBtn) startBtn.disabled = !squareRedrawImages.length || squareRedrawRunning;
+    if (retryBtn) retryBtn.disabled = squareRedrawRunning || !squareRedrawBatchId || summary.failed === 0;
+    if (downloadBtn) downloadBtn.disabled = squareRedrawRunning || !squareRedrawBatchId || (summary.done + summary.skipped === 0);
 }
 
 function squareRedrawBatchSignature(batchId, targetAspectRatio, images) {
@@ -352,6 +352,7 @@ async function startSquareRedrawBatch() {
         showToast('请先上传图片', 'error');
         return;
     }
+    if (squareRedrawRunning) return;
 
     const payload = {
         target_aspect_ratio: squareRedrawTargetAspectRatio,
@@ -374,7 +375,7 @@ async function startSquareRedrawBatch() {
         return;
     }
     applySquareRedrawBatch(data.data);
-    startSquareRedrawPolling();
+    await runSquareRedrawQueue();
 }
 
 function applySquareRedrawBatch(batch) {
@@ -436,15 +437,28 @@ async function removeSquareRedrawImage(itemId) {
     showToast('已删除图片', 'success');
 }
 
-function startSquareRedrawPolling() {
-    stopSquareRedrawPolling();
-    squareRedrawPollingTimer = setInterval(refreshSquareRedrawBatch, 2000);
-    refreshSquareRedrawBatch();
+function markSquareRedrawItemStatus(itemId, status) {
+    squareRedrawImages = squareRedrawImages.map(item => item.id === itemId ? { ...item, status } : item);
+    squareRedrawRenderSignature = squareRedrawBatchSignature(squareRedrawBatchId, squareRedrawTargetAspectRatio, squareRedrawImages);
+    renderSquareRedrawList();
+    updateSquareRedrawActions();
 }
 
-function stopSquareRedrawPolling() {
-    if (squareRedrawPollingTimer) clearInterval(squareRedrawPollingTimer);
-    squareRedrawPollingTimer = null;
+async function processSquareRedrawServerItem(item) {
+    const serverItemId = String(item.id).replace('server_', '');
+    markSquareRedrawItemStatus(item.id, 'running');
+    const response = await fetch(`${API_BASE}/api/square-redraw/batches/${squareRedrawBatchId}/items/${serverItemId}/process`, {
+        method: 'POST',
+    });
+    const data = await response.json();
+    if (data.status !== 'success') {
+        throw new Error(data.message || '单图重绘失败');
+    }
+    applySquareRedrawBatch(data.data);
+    const processedItem = (data.data.items || []).find(batchItem => String(batchItem.id) === serverItemId);
+    if (processedItem?.status === 'failed') {
+        throw new Error(processedItem.error_message || '单图重绘失败');
+    }
 }
 
 async function refreshSquareRedrawBatch() {
@@ -453,12 +467,71 @@ async function refreshSquareRedrawBatch() {
     const data = await response.json();
     if (data.status !== 'success') return;
     applySquareRedrawBatch(data.data);
-    const active = squareRedrawImages.some(item => ['queued', 'running'].includes(item.status));
-    if (!active) stopSquareRedrawPolling();
+}
+
+async function runSquareRedrawQueue() {
+    if (!squareRedrawBatchId) return;
+    const queuedItems = squareRedrawImages.filter(item => item.status === 'queued');
+    if (!queuedItems.length) {
+        updateSquareRedrawActions();
+        return;
+    }
+
+    const startBtn = document.getElementById('squareRedrawStartBtn');
+    const originalStartHtml = startBtn?.innerHTML || '';
+    squareRedrawRunning = true;
+    updateSquareRedrawActions();
+
+    const activeTasks = [];
+    let completedCount = 0;
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < queuedItems.length; i++) {
+        if (activeTasks.length >= CONCURRENCY_LIMIT) {
+            await Promise.race(activeTasks);
+        }
+
+        const item = queuedItems[i];
+        const taskPromise = (async () => {
+            try {
+                await processSquareRedrawServerItem(item);
+                successCount++;
+            } catch (err) {
+                console.error(err);
+                errorCount++;
+                await refreshSquareRedrawBatch();
+                showToast(`${item.filename} 重绘失败`, 'error');
+            } finally {
+                completedCount++;
+                if (startBtn) {
+                    startBtn.innerHTML = `<span class="loader mr-2 border-white border-t-transparent w-4 h-4"></span> 并行重绘 ${completedCount}/${queuedItems.length}`;
+                }
+            }
+        })();
+
+        activeTasks.push(taskPromise);
+        taskPromise.finally(() => {
+            const idx = activeTasks.indexOf(taskPromise);
+            if (idx > -1) activeTasks.splice(idx, 1);
+        });
+
+        if (i < queuedItems.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, STAGGER_DELAY));
+        }
+    }
+
+    await Promise.all(activeTasks);
+    squareRedrawRunning = false;
+    if (startBtn) startBtn.innerHTML = originalStartHtml;
+    await refreshSquareRedrawBatch();
+    updateSquareRedrawActions();
+    showToast(`重绘完成：成功 ${successCount}，失败 ${errorCount}`, errorCount ? 'warning' : 'success');
 }
 
 async function retrySquareRedrawFailed() {
     if (!squareRedrawBatchId) return;
+    if (squareRedrawRunning) return;
     const response = await fetch(`${API_BASE}/api/square-redraw/batches/${squareRedrawBatchId}/retry-failed`, { method: 'POST' });
     const data = await response.json();
     if (data.status !== 'success') {
@@ -466,7 +539,7 @@ async function retrySquareRedrawFailed() {
         return;
     }
     applySquareRedrawBatch(data.data);
-    startSquareRedrawPolling();
+    await runSquareRedrawQueue();
 }
 
 function downloadSquareRedrawZip() {
