@@ -2,6 +2,8 @@ import datetime
 import asyncio
 import base64
 import io
+import json
+import zipfile
 
 import pytest
 from PIL import Image
@@ -12,13 +14,16 @@ from sqlalchemy.orm import sessionmaker
 from db import Base, SquareRedrawBatch, SquareRedrawItem, enable_sqlite_foreign_keys
 from models.request import SquareRedrawBatchRequest
 from services.square_redraw_service import (
+    build_square_redraw_zip,
     MAX_SQUARE_REDRAW_BATCH_SIZE,
     create_square_redraw_batch,
     decode_image_data_url,
     image_size_from_bytes,
     mime_extension,
     process_square_redraw_batch,
+    retry_failed_square_redraw_items,
     safe_output_basename,
+    save_bytes_for_item,
     serialize_square_redraw_batch,
 )
 from unittest.mock import AsyncMock, patch
@@ -236,6 +241,7 @@ def test_process_non_square_uses_square_image_config():
     db = SessionLocal()
     try:
         batch = create_square_redraw_batch(db, request)
+        batch_id = batch.id
     finally:
         db.close()
 
@@ -252,7 +258,7 @@ def test_process_non_square_uses_square_image_config():
         }]
     }
     with patch("services.square_redraw_service.AIService.generate_content", new=AsyncMock(return_value=ai_response)) as mock_ai:
-        asyncio.run(process_square_redraw_batch(batch.id))
+        asyncio.run(process_square_redraw_batch(batch_id))
 
     payload = mock_ai.await_args.kwargs["payload"]
     assert payload["generationConfig"]["responseModalities"] == ["IMAGE"]
@@ -260,8 +266,74 @@ def test_process_non_square_uses_square_image_config():
 
     db = SessionLocal()
     try:
-        item = db.query(SquareRedrawItem).filter(SquareRedrawItem.batch_id == batch.id).one()
+        item = db.query(SquareRedrawItem).filter(SquareRedrawItem.batch_id == batch_id).one()
         assert item.status == "done"
         assert item.output_url.startswith("/static/outputs/square-redraw/")
+    finally:
+        db.close()
+
+
+def test_retry_failed_only_resets_failed_items():
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(images=[
+        {"filename": "bad.png", "image_data": "bad", "width": 10, "height": 20},
+        {"filename": "square.png", "image_data": make_data_url(20, 20), "width": 20, "height": 20},
+    ])
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+        reset_count = retry_failed_square_redraw_items(db, batch.id)
+        items = (
+            db.query(SquareRedrawItem)
+            .filter(SquareRedrawItem.batch_id == batch.id)
+            .order_by(SquareRedrawItem.id.asc())
+            .all()
+        )
+        assert reset_count == 1
+        assert items[0].status == "queued"
+        assert items[0].retry_count == 1
+        assert items[1].status == "skipped_square"
+    finally:
+        db.close()
+
+
+def test_build_square_redraw_zip_contains_redrawn_skipped_and_manifest(tmp_path):
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(images=[{
+        "filename": "square.png",
+        "image_data": make_data_url(20, 20),
+        "width": 20,
+        "height": 20,
+    }])
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+        redrawn_url = save_bytes_for_item(batch.id, "portrait-square.png", b"redrawn", "image/png", "redrawn")
+        done = SquareRedrawItem(
+            batch_id=batch.id,
+            source_filename="portrait.png",
+            source_mime_type="image/png",
+            source_width=10,
+            source_height=20,
+            status="done",
+            output_url=redrawn_url,
+        )
+        db.add(done)
+        db.commit()
+
+        zip_path = build_square_redraw_zip(db, batch.id)
+
+        assert zip_path.endswith(".zip")
+        with zipfile.ZipFile(zip_path) as archive:
+            names = archive.namelist()
+            assert "manifest.json" in names
+            assert any(name.startswith("redrawn/") for name in names)
+            assert any(name.startswith("skipped-originals/") for name in names)
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
+            assert len(manifest["items"]) == 2
     finally:
         db.close()

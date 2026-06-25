@@ -1,9 +1,11 @@
 import base64
 import asyncio
 import io
+import json
 import os
 import re
 import uuid
+import zipfile
 from pathlib import Path
 
 from PIL import Image
@@ -288,3 +290,85 @@ async def process_square_redraw_item(item_id: int) -> None:
             db.commit()
             _update_batch_status(db, item.batch_id)
         db.close()
+
+
+def retry_failed_square_redraw_items(db, batch_id: int) -> int:
+    failed_items = (
+        db.query(SquareRedrawItem)
+        .filter(
+            SquareRedrawItem.batch_id == batch_id,
+            SquareRedrawItem.status == "failed",
+        )
+        .all()
+    )
+    for item in failed_items:
+        item.status = "queued"
+        item.error_message = None
+        item.output_url = None
+        item.retry_count = (item.retry_count or 0) + 1
+    db.commit()
+    _update_batch_status(db, batch_id)
+    return len(failed_items)
+
+
+def _static_url_to_abs_path(static_url: str) -> str:
+    if not static_url or not static_url.startswith("/static/"):
+        raise ValueError("静态文件路径无效")
+    return os.path.join(STATIC_DIR, static_url.replace("/static/", "", 1))
+
+
+def _zip_arcname(folder: str, item: SquareRedrawItem, url: str) -> str:
+    ext = Path(_static_url_to_abs_path(url)).suffix or ".png"
+    base = safe_output_basename(item.source_filename)
+    return f"{folder}/{base}{ext}"
+
+
+def build_square_redraw_zip(db, batch_id: int) -> str:
+    batch = db.query(SquareRedrawBatch).filter(SquareRedrawBatch.id == batch_id).first()
+    if not batch:
+        raise ValueError("批次不存在")
+
+    items = (
+        db.query(SquareRedrawItem)
+        .filter(SquareRedrawItem.batch_id == batch_id)
+        .order_by(SquareRedrawItem.id.asc())
+        .all()
+    )
+    usable_items = [item for item in items if item.status in {"done", "skipped_square"}]
+    if not usable_items:
+        raise ValueError("没有可导出的图片")
+
+    out_dir = os.path.join(SQUARE_OUTPUT_ROOT, str(batch_id))
+    os.makedirs(out_dir, exist_ok=True)
+    zip_path = os.path.join(out_dir, f"square-redraw-{batch_id}.zip")
+    manifest = {
+        "batch_id": batch_id,
+        "items": [{
+            "filename": item.source_filename,
+            "width": item.source_width,
+            "height": item.source_height,
+            "status": item.status,
+            "retry_count": item.retry_count or 0,
+            "source_url": item.source_url,
+            "output_url": item.output_url,
+            "error_message": item.error_message,
+        } for item in items],
+    }
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for item in usable_items:
+            if item.status == "done" and item.output_url:
+                archive.write(
+                    _static_url_to_abs_path(item.output_url),
+                    _zip_arcname("redrawn", item, item.output_url),
+                )
+            if item.status == "skipped_square" and item.source_url:
+                archive.write(
+                    _static_url_to_abs_path(item.source_url),
+                    _zip_arcname("skipped-originals", item, item.source_url),
+                )
+        archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+
+    batch.zip_path = zip_path
+    db.commit()
+    return zip_path
