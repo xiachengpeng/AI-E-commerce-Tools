@@ -351,10 +351,16 @@ def _static_url_to_abs_path(static_url: str) -> str:
     return os.path.join(STATIC_DIR, static_url.replace("/static/", "", 1))
 
 
-def _zip_arcname(folder: str, item: SquareRedrawItem, url: str) -> str:
+def _zip_arcname(item: SquareRedrawItem, url: str, used_names: set[str]) -> str:
     ext = Path(_static_url_to_abs_path(url)).suffix or ".png"
     base = safe_output_basename(item.source_filename)
-    return f"{folder}/{base}{ext}"
+    candidate = f"{base}{ext}"
+    index = 2
+    while candidate in used_names:
+        candidate = f"{base}-{index}{ext}"
+        index += 1
+    used_names.add(candidate)
+    return candidate
 
 
 def build_square_redraw_zip(db, batch_id: int) -> str:
@@ -391,16 +397,17 @@ def build_square_redraw_zip(db, batch_id: int) -> str:
     }
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+        used_names = {"manifest.json"}
         for item in usable_items:
             if item.status == "done" and item.output_url:
                 archive.write(
                     _static_url_to_abs_path(item.output_url),
-                    _zip_arcname("redrawn", item, item.output_url),
+                    _zip_arcname(item, item.output_url, used_names),
                 )
             if item.status == "skipped_square" and item.source_url:
                 archive.write(
                     _static_url_to_abs_path(item.source_url),
-                    _zip_arcname("skipped-originals", item, item.source_url),
+                    _zip_arcname(item, item.source_url, used_names),
                 )
         archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
 

@@ -465,7 +465,7 @@ def test_delete_square_redraw_item_removes_non_running_item():
         db.close()
 
 
-def test_build_square_redraw_zip_contains_redrawn_skipped_and_manifest(tmp_path):
+def test_build_square_redraw_zip_contains_flat_images_and_manifest(tmp_path):
     from db import SessionLocal
 
     clear_square_redraw_tables()
@@ -497,9 +497,33 @@ def test_build_square_redraw_zip_contains_redrawn_skipped_and_manifest(tmp_path)
         with zipfile.ZipFile(zip_path) as archive:
             names = archive.namelist()
             assert "manifest.json" in names
-            assert any(name.startswith("redrawn/") for name in names)
-            assert any(name.startswith("skipped-originals/") for name in names)
+            image_names = [name for name in names if name != "manifest.json"]
+            assert image_names
+            assert all("/" not in name for name in image_names)
+            assert "portrait.png" in image_names
+            assert "square.png" in image_names
             manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
             assert len(manifest["items"]) == 2
+    finally:
+        db.close()
+
+
+def test_build_square_redraw_zip_deduplicates_flat_filenames(tmp_path):
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(images=[
+        {"filename": "same.png", "image_data": make_data_url(20, 20), "width": 20, "height": 20},
+        {"filename": "same.png", "image_data": make_data_url(30, 30), "width": 30, "height": 30},
+    ])
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+        zip_path = build_square_redraw_zip(db, batch.id)
+
+        with zipfile.ZipFile(zip_path) as archive:
+            names = archive.namelist()
+            assert "same.png" in names
+            assert "same-2.png" in names
     finally:
         db.close()
