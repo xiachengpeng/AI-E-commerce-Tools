@@ -37,7 +37,7 @@ async function loadGlobalHistory(module) {
     // 更新 UI 状态
     document.querySelectorAll('.history-tab-btn').forEach(btn => {
         const modId = btn.id.replace('hist-tab-', '');
-        const map = { 'analysis': 'analysis', 'listing': 'listing', 'translation': 'translation', 'text-translation': 'text-translation', 'ads': 'ads', 'render': 'render' };
+        const map = { 'analysis': 'analysis', 'listing': 'listing', 'translation': 'translation', 'text-translation': 'text-translation', 'ads': 'ads', 'square-redraw': 'square-redraw', 'render': 'render' };
         btn.classList.toggle('active', map[modId] === module);
     });
 
@@ -56,6 +56,7 @@ async function loadGlobalHistory(module) {
             const name = item.query_url ||
                 item.product_name ||
                 item.task_name ||
+                (module === 'square-redraw' && item.batch_id ? `尺寸重绘批次 #${item.batch_id}` : '') ||
                 item.source_text ||
                 item.name ||
                 item.text ||
@@ -72,11 +73,23 @@ async function loadGlobalHistory(module) {
                 subInfo += ` | 译文: ${preview.substring(0, 30)}${preview.length > 30 ? '...' : ''}`;
             } else if (module === 'ads') {
                 subInfo = [item.platforms, item.region, item.target_lang].filter(Boolean).join(' / ');
+            } else if (module === 'square-redraw') {
+                const result = item.result || {};
+                const summary = result.summary || {};
+                subInfo = `目标 ${item.target_aspect_ratio || result.target_aspect_ratio || '1:1'} | 成功 ${summary.done || 0} | 跳过 ${summary.skipped || 0} | 失败 ${summary.failed || 0}`;
             }
 
             // 提取缩略图 (针对翻译和渲染模块)
             let thumb = '';
-            if (module === 'render' || module === 'translation' || module === 'ads') {
+            if (module === 'square-redraw') {
+                const firstImage = (item.result?.items || []).find(img => img.output_url || img.source_url);
+                const imgSrc = formatImgSrc(firstImage?.output_url || firstImage?.source_url);
+                if (imgSrc) {
+                    thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
+                                <img src="${imgSrc}" class="w-full h-full object-cover">
+                             </div>`;
+                }
+            } else if (module === 'render' || module === 'translation' || module === 'ads') {
                 const imgData = item.image_url || item.image_base64 || item.result || item.data || item.metadata_info?.finalImage;
                 let imgSrc = formatImgSrc(typeof imgData === 'string' ? imgData : (imgData && imgData.image));
                 
@@ -284,6 +297,18 @@ async function restoreHistoryItemByIndex(module, index) {
             
             showToast('已还原文本翻译历史', 'success');
         }
+    } else if (module === 'square-redraw') {
+        switchMainTab('square-redraw');
+        if (!responseObj || typeof responseObj !== 'object') {
+            showToast('该尺寸重绘历史记录数据格式已失效', 'error');
+            return;
+        }
+        setTimeout(() => {
+            if (typeof applySquareRedrawBatch === 'function') {
+                applySquareRedrawBatch(responseObj);
+                showToast('已还原尺寸重绘历史', 'success');
+            }
+        }, 150);
     }
 
     toggleGlobalHistory();

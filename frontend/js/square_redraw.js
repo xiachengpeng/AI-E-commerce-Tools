@@ -526,7 +526,35 @@ async function runSquareRedrawQueue() {
     if (startBtn) startBtn.innerHTML = originalStartHtml;
     await refreshSquareRedrawBatch();
     updateSquareRedrawActions();
+    saveSquareRedrawHistory();
     showToast(`重绘完成：成功 ${successCount}，失败 ${errorCount}`, errorCount ? 'warning' : 'success');
+}
+
+function saveSquareRedrawHistory() {
+    if (!squareRedrawBatchId || typeof saveToHistory !== 'function') return;
+    const summary = squareRedrawSummary();
+    if (summary.done + summary.skipped === 0) return;
+    saveToHistory('square-redraw', {
+        batch_id: squareRedrawBatchId,
+        target_aspect_ratio: squareRedrawTargetAspectRatio,
+        result: {
+            id: squareRedrawBatchId,
+            status: squareRedrawImages.some(item => item.status === 'failed') ? 'failed' : 'done',
+            target_aspect_ratio: squareRedrawTargetAspectRatio,
+            summary,
+            items: squareRedrawImages.map(item => ({
+                id: String(item.id).replace('server_', ''),
+                filename: item.filename,
+                width: item.width,
+                height: item.height,
+                status: item.status,
+                retry_count: item.retry_count || 0,
+                source_url: item.source_url,
+                output_url: item.output_url,
+                error_message: item.error_message || '',
+            })),
+        },
+    });
 }
 
 async function retrySquareRedrawFailed() {

@@ -426,6 +426,29 @@ def test_history_invalid_module():
     assert resp.json() == []
 
 
+def test_square_redraw_history_save_and_list():
+    payload = {
+        "batch_id": 123,
+        "target_aspect_ratio": "1:1",
+        "result": {
+            "id": 123,
+            "target_aspect_ratio": "1:1",
+            "summary": {"done": 1, "skipped": 0, "failed": 0},
+            "items": [{"filename": "image.png", "status": "done", "output_url": "/static/out.png"}],
+        },
+    }
+    save_resp = client.post("/api/history/square-redraw", json=payload)
+    assert save_resp.status_code == 200
+    assert save_resp.json()["status"] == "success"
+
+    list_resp = client.get("/api/history/square-redraw")
+    data = list_resp.json()
+    assert data
+    saved = next(item for item in data if item["batch_id"] == 123)
+    assert saved["target_aspect_ratio"] == "1:1"
+    assert saved["result"]["summary"]["done"] == 1
+
+
 # ============================================================
 # 翻译端点
 # ============================================================

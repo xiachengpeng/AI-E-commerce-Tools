@@ -84,6 +84,14 @@ class RenderHistory(Base):
     image_base64 = Column(Text) # 存储生成的图片
     metadata_info = Column(JSON) # 包含文案等信息
 
+class SquareRedrawHistory(Base):
+    __tablename__ = "square_redraw_history"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.datetime.now)
+    batch_id = Column(Integer, index=True)
+    target_aspect_ratio = Column(String(20), default="1:1")
+    result = Column(JSON)
+
 class SquareRedrawBatch(Base):
     __tablename__ = "square_redraw_batches"
     id = Column(Integer, primary_key=True, index=True)

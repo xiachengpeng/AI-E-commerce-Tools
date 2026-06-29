@@ -46,7 +46,7 @@ from config import (
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
-from db import init_db, get_db, SessionLocal, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory
+from db import init_db, get_db, SessionLocal, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory
 
 # 加载配置
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
@@ -687,6 +687,13 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
             hist = RenderHistory(task_name=data.get("name"), style=data.get("style"), image_base64=data.get("image"), metadata_info=metadata)
         elif module == "analysis":
             hist = AnalysisHistory(query_url=data.get("url"), template_type=data.get("type"), data=data.get("data"))
+        elif module == "square-redraw":
+            result = data.get("result") or {}
+            hist = SquareRedrawHistory(
+                batch_id=data.get("batch_id") or result.get("id"),
+                target_aspect_ratio=data.get("target_aspect_ratio") or result.get("target_aspect_ratio") or "1:1",
+                result=result,
+            )
         else: return {"status": "error"}
         
         db.add(hist)
@@ -698,14 +705,14 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
 
 @app.get("/api/history/{module}")
 async def get_history(module: str, db: Session = Depends(get_db)):
-    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory}
+    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory, "square-redraw": SquareRedrawHistory}
     model = mapping.get(module)
     if not model: return []
     return db.query(model).order_by(model.timestamp.desc()).all()
 
 @app.delete("/api/history/{module}/{id}")
 async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
-    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory}
+    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory, "square-redraw": SquareRedrawHistory}
     model = mapping.get(module)
     if not model: return {"status": "error"}
     item = db.query(model).filter(model.id == id).first()
