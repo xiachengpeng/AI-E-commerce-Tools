@@ -1,227 +1,163 @@
-"""
-测试 AIService —— google-genai SDK 调用封装
-"""
+"""Tests for the capability-routed AIService compatibility facade."""
+
+import inspect
 import json
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.ai_service import AIService
 
 
-@pytest.fixture(autouse=True)
-def reset_client():
-    AIService._clients = {}
-    yield
-    AIService._clients = {}
-
-
-def make_sdk_response(parts):
-    content = MagicMock()
-    content.role = "model"
-    content.parts = parts
-
-    candidate = MagicMock()
-    candidate.content = content
-
-    response = MagicMock()
-    response.candidates = [candidate]
-    return response
-
-
-def make_text_part(text):
-    part = MagicMock()
-    part.thought = False
-    part.text = text
-    part.inline_data = None
-    return part
-
-
-def make_image_part(mime_type="image/png", data=b"aaaa"):
-    inline_data = MagicMock()
-    inline_data.mime_type = mime_type
-    inline_data.data = data
-
-    part = MagicMock()
-    part.thought = False
-    part.text = None
-    part.inline_data = inline_data
-    return part
-
-
-def test_get_client_delegates_construction_to_google_adapter():
-    adapter = MagicMock()
-    adapter._client.return_value = MagicMock()
-
-    with patch("services.ai_service.get_adapter", return_value=adapter) as lookup:
-        client = AIService._get_client("gemini")
-
-    lookup.assert_called_once_with("gemini")
-    adapter._client.assert_called_once()
-    assert client is adapter._client.return_value
-
-
-@pytest.mark.asyncio
-async def test_call_ai_success():
-    """文本调用：返回第一段文本"""
-    mock_client = MagicMock()
-    mock_client.models.generate_content.return_value = make_sdk_response([
-        make_text_part("Hello, World")
-    ])
-
-    with patch.object(AIService, "_get_client", return_value=mock_client):
-        result = await AIService.call_ai("test prompt", provider="gemini")
-
-    assert result == "Hello, World"
-    mock_client.models.generate_content.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_call_ai_json_output():
-    """JSON 调用：保留 JSON 字符串"""
-    json_str = '{"key": "value"}'
-    mock_client = MagicMock()
-    mock_client.models.generate_content.return_value = make_sdk_response([
-        make_text_part(json_str)
-    ])
-
-    with patch.object(AIService, "_get_client", return_value=mock_client):
-        result = await AIService.call_ai(
-            "json prompt",
-            provider="gemini",
-            response_mime_type="application/json",
-        )
-
-    assert result == json_str
-
-
-@pytest.mark.asyncio
-async def test_generate_content_image_response_shape():
-    """图片响应：转换成前端兼容的 inlineData 结构"""
-    mock_client = MagicMock()
-    mock_client.models.generate_content.return_value = make_sdk_response([
-        make_image_part(data=b"image-bytes")
-    ])
-
-    payload = {
-        "contents": [{
-            "role": "user",
-            "parts": [
-                {"text": "generate image"},
-                {"inlineData": {"mimeType": "image/jpeg", "data": "YWFhYQ=="}},
-            ],
-        }],
-        "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+def normalized_text_response(text):
+    return {
+        "candidates": [
+            {
+                "content": {
+                    "role": "model",
+                    "parts": [{"text": text}],
+                }
+            }
+        ]
     }
 
-    with patch.object(AIService, "_get_client", return_value=mock_client):
-        result = await AIService.generate_content("gemini-test", payload, provider="vertex")
 
-    inline_data = result["candidates"][0]["content"]["parts"][0]["inlineData"]
-    assert inline_data["mimeType"] == "image/png"
-    assert inline_data["data"] == "aW1hZ2UtYnl0ZXM="
+@pytest.mark.asyncio
+async def test_call_ai_routes_prompt_by_capability():
+    response = normalized_text_response("Hello, World")
+    with patch(
+        "services.ai_service.ai_router.generate",
+        new=AsyncMock(return_value=response),
+    ) as generate:
+        result = await AIService.call_ai(
+            "test prompt",
+            capability="image",
+            response_mime_type="text/plain",
+        )
+
+    assert result == "Hello, World"
+    generate.assert_awaited_once_with(
+        "image",
+        {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": "test prompt"}],
+                }
+            ],
+            "generationConfig": {"responseMimeType": "text/plain"},
+        },
+    )
 
 
 @pytest.mark.asyncio
-async def test_call_ai_retries_then_success():
-    """SDK 异常 → 指数退避后重试成功"""
-    mock_client = MagicMock()
-    mock_client.models.generate_content.side_effect = [
-        RuntimeError("rate limited"),
-        make_sdk_response([make_text_part("recovered")]),
-    ]
+async def test_call_ai_defaults_to_text_capability_and_json_response():
+    with patch(
+        "services.ai_service.ai_router.generate",
+        new=AsyncMock(return_value=normalized_text_response('{"ok": true}')),
+    ) as generate:
+        result = await AIService.call_ai("json prompt")
 
-    with patch.object(AIService, "_get_client", return_value=mock_client):
-        with patch.object(AIService, "_MAX_RETRIES", 2):
-            with patch(
-                "services.ai_service.asyncio.sleep", new=AsyncMock()
-            ):
-                result = await AIService.call_ai("test", provider="gemini")
-
-    assert result == "recovered"
-    assert mock_client.models.generate_content.call_count == 2
+    assert result == '{"ok": true}'
+    assert generate.await_args.args[0] == "text"
+    assert generate.await_args.args[1]["generationConfig"] == {
+        "responseMimeType": "application/json"
+    }
 
 
 @pytest.mark.asyncio
-async def test_call_ai_retry_backoff_uses_async_sleep():
-    mock_client = MagicMock()
-    mock_client.models.generate_content.side_effect = [
-        RuntimeError("rate limited"),
-        make_sdk_response([make_text_part("recovered")]),
-    ]
-    async_sleep = AsyncMock()
+async def test_generate_content_routes_payload_by_capability():
+    payload = {"contents": [{"parts": [{"text": "draw"}]}]}
+    response = {"candidates": []}
+    with patch(
+        "services.ai_service.ai_router.generate",
+        new=AsyncMock(return_value=response),
+    ) as generate:
+        result = await AIService.generate_content(
+            payload=payload,
+            capability="image",
+        )
 
-    with patch.object(AIService, "_get_client", return_value=mock_client):
-        with patch.object(AIService, "_MAX_RETRIES", 2):
-            with patch("asyncio.sleep", new=async_sleep):
-                with patch(
-                    "time.sleep",
-                    side_effect=AssertionError("blocking sleep called"),
-                ):
-                    with patch(
-                        "services.ai_service.random.uniform",
-                        return_value=0.25,
-                    ):
-                        result = await AIService.call_ai(
-                            "test", provider="gemini"
-                        )
-
-    assert result == "recovered"
-    assert mock_client.models.generate_content.call_count == 2
-    async_sleep.assert_awaited_once_with(2.25)
+    assert result is response
+    generate.assert_awaited_once_with("image", payload)
 
 
-@pytest.mark.asyncio
-async def test_call_ai_retry_exhausted():
-    """所有 SDK 调用失败 → 抛出最后异常"""
-    mock_client = MagicMock()
-    mock_client.models.generate_content.side_effect = RuntimeError("boom")
+def test_facade_does_not_accept_provider_or_model_selection():
+    call_ai_parameters = inspect.signature(AIService.call_ai).parameters
+    generate_parameters = inspect.signature(
+        AIService.generate_content
+    ).parameters
 
-    with patch.object(AIService, "_get_client", return_value=mock_client):
-        with patch.object(AIService, "_MAX_RETRIES", 2):
-            with patch(
-                "services.ai_service.asyncio.sleep", new=AsyncMock()
-            ):
-                with pytest.raises(RuntimeError):
-                    await AIService.call_ai("test", provider="gemini")
+    assert "provider" not in call_ai_parameters
+    assert "model_id" not in call_ai_parameters
+    assert "provider" not in generate_parameters
+    assert "model_id" not in generate_parameters
 
 
 @pytest.mark.asyncio
-async def test_call_ai_empty_candidates():
-    """响应无 candidates → ValueError"""
-    response = MagicMock()
-    response.candidates = []
+async def test_call_ai_empty_candidates_raises_safe_error():
+    with patch(
+        "services.ai_service.ai_router.generate",
+        new=AsyncMock(return_value={"candidates": []}),
+    ):
+        with pytest.raises(ValueError) as error:
+            await AIService.call_ai("test")
 
-    mock_client = MagicMock()
-    mock_client.models.generate_content.return_value = response
+    assert str(error.value) == "AI 响应中没有候选结果"
 
-    with patch.object(AIService, "_get_client", return_value=mock_client):
-        with pytest.raises(ValueError):
-            await AIService.call_ai("test", provider="gemini")
+
+@pytest.mark.asyncio
+async def test_call_ai_empty_parts_raises_safe_error():
+    response = {"candidates": [{"content": {"parts": []}}]}
+    with patch(
+        "services.ai_service.ai_router.generate",
+        new=AsyncMock(return_value=response),
+    ):
+        with pytest.raises(ValueError) as error:
+            await AIService.call_ai("test")
+
+    assert str(error.value) == "AI 响应候选结果中没有内容"
 
 
 @pytest.mark.asyncio
 async def test_translate_text_batch_success():
-    """批量翻译：返回多语言字典"""
-    lang_map = {"English": "Hello", "Japanese": "こんにちは", "French": "Bonjour"}
+    lang_map = {
+        "English": "Hello",
+        "Japanese": "こんにちは",
+        "French": "Bonjour",
+    }
     json_str = json.dumps(lang_map, ensure_ascii=False)
 
-    with patch.object(AIService, "call_ai", new=AsyncMock(return_value=json_str)):
+    with patch.object(
+        AIService,
+        "call_ai",
+        new=AsyncMock(return_value=json_str),
+    ) as call_ai:
         result = await AIService.translate_text_batch(
-            "你好", ["English", "Japanese", "French"], provider="gemini"
+            "你好",
+            ["English", "Japanese", "French"],
         )
 
     assert result == lang_map
+    assert call_ai.await_args.kwargs == {
+        "capability": "text",
+        "response_mime_type": "application/json",
+    }
 
 
 @pytest.mark.asyncio
 async def test_translate_text_batch_json_with_markdown():
-    """批量翻译：AI 返回包裹了 ```json``` 的响应"""
     lang_map = {"English": "Hello", "German": "Hallo"}
     md_json = f"```json\n{json.dumps(lang_map, ensure_ascii=False)}\n```"
 
-    with patch.object(AIService, "call_ai", new=AsyncMock(return_value=md_json)):
+    with patch.object(
+        AIService,
+        "call_ai",
+        new=AsyncMock(return_value=md_json),
+    ):
         result = await AIService.translate_text_batch(
-            "你好", ["English", "German"], provider="gemini"
+            "你好",
+            ["English", "German"],
         )
 
     assert result["English"] == "Hello"
@@ -230,10 +166,14 @@ async def test_translate_text_batch_json_with_markdown():
 
 @pytest.mark.asyncio
 async def test_translate_text_batch_parse_failure():
-    """批量翻译：JSON 解析失败 → 返回错误占位字典"""
-    with patch.object(AIService, "call_ai", new=AsyncMock(return_value="not valid json")):
+    with patch.object(
+        AIService,
+        "call_ai",
+        new=AsyncMock(return_value="not valid json"),
+    ):
         result = await AIService.translate_text_batch(
-            "你好", ["English"], provider="gemini"
+            "你好",
+            ["English"],
         )
 
     assert "English" in result
