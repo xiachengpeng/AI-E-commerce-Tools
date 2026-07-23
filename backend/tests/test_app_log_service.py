@@ -82,6 +82,25 @@ def test_quoted_authorization_keys_in_serialized_mappings_are_redacted(message, 
     assert "[REDACTED]" in entry["message"]
 
 
+@pytest.mark.parametrize(
+    ("message", "key", "secret"),
+    [
+        ('{"api_key": "json-secret"}', '"api_key": ', "json-secret"),
+        ("{'apiKey': 'repr-secret'}", "'apiKey': ", "repr-secret"),
+        ('{"api-key" = "hyphen-secret"}', '"api-key" = ', "hyphen-secret"),
+        ("{'API Key' = 'space-secret'}", "'API Key' = ", "space-secret"),
+        ('{X-API-Key: bare-secret}', "X-API-Key: ", "bare-secret"),
+        ("{api_key=bare-equals-secret}", "api_key=", "bare-equals-secret"),
+    ],
+)
+def test_serialized_api_key_mapping_forms_redact_only_the_value(message, key, secret):
+    entry = AppLogService().emit(level="info", source="system", message=message)
+
+    assert key in entry["message"]
+    assert secret not in entry["message"]
+    assert "[REDACTED]" in entry["message"]
+
+
 @pytest.mark.asyncio
 async def test_string_structured_fields_are_redacted_before_publication():
     logs = AppLogService()

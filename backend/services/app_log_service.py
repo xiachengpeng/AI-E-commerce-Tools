@@ -31,7 +31,12 @@ class AppLogService:
             value,
         )
         value = re.sub(
-            r"(?i)(?:\bx[-_])?(api[_ -]?key\b\s*(?:[:=]\s*['\"]?|['\"]?\s+))[^\s,;'\"]+",
+            r"(?i)(([\"']?)(?:x[-_ ]?)?api(?:[_ -]?key|key)\2(?:\s*[:=]\s*|\s+(?![:=])))([\"'])[^\"']*\3",
+            r"\1\3[REDACTED]\3",
+            value,
+        )
+        value = re.sub(
+            r"(?i)(([\"']?)(?:x[-_ ]?)?api(?:[_ -]?key|key)\2(?:\s*[:=]\s*|\s+(?![:=])))(?![\"'])[^\s,;}\]]+",
             r"\1[REDACTED]",
             value,
         )
