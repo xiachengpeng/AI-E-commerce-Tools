@@ -68,14 +68,15 @@ FIRECRAWL_API_KEY=your_firecrawl_api_key
 文本 AI 和图片 AI 选择线路。保存后下一次请求立即生效，无需重启。
 
 OpenAI Compatible 的 Base URL 填服务根地址；程序调用
-`/v1/chat/completions` 和 `/v1/images/generations`。API Key 仅保存在本地
-SQLite，设置读取接口和实时日志不会返回原值。
+`/v1/chat/completions` 和 `/v1/images/generations`。首次启动使用的密钥可以
+继续保留在 `backend/.env`，并会导入本地 SQLite；在“设置”中新建或更新的
+API Key 保存在本地 SQLite。设置读取接口和实时日志不会向前端返回密钥原值。
 
 “实时运行日志”仅展示当前后端进程内最近的应用事件（最多 200 条），包括
 前端事件和 AI 调用的能力、线路、模型、耗时、重试和结果状态；它不是历史
 业务记录，也不会跨重启保留。日志会脱敏 API Key、Authorization、提示词、
-模型响应（含提供商响应）及 Base64 图片数据；请勿把其他敏感信息写入前端
-自定义日志。
+模型响应（含提供商响应）等带标签或结构化的敏感载荷，以及 `data:image/...`
+形式的图片数据 URL；请勿把其他敏感信息写入前端自定义日志。
 
 ### 2. 安装依赖
 ```bash
