@@ -1,9 +1,16 @@
+import asyncio
+import traceback
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
 from services.ai_config_service import ProviderSnapshot
-from services.ai_router import AIRouter
+from services.ai_router import (
+    AIProviderRequestError,
+    AIRouter,
+    map_provider_error,
+)
 
 
 def snapshot(*, id=1, max_retries=0, protocol="gemini"):
@@ -119,15 +126,26 @@ async def test_owned_db_closes_before_network_request(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_exhausted_retry_logs_safe_summary_and_does_not_fail_over(
+async def test_exhausted_retry_raises_and_logs_safe_domain_error(
     monkeypatch,
 ):
     selected = snapshot(id=7, max_retries=1)
     get_snapshot = MagicMock(return_value=selected)
     monkeypatch.setattr("services.ai_router.get_snapshot", get_snapshot)
     adapter = AsyncMock()
-    adapter.generate.side_effect = RuntimeError(
-        "Authorization: Bearer super-secret"
+    request = httpx.Request(
+        "POST",
+        "https://provider.invalid/generate?key=query-secret",
+    )
+    response = httpx.Response(
+        401,
+        text="body-secret",
+        request=request,
+    )
+    adapter.generate.side_effect = httpx.HTTPStatusError(
+        "Authorization: Bearer header-secret",
+        request=request,
+        response=response,
     )
     get_adapter = MagicMock(return_value=adapter)
     monkeypatch.setattr("services.ai_router.get_adapter", get_adapter)
@@ -137,13 +155,113 @@ async def test_exhausted_retry_logs_safe_summary_and_does_not_fail_over(
     emit = MagicMock()
     monkeypatch.setattr("services.ai_router.app_logs.emit", emit)
 
-    with pytest.raises(RuntimeError, match="super-secret"):
+    with pytest.raises(AIProviderRequestError) as raised:
         await AIRouter(base_delay=0).generate("text", {}, db=object())
 
     get_snapshot.assert_called_once()
     get_adapter.assert_called_once_with("gemini")
     assert adapter.generate.await_count == 2
+    assert raised.value.category == "authentication"
+    assert str(raised.value) == "AI 提供商认证失败"
+    assert raised.value.__cause__ is None
+    assert raised.value.__context__ is None
+    rendered_error = "".join(
+        traceback.format_exception(raised.value)
+    )
+    assert "query-secret" not in rendered_error
+    assert "body-secret" not in rendered_error
+    assert "header-secret" not in rendered_error
     error_log = emit.call_args_list[-1].kwargs
     assert error_log["level"] == "error"
-    assert error_log["message"] == "AI 提供商请求失败"
-    assert "super-secret" not in repr(error_log)
+    assert error_log["message"] == "AI 提供商认证失败"
+    assert "query-secret" not in repr(error_log)
+    assert "body-secret" not in repr(error_log)
+    assert "header-secret" not in repr(error_log)
+
+
+class ProviderError(RuntimeError):
+    def __init__(self, raw_message, *, status_code=None, code=None):
+        super().__init__(raw_message)
+        if status_code is not None:
+            self.status_code = status_code
+        if code is not None:
+            self.code = code
+
+
+@pytest.mark.parametrize(
+    ("error", "category", "message"),
+    [
+        (
+            ProviderError("secret", status_code=403),
+            "authentication",
+            "AI 提供商认证失败",
+        ),
+        (
+            ProviderError("secret", code="UNAUTHENTICATED"),
+            "authentication",
+            "AI 提供商认证失败",
+        ),
+        (
+            ProviderError("secret", code=404),
+            "model_not_found",
+            "AI 模型不存在或不可用",
+        ),
+        (
+            ProviderError("secret", code="MODEL_NOT_FOUND"),
+            "model_not_found",
+            "AI 模型不存在或不可用",
+        ),
+        (
+            ProviderError("secret", status_code=429),
+            "rate_limit",
+            "AI 提供商请求频率受限",
+        ),
+        (
+            ProviderError("secret", code="RESOURCE_EXHAUSTED"),
+            "rate_limit",
+            "AI 提供商请求频率受限",
+        ),
+        (
+            TimeoutError("secret"),
+            "timeout",
+            "AI 提供商请求超时",
+        ),
+        (
+            asyncio.TimeoutError("secret"),
+            "timeout",
+            "AI 提供商请求超时",
+        ),
+        (
+            httpx.ReadTimeout("secret"),
+            "timeout",
+            "AI 提供商请求超时",
+        ),
+        (
+            ProviderError("secret", status_code=405),
+            "protocol_incompatible",
+            "AI 提供商协议不兼容",
+        ),
+        (
+            ProviderError("secret", code="UNIMPLEMENTED"),
+            "protocol_incompatible",
+            "AI 提供商协议不兼容",
+        ),
+        (
+            KeyError("missing provider response field: secret"),
+            "protocol_incompatible",
+            "AI 提供商协议不兼容",
+        ),
+        (
+            RuntimeError("upstream response secret"),
+            "upstream_failure",
+            "AI 提供商请求失败",
+        ),
+    ],
+)
+def test_provider_errors_map_to_safe_categories(error, category, message):
+    mapped = map_provider_error(error)
+
+    assert isinstance(mapped, AIProviderRequestError)
+    assert mapped.category == category
+    assert str(mapped) == message
+    assert "secret" not in str(mapped)
