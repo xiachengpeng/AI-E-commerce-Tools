@@ -2,18 +2,9 @@
  * 全局应用逻辑
  */
 
-let TEXT_ROUTE = {
-    capability: "text",
-    name: null,
-    protocol: null,
-    model: null
-};
-let IMAGE_ROUTE = {
-    capability: "image",
-    name: null,
-    protocol: null,
-    model: null
-};
+let TEXT_ROUTE = null;
+let IMAGE_ROUTE = null;
+let PUBLIC_AI_ROUTES_LOADED = false;
 
 let CONCURRENCY_LIMIT = 2;
 let STAGGER_DELAY = 2000;
@@ -40,8 +31,9 @@ async function refreshPublicAIRoutes() {
         const res = await fetch(`${API_BASE}/config`, { signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const cfg = await res.json();
-        TEXT_ROUTE = cfg.TEXT_ROUTE || TEXT_ROUTE;
-        IMAGE_ROUTE = cfg.IMAGE_ROUTE || IMAGE_ROUTE;
+        TEXT_ROUTE = cfg?.TEXT_ROUTE || null;
+        IMAGE_ROUTE = cfg?.IMAGE_ROUTE || null;
+        PUBLIC_AI_ROUTES_LOADED = true;
 
         if (cfg.CONCURRENCY_LIMIT) CONCURRENCY_LIMIT = cfg.CONCURRENCY_LIMIT;
         if (cfg.STAGGER_DELAY) STAGGER_DELAY = cfg.STAGGER_DELAY;
@@ -55,6 +47,9 @@ async function refreshPublicAIRoutes() {
         console.log(`%c[系统] ${logMsg}`, "color: #10b981; font-weight: bold;");
         remoteLog(logMsg);
         return { TEXT_ROUTE, IMAGE_ROUTE };
+    } catch (error) {
+        PUBLIC_AI_ROUTES_LOADED = false;
+        throw error;
     } finally {
         clearTimeout(timeoutId);
     }
@@ -66,22 +61,52 @@ async function refreshPublicAIRoutes() {
 async function loadConfig() {
     try {
         return await refreshPublicAIRoutes();
-    } catch (e) {
-        console.warn("⚠️ 无法加载后端配置 (使用本地默认值):", e.message);
+    } catch (_error) {
+        console.warn("⚠️ 无法加载后端配置，请检查后端连接后重试");
         return null;
     }
+}
+
+function unconfiguredAIRouteMessage(capability) {
+    const label = capability === "image" ? "图片" : "文本";
+    return `${label} AI 未配置，请前往设置页面配置`;
+}
+
+async function currentPublicAIRoute(capability) {
+    let route = capability === "image" ? IMAGE_ROUTE : TEXT_ROUTE;
+    if (!PUBLIC_AI_ROUTES_LOADED || !route?.name || !route?.model) {
+        try {
+            await refreshPublicAIRoutes();
+        } catch (_error) {
+            throw new Error("无法获取 AI 路由配置，请检查后端连接后重试");
+        }
+        route = capability === "image" ? IMAGE_ROUTE : TEXT_ROUTE;
+    }
+    if (!route?.name || !route?.model) {
+        throw new Error(unconfiguredAIRouteMessage(capability));
+    }
+    return route;
+}
+
+async function safeAIRouteConflictError(response, capability) {
+    let data = {};
+    try {
+        data = await response.json();
+    } catch (_error) {
+        data = {};
+    }
+    const expected = unconfiguredAIRouteMessage(capability);
+    const message = data?.detail === expected
+        ? expected
+        : "AI 路由配置不可用，请前往设置页面检查";
+    return new Error(message);
 }
 
 /**
  * 统一 AI 调用封装
  */
 async function callAI(capability, payload) {
-    const route = capability === "image" ? IMAGE_ROUTE : TEXT_ROUTE;
-    if (!route?.name || !route?.model) {
-        const label = capability === "image" ? "图片" : "文本";
-        throw new Error(`${label} AI 未配置，请前往设置页面配置`);
-    }
-
+    const route = await currentPublicAIRoute(capability);
     const logMsg = `正在调用模型: ${route.model} (${route.name})`;
     console.log(`%c[AI请求] ${logMsg}`, "color: #0891b2; font-weight: bold;");
     remoteLog(logMsg);
@@ -90,6 +115,12 @@ async function callAI(capability, payload) {
         method: 'POST',
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ capability, payload })
+    }, 5, {
+        nonRetryableStatuses: [409],
+        createError: response => safeAIRouteConflictError(
+            response,
+            capability
+        )
     });
 }
 

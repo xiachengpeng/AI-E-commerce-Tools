@@ -54,15 +54,29 @@ function showToast(message, type = 'info') {
 /**
  * 带重试机制的 Fetch
  */
-async function fetchWithRetry(url, options, retries = 5) {
+async function fetchWithRetry(url, options, retries = 5, retryOptions = {}) {
     const delays = [1000, 2000, 4000, 8000, 16000];
+    const nonRetryableStatuses = new Set(
+        retryOptions.nonRetryableStatuses || []
+    );
     for (let i = 0; i < retries; i++) {
         try {
             const res = await fetch(url, options);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            if (!res.ok) {
+                if (nonRetryableStatuses.has(res.status)) {
+                    let error = new Error(`HTTP ${res.status}`);
+                    if (typeof retryOptions.createError === "function") {
+                        const customError = await retryOptions.createError(res);
+                        if (customError instanceof Error) error = customError;
+                    }
+                    error.retryable = false;
+                    throw error;
+                }
+                throw new Error(`HTTP ${res.status}`);
+            }
             return await res.json();
         } catch (e) {
-            if (i === retries - 1) throw e;
+            if (e.retryable === false || i === retries - 1) throw e;
             await new Promise(r => setTimeout(r, delays[i]));
         }
     }
@@ -160,6 +174,7 @@ function jsonParseSafe(str) {
 
 if (typeof module !== "undefined") {
     module.exports = {
-        appendToastContent
+        appendToastContent,
+        fetchWithRetry
     };
 }
