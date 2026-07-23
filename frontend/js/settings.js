@@ -98,17 +98,48 @@ function settingsLogId(entry) {
         : null;
 }
 
+function settingsLogSessionId(entry) {
+    return typeof entry?.session_id === "string"
+        && entry.session_id.length > 0
+        ? entry.session_id
+        : null;
+}
+
+function settingsLogKey(entry) {
+    const sessionId = settingsLogSessionId(entry);
+    const sequenceId = settingsLogId(entry);
+    return sessionId !== null && sequenceId !== null
+        ? `${sessionId}:${sequenceId}`
+        : null;
+}
+
 function mergeSettingsLogSnapshot(snapshot, buffered, limit = 200) {
+    const combined = [...snapshot, ...buffered];
+    let currentSession = null;
+    const sessionCandidates = snapshot.length ? snapshot : buffered;
+    sessionCandidates.forEach(entry => {
+        currentSession = settingsLogSessionId(entry) || currentSession;
+    });
+
     const seen = new Set();
-    return [...snapshot, ...buffered]
-        .filter(entry => {
-            const id = settingsLogId(entry);
-            if (id === null) return true;
-            if (seen.has(id)) return false;
-            seen.add(id);
-            return true;
-        })
-        .slice(-limit);
+    const legacyEntries = [];
+    const currentEntries = [];
+    combined.forEach(entry => {
+        const key = settingsLogKey(entry);
+        if (key === null) {
+            legacyEntries.push(entry);
+            return;
+        }
+        if (settingsLogSessionId(entry) !== currentSession || seen.has(key)) {
+            return;
+        }
+        seen.add(key);
+        currentEntries.push(entry);
+    });
+    currentEntries.sort((left, right) => (
+        settingsLogId(left) - settingsLogId(right)
+    ));
+    return [...legacyEntries, ...currentEntries].slice(-limit);
 }
 
 function formatSettingsLogLine(entry) {
@@ -127,11 +158,16 @@ function closeSettingsLogSource(source) {
 }
 
 function replaceSettingsLogs(state, logs) {
-    state.logs = logs.slice(-200);
+    state.logs = mergeSettingsLogSnapshot([], logs);
+    state.logSessionId = null;
+    state.logs.forEach(entry => {
+        state.logSessionId = settingsLogSessionId(entry)
+            || state.logSessionId;
+    });
     state.logSeenIds = new Set(
         state.logs
-            .map(settingsLogId)
-            .filter(id => id !== null)
+            .map(settingsLogKey)
+            .filter(key => key !== null)
     );
 }
 
@@ -142,6 +178,7 @@ const settingsState = {
     editingProviderId: null,
     logs: [],
     logSeenIds: new Set(),
+    logSessionId: null,
     logSource: null,
     logConnecting: null,
     logConnectionCancel: null,
@@ -342,15 +379,26 @@ function copyVisibleSettingsLogs() {
 function appendSettingsLog(entry, options = {}) {
     const state = options.state || settingsState;
     const render = options.render || renderSettingsLogs;
-    if (!(state.logSeenIds instanceof Set)) {
+    if (
+        !(state.logSeenIds instanceof Set)
+        || state.logSessionId === undefined
+    ) {
         replaceSettingsLogs(state, state.logs || []);
     }
-    const id = settingsLogId(entry);
-    if (id !== null && state.logSeenIds.has(id)) return false;
-    replaceSettingsLogs(
-        state,
-        appendBoundedSettingsLog(state.logs || [], entry)
-    );
+    const sessionId = settingsLogSessionId(entry);
+    const key = settingsLogKey(entry);
+    if (
+        sessionId !== null
+        && state.logSessionId !== null
+        && state.logSessionId !== sessionId
+    ) {
+        replaceSettingsLogs(state, []);
+    }
+    if (key !== null && state.logSeenIds.has(key)) return false;
+    const nextLogs = key === null
+        ? appendBoundedSettingsLog(state.logs || [], entry)
+        : mergeSettingsLogSnapshot(state.logs || [], [entry]);
+    replaceSettingsLogs(state, nextLogs);
     if (!state.logsPaused) render();
     return true;
 }
@@ -1233,6 +1281,7 @@ if (typeof module !== "undefined") {
         appendSettingsLog,
         formatSettingsLogLine,
         settingsLogId,
+        settingsLogKey,
         mergeSettingsLogSnapshot
     };
 }

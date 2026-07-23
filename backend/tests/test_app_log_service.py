@@ -1,8 +1,29 @@
 import asyncio
+import threading
 
 import pytest
 
-from services.app_log_service import AppLogService
+from services.app_log_service import APP_LOG_OVERFLOW, AppLogService
+
+
+def test_log_session_id_is_stable_per_service_and_injectable():
+    first_boot = AppLogService(session_id="boot-a")
+    second_boot = AppLogService(session_id="boot-b")
+
+    first_entry = first_boot.emit(
+        level="info",
+        source="system",
+        message="first boot",
+    )
+    second_entry = second_boot.emit(
+        level="info",
+        source="system",
+        message="second boot",
+    )
+
+    assert first_entry["session_id"] == "boot-a"
+    assert second_entry["session_id"] == "boot-b"
+    assert first_entry["id"] == second_entry["id"] == 1
 
 
 def test_log_ids_are_monotonic_across_buffer_eviction_and_copied():
@@ -17,6 +38,75 @@ def test_log_ids_are_monotonic_across_buffer_eviction_and_copied():
 
     third["id"] = 999
     assert logs.recent()[-1]["id"] == 3
+
+
+@pytest.mark.asyncio
+async def test_threaded_emits_preserve_history_and_publication_order():
+    slow_redaction_started = threading.Event()
+    release_slow_redaction = threading.Event()
+    fast_redaction_started = threading.Event()
+
+    class DelayedRedactionLogs(AppLogService):
+        @staticmethod
+        def _redact(value):
+            if value == "slow":
+                slow_redaction_started.set()
+                release_slow_redaction.wait(1)
+            elif value == "fast":
+                fast_redaction_started.set()
+            return AppLogService._redact(value)
+
+    logs = DelayedRedactionLogs(session_id="boot-a")
+    queue = logs.subscribe()
+    slow_thread = threading.Thread(
+        target=lambda: logs.emit(
+            level="info",
+            source="system",
+            message="slow",
+        )
+    )
+    fast_thread = threading.Thread(
+        target=lambda: logs.emit(
+            level="info",
+            source="system",
+            message="fast",
+        )
+    )
+
+    slow_thread.start()
+    assert await asyncio.to_thread(slow_redaction_started.wait, 1)
+    fast_thread.start()
+    await asyncio.to_thread(fast_redaction_started.wait, 0.1)
+    release_slow_redaction.set()
+    await asyncio.to_thread(slow_thread.join, 1)
+    await asyncio.to_thread(fast_thread.join, 1)
+
+    delivered = [
+        await asyncio.wait_for(queue.get(), 0.2),
+        await asyncio.wait_for(queue.get(), 0.2),
+    ]
+
+    assert [entry["id"] for entry in logs.recent()] == [1, 2]
+    assert [entry["id"] for entry in delivered] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_cross_thread_emit_wakes_subscriber_on_owning_loop():
+    logs = AppLogService(session_id="boot-a")
+    queue = logs.subscribe()
+    pending = asyncio.create_task(queue.get())
+    await asyncio.sleep(0)
+
+    await asyncio.to_thread(
+        logs.emit,
+        level="info",
+        source="system",
+        message="from worker",
+    )
+    delivered = await asyncio.wait_for(pending, 0.2)
+
+    assert delivered["session_id"] == "boot-a"
+    assert delivered["id"] == 1
 
 
 def test_log_buffer_is_bounded_and_redacted():
@@ -234,14 +324,26 @@ async def test_unsubscribed_queue_does_not_receive_new_entries():
     assert queue.empty()
 
 
-def test_full_subscriber_queue_drops_new_entries_without_interrupting_emit():
-    logs = AppLogService()
+@pytest.mark.asyncio
+async def test_full_subscriber_queue_collapses_to_recoverable_overflow():
+    logs = AppLogService(capacity=200, session_id="boot-a")
     slow_queue = logs.subscribe()
 
-    for index in range(201):
+    for index in range(500):
         logs.emit(level="info", source="system", message=f"entry {index}")
+    await asyncio.sleep(0)
 
     assert len(logs.recent()) == 200
-    assert slow_queue.full()
-    assert slow_queue.get_nowait()["message"] == "entry 0"
-    assert logs.recent()[-1]["message"] == "entry 200"
+    assert slow_queue.qsize() == 1
+    assert slow_queue.get_nowait() is APP_LOG_OVERFLOW
+
+    recovered = logs.recent_after(
+        "boot-a",
+        0,
+        subscriber_queue=slow_queue,
+    )
+    assert [entry["id"] for entry in recovered] == list(range(301, 501))
+
+    logs.emit(level="info", source="system", message="after recovery")
+    await asyncio.sleep(0)
+    assert slow_queue.get_nowait()["id"] == 501

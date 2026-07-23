@@ -71,7 +71,7 @@ from services.ai_config_service import (
 )
 from services.ai_adapters import get_adapter
 from services.ai_router import map_provider_error
-from services.app_log_service import app_logs
+from services.app_log_service import APP_LOG_OVERFLOW, app_logs
 from config import (
     AI_PROVIDER,
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
@@ -935,19 +935,30 @@ def api_recent_logs():
     return {"items": app_logs.recent()}
 
 
-def _settings_log_cursor(request: Request, after_id: int | None) -> int:
-    if after_id is not None:
-        return max(after_id, 0)
-    raw_cursor = getattr(request, "headers", {}).get("last-event-id")
+def _settings_log_cursor(
+    request: Request,
+    after_id: str | None,
+) -> tuple[str | None, int]:
+    raw_cursor = (
+        after_id
+        if after_id is not None
+        else getattr(request, "headers", {}).get("last-event-id")
+    )
+    if not isinstance(raw_cursor, str) or ":" not in raw_cursor:
+        return None, 0
+    session_id, raw_sequence = raw_cursor.rsplit(":", 1)
     try:
-        return max(int(raw_cursor), 0)
+        sequence_id = int(raw_sequence)
     except (TypeError, ValueError):
-        return 0
+        return None, 0
+    if not session_id or sequence_id < 0:
+        return None, 0
+    return session_id, sequence_id
 
 
 def _settings_log_sse_frame(entry: dict) -> str:
     return (
-        f"id: {entry['id']}\n"
+        f"id: {entry['session_id']}:{entry['id']}\n"
         "data: "
         f"{json.dumps(entry, ensure_ascii=False)}\n\n"
     )
@@ -956,19 +967,32 @@ def _settings_log_sse_frame(entry: dict) -> str:
 @app.get("/api/settings/logs/stream")
 async def api_stream_logs(
     request: Request,
-    after_id: int | None = None,
+    after_id: str | None = None,
 ):
-    cursor = _settings_log_cursor(request, after_id)
+    cursor_session, cursor_sequence = _settings_log_cursor(
+        request,
+        after_id,
+    )
 
     async def events():
         queue = app_logs.subscribe()
-        last_sent_id = cursor
+        last_session, last_sent_id = app_logs.normalize_cursor(
+            cursor_session,
+            cursor_sequence,
+        )
         try:
-            for entry in app_logs.recent():
+            for entry in app_logs.recent_after(
+                last_session,
+                last_sent_id,
+            ):
                 if await request.is_disconnected():
                     return
-                if entry["id"] <= last_sent_id:
+                if (
+                    entry["session_id"] == last_session
+                    and entry["id"] <= last_sent_id
+                ):
                     continue
+                last_session = entry["session_id"]
                 last_sent_id = entry["id"]
                 yield _settings_log_sse_frame(entry)
 
@@ -978,8 +1002,30 @@ async def api_stream_logs(
                         queue.get(),
                         timeout=15,
                     )
-                    if entry["id"] <= last_sent_id:
+                    if entry is APP_LOG_OVERFLOW:
+                        replay = app_logs.recent_after(
+                            last_session,
+                            last_sent_id,
+                            subscriber_queue=queue,
+                        )
+                        for replay_entry in replay:
+                            if (
+                                replay_entry["session_id"]
+                                == last_session
+                                and replay_entry["id"]
+                                <= last_sent_id
+                            ):
+                                continue
+                            last_session = replay_entry["session_id"]
+                            last_sent_id = replay_entry["id"]
+                            yield _settings_log_sse_frame(replay_entry)
                         continue
+                    if (
+                        entry["session_id"] == last_session
+                        and entry["id"] <= last_sent_id
+                    ):
+                        continue
+                    last_session = entry["session_id"]
                     last_sent_id = entry["id"]
                     yield _settings_log_sse_frame(entry)
                 except asyncio.TimeoutError:

@@ -4,17 +4,36 @@ import asyncio
 import datetime
 import re
 import threading
+import uuid
 from collections import deque
+
+
+APP_LOG_OVERFLOW = object()
+
+
+class _LogSubscriber:
+    def __init__(self, loop: asyncio.AbstractEventLoop):
+        self.loop = loop
+        self.overflowed = False
 
 
 class AppLogService:
     """Keep a bounded stream of safe log entries for application consumers."""
 
-    def __init__(self, capacity: int = 200):
+    def __init__(
+        self,
+        capacity: int = 200,
+        session_id: str | None = None,
+    ):
+        self._capacity = capacity
         self._entries = deque(maxlen=capacity)
-        self._subscribers: set[asyncio.Queue] = set()
+        self._subscribers: dict[
+            asyncio.Queue,
+            _LogSubscriber,
+        ] = {}
+        self.session_id = session_id or uuid.uuid4().hex
         self._next_id = 1
-        self._id_lock = threading.Lock()
+        self._lock = threading.RLock()
 
     @staticmethod
     def _redact(value: str) -> str:
@@ -80,39 +99,109 @@ class AppLogService:
         duration_ms: int | str | None = None,
         retry: int | str | None = None,
     ) -> dict:
-        with self._id_lock:
+        with self._lock:
             entry_id = self._next_id
             self._next_id += 1
-        entry = {
-            "id": entry_id,
-            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
-            "level": self._redact(str(level)),
-            "source": self._redact(str(source)),
-            "message": self._redact(str(message)),
-            "capability": self._redact_optional(capability),
-            "provider": self._redact_optional(provider),
-            "model": self._redact_optional(model),
-            "duration_ms": self._coerce_int(duration_ms),
-            "retry": self._coerce_int(retry),
-        }
-        self._entries.append(dict(entry))
-        for queue in tuple(self._subscribers):
+            entry = {
+                "session_id": self.session_id,
+                "id": entry_id,
+                "timestamp": datetime.datetime.now(
+                    datetime.UTC
+                ).isoformat(),
+                "level": self._redact(str(level)),
+                "source": self._redact(str(source)),
+                "message": self._redact(str(message)),
+                "capability": self._redact_optional(capability),
+                "provider": self._redact_optional(provider),
+                "model": self._redact_optional(model),
+                "duration_ms": self._coerce_int(duration_ms),
+                "retry": self._coerce_int(retry),
+            }
+            self._entries.append(dict(entry))
+            for queue, subscriber in tuple(self._subscribers.items()):
+                subscriber.loop.call_soon_threadsafe(
+                    self._publish_to_subscriber,
+                    queue,
+                    dict(entry),
+                )
+            return dict(entry)
+
+    def _publish_to_subscriber(
+        self,
+        queue: asyncio.Queue,
+        entry: dict,
+    ) -> None:
+        with self._lock:
+            subscriber = self._subscribers.get(queue)
+            if subscriber is None or subscriber.overflowed:
+                return
             try:
-                queue.put_nowait(dict(entry))
+                queue.put_nowait(entry)
             except asyncio.QueueFull:
-                continue
-        return dict(entry)
+                while True:
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                queue.put_nowait(APP_LOG_OVERFLOW)
+                subscriber.overflowed = True
 
     def recent(self) -> list[dict]:
-        return [dict(entry) for entry in self._entries]
+        with self._lock:
+            return [dict(entry) for entry in self._entries]
+
+    def normalize_cursor(
+        self,
+        session_id: str | None,
+        sequence_id: int,
+    ) -> tuple[str, int]:
+        with self._lock:
+            high_water = self._next_id - 1
+            if (
+                session_id != self.session_id
+                or sequence_id < 0
+                or sequence_id > high_water
+            ):
+                return self.session_id, 0
+            return self.session_id, sequence_id
+
+    def recent_after(
+        self,
+        session_id: str | None,
+        sequence_id: int,
+        subscriber_queue: asyncio.Queue | None = None,
+    ) -> list[dict]:
+        with self._lock:
+            normalized_session, normalized_sequence = (
+                self.normalize_cursor(
+                    session_id,
+                    sequence_id,
+                )
+            )
+            entries = [
+                dict(entry)
+                for entry in self._entries
+                if (
+                    entry["session_id"] == normalized_session
+                    and entry["id"] > normalized_sequence
+                )
+            ]
+            if subscriber_queue is not None:
+                subscriber = self._subscribers.get(subscriber_queue)
+                if subscriber is not None:
+                    subscriber.overflowed = False
+            return entries
 
     def subscribe(self) -> asyncio.Queue:
-        queue = asyncio.Queue(maxsize=200)
-        self._subscribers.add(queue)
+        loop = asyncio.get_running_loop()
+        queue = asyncio.Queue(maxsize=self._capacity)
+        with self._lock:
+            self._subscribers[queue] = _LogSubscriber(loop)
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue) -> None:
-        self._subscribers.discard(queue)
+        with self._lock:
+            self._subscribers.pop(queue, None)
 
 
 app_logs = AppLogService()

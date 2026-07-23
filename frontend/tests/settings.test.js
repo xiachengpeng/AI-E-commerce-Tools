@@ -16,6 +16,7 @@ const {
     appendSettingsLog,
     formatSettingsLogLine,
     settingsLogId,
+    settingsLogKey,
     mergeSettingsLogSnapshot
 } = require("../js/settings.js");
 const { appendToastContent } = require("../js/utils.js");
@@ -169,6 +170,7 @@ assert.equal(formatSettingsLogLine({
 }), "timestamp=2026-07-23T10:00:00Z level=error source=ai message=<script>alert(1)</script> capability=image provider=Relay model=vision-v1 duration_ms=125 retry=2");
 
 const snapshotLog = {
+    session_id: "boot-a",
     id: 101,
     timestamp: "2026-07-23T10:00:00Z",
     level: "success",
@@ -193,12 +195,31 @@ assert.notEqual(
     settingsLogId(snapshotLog),
     settingsLogId(laterLegitimateLog)
 );
+assert.equal(settingsLogKey(snapshotLog), "boot-a:101");
+assert.equal(
+    settingsLogKey({ ...snapshotLog, session_id: "boot-b" }),
+    "boot-b:101"
+);
 assert.deepEqual(
     mergeSettingsLogSnapshot(
         [snapshotLog],
         [sameBackendLog, laterLegitimateLog]
     ),
     [snapshotLog, laterLegitimateLog]
+);
+
+const newerSnapshot = Array.from({ length: 200 }, (_, index) => ({
+    ...snapshotLog,
+    id: index + 201
+}));
+const olderBuffered = Array.from({ length: 200 }, (_, index) => ({
+    ...snapshotLog,
+    id: index + 1
+}));
+assert.deepEqual(
+    mergeSettingsLogSnapshot(newerSnapshot, olderBuffered)
+        .map(entry => entry.id),
+    Array.from({ length: 200 }, (_, index) => index + 201)
 );
 
 async function runAsyncTests() {
@@ -321,7 +342,7 @@ async function runAsyncTests() {
     );
     assert.deepEqual(
         lifecycleState.logs.map(entry => entry.id),
-        [101, 103, 102]
+        [101, 102, 103]
     );
 
     connectedSource.error();
@@ -337,7 +358,7 @@ async function runAsyncTests() {
     assert.equal(recentRequests, 1);
     assert.deepEqual(
         lifecycleState.logs.map(entry => entry.id),
-        [101, 103, 102, 104]
+        [101, 102, 103, 104]
     );
 
     disconnectSettingsLogs({
@@ -436,7 +457,8 @@ async function runAsyncTests() {
 
     const dedupeState = {
         logs: [snapshotLog],
-        logSeenIds: new Set([snapshotLog.id]),
+        logSeenIds: new Set(["boot-a:101"]),
+        logSessionId: "boot-a",
         logsPaused: false
     };
     let dedupeRenders = 0;
@@ -459,6 +481,50 @@ async function runAsyncTests() {
         [101, 102]
     );
     assert.equal(dedupeRenders, 1);
+
+    const sessionChangeState = {
+        logs: [
+            { ...snapshotLog, id: 399 },
+            { ...snapshotLog, id: 400 }
+        ],
+        logSeenIds: new Set(["boot-a:399", "boot-a:400"]),
+        logSessionId: "boot-a",
+        logsPaused: false
+    };
+    let sessionChangeRenders = 0;
+    const newSessionFirst = {
+        ...snapshotLog,
+        session_id: "boot-b",
+        id: 1
+    };
+    appendSettingsLog(newSessionFirst, {
+        state: sessionChangeState,
+        render: () => { sessionChangeRenders += 1; }
+    });
+    appendSettingsLog({ ...newSessionFirst }, {
+        state: sessionChangeState,
+        render: () => { sessionChangeRenders += 1; }
+    });
+    appendSettingsLog(
+        { ...newSessionFirst, id: 2 },
+        {
+            state: sessionChangeState,
+            render: () => { sessionChangeRenders += 1; }
+        }
+    );
+    assert.equal(sessionChangeState.logSessionId, "boot-b");
+    assert.deepEqual(
+        sessionChangeState.logs.map(entry => [
+            entry.session_id,
+            entry.id
+        ]),
+        [["boot-b", 1], ["boot-b", 2]]
+    );
+    assert.deepEqual(
+        [...sessionChangeState.logSeenIds],
+        ["boot-b:1", "boot-b:2"]
+    );
+    assert.equal(sessionChangeRenders, 2);
 }
 
 runAsyncTests().catch(error => {
