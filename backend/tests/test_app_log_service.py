@@ -113,6 +113,69 @@ def test_labeled_prompt_and_response_payloads_are_redacted():
     assert entry["message"].count("[REDACTED]") == 4
 
 
+def test_prompt_and_response_separator_and_provider_key_variants_are_redacted():
+    entry = AppLogService().emit(
+        level="info",
+        source="ai",
+        message=(
+            "Prompt = equals-secret\n"
+            "prompt: colon-secret\n"
+            '{"PROMPT": "upper-secret", "provider_response": "snake-secret", '
+            '"providerResponse": "camel-secret"}'
+        ),
+    )
+
+    for secret in (
+        "equals-secret",
+        "colon-secret",
+        "upper-secret",
+        "snake-secret",
+        "camel-secret",
+    ):
+        assert secret not in entry["message"]
+    assert entry["message"].count("[REDACTED]") == 5
+
+
+@pytest.mark.asyncio
+async def test_returned_history_and_subscriber_entries_are_independent_copies():
+    logs = AppLogService()
+    first_subscriber = logs.subscribe()
+    second_subscriber = logs.subscribe()
+
+    returned = logs.emit(level="info", source="system", message="original")
+    first_event = await asyncio.wait_for(first_subscriber.get(), 0.1)
+    second_event = await asyncio.wait_for(second_subscriber.get(), 0.1)
+    recent = logs.recent()
+
+    returned["message"] = "returned mutation"
+    first_event["message"] = "first subscriber mutation"
+    recent[0]["message"] = "recent mutation"
+
+    assert second_event["message"] == "original"
+    assert logs.recent()[0]["message"] == "original"
+
+
+def test_duration_and_retry_are_coerced_to_integers_or_none():
+    entry = AppLogService().emit(
+        level="info",
+        source="system",
+        message="safe summary",
+        duration_ms="125",
+        retry="2",
+    )
+    invalid = AppLogService().emit(
+        level="info",
+        source="system",
+        message="safe summary",
+        duration_ms="prompt: duration-secret",
+        retry="not-a-number",
+    )
+
+    assert (entry["duration_ms"], entry["retry"]) == (125, 2)
+    assert (invalid["duration_ms"], invalid["retry"]) == (None, None)
+    assert "duration-secret" not in str(invalid)
+
+
 @pytest.mark.asyncio
 async def test_unsubscribed_queue_does_not_receive_new_entries():
     logs = AppLogService()

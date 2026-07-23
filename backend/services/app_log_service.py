@@ -31,12 +31,12 @@ class AppLogService:
             value,
         )
         value = re.sub(
-            r"(?im)(\b(?:prompt|(?:provider[-_ ]?)?response)\s*:\s*)[^\r\n]*",
+            r"(?im)(\b(?:prompt|response|provider[_ -]?response|providerresponse)\s*[:=]\s*)[^\r\n]*",
             r"\1[REDACTED]",
             value,
         )
         value = re.sub(
-            r"(?i)([\"'](?:prompt|response)[\"']\s*:\s*)(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^,}\]\r\n]+)",
+            r"(?i)([\"'](?:prompt|response|provider[_-]?response|providerresponse)[\"']\s*:\s*)(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^,}\]\r\n]+)",
             r'\1"[REDACTED]"',
             value,
         )
@@ -45,6 +45,15 @@ class AppLogService:
     @classmethod
     def _redact_optional(cls, value: str | None) -> str | None:
         return cls._redact(value) if isinstance(value, str) else value
+
+    @staticmethod
+    def _coerce_int(value: int | str | None) -> int | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
 
     def emit(
         self,
@@ -55,8 +64,8 @@ class AppLogService:
         capability: str | None = None,
         provider: str | None = None,
         model: str | None = None,
-        duration_ms: int | None = None,
-        retry: int | None = None,
+        duration_ms: int | str | None = None,
+        retry: int | str | None = None,
     ) -> dict:
         entry = {
             "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
@@ -66,19 +75,19 @@ class AppLogService:
             "capability": self._redact_optional(capability),
             "provider": self._redact_optional(provider),
             "model": self._redact_optional(model),
-            "duration_ms": duration_ms,
-            "retry": retry,
+            "duration_ms": self._coerce_int(duration_ms),
+            "retry": self._coerce_int(retry),
         }
-        self._entries.append(entry)
+        self._entries.append(dict(entry))
         for queue in tuple(self._subscribers):
             try:
-                queue.put_nowait(entry)
+                queue.put_nowait(dict(entry))
             except asyncio.QueueFull:
                 continue
-        return entry
+        return dict(entry)
 
     def recent(self) -> list[dict]:
-        return list(self._entries)
+        return [dict(entry) for entry in self._entries]
 
     def subscribe(self) -> asyncio.Queue:
         queue = asyncio.Queue(maxsize=200)
