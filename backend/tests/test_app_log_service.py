@@ -5,6 +5,20 @@ import pytest
 from services.app_log_service import AppLogService
 
 
+def test_log_ids_are_monotonic_across_buffer_eviction_and_copied():
+    logs = AppLogService(capacity=2)
+
+    first = logs.emit(level="info", source="system", message="first")
+    second = logs.emit(level="info", source="system", message="second")
+    third = logs.emit(level="info", source="system", message="third")
+
+    assert [first["id"], second["id"], third["id"]] == [1, 2, 3]
+    assert [entry["id"] for entry in logs.recent()] == [2, 3]
+
+    third["id"] = 999
+    assert logs.recent()[-1]["id"] == 3
+
+
 def test_log_buffer_is_bounded_and_redacted():
     logs = AppLogService(capacity=200)
 

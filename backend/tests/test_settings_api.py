@@ -685,6 +685,7 @@ def test_frontend_log_is_structured_redacted_and_never_uses_raw_logger(
     assert raw_info.call_count == 0
     assert logs.recent() == [
         {
+            "id": 1,
             "timestamp": logs.recent()[0]["timestamp"],
             "level": "warning",
             "source": "frontend",
@@ -713,7 +714,10 @@ async def test_sse_stream_sends_new_events_and_cleans_up_subscriber(
     monkeypatch.setattr(main, "app_logs", logs)
     logs.emit(level="info", source="test", message="old")
 
-    response = await main.api_stream_logs(ConnectedRequest())
+    response = await main.api_stream_logs(
+        ConnectedRequest(),
+        after_id=logs.recent()[-1]["id"],
+    )
     assert response.media_type == "text/event-stream"
     assert len(logs._subscribers) == 0
 
@@ -724,9 +728,154 @@ async def test_sse_stream_sends_new_events_and_cleans_up_subscriber(
     event = await next_event
     await response.body_iterator.aclose()
 
+    assert event.startswith(f'id: {logs.recent()[-1]["id"]}\n')
     assert '"message": "new"' in event
     assert '"message": "old"' not in event
     assert len(logs._subscribers) == 0
+
+
+@pytest.mark.asyncio
+async def test_sse_stream_replays_after_last_event_id_with_frame_ids(
+    monkeypatch,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    class ReconnectRequest:
+        headers = {"last-event-id": "1"}
+
+        async def is_disconnected(self):
+            return False
+
+    logs = AppLogService()
+    monkeypatch.setattr(main, "app_logs", logs)
+    logs.emit(level="info", source="test", message="one")
+    second = logs.emit(level="info", source="test", message="two")
+    third = logs.emit(level="info", source="test", message="three")
+
+    response = await main.api_stream_logs(ReconnectRequest())
+    second_frame = await anext(response.body_iterator)
+    third_frame = await anext(response.body_iterator)
+    await response.body_iterator.aclose()
+
+    assert second_frame.startswith(f'id: {second["id"]}\n')
+    assert '"message": "two"' in second_frame
+    assert third_frame.startswith(f'id: {third["id"]}\n')
+    assert '"message": "three"' in third_frame
+
+
+@pytest.mark.asyncio
+async def test_sse_after_id_replays_available_buffer_when_cursor_is_too_old(
+    monkeypatch,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    class ConnectedRequest:
+        headers = {}
+
+        async def is_disconnected(self):
+            return False
+
+    logs = AppLogService(capacity=3)
+    monkeypatch.setattr(main, "app_logs", logs)
+    for index in range(5):
+        logs.emit(level="info", source="test", message=f"event {index + 1}")
+
+    response = await main.api_stream_logs(ConnectedRequest(), after_id=1)
+    frames = [
+        await anext(response.body_iterator),
+        await anext(response.body_iterator),
+        await anext(response.body_iterator),
+    ]
+    await response.body_iterator.aclose()
+
+    assert [frame.splitlines()[0] for frame in frames] == [
+        "id: 3",
+        "id: 4",
+        "id: 5",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sse_reconnect_replays_events_emitted_while_disconnected(
+    monkeypatch,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    class ConnectedRequest:
+        def __init__(self, last_event_id=None):
+            self.headers = (
+                {"last-event-id": str(last_event_id)}
+                if last_event_id is not None
+                else {}
+            )
+
+        async def is_disconnected(self):
+            return False
+
+    logs = AppLogService()
+    monkeypatch.setattr(main, "app_logs", logs)
+    first = logs.emit(level="info", source="test", message="first")
+
+    initial = await main.api_stream_logs(ConnectedRequest(), after_id=0)
+    first_frame = await anext(initial.body_iterator)
+    await initial.body_iterator.aclose()
+    assert first_frame.startswith(f'id: {first["id"]}\n')
+
+    missed_second = logs.emit(level="info", source="test", message="missed two")
+    missed_third = logs.emit(level="info", source="test", message="missed three")
+
+    reconnect = await main.api_stream_logs(ConnectedRequest(first["id"]))
+    second_frame = await anext(reconnect.body_iterator)
+    third_frame = await anext(reconnect.body_iterator)
+    await reconnect.body_iterator.aclose()
+
+    assert second_frame.startswith(f'id: {missed_second["id"]}\n')
+    assert third_frame.startswith(f'id: {missed_third["id"]}\n')
+
+
+@pytest.mark.asyncio
+async def test_sse_deduplicates_event_present_in_replay_and_queue(
+    monkeypatch,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    class ConnectedRequest:
+        headers = {}
+
+        async def is_disconnected(self):
+            return False
+
+    logs = AppLogService()
+    monkeypatch.setattr(main, "app_logs", logs)
+    original_recent = logs.recent
+    overlap = None
+
+    def recent_with_subscribe_overlap():
+        nonlocal overlap
+        overlap = logs.emit(
+            level="success",
+            source="test",
+            message="replay and queue overlap",
+        )
+        return original_recent()
+
+    monkeypatch.setattr(logs, "recent", recent_with_subscribe_overlap)
+    response = await main.api_stream_logs(ConnectedRequest(), after_id=0)
+    overlap_frame = await anext(response.body_iterator)
+    assert overlap_frame.startswith(f'id: {overlap["id"]}\n')
+
+    next_frame_task = asyncio.create_task(anext(response.body_iterator))
+    await asyncio.sleep(0)
+    newer = logs.emit(level="success", source="test", message="newer")
+    next_frame = await asyncio.wait_for(next_frame_task, 0.1)
+    await response.body_iterator.aclose()
+
+    assert next_frame.startswith(f'id: {newer["id"]}\n')
+    assert '"message": "replay and queue overlap"' not in next_frame
 
 
 @pytest.mark.asyncio

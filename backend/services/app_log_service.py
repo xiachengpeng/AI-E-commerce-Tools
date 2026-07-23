@@ -3,6 +3,7 @@
 import asyncio
 import datetime
 import re
+import threading
 from collections import deque
 
 
@@ -12,6 +13,8 @@ class AppLogService:
     def __init__(self, capacity: int = 200):
         self._entries = deque(maxlen=capacity)
         self._subscribers: set[asyncio.Queue] = set()
+        self._next_id = 1
+        self._id_lock = threading.Lock()
 
     @staticmethod
     def _redact(value: str) -> str:
@@ -77,7 +80,11 @@ class AppLogService:
         duration_ms: int | str | None = None,
         retry: int | str | None = None,
     ) -> dict:
+        with self._id_lock:
+            entry_id = self._next_id
+            self._next_id += 1
         entry = {
+            "id": entry_id,
             "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
             "level": self._redact(str(level)),
             "source": self._redact(str(source)),

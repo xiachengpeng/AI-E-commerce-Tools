@@ -935,21 +935,53 @@ def api_recent_logs():
     return {"items": app_logs.recent()}
 
 
+def _settings_log_cursor(request: Request, after_id: int | None) -> int:
+    if after_id is not None:
+        return max(after_id, 0)
+    raw_cursor = getattr(request, "headers", {}).get("last-event-id")
+    try:
+        return max(int(raw_cursor), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _settings_log_sse_frame(entry: dict) -> str:
+    return (
+        f"id: {entry['id']}\n"
+        "data: "
+        f"{json.dumps(entry, ensure_ascii=False)}\n\n"
+    )
+
+
 @app.get("/api/settings/logs/stream")
-async def api_stream_logs(request: Request):
+async def api_stream_logs(
+    request: Request,
+    after_id: int | None = None,
+):
+    cursor = _settings_log_cursor(request, after_id)
+
     async def events():
         queue = app_logs.subscribe()
+        last_sent_id = cursor
         try:
+            for entry in app_logs.recent():
+                if await request.is_disconnected():
+                    return
+                if entry["id"] <= last_sent_id:
+                    continue
+                last_sent_id = entry["id"]
+                yield _settings_log_sse_frame(entry)
+
             while not await request.is_disconnected():
                 try:
                     entry = await asyncio.wait_for(
                         queue.get(),
                         timeout=15,
                     )
-                    yield (
-                        "data: "
-                        f"{json.dumps(entry, ensure_ascii=False)}\n\n"
-                    )
+                    if entry["id"] <= last_sent_id:
+                        continue
+                    last_sent_id = entry["id"]
+                    yield _settings_log_sse_frame(entry)
                 except asyncio.TimeoutError:
                     yield ": keep-alive\n\n"
         finally:

@@ -15,7 +15,7 @@ const {
     disconnectSettingsLogs,
     appendSettingsLog,
     formatSettingsLogLine,
-    settingsLogFingerprint,
+    settingsLogId,
     mergeSettingsLogSnapshot
 } = require("../js/settings.js");
 const { appendToastContent } = require("../js/utils.js");
@@ -169,6 +169,7 @@ assert.equal(formatSettingsLogLine({
 }), "timestamp=2026-07-23T10:00:00Z level=error source=ai message=<script>alert(1)</script> capability=image provider=Relay model=vision-v1 duration_ms=125 retry=2");
 
 const snapshotLog = {
+    id: 101,
     timestamp: "2026-07-23T10:00:00Z",
     level: "success",
     source: "ai",
@@ -182,15 +183,15 @@ const snapshotLog = {
 const sameBackendLog = { ...snapshotLog };
 const laterLegitimateLog = {
     ...snapshotLog,
-    timestamp: "2026-07-23T10:00:01Z"
+    id: 102
 };
 assert.equal(
-    settingsLogFingerprint(snapshotLog),
-    settingsLogFingerprint(sameBackendLog)
+    settingsLogId(snapshotLog),
+    settingsLogId(sameBackendLog)
 );
 assert.notEqual(
-    settingsLogFingerprint(snapshotLog),
-    settingsLogFingerprint(laterLegitimateLog)
+    settingsLogId(snapshotLog),
+    settingsLogId(laterLegitimateLog)
 );
 assert.deepEqual(
     mergeSettingsLogSnapshot(
@@ -290,7 +291,7 @@ async function runAsyncTests() {
 
     const duringSnapshotFetch = {
         ...snapshotLog,
-        timestamp: "2026-07-23T10:00:02Z",
+        id: 103,
         message: "arrived during snapshot fetch"
     };
     connectedSource.message(sameBackendLog);
@@ -305,8 +306,7 @@ async function runAsyncTests() {
     ]);
     assert.equal(
         lifecycleState.logs.filter(
-            entry => settingsLogFingerprint(entry)
-                === settingsLogFingerprint(snapshotLog)
+            entry => entry.id === snapshotLog.id
         ).length,
         1
     );
@@ -318,6 +318,26 @@ async function runAsyncTests() {
             entry => entry.message === snapshotLog.message
         ).length,
         2
+    );
+    assert.deepEqual(
+        lifecycleState.logs.map(entry => entry.id),
+        [101, 103, 102]
+    );
+
+    connectedSource.error();
+    connectedSource.open();
+    connectedSource.message(sameBackendLog);
+    const replayedAfterReconnect = {
+        ...snapshotLog,
+        id: 104,
+        message: "replayed after reconnect"
+    };
+    connectedSource.message(replayedAfterReconnect);
+    connectedSource.message({ ...replayedAfterReconnect });
+    assert.equal(recentRequests, 1);
+    assert.deepEqual(
+        lifecycleState.logs.map(entry => entry.id),
+        [101, 103, 102, 104]
     );
 
     disconnectSettingsLogs({
@@ -376,6 +396,8 @@ async function runAsyncTests() {
     assert.equal(fallbackRequests, 1);
     assert.equal(fallbackSource.closeCalls, 0);
     assert.deepEqual(fallbackState.logs, [snapshotLog]);
+    fallbackSource.message(sameBackendLog);
+    assert.deepEqual(fallbackState.logs, [snapshotLog]);
     disconnectSettingsLogs({
         state: fallbackState,
         setConnection: () => {}
@@ -411,6 +433,32 @@ async function runAsyncTests() {
     await pendingConnect;
     assert.deepEqual(pendingState.logs, [{ sentinel: true }]);
     assert.equal(staleSource.closeCalls, 1);
+
+    const dedupeState = {
+        logs: [snapshotLog],
+        logSeenIds: new Set([snapshotLog.id]),
+        logsPaused: false
+    };
+    let dedupeRenders = 0;
+    appendSettingsLog(
+        sameBackendLog,
+        {
+            state: dedupeState,
+            render: () => { dedupeRenders += 1; }
+        }
+    );
+    appendSettingsLog(
+        laterLegitimateLog,
+        {
+            state: dedupeState,
+            render: () => { dedupeRenders += 1; }
+        }
+    );
+    assert.deepEqual(
+        dedupeState.logs.map(entry => entry.id),
+        [101, 102]
+    );
+    assert.equal(dedupeRenders, 1);
 }
 
 runAsyncTests().catch(error => {

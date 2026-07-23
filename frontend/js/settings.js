@@ -92,31 +92,20 @@ const SETTINGS_LOG_FIELDS = [
     "retry"
 ];
 
-const SETTINGS_LOG_FINGERPRINT_FIELDS = [
-    "timestamp",
-    "level",
-    "source",
-    "capability",
-    "provider",
-    "model",
-    "duration_ms",
-    "retry",
-    "message"
-];
-
-function settingsLogFingerprint(entry) {
-    return JSON.stringify(
-        SETTINGS_LOG_FINGERPRINT_FIELDS.map(field => entry?.[field] ?? null)
-    );
+function settingsLogId(entry) {
+    return Number.isSafeInteger(entry?.id) && entry.id > 0
+        ? entry.id
+        : null;
 }
 
 function mergeSettingsLogSnapshot(snapshot, buffered, limit = 200) {
     const seen = new Set();
     return [...snapshot, ...buffered]
         .filter(entry => {
-            const fingerprint = settingsLogFingerprint(entry);
-            if (seen.has(fingerprint)) return false;
-            seen.add(fingerprint);
+            const id = settingsLogId(entry);
+            if (id === null) return true;
+            if (seen.has(id)) return false;
+            seen.add(id);
             return true;
         })
         .slice(-limit);
@@ -137,12 +126,22 @@ function closeSettingsLogSource(source) {
     return null;
 }
 
+function replaceSettingsLogs(state, logs) {
+    state.logs = logs.slice(-200);
+    state.logSeenIds = new Set(
+        state.logs
+            .map(settingsLogId)
+            .filter(id => id !== null)
+    );
+}
+
 const settingsState = {
     initialized: false,
     providers: [],
     bindings: { items: [] },
     editingProviderId: null,
     logs: [],
+    logSeenIds: new Set(),
     logSource: null,
     logConnecting: null,
     logConnectionCancel: null,
@@ -311,7 +310,7 @@ function setSettingsLogAutoScroll(enabled) {
 }
 
 function clearVisibleSettingsLogs() {
-    settingsState.logs = [];
+    replaceSettingsLogs(settingsState, []);
     renderSettingsLogs();
 }
 
@@ -343,8 +342,17 @@ function copyVisibleSettingsLogs() {
 function appendSettingsLog(entry, options = {}) {
     const state = options.state || settingsState;
     const render = options.render || renderSettingsLogs;
-    state.logs = appendBoundedSettingsLog(state.logs || [], entry);
+    if (!(state.logSeenIds instanceof Set)) {
+        replaceSettingsLogs(state, state.logs || []);
+    }
+    const id = settingsLogId(entry);
+    if (id !== null && state.logSeenIds.has(id)) return false;
+    replaceSettingsLogs(
+        state,
+        appendBoundedSettingsLog(state.logs || [], entry)
+    );
     if (!state.logsPaused) render();
+    return true;
 }
 
 function connectSettingsLogs(options = {}) {
@@ -424,7 +432,10 @@ function connectSettingsLogs(options = {}) {
                 return;
             }
             const items = Array.isArray(recent?.items) ? recent.items : [];
-            state.logs = mergeSettingsLogSnapshot(items, bufferedEvents);
+            replaceSettingsLogs(
+                state,
+                mergeSettingsLogSnapshot(items, bufferedEvents)
+            );
             bufferedEvents = [];
             snapshotReady = true;
             if (!state.logsPaused) render();
@@ -434,9 +445,12 @@ function connectSettingsLogs(options = {}) {
                 settle(null);
                 return;
             }
-            state.logs = mergeSettingsLogSnapshot(
-                state.logs || [],
-                bufferedEvents
+            replaceSettingsLogs(
+                state,
+                mergeSettingsLogSnapshot(
+                    state.logs || [],
+                    bufferedEvents
+                )
             );
             bufferedEvents = [];
             snapshotReady = true;
@@ -469,7 +483,10 @@ function connectSettingsLogs(options = {}) {
             return;
         }
         if (!snapshotReady) {
-            bufferedEvents.push(entry);
+            bufferedEvents = appendBoundedSettingsLog(
+                bufferedEvents,
+                entry
+            );
             return;
         }
         appendSettingsLog(entry, { state, render });
@@ -1215,7 +1232,7 @@ if (typeof module !== "undefined") {
         disconnectSettingsLogs,
         appendSettingsLog,
         formatSettingsLogLine,
-        settingsLogFingerprint,
+        settingsLogId,
         mergeSettingsLogSnapshot
     };
 }
