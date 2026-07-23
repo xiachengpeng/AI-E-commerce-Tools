@@ -68,6 +68,20 @@ def test_all_authorization_credential_forms_are_redacted(authorization, secret):
     assert "[REDACTED]" in entry["message"]
 
 
+@pytest.mark.parametrize(
+    ("message", "secret"),
+    [
+        ('{"Authorization": "Bearer json-secret"}', "json-secret"),
+        ("{'Authorization': 'Bearer repr-secret'}", "repr-secret"),
+    ],
+)
+def test_quoted_authorization_keys_in_serialized_mappings_are_redacted(message, secret):
+    entry = AppLogService().emit(level="info", source="system", message=message)
+
+    assert secret not in entry["message"]
+    assert "[REDACTED]" in entry["message"]
+
+
 @pytest.mark.asyncio
 async def test_string_structured_fields_are_redacted_before_publication():
     logs = AppLogService()

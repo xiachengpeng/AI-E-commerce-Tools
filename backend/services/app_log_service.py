@@ -16,6 +16,11 @@ class AppLogService:
     @staticmethod
     def _redact(value: str) -> str:
         value = re.sub(
+            r"(?i)((?:[\"']authorization[\"'])\s*[:=]\s*)[\"'](?:[^\s,;\"']+\s+)?[^\s,;\"']+[\"']",
+            r'\1"[REDACTED]"',
+            value,
+        )
+        value = re.sub(
             r"(?i)(\bauthorization\b\s*[:=]\s*)(?:[^\s,;]+\s+)?[^\s,;]+",
             "Authorization: [REDACTED]",
             value,
