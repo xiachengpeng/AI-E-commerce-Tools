@@ -41,6 +41,34 @@ function buildProviderPayload(values) {
     return payload;
 }
 
+function replaceProviderInList(providers, updatedProvider) {
+    const exists = providers.some(
+        provider => Number(provider.id) === Number(updatedProvider.id)
+    );
+    if (!exists) return [...providers, updatedProvider];
+    return providers.map(provider => (
+        Number(provider.id) === Number(updatedProvider.id)
+            ? updatedProvider
+            : provider
+    ));
+}
+
+function removeProviderFromList(providers, providerId) {
+    return providers.filter(provider => Number(provider.id) !== Number(providerId));
+}
+
+function replaceBindingInList(bindings, updatedBinding) {
+    const exists = bindings.some(
+        binding => binding.capability === updatedBinding.capability
+    );
+    if (!exists) return [...bindings, updatedBinding];
+    return bindings.map(binding => (
+        binding.capability === updatedBinding.capability
+            ? updatedBinding
+            : binding
+    ));
+}
+
 const settingsState = {
     initialized: false,
     providers: [],
@@ -126,6 +154,20 @@ function setSettingsButtonBusy(button, isBusy) {
     if (!button) return;
     button.disabled = isBusy;
     button.setAttribute("aria-busy", isBusy ? "true" : "false");
+}
+
+async function refreshSettingsAfterSuccess(
+    result,
+    refresh = loadSettingsData,
+    warn = message => settingsToast(message, "warning")
+) {
+    try {
+        await refresh();
+        return { result, refreshed: true, refreshError: null };
+    } catch (error) {
+        warn(`操作成功，但刷新失败：${error.message}`);
+        return { result, refreshed: false, refreshError: error };
+    }
 }
 
 async function initSettings() {
@@ -245,6 +287,35 @@ function renderCapabilityBindings() {
         select.disabled = available.length === 0;
         if (button) button.disabled = available.length === 0;
     });
+}
+
+function renderCurrentSettingsState() {
+    renderCapabilityBindings();
+    renderProviderList();
+}
+
+function applyLocalProvider(updatedProvider) {
+    settingsState.providers = replaceProviderInList(
+        settingsState.providers,
+        updatedProvider
+    );
+    renderCurrentSettingsState();
+}
+
+function applyLocalBinding(updatedBinding) {
+    settingsState.bindings = {
+        ...settingsState.bindings,
+        items: replaceBindingInList(settingsBindings(), updatedBinding)
+    };
+    renderCurrentSettingsState();
+}
+
+function removeLocalProvider(providerId) {
+    settingsState.providers = removeProviderFromList(
+        settingsState.providers,
+        providerId
+    );
+    renderCurrentSettingsState();
 }
 
 function providerProtocolIcon(protocol) {
@@ -554,8 +625,9 @@ async function saveProvider(event) {
         ? `${API_BASE}/api/settings/ai/providers`
         : `${API_BASE}/api/settings/ai/providers/${providerId}`;
     setSettingsButtonBusy(button, true);
+    let savedProvider;
     try {
-        await settingsRequest(url, {
+        savedProvider = await settingsRequest(url, {
             method: providerId === null ? "POST" : "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
@@ -566,15 +638,11 @@ async function saveProvider(event) {
         return;
     }
 
+    applyLocalProvider(savedProvider);
     settingsToast(providerId === null ? "AI 线路已创建" : "AI 线路已保存", "success");
-    try {
-        await loadSettingsData();
-    } catch (error) {
-        settingsToast(`线路已保存，但刷新失败：${error.message}`, "error");
-    } finally {
-        setSettingsButtonBusy(button, false);
-        closeProviderEditor();
-    }
+    await refreshSettingsAfterSuccess(savedProvider);
+    setSettingsButtonBusy(button, false);
+    closeProviderEditor();
 }
 
 async function testProviderConnection(button) {
@@ -598,29 +666,32 @@ async function testProviderConnection(button) {
         resultElement.className = "settings-test-result";
     }
 
+    let data;
     try {
-        const data = await settingsRequest(`${API_BASE}/api/settings/ai/providers/test`, {
+        data = await settingsRequest(`${API_BASE}/api/settings/ai/providers/test`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(requestBody)
         });
-        const success = data.status === "success";
-        const message = `${data.message}（${data.duration_ms} ms）`;
-        if (resultElement) {
-            resultElement.textContent = message;
-            resultElement.className = `settings-test-result ${success ? "is-success" : "is-error"}`;
-        }
-        settingsToast(message, success ? "success" : "error");
-        await loadSettingsData();
     } catch (error) {
         if (resultElement) {
             resultElement.textContent = error.message;
             resultElement.className = "settings-test-result is-error";
         }
         settingsToast(error.message, "error");
-    } finally {
         setSettingsButtonBusy(button, false);
+        return;
     }
+
+    const success = data.status === "success";
+    const message = `${data.message}（${data.duration_ms} ms）`;
+    if (resultElement) {
+        resultElement.textContent = message;
+        resultElement.className = `settings-test-result ${success ? "is-success" : "is-error"}`;
+    }
+    settingsToast(message, success ? "success" : "error");
+    await refreshSettingsAfterSuccess(data);
+    setSettingsButtonBusy(button, false);
 }
 
 async function testSavedProvider(providerId, capability, button) {
@@ -629,8 +700,9 @@ async function testSavedProvider(providerId, capability, button) {
         return;
     }
     setSettingsButtonBusy(button, true);
+    let data;
     try {
-        const data = await settingsRequest(`${API_BASE}/api/settings/ai/providers/test`, {
+        data = await settingsRequest(`${API_BASE}/api/settings/ai/providers/test`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -638,14 +710,16 @@ async function testSavedProvider(providerId, capability, button) {
                 capability
             })
         });
-        const message = `${data.message}（${data.duration_ms} ms）`;
-        settingsToast(message, data.status === "success" ? "success" : "error");
-        await loadSettingsData();
     } catch (error) {
         settingsToast(error.message, "error");
-    } finally {
         setSettingsButtonBusy(button, false);
+        return;
     }
+
+    const message = `${data.message}（${data.duration_ms} ms）`;
+    settingsToast(message, data.status === "success" ? "success" : "error");
+    await refreshSettingsAfterSuccess(data);
+    setSettingsButtonBusy(button, false);
 }
 
 async function saveCapabilityBinding(capability, button) {
@@ -659,19 +733,23 @@ async function saveCapabilityBinding(capability, button) {
     }
 
     setSettingsButtonBusy(button, true);
+    let savedBinding;
     try {
-        await settingsRequest(`${API_BASE}/api/settings/ai/bindings/${capability}`, {
+        savedBinding = await settingsRequest(`${API_BASE}/api/settings/ai/bindings/${capability}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ provider_config_id: providerId })
         });
-        settingsToast(`${capability === "text" ? "文本" : "图片"}能力线路已切换`, "success");
-        await loadSettingsData();
     } catch (error) {
         settingsToast(error.message, "error");
-    } finally {
         setSettingsButtonBusy(button, false);
+        return;
     }
+
+    applyLocalBinding(savedBinding);
+    settingsToast(`${capability === "text" ? "文本" : "图片"}能力线路已切换`, "success");
+    await refreshSettingsAfterSuccess(savedBinding);
+    setSettingsButtonBusy(button, false);
 }
 
 async function toggleProviderEnabled(providerId, button) {
@@ -684,19 +762,23 @@ async function toggleProviderEnabled(providerId, button) {
 
     const action = provider.enabled ? "disable" : "enable";
     setSettingsButtonBusy(button, true);
+    let updatedProvider;
     try {
-        await settingsRequest(
+        updatedProvider = await settingsRequest(
             `${API_BASE}/api/settings/ai/providers/${providerId}/${action}`,
             { method: "POST" }
         );
-        settingsToast(provider.enabled ? "AI 线路已停用" : "AI 线路已启用", "success");
-        await loadSettingsData();
     } catch (error) {
         // 409 detail is surfaced verbatim; current bindings and editor selection remain untouched.
         settingsToast(error.message, "error");
-    } finally {
         setSettingsButtonBusy(button, false);
+        return;
     }
+
+    applyLocalProvider(updatedProvider);
+    settingsToast(provider.enabled ? "AI 线路已停用" : "AI 线路已启用", "success");
+    await refreshSettingsAfterSuccess(updatedProvider);
+    setSettingsButtonBusy(button, false);
 }
 
 async function deleteProvider(providerId, button) {
@@ -711,25 +793,33 @@ async function deleteProvider(providerId, button) {
     }
 
     setSettingsButtonBusy(button, true);
+    let result;
     try {
-        await settingsRequest(
+        result = await settingsRequest(
             `${API_BASE}/api/settings/ai/providers/${providerId}`,
             { method: "DELETE" }
         );
-        settingsToast("AI 线路已删除", "success");
-        await loadSettingsData();
     } catch (error) {
         // 409 detail is surfaced verbatim; current bindings and editor selection remain untouched.
         settingsToast(error.message, "error");
-    } finally {
         setSettingsButtonBusy(button, false);
+        return;
     }
+
+    removeLocalProvider(providerId);
+    settingsToast("AI 线路已删除", "success");
+    await refreshSettingsAfterSuccess(result);
+    setSettingsButtonBusy(button, false);
 }
 
 if (typeof module !== "undefined") {
     module.exports = {
         providerSupportsCapability,
         buildProviderPayload,
-        maskedKeyPlaceholder
+        maskedKeyPlaceholder,
+        replaceProviderInList,
+        removeProviderFromList,
+        replaceBindingInList,
+        refreshSettingsAfterSuccess
     };
 }

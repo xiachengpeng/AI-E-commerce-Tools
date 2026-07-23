@@ -25,6 +25,17 @@ async function remoteLog(message, fields = {}) {
 /**
  * 统一弹窗提示
  */
+function appendToastContent(toast, message, icon, documentRef = document) {
+    const iconElement = documentRef.createElement('i');
+    iconElement.className = `ph ${icon} text-lg`;
+
+    const messageElement = documentRef.createElement('span');
+    messageElement.textContent = String(message ?? '');
+
+    toast.appendChild(iconElement);
+    toast.appendChild(messageElement);
+}
+
 function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
     if (!container) return;
@@ -32,7 +43,7 @@ function showToast(message, type = 'info') {
     let bgClass = type === 'success' ? 'bg-emerald-600' : (type === 'error' ? 'bg-red-500' : (type === 'warning' ? 'bg-amber-500' : 'bg-gray-800'));
     let icon = type === 'success' ? 'ph-check-circle' : (type === 'error' ? 'ph-warning-circle' : 'ph-info');
     toast.className = `toast-enter flex items-center gap-2 ${bgClass} text-white px-4 py-3 rounded-xl shadow-xl text-sm font-medium tracking-wide`;
-    toast.innerHTML = `<i class="ph ${icon} text-lg"></i> <span>${message}</span>`;
+    appendToastContent(toast, message, icon);
     container.appendChild(toast);
     setTimeout(() => {
         toast.style.opacity = '0'; toast.style.transform = 'translateY(-10px)'; toast.style.transition = 'all 0.3s ease';
@@ -145,4 +156,10 @@ function jsonParseSafe(str) {
         console.error("JSON Parse Error:", e, str);
         return {};
     }
+}
+
+if (typeof module !== "undefined") {
+    module.exports = {
+        appendToastContent
+    };
 }
