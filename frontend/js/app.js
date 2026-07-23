@@ -29,24 +29,23 @@ let detailStrategyOverrides = {};
 const modules = MODULES_CONFIG.map(m => ({ ...m }));
 
 /**
- * 从后端加载配置
+ * 从后端刷新公开 AI 路由。
  */
-async function loadConfig() {
+async function refreshPublicAIRoutes() {
     console.log("[System] Loading config from backend...");
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
 
+    try {
         const res = await fetch(`${API_BASE}/config`, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const cfg = await res.json();
         TEXT_ROUTE = cfg.TEXT_ROUTE || TEXT_ROUTE;
         IMAGE_ROUTE = cfg.IMAGE_ROUTE || IMAGE_ROUTE;
-        
+
         if (cfg.CONCURRENCY_LIMIT) CONCURRENCY_LIMIT = cfg.CONCURRENCY_LIMIT;
         if (cfg.STAGGER_DELAY) STAGGER_DELAY = cfg.STAGGER_DELAY;
-        
+
         const routeLabel = route => (
             route?.name && route?.model
                 ? `${route.name} / ${route.model}`
@@ -55,8 +54,21 @@ async function loadConfig() {
         const logMsg = `配置加载成功 | 文本: ${routeLabel(TEXT_ROUTE)} | 图片: ${routeLabel(IMAGE_ROUTE)}`;
         console.log(`%c[系统] ${logMsg}`, "color: #10b981; font-weight: bold;");
         remoteLog(logMsg);
+        return { TEXT_ROUTE, IMAGE_ROUTE };
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+/**
+ * 首次加载配置失败时保留安全的未配置状态。
+ */
+async function loadConfig() {
+    try {
+        return await refreshPublicAIRoutes();
     } catch (e) {
         console.warn("⚠️ 无法加载后端配置 (使用本地默认值):", e.message);
+        return null;
     }
 }
 
@@ -65,12 +77,12 @@ async function loadConfig() {
  */
 async function callAI(capability, payload) {
     const route = capability === "image" ? IMAGE_ROUTE : TEXT_ROUTE;
-    const routeName = (
-        route?.name && route?.model
-            ? `${route.name} / ${route.model}`
-            : `${capability} 路由未配置`
-    );
-    const logMsg = `正在调用: ${routeName}`;
+    if (!route?.name || !route?.model) {
+        const label = capability === "image" ? "图片" : "文本";
+        throw new Error(`${label} AI 未配置，请前往设置页面配置`);
+    }
+
+    const logMsg = `正在调用模型: ${route.model} (${route.name})`;
     console.log(`%c[AI请求] ${logMsg}`, "color: #0891b2; font-weight: bold;");
     remoteLog(logMsg);
 

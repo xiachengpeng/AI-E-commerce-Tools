@@ -279,6 +279,33 @@ def test_ai_generate_endpoint_routes_by_capability_and_ignores_browser_routing()
     )
 
 
+@pytest.mark.parametrize(
+    ("capability", "message"),
+    [
+        ("text", "文本 AI 未配置，请前往设置页面配置"),
+        ("image", "图片 AI 未配置，请前往设置页面配置"),
+    ],
+)
+def test_ai_generate_endpoint_sanitizes_unconfigured_capability(
+    capability,
+    message,
+):
+    with patch(
+        "services.ai_service.AIService.generate_content",
+        new=AsyncMock(side_effect=ValueError("secret /tmp/provider-key.json")),
+    ):
+        resp = client.post("/api/ai/generate", json={
+            "capability": capability,
+            "payload": {},
+        })
+
+    assert resp.status_code == 409
+    assert resp.json() == {"detail": message}
+    serialized = json.dumps(resp.json()).lower()
+    assert "secret" not in serialized
+    assert "/tmp/provider-key.json" not in serialized
+
+
 @pytest.mark.parametrize("body", [{}, {"capability": "audio", "payload": {}}])
 def test_ai_generate_endpoint_rejects_missing_or_invalid_capability(body):
     resp = client.post("/api/ai/generate", json=body)

@@ -604,10 +604,17 @@ async def api_ai_generate(data: dict):
     capability = data.get("capability")
     if capability not in {"text", "image"}:
         raise HTTPException(422, "capability 必须是 text 或 image")
-    return await AIService.generate_content(
-        payload=data.get("payload", {}),
-        capability=capability,
-    )
+    try:
+        return await AIService.generate_content(
+            payload=data.get("payload", {}),
+            capability=capability,
+        )
+    except ValueError:
+        label = "文本" if capability == "text" else "图片"
+        raise HTTPException(
+            status_code=409,
+            detail=f"{label} AI 未配置，请前往设置页面配置",
+        ) from None
 
 @app.post("/log")
 async def receive_frontend_log(data: FrontendLogEvent):

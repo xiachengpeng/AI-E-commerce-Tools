@@ -238,6 +238,45 @@ async function runAsyncTests() {
     assert.equal(outcome.refreshError.message, "refresh failed");
     assert.deepEqual(warnings, ["操作成功，但刷新失败：refresh failed"]);
 
+    const refreshOrder = [];
+    let activeRouteLabel = "old-model (Old Provider)";
+    const routeOutcome = await refreshSettingsAfterSuccess(
+        operationResult,
+        async () => {
+            refreshOrder.push("settings");
+        },
+        message => warnings.push(message),
+        async () => {
+            refreshOrder.push("routes");
+            activeRouteLabel = "new-model (New Provider)";
+        }
+    );
+    assert.deepEqual(refreshOrder, ["settings", "routes"]);
+    assert.equal(activeRouteLabel, "new-model (New Provider)");
+    assert.equal(routeOutcome.refreshed, true);
+    assert.equal(routeOutcome.routesRefreshed, true);
+    assert.strictEqual(routeOutcome.result, operationResult);
+
+    const routeWarnings = [];
+    const routeFailureOutcome = await refreshSettingsAfterSuccess(
+        operationResult,
+        async () => {},
+        message => routeWarnings.push(message),
+        async () => {
+            throw new Error("route refresh failed");
+        }
+    );
+    assert.strictEqual(routeFailureOutcome.result, operationResult);
+    assert.equal(routeFailureOutcome.refreshed, true);
+    assert.equal(routeFailureOutcome.routesRefreshed, false);
+    assert.equal(
+        routeFailureOutcome.routeRefreshError.message,
+        "route refresh failed"
+    );
+    assert.deepEqual(routeWarnings, [
+        "操作成功，但 AI 路由刷新失败：route refresh failed"
+    ]);
+
     class DeterministicEventSource {
         static instances = [];
 

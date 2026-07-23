@@ -610,15 +610,34 @@ function setSettingsButtonBusy(button, isBusy) {
 async function refreshSettingsAfterSuccess(
     result,
     refresh = loadSettingsData,
-    warn = message => settingsToast(message, "warning")
+    warn = message => settingsToast(message, "warning"),
+    refreshRoutes = async () => {
+        if (typeof refreshPublicAIRoutes === "function") {
+            await refreshPublicAIRoutes();
+        }
+    }
 ) {
+    let refreshError = null;
+    let routeRefreshError = null;
     try {
         await refresh();
-        return { result, refreshed: true, refreshError: null };
     } catch (error) {
+        refreshError = error;
         warn(`操作成功，但刷新失败：${error.message}`);
-        return { result, refreshed: false, refreshError: error };
     }
+    try {
+        await refreshRoutes();
+    } catch (error) {
+        routeRefreshError = error;
+        warn(`操作成功，但 AI 路由刷新失败：${error.message}`);
+    }
+    return {
+        result,
+        refreshed: refreshError === null,
+        refreshError,
+        routesRefreshed: routeRefreshError === null,
+        routeRefreshError
+    };
 }
 
 async function initSettings() {
