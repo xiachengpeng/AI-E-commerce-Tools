@@ -92,6 +92,36 @@ const SETTINGS_LOG_FIELDS = [
     "retry"
 ];
 
+const SETTINGS_LOG_FINGERPRINT_FIELDS = [
+    "timestamp",
+    "level",
+    "source",
+    "capability",
+    "provider",
+    "model",
+    "duration_ms",
+    "retry",
+    "message"
+];
+
+function settingsLogFingerprint(entry) {
+    return JSON.stringify(
+        SETTINGS_LOG_FINGERPRINT_FIELDS.map(field => entry?.[field] ?? null)
+    );
+}
+
+function mergeSettingsLogSnapshot(snapshot, buffered, limit = 200) {
+    const seen = new Set();
+    return [...snapshot, ...buffered]
+        .filter(entry => {
+            const fingerprint = settingsLogFingerprint(entry);
+            if (seen.has(fingerprint)) return false;
+            seen.add(fingerprint);
+            return true;
+        })
+        .slice(-limit);
+}
+
 function formatSettingsLogLine(entry) {
     return SETTINGS_LOG_FIELDS
         .map(field => `${field}=${entry?.[field] ?? "—"}`)
@@ -115,6 +145,7 @@ const settingsState = {
     logs: [],
     logSource: null,
     logConnecting: null,
+    logConnectionCancel: null,
     logGeneration: 0,
     logsPaused: false,
     logFilters: {
@@ -332,58 +363,127 @@ function connectSettingsLogs(options = {}) {
     const generation = state.logGeneration || 0;
 
     setConnection("connecting");
-    const connection = (async () => {
+    if (!EventSourceClass) {
+        const error = new Error("当前浏览器不支持实时日志连接");
+        setConnection("disconnected");
+        onError(error);
+        return Promise.resolve(null);
+    }
+
+    let settleConnection;
+    let settled = false;
+    const connection = new Promise(resolve => {
+        settleConnection = resolve;
+    });
+    const settle = value => {
+        if (settled) return;
+        settled = true;
+        if (state.logConnecting === connection) state.logConnecting = null;
+        if (state.logConnectionCancel === cancelConnection) {
+            state.logConnectionCancel = null;
+        }
+        settleConnection(value);
+    };
+    const cancelConnection = () => settle(null);
+    state.logConnecting = connection;
+    state.logConnectionCancel = cancelConnection;
+
+    let source;
+    try {
+        source = new EventSourceClass(`${baseUrl}/api/settings/logs/stream`);
+    } catch (error) {
+        if ((state.logGeneration || 0) === generation) {
+            setConnection("disconnected");
+            try {
+                onError(error);
+            } finally {
+                settle(null);
+            }
+        } else {
+            settle(null);
+        }
+        return connection;
+    }
+
+    state.logSource = source;
+    let snapshotStarted = false;
+    let snapshotReady = false;
+    let bufferedEvents = [];
+    const isCurrent = () => (
+        (state.logGeneration || 0) === generation
+        && state.logSource === source
+    );
+
+    const startSnapshot = async () => {
+        if (snapshotStarted || !isCurrent()) return;
+        snapshotStarted = true;
         try {
             const recent = await request(`${baseUrl}/api/settings/logs/recent`);
-            if ((state.logGeneration || 0) !== generation) return null;
-
+            if (!isCurrent()) {
+                settle(null);
+                return;
+            }
             const items = Array.isArray(recent?.items) ? recent.items : [];
-            state.logs = items.slice(-200);
-            render();
-
-            if (!EventSourceClass) {
-                throw new Error("当前浏览器不支持实时日志连接");
-            }
-            const source = new EventSourceClass(`${baseUrl}/api/settings/logs/stream`);
-            if ((state.logGeneration || 0) !== generation) {
-                source.close();
-                return null;
-            }
-            state.logSource = source;
-            source.onopen = () => {
-                if (state.logSource === source) setConnection("connected");
-            };
-            source.onerror = () => {
-                if (state.logSource === source) setConnection("reconnecting");
-            };
-            source.onmessage = event => {
-                if (state.logSource !== source) return;
-                try {
-                    appendSettingsLog(JSON.parse(event.data), { state, render });
-                } catch (_error) {
-                    onError(new Error("收到无法解析的日志事件"));
-                }
-            };
-            return source;
+            state.logs = mergeSettingsLogSnapshot(items, bufferedEvents);
+            bufferedEvents = [];
+            snapshotReady = true;
+            if (!state.logsPaused) render();
+            settle(source);
         } catch (error) {
-            if ((state.logGeneration || 0) === generation) {
-                setConnection("disconnected");
-                onError(error);
+            if (!isCurrent()) {
+                settle(null);
+                return;
             }
-            return null;
+            state.logs = mergeSettingsLogSnapshot(
+                state.logs || [],
+                bufferedEvents
+            );
+            bufferedEvents = [];
+            snapshotReady = true;
+            if (!state.logsPaused) render();
+            try {
+                onError(error);
+            } finally {
+                settle(source);
+            }
         }
-    })();
+    };
 
-    state.logConnecting = connection;
-    return connection.finally(() => {
-        if (state.logConnecting === connection) state.logConnecting = null;
-    });
+    source.onopen = () => {
+        if (!isCurrent()) return;
+        setConnection("connected");
+        startSnapshot();
+    };
+    source.onerror = () => {
+        if (!isCurrent()) return;
+        setConnection("reconnecting");
+        startSnapshot();
+    };
+    source.onmessage = event => {
+        if (!isCurrent()) return;
+        let entry;
+        try {
+            entry = JSON.parse(event.data);
+        } catch (_error) {
+            onError(new Error("收到无法解析的日志事件"));
+            return;
+        }
+        if (!snapshotReady) {
+            bufferedEvents.push(entry);
+            return;
+        }
+        appendSettingsLog(entry, { state, render });
+    };
+    return connection;
 }
 
 function disconnectSettingsLogs(options = {}) {
     const state = options.state || settingsState;
     const setConnection = options.setConnection || setLogConnection;
     state.logGeneration = (state.logGeneration || 0) + 1;
+    const cancelConnection = state.logConnectionCancel;
+    state.logConnectionCancel = null;
+    cancelConnection?.();
     state.logSource = closeSettingsLogSource(state.logSource);
     state.logConnecting = null;
     setConnection("disconnected");
@@ -1114,6 +1214,8 @@ if (typeof module !== "undefined") {
         connectSettingsLogs,
         disconnectSettingsLogs,
         appendSettingsLog,
-        formatSettingsLogLine
+        formatSettingsLogLine,
+        settingsLogFingerprint,
+        mergeSettingsLogSnapshot
     };
 }

@@ -14,7 +14,9 @@ const {
     connectSettingsLogs,
     disconnectSettingsLogs,
     appendSettingsLog,
-    formatSettingsLogLine
+    formatSettingsLogLine,
+    settingsLogFingerprint,
+    mergeSettingsLogSnapshot
 } = require("../js/settings.js");
 const { appendToastContent } = require("../js/utils.js");
 
@@ -166,6 +168,38 @@ assert.equal(formatSettingsLogLine({
     retry: 2
 }), "timestamp=2026-07-23T10:00:00Z level=error source=ai message=<script>alert(1)</script> capability=image provider=Relay model=vision-v1 duration_ms=125 retry=2");
 
+const snapshotLog = {
+    timestamp: "2026-07-23T10:00:00Z",
+    level: "success",
+    source: "ai",
+    message: "AI 请求完成",
+    capability: "text",
+    provider: "Primary",
+    model: "text-v1",
+    duration_ms: 80,
+    retry: 0
+};
+const sameBackendLog = { ...snapshotLog };
+const laterLegitimateLog = {
+    ...snapshotLog,
+    timestamp: "2026-07-23T10:00:01Z"
+};
+assert.equal(
+    settingsLogFingerprint(snapshotLog),
+    settingsLogFingerprint(sameBackendLog)
+);
+assert.notEqual(
+    settingsLogFingerprint(snapshotLog),
+    settingsLogFingerprint(laterLegitimateLog)
+);
+assert.deepEqual(
+    mergeSettingsLogSnapshot(
+        [snapshotLog],
+        [sameBackendLog, laterLegitimateLog]
+    ),
+    [snapshotLog, laterLegitimateLog]
+);
+
 async function runAsyncTests() {
     const operationResult = { status: "success", message: "连接成功" };
     const warnings = [];
@@ -182,6 +216,32 @@ async function runAsyncTests() {
     assert.equal(outcome.refreshError.message, "refresh failed");
     assert.deepEqual(warnings, ["操作成功，但刷新失败：refresh failed"]);
 
+    class DeterministicEventSource {
+        static instances = [];
+
+        constructor(url) {
+            this.url = url;
+            this.closeCalls = 0;
+            DeterministicEventSource.instances.push(this);
+        }
+
+        open() {
+            this.onopen?.();
+        }
+
+        error() {
+            this.onerror?.();
+        }
+
+        message(entry) {
+            this.onmessage?.({ data: JSON.stringify(entry) });
+        }
+
+        close() {
+            this.closeCalls += 1;
+        }
+    }
+
     const lifecycleState = {
         logs: [],
         logSource: null,
@@ -190,23 +250,11 @@ async function runAsyncTests() {
     };
     let resolveRecent;
     let recentRequests = 0;
-    let eventSources = 0;
     let rendered = 0;
     let connectionStatus = "";
     const recentPromise = new Promise(resolve => {
         resolveRecent = resolve;
     });
-    class FakeEventSource {
-        constructor(url) {
-            this.url = url;
-            this.closeCalls = 0;
-            eventSources += 1;
-        }
-
-        close() {
-            this.closeCalls += 1;
-        }
-    }
     const lifecycleOptions = {
         state: lifecycleState,
         baseUrl: "http://localhost:8000",
@@ -214,7 +262,7 @@ async function runAsyncTests() {
             recentRequests += 1;
             return recentPromise;
         },
-        EventSourceClass: FakeEventSource,
+        EventSourceClass: DeterministicEventSource,
         render: () => {
             rendered += 1;
         },
@@ -228,21 +276,54 @@ async function runAsyncTests() {
 
     const firstConnection = connectSettingsLogs(lifecycleOptions);
     const duplicateConnection = connectSettingsLogs(lifecycleOptions);
-    assert.equal(recentRequests, 1);
-    resolveRecent({
-        items: Array.from({ length: 201 }, (_, index) => ({ index }))
-    });
-    await Promise.all([firstConnection, duplicateConnection]);
-    assert.equal(eventSources, 1);
-    assert.equal(rendered, 1);
-    assert.equal(lifecycleState.logs.length, 200);
-    assert.equal(lifecycleState.logs[0].index, 1);
-    assert.equal(lifecycleState.logSource.url, "http://localhost:8000/api/settings/logs/stream");
-    lifecycleState.logSource.onopen();
-    assert.equal(connectionStatus, "connected");
+    assert.equal(DeterministicEventSource.instances.length, 1);
+    assert.equal(recentRequests, 0);
 
-    const connectedSource = lifecycleState.logSource;
-    disconnectSettingsLogs({ state: lifecycleState, setConnection: lifecycleOptions.setConnection });
+    const connectedSource = DeterministicEventSource.instances[0];
+    assert.equal(
+        connectedSource.url,
+        "http://localhost:8000/api/settings/logs/stream"
+    );
+    connectedSource.open();
+    assert.equal(connectionStatus, "connected");
+    assert.equal(recentRequests, 1);
+
+    const duringSnapshotFetch = {
+        ...snapshotLog,
+        timestamp: "2026-07-23T10:00:02Z",
+        message: "arrived during snapshot fetch"
+    };
+    connectedSource.message(sameBackendLog);
+    connectedSource.message(duringSnapshotFetch);
+    resolveRecent({ items: [snapshotLog] });
+    await Promise.all([firstConnection, duplicateConnection]);
+
+    assert.equal(rendered, 1);
+    assert.deepEqual(lifecycleState.logs, [
+        snapshotLog,
+        duringSnapshotFetch
+    ]);
+    assert.equal(
+        lifecycleState.logs.filter(
+            entry => settingsLogFingerprint(entry)
+                === settingsLogFingerprint(snapshotLog)
+        ).length,
+        1
+    );
+
+    connectedSource.message(laterLegitimateLog);
+    assert.equal(lifecycleState.logs.length, 3);
+    assert.equal(
+        lifecycleState.logs.filter(
+            entry => entry.message === snapshotLog.message
+        ).length,
+        2
+    );
+
+    disconnectSettingsLogs({
+        state: lifecycleState,
+        setConnection: lifecycleOptions.setConnection
+    });
     assert.equal(connectedSource.closeCalls, 1);
     assert.equal(lifecycleState.logSource, null);
     assert.equal(connectionStatus, "disconnected");
@@ -266,35 +347,70 @@ async function runAsyncTests() {
     assert.equal(pausedState.logs.length, 2);
     assert.equal(pausedRenders, 1);
 
-    const pendingState = {
+    const fallbackState = {
         logs: [],
         logSource: null,
         logConnecting: null,
         logGeneration: 0
     };
-    let resolvePendingRecent;
-    let pendingSources = 0;
-    const pendingConnect = connectSettingsLogs({
-        state: pendingState,
+    let fallbackRequests = 0;
+    const fallbackConnection = connectSettingsLogs({
+        state: fallbackState,
         baseUrl: "",
-        request: () => new Promise(resolve => {
-            resolvePendingRecent = resolve;
-        }),
-        EventSourceClass: class {
-            constructor() {
-                pendingSources += 1;
-            }
+        request: async () => {
+            fallbackRequests += 1;
+            return { items: [snapshotLog] };
         },
+        EventSourceClass: DeterministicEventSource,
         render: () => {},
         setConnection: () => {},
         onError: error => {
             throw error;
         }
     });
+    const fallbackSource = DeterministicEventSource.instances[1];
+    fallbackSource.error();
+    await fallbackConnection;
+    fallbackSource.error();
+    fallbackSource.open();
+    assert.equal(fallbackRequests, 1);
+    assert.equal(fallbackSource.closeCalls, 0);
+    assert.deepEqual(fallbackState.logs, [snapshotLog]);
+    disconnectSettingsLogs({
+        state: fallbackState,
+        setConnection: () => {}
+    });
+
+    const pendingState = {
+        logs: [{ sentinel: true }],
+        logSource: null,
+        logConnecting: null,
+        logGeneration: 0
+    };
+    let resolvePendingRecent;
+    const pendingConnect = connectSettingsLogs({
+        state: pendingState,
+        baseUrl: "",
+        request: () => new Promise(resolve => {
+            resolvePendingRecent = resolve;
+        }),
+        EventSourceClass: DeterministicEventSource,
+        render: () => {},
+        setConnection: () => {},
+        onError: error => {
+            throw error;
+        }
+    });
+    const staleSource = DeterministicEventSource.instances[2];
+    staleSource.open();
+    staleSource.message(snapshotLog);
     disconnectSettingsLogs({ state: pendingState, setConnection: () => {} });
-    resolvePendingRecent({ items: [] });
+    staleSource.open();
+    staleSource.message(duringSnapshotFetch);
+    resolvePendingRecent({ items: [snapshotLog] });
     await pendingConnect;
-    assert.equal(pendingSources, 0);
+    assert.deepEqual(pendingState.logs, [{ sentinel: true }]);
+    assert.equal(staleSource.closeCalls, 1);
 }
 
 runAsyncTests().catch(error => {
