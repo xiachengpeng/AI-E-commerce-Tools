@@ -16,7 +16,7 @@ class AppLogService:
     @staticmethod
     def _redact(value: str) -> str:
         value = re.sub(
-            r"(?i)authorization\s*:\s*bearer\s+\S+",
+            r"(?i)(\bauthorization\b\s*[:=]\s*)(?:[^\s,;]+\s+)?[^\s,;]+",
             "Authorization: [REDACTED]",
             value,
         )
@@ -30,7 +30,21 @@ class AppLogService:
             r"\1[REDACTED]",
             value,
         )
+        value = re.sub(
+            r"(?im)(\b(?:prompt|(?:provider[-_ ]?)?response)\s*:\s*)[^\r\n]*",
+            r"\1[REDACTED]",
+            value,
+        )
+        value = re.sub(
+            r"(?i)([\"'](?:prompt|response)[\"']\s*:\s*)(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^,}\]\r\n]+)",
+            r'\1"[REDACTED]"',
+            value,
+        )
         return value[:1000]
+
+    @classmethod
+    def _redact_optional(cls, value: str | None) -> str | None:
+        return cls._redact(value) if isinstance(value, str) else value
 
     def emit(
         self,
@@ -46,12 +60,12 @@ class AppLogService:
     ) -> dict:
         entry = {
             "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
-            "level": level,
-            "source": source,
+            "level": self._redact(str(level)),
+            "source": self._redact(str(source)),
             "message": self._redact(str(message)),
-            "capability": capability,
-            "provider": provider,
-            "model": model,
+            "capability": self._redact_optional(capability),
+            "provider": self._redact_optional(provider),
+            "model": self._redact_optional(model),
             "duration_ms": duration_ms,
             "retry": retry,
         }
