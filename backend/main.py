@@ -1,14 +1,18 @@
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import base64
+import datetime
 import uuid
 import json
 import logging
 import asyncio
 import os
 import re
-from typing import List, Union, Any, Optional
+import time
+from typing import List, Literal, Union, Any, Optional
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
@@ -19,6 +23,17 @@ from models.request import (
     ListingGenerateRequest, ListingImageExtractRequest, ListingComplianceRequest,
     AdCopyGenerateRequest,
     SquareRedrawBatchRequest,
+)
+from models.settings import (
+    AIProviderList,
+    AIProviderRead,
+    AIProviderWrite,
+    CapabilityBindingList,
+    CapabilityBindingRead,
+    CapabilityBindingWrite,
+    FrontendLogEvent,
+    ProviderConnectionTest,
+    ProviderConnectionTestResult,
 )
 from services.firecrawl import fetch_markdown
 from services.cleaner import clean_content, check_block
@@ -41,12 +56,27 @@ from services.square_redraw_service import (
     retry_failed_square_redraw_items,
     serialize_square_redraw_batch,
 )
+from services.ai_config_service import (
+    ProviderSnapshot,
+    create_provider,
+    delete_provider,
+    get_bindings,
+    import_env_defaults_if_empty,
+    list_providers,
+    mask_secret,
+    set_binding,
+    set_provider_enabled,
+    update_provider,
+)
+from services.ai_adapters import get_adapter
+from services.ai_router import map_provider_error
+from services.app_log_service import app_logs
 from config import (
     AI_PROVIDER,
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
-from db import init_db, get_db, SessionLocal, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory
+from db import init_db, get_db, SessionLocal, AIProviderConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory
 
 # 加载配置
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
@@ -55,7 +85,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # 初始化数据库
+def initialize_ai_settings():
+    db = SessionLocal()
+    try:
+        import_env_defaults_if_empty(db)
+    finally:
+        db.close()
+
+
 init_db()
+initialize_ai_settings()
 
 app = FastAPI(title="AI Competitor Analyzer V2")
 
@@ -563,10 +602,356 @@ async def api_ai_generate(data: dict):
         return {"error": {"message": str(e)}}
 
 @app.post("/log")
-async def receive_frontend_log(data: dict):
-    message = data.get("message", "")
-    if message: logger.info(f"🖥️ [前端] {message}")
+async def receive_frontend_log(data: FrontendLogEvent):
+    app_logs.emit(
+        level=data.level,
+        source="frontend",
+        message=data.message,
+        capability=data.capability,
+        provider=data.provider,
+        model=data.model,
+        duration_ms=data.duration_ms,
+        retry=data.retry,
+    )
     return {"status": "ok"}
+
+
+def serialize_provider(row) -> dict:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "protocol": row.protocol,
+        "base_url": row.base_url,
+        "has_api_key": bool(row.api_key),
+        "api_key_masked": mask_secret(row.api_key),
+        "has_vertex_credentials": bool(
+            row.vertex_project_id
+            or row.vertex_location
+            or row.vertex_key_path
+        ),
+        "text_model": row.text_model,
+        "image_model": row.image_model,
+        "supports_text": bool(row.supports_text),
+        "supports_image": bool(row.supports_image),
+        "timeout_seconds": row.timeout_seconds,
+        "max_retries": row.max_retries,
+        "enabled": bool(row.enabled),
+        "last_test_status": row.last_test_status,
+        "last_test_message": row.last_test_message,
+        "last_tested_at": row.last_tested_at,
+        "config_version": row.config_version,
+    }
+
+
+def serialize_binding(row) -> dict:
+    return {
+        "capability": row.capability,
+        "provider_config_id": row.provider_config_id,
+        "updated_at": row.updated_at,
+    }
+
+
+def _settings_error(exc: ValueError, *, missing_is_404: bool = False):
+    message = str(exc)
+    if missing_is_404 and "不存在" in message:
+        raise HTTPException(status_code=404, detail=message) from exc
+    raise HTTPException(status_code=409, detail=message) from exc
+
+
+@app.post(
+    "/api/settings/ai/providers",
+    response_model=AIProviderRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def api_create_ai_provider(
+    data: AIProviderWrite,
+    db: Session = Depends(get_db),
+):
+    try:
+        return serialize_provider(create_provider(db, data))
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="提供商名称已存在",
+        ) from exc
+    except ValueError as exc:
+        _settings_error(exc)
+
+
+@app.get(
+    "/api/settings/ai/providers",
+    response_model=AIProviderList,
+)
+def api_list_ai_providers(db: Session = Depends(get_db)):
+    return {
+        "items": [
+            serialize_provider(row)
+            for row in list_providers(db)
+        ]
+    }
+
+
+@app.put(
+    "/api/settings/ai/providers/{provider_id}",
+    response_model=AIProviderRead,
+)
+def api_update_ai_provider(
+    provider_id: int,
+    data: AIProviderWrite,
+    db: Session = Depends(get_db),
+):
+    try:
+        return serialize_provider(update_provider(db, provider_id, data))
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="提供商名称已存在",
+        ) from exc
+    except ValueError as exc:
+        _settings_error(exc, missing_is_404=True)
+
+
+@app.delete("/api/settings/ai/providers/{provider_id}")
+def api_delete_ai_provider(
+    provider_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        delete_provider(db, provider_id)
+    except ValueError as exc:
+        _settings_error(exc, missing_is_404=True)
+    return {"status": "success"}
+
+
+def _set_ai_provider_enabled(provider_id: int, enabled: bool, db: Session):
+    try:
+        return serialize_provider(
+            set_provider_enabled(db, provider_id, enabled)
+        )
+    except ValueError as exc:
+        _settings_error(exc, missing_is_404=True)
+
+
+@app.post(
+    "/api/settings/ai/providers/{provider_id}/enable",
+    response_model=AIProviderRead,
+)
+def api_enable_ai_provider(
+    provider_id: int,
+    db: Session = Depends(get_db),
+):
+    return _set_ai_provider_enabled(provider_id, True, db)
+
+
+@app.post(
+    "/api/settings/ai/providers/{provider_id}/disable",
+    response_model=AIProviderRead,
+)
+def api_disable_ai_provider(
+    provider_id: int,
+    db: Session = Depends(get_db),
+):
+    return _set_ai_provider_enabled(provider_id, False, db)
+
+
+@app.get(
+    "/api/settings/ai/bindings",
+    response_model=CapabilityBindingList,
+)
+def api_get_ai_bindings(db: Session = Depends(get_db)):
+    return {
+        "items": [
+            serialize_binding(row)
+            for row in get_bindings(db)
+        ]
+    }
+
+
+@app.put(
+    "/api/settings/ai/bindings/{capability}",
+    response_model=CapabilityBindingRead,
+)
+def api_set_ai_binding(
+    capability: Literal["text", "image"],
+    data: CapabilityBindingWrite,
+    db: Session = Depends(get_db),
+):
+    try:
+        return serialize_binding(
+            set_binding(db, capability, data.provider_config_id)
+        )
+    except ValueError as exc:
+        _settings_error(exc, missing_is_404=True)
+
+
+def _connection_test_snapshot(
+    data: ProviderConnectionTest,
+    db: Session,
+) -> tuple[ProviderSnapshot | None, AIProviderConfig | None, str | None]:
+    row = None
+    if data.provider_id is not None:
+        row = db.get(AIProviderConfig, data.provider_id)
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail="AI 提供商不存在",
+            )
+        source = row
+        snapshot_id = row.id
+        config_version = row.config_version
+    else:
+        source = data.draft
+        snapshot_id = 0
+        config_version = 1
+
+    supported = (
+        source.supports_text
+        if data.capability == "text"
+        else source.supports_image
+    )
+    if not supported:
+        return None, row, f"该提供商不支持{'文本' if data.capability == 'text' else '图片'}能力"
+
+    model = (
+        source.text_model
+        if data.capability == "text"
+        else source.image_model
+    )
+    if not model:
+        return None, row, f"未配置{'文本' if data.capability == 'text' else '图片'}模型"
+
+    snapshot = ProviderSnapshot(
+        id=snapshot_id,
+        capability=data.capability,
+        name=source.name,
+        protocol=source.protocol,
+        base_url=source.base_url,
+        api_key=source.api_key,
+        vertex_project_id=source.vertex_project_id,
+        vertex_location=source.vertex_location,
+        vertex_key_path=source.vertex_key_path,
+        model=model,
+        timeout_seconds=source.timeout_seconds,
+        max_retries=source.max_retries,
+        config_version=config_version,
+    )
+    return snapshot, row, None
+
+
+def _save_connection_test_result(
+    db: Session,
+    row: AIProviderConfig | None,
+    result_status: str,
+    message: str,
+) -> None:
+    if row is None:
+        return
+    row.last_test_status = result_status
+    row.last_test_message = message
+    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+
+
+def _connection_payload(capability: str) -> dict:
+    prompt = (
+        "Reply with OK"
+        if capability == "text"
+        else "Generate a 1×1 image"
+    )
+    return {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": prompt}],
+            }
+        ]
+    }
+
+
+@app.post(
+    "/api/settings/ai/providers/test",
+    response_model=ProviderConnectionTestResult,
+)
+async def api_test_ai_provider(
+    data: ProviderConnectionTest,
+    db: Session = Depends(get_db),
+):
+    snapshot, row, validation_message = _connection_test_snapshot(data, db)
+    started = time.monotonic()
+    result_status = "success"
+    message = "连接成功"
+
+    if validation_message is not None:
+        result_status = "error"
+        message = validation_message
+    else:
+        try:
+            adapter = get_adapter(snapshot.protocol)
+            await adapter.generate(
+                snapshot,
+                _connection_payload(data.capability),
+            )
+        except Exception as exc:
+            mapped = map_provider_error(exc)
+            result_status = "error"
+            if (
+                data.capability == "image"
+                and mapped.category
+                in {"model_not_found", "protocol_incompatible"}
+            ):
+                message = "图片生成接口不可用"
+            else:
+                message = str(mapped)
+
+    duration_ms = round((time.monotonic() - started) * 1000)
+    _save_connection_test_result(
+        db,
+        row,
+        result_status,
+        message,
+    )
+    return {
+        "status": result_status,
+        "capability": data.capability,
+        "duration_ms": duration_ms,
+        "message": message,
+    }
+
+
+@app.get("/api/settings/logs/recent")
+def api_recent_logs():
+    return {"items": app_logs.recent()}
+
+
+@app.get("/api/settings/logs/stream")
+async def api_stream_logs(request: Request):
+    queue = app_logs.subscribe()
+
+    async def events():
+        try:
+            while not await request.is_disconnected():
+                try:
+                    entry = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=15,
+                    )
+                    yield (
+                        "data: "
+                        f"{json.dumps(entry, ensure_ascii=False)}\n\n"
+                    )
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            app_logs.unsubscribe(queue)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 @app.get("/config")
 async def get_frontend_config():

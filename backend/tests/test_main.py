@@ -401,11 +401,49 @@ def test_square_redraw_get_missing_batch_returns_error():
 # Log 端点
 # ============================================================
 
-def test_log_endpoint():
-    """POST /log 接收前端日志"""
-    resp = client.post("/log", json={"message": "test log"})
+def test_log_endpoint(monkeypatch):
+    """POST /log 接收前端日志并写入结构化日志服务"""
+    emit = MagicMock()
+    monkeypatch.setattr("main.app_logs.emit", emit)
+
+    resp = client.post(
+        "/log",
+        json={"level": "info", "message": "test log"},
+    )
+
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
+    emit.assert_called_once_with(
+        level="info",
+        source="frontend",
+        message="test log",
+        capability=None,
+        provider=None,
+        model=None,
+        duration_ms=None,
+        retry=None,
+    )
+
+
+def test_initialize_ai_settings_imports_defaults_and_closes_session(
+    monkeypatch,
+):
+    import main
+
+    db = MagicMock()
+    monkeypatch.setattr(main, "SessionLocal", MagicMock(return_value=db))
+    import_defaults = MagicMock()
+    monkeypatch.setattr(
+        main,
+        "import_env_defaults_if_empty",
+        import_defaults,
+        raising=False,
+    )
+
+    main.initialize_ai_settings()
+
+    import_defaults.assert_called_once_with(db)
+    db.close.assert_called_once_with()
 
 
 # ============================================================

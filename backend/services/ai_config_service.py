@@ -120,6 +120,16 @@ def update_provider(db, id, data):
     )
     for key in fields:
         if _has_field(data, key):
+            if (
+                key in {
+                    "api_key",
+                    "vertex_project_id",
+                    "vertex_location",
+                    "vertex_key_path",
+                }
+                and _data_value(data, key) == ""
+            ):
+                continue
             setattr(row, key, _data_value(data, key))
     if _has_field(data, "base_url"):
         row.base_url = base_url
