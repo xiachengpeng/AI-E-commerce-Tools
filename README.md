@@ -61,6 +61,22 @@ VERTEX_LOCATION=us-central1
 FIRECRAWL_API_KEY=your_firecrawl_api_key
 ```
 
+### AI 线路设置
+
+首次启动仍从 `backend/.env` 导入 Gemini 或 Vertex 默认配置。之后可在左侧
+“设置”页面新增 Gemini、Vertex AI 或 OpenAI Compatible 线路，并分别为
+文本 AI 和图片 AI 选择线路。保存后下一次请求立即生效，无需重启。
+
+OpenAI Compatible 的 Base URL 填服务根地址；程序调用
+`/v1/chat/completions` 和 `/v1/images/generations`。API Key 仅保存在本地
+SQLite，设置读取接口和实时日志不会返回原值。
+
+“实时运行日志”仅展示当前后端进程内最近的应用事件（最多 200 条），包括
+前端事件和 AI 调用的能力、线路、模型、耗时、重试和结果状态；它不是历史
+业务记录，也不会跨重启保留。日志会脱敏 API Key、Authorization、提示词、
+模型响应（含提供商响应）及 Base64 图片数据；请勿把其他敏感信息写入前端
+自定义日志。
+
 ### 2. 安装依赖
 ```bash
 cd backend

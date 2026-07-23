@@ -40,6 +40,9 @@ debug/
 .codex-run-logs/
 .worktrees/
 
+# Local brainstorming mockups
+.superpowers/
+
 # OS
 .DS_Store
 Thumbs.db
