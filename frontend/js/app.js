@@ -75,6 +75,10 @@ async function callAI(modelId, payload) {
 function switchMainTab(tabId) {
     // 1. 记录状态到本地存储
     localStorage.setItem('activeMainTab', tabId);
+
+    if (tabId !== "settings" && typeof disconnectSettingsLogs === "function") {
+        disconnectSettingsLogs();
+    }
     
     // 2. 更新侧边栏 UI (通过 ID 精准匹配)
     document.querySelectorAll('.side-tab').forEach(item => {
@@ -103,6 +107,9 @@ function switchMainTab(tabId) {
 
     if (tabId === "settings" && typeof initSettings === "function") {
         initSettings();
+    }
+    if (tabId === "settings" && typeof connectSettingsLogs === "function") {
+        connectSettingsLogs();
     }
 }
 

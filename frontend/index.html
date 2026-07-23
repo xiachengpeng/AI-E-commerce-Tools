@@ -1301,18 +1301,62 @@
                                 </div>
                                 <p>连接测试、AI 请求与应用事件将在此持续显示。</p>
                             </div>
-                            <span class="settings-task-badge">Task 8</span>
+                            <span id="settingsLogConnection" class="settings-log-connection"
+                                data-status="disconnected">已断开</span>
                         </div>
-                        <div class="settings-log-toolbar-placeholder" aria-hidden="true">
-                            <span></span><span></span><span></span>
-                        </div>
-                        <div class="settings-log-placeholder">
-                            <div class="settings-terminal-mark">
-                                <i class="ph ph-terminal-window"></i>
+                        <div class="settings-log-toolbar" aria-label="日志控制">
+                            <div class="settings-log-filters">
+                                <label>
+                                    <span>级别</span>
+                                    <select id="settingsLogLevel" onchange="filterSettingsLogs()">
+                                        <option value="all">全部</option>
+                                        <option value="error">错误</option>
+                                        <option value="warning">警告</option>
+                                        <option value="success">成功</option>
+                                        <option value="info">信息</option>
+                                        <option value="debug">调试</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    <span>来源</span>
+                                    <select id="settingsLogSource" onchange="filterSettingsLogs()">
+                                        <option value="all">全部</option>
+                                        <option value="ai">AI</option>
+                                        <option value="frontend">前端</option>
+                                        <option value="system">系统</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    <span>能力</span>
+                                    <select id="settingsLogCapability" onchange="filterSettingsLogs()">
+                                        <option value="all">全部</option>
+                                        <option value="text">文本</option>
+                                        <option value="image">图片</option>
+                                    </select>
+                                </label>
                             </div>
-                            <h3>日志终端即将接入</h3>
-                            <p>本区域已为实时日志流预留稳定容器。下一阶段将加入 SSE 连接、筛选、暂停和复制操作。</p>
-                            <code>GET /api/settings/logs/stream</code>
+                            <div class="settings-log-actions">
+                                <button type="button" id="settingsLogPause"
+                                    class="settings-log-button" aria-pressed="false"
+                                    onclick="toggleSettingsLogsPaused()">暂停</button>
+                                <label class="settings-log-autoscroll">
+                                    <input type="checkbox" checked
+                                        onchange="setSettingsLogAutoScroll(this.checked)">
+                                    <span>自动滚动</span>
+                                </label>
+                                <button type="button" class="settings-log-button"
+                                    onclick="clearVisibleSettingsLogs()">清空可见</button>
+                                <button type="button" class="settings-log-button"
+                                    onclick="copyVisibleSettingsLogs()">复制可见</button>
+                            </div>
+                        </div>
+                        <div class="settings-log-statusbar">
+                            <span>最近 200 条</span>
+                            <span id="settingsLogCount">0 / 0</span>
+                        </div>
+                        <div id="settingsLogEntries" class="settings-log-entries custom-scrollbar"
+                            aria-live="polite" aria-label="实时应用日志">
+                            <div class="settings-log-empty">暂无运行日志，等待新的应用事件。</div>
                         </div>
                     </section>
                 </aside>

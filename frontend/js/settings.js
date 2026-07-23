@@ -69,11 +69,60 @@ function replaceBindingInList(bindings, updatedBinding) {
     ));
 }
 
+function logMatchesFilters(entry, filters) {
+    return ["level", "source", "capability"].every(field => {
+        const selected = filters?.[field] || "all";
+        return selected === "all" || entry?.[field] === selected;
+    });
+}
+
+function appendBoundedSettingsLog(logs, entry, limit = 200) {
+    return [...logs, entry].slice(-limit);
+}
+
+const SETTINGS_LOG_FIELDS = [
+    "timestamp",
+    "level",
+    "source",
+    "message",
+    "capability",
+    "provider",
+    "model",
+    "duration_ms",
+    "retry"
+];
+
+function formatSettingsLogLine(entry) {
+    return SETTINGS_LOG_FIELDS
+        .map(field => `${field}=${entry?.[field] ?? "—"}`)
+        .join(" ");
+}
+
+function shouldConnectSettingsLogs(state) {
+    return !state.logSource && !state.logConnecting;
+}
+
+function closeSettingsLogSource(source) {
+    source?.close();
+    return null;
+}
+
 const settingsState = {
     initialized: false,
     providers: [],
     bindings: { items: [] },
-    editingProviderId: null
+    editingProviderId: null,
+    logs: [],
+    logSource: null,
+    logConnecting: null,
+    logGeneration: 0,
+    logsPaused: false,
+    logFilters: {
+        level: "all",
+        source: "all",
+        capability: "all"
+    },
+    logAutoScroll: true
 };
 
 const SETTINGS_PROTOCOL_LABELS = {
@@ -101,6 +150,243 @@ function settingsToast(message, type = "info") {
         return;
     }
     console[type === "error" ? "error" : "log"](message);
+}
+
+function setLogConnection(status) {
+    const badge = settingsElement("settingsLogConnection");
+    if (!badge) return;
+    const labels = {
+        connecting: "连接中",
+        connected: "已连接",
+        reconnecting: "重连中",
+        disconnected: "已断开"
+    };
+    badge.dataset.status = status;
+    badge.textContent = labels[status] || status;
+}
+
+function currentSettingsLogFilters() {
+    return {
+        level: settingsElement("settingsLogLevel")?.value || "all",
+        source: settingsElement("settingsLogSource")?.value || "all",
+        capability: settingsElement("settingsLogCapability")?.value || "all"
+    };
+}
+
+function visibleSettingsLogs(state = settingsState) {
+    return (state.logs || []).filter(entry => (
+        logMatchesFilters(entry, state.logFilters || {})
+    ));
+}
+
+function createSettingsLogElement(tagName, className, text) {
+    const element = document.createElement(tagName);
+    if (className) element.className = className;
+    element.textContent = String(text ?? "—");
+    return element;
+}
+
+function appendSettingsLogField(container, label, value, className = "") {
+    const field = createSettingsLogElement(
+        "span",
+        `settings-log-field ${className}`.trim(),
+        ""
+    );
+    field.appendChild(createSettingsLogElement(
+        "span",
+        "settings-log-field-label",
+        `${label}=`
+    ));
+    field.appendChild(createSettingsLogElement(
+        "span",
+        "settings-log-field-value",
+        value
+    ));
+    container.appendChild(field);
+}
+
+function renderSettingsLogs() {
+    const container = settingsElement("settingsLogEntries");
+    if (!container) return;
+
+    const visible = visibleSettingsLogs();
+    container.replaceChildren();
+
+    if (!visible.length) {
+        const empty = createSettingsLogElement(
+            "div",
+            "settings-log-empty",
+            settingsState.logs.length
+                ? "当前筛选条件下没有日志。"
+                : "暂无运行日志，等待新的应用事件。"
+        );
+        container.appendChild(empty);
+    } else {
+        visible.forEach(entry => {
+            const row = createSettingsLogElement("article", "settings-log-entry", "");
+            const level = ["error", "warning", "success", "info", "debug"]
+                .includes(entry?.level)
+                ? entry.level
+                : "default";
+            row.dataset.level = level;
+
+            const head = createSettingsLogElement("div", "settings-log-entry-head", "");
+            appendSettingsLogField(head, "timestamp", entry?.timestamp, "is-timestamp");
+            appendSettingsLogField(head, "level", entry?.level, "is-level");
+            appendSettingsLogField(head, "source", entry?.source, "is-source");
+            row.appendChild(head);
+
+            const message = createSettingsLogElement("div", "settings-log-message", "");
+            appendSettingsLogField(message, "message", entry?.message);
+            row.appendChild(message);
+
+            const meta = createSettingsLogElement("div", "settings-log-meta", "");
+            appendSettingsLogField(meta, "capability", entry?.capability);
+            appendSettingsLogField(meta, "provider", entry?.provider);
+            appendSettingsLogField(meta, "model", entry?.model);
+            appendSettingsLogField(meta, "duration_ms", entry?.duration_ms);
+            appendSettingsLogField(meta, "retry", entry?.retry);
+            row.appendChild(meta);
+            container.appendChild(row);
+        });
+    }
+
+    const count = settingsElement("settingsLogCount");
+    if (count) count.textContent = `${visible.length} / ${settingsState.logs.length}`;
+    if (settingsState.logAutoScroll) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+function filterSettingsLogs() {
+    settingsState.logFilters = currentSettingsLogFilters();
+    renderSettingsLogs();
+    return visibleSettingsLogs();
+}
+
+function toggleSettingsLogsPaused() {
+    settingsState.logsPaused = !settingsState.logsPaused;
+    const button = settingsElement("settingsLogPause");
+    if (button) {
+        button.setAttribute("aria-pressed", settingsState.logsPaused ? "true" : "false");
+        button.textContent = settingsState.logsPaused ? "继续" : "暂停";
+    }
+    if (!settingsState.logsPaused) renderSettingsLogs();
+}
+
+function setSettingsLogAutoScroll(enabled) {
+    settingsState.logAutoScroll = enabled === true;
+    if (settingsState.logAutoScroll) renderSettingsLogs();
+}
+
+function clearVisibleSettingsLogs() {
+    settingsState.logs = [];
+    renderSettingsLogs();
+}
+
+function copyVisibleSettingsLogs() {
+    const text = visibleSettingsLogs()
+        .map(formatSettingsLogLine)
+        .join("\n");
+    if (!text) {
+        settingsToast("当前没有可复制的日志", "warning");
+        return;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.setAttribute("readonly", "");
+    textArea.className = "settings-clipboard-buffer";
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+        document.execCommand("copy");
+        settingsToast("已复制当前筛选日志", "success");
+    } catch (_error) {
+        settingsToast("复制失败", "error");
+    } finally {
+        document.body.removeChild(textArea);
+    }
+}
+
+function appendSettingsLog(entry, options = {}) {
+    const state = options.state || settingsState;
+    const render = options.render || renderSettingsLogs;
+    state.logs = appendBoundedSettingsLog(state.logs || [], entry);
+    if (!state.logsPaused) render();
+}
+
+function connectSettingsLogs(options = {}) {
+    const state = options.state || settingsState;
+    if (!shouldConnectSettingsLogs(state)) return state.logConnecting;
+
+    const baseUrl = options.baseUrl !== undefined
+        ? options.baseUrl
+        : (typeof API_BASE !== "undefined" ? API_BASE : "");
+    const request = options.request || (url => settingsRequest(url));
+    const EventSourceClass = options.EventSourceClass
+        || (typeof EventSource !== "undefined" ? EventSource : null);
+    const render = options.render || renderSettingsLogs;
+    const setConnection = options.setConnection || setLogConnection;
+    const onError = options.onError || (error => settingsToast(error.message, "error"));
+    const generation = state.logGeneration || 0;
+
+    setConnection("connecting");
+    const connection = (async () => {
+        try {
+            const recent = await request(`${baseUrl}/api/settings/logs/recent`);
+            if ((state.logGeneration || 0) !== generation) return null;
+
+            const items = Array.isArray(recent?.items) ? recent.items : [];
+            state.logs = items.slice(-200);
+            render();
+
+            if (!EventSourceClass) {
+                throw new Error("当前浏览器不支持实时日志连接");
+            }
+            const source = new EventSourceClass(`${baseUrl}/api/settings/logs/stream`);
+            if ((state.logGeneration || 0) !== generation) {
+                source.close();
+                return null;
+            }
+            state.logSource = source;
+            source.onopen = () => {
+                if (state.logSource === source) setConnection("connected");
+            };
+            source.onerror = () => {
+                if (state.logSource === source) setConnection("reconnecting");
+            };
+            source.onmessage = event => {
+                if (state.logSource !== source) return;
+                try {
+                    appendSettingsLog(JSON.parse(event.data), { state, render });
+                } catch (_error) {
+                    onError(new Error("收到无法解析的日志事件"));
+                }
+            };
+            return source;
+        } catch (error) {
+            if ((state.logGeneration || 0) === generation) {
+                setConnection("disconnected");
+                onError(error);
+            }
+            return null;
+        }
+    })();
+
+    state.logConnecting = connection;
+    return connection.finally(() => {
+        if (state.logConnecting === connection) state.logConnecting = null;
+    });
+}
+
+function disconnectSettingsLogs(options = {}) {
+    const state = options.state || settingsState;
+    const setConnection = options.setConnection || setLogConnection;
+    state.logGeneration = (state.logGeneration || 0) + 1;
+    state.logSource = closeSettingsLogSource(state.logSource);
+    state.logConnecting = null;
+    setConnection("disconnected");
 }
 
 function settingsBindings() {
@@ -820,6 +1106,14 @@ if (typeof module !== "undefined") {
         replaceProviderInList,
         removeProviderFromList,
         replaceBindingInList,
-        refreshSettingsAfterSuccess
+        refreshSettingsAfterSuccess,
+        logMatchesFilters,
+        appendBoundedSettingsLog,
+        shouldConnectSettingsLogs,
+        closeSettingsLogSource,
+        connectSettingsLogs,
+        disconnectSettingsLogs,
+        appendSettingsLog,
+        formatSettingsLogLine
     };
 }

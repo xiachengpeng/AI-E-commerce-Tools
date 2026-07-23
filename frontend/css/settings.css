@@ -566,81 +566,228 @@
     box-shadow: 0 0 0 4px rgba(245, 158, 11, .12);
 }
 
-.settings-task-badge {
-    padding: 4px 7px;
-    border: 1px solid rgba(129, 140, 248, .22);
-    border-radius: 6px;
-    color: #a5b4fc;
-    background: rgba(79, 70, 229, .1);
-    font: 700 9px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: .05em;
+.settings-log-connection {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border: 1px solid rgba(148, 163, 184, .2);
+    border-radius: 999px;
+    color: #94a3b8;
+    background: rgba(15, 23, 42, .45);
+    font: 700 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.settings-log-connection::before {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+    content: "";
+}
+
+.settings-log-connection[data-status="connecting"],
+.settings-log-connection[data-status="reconnecting"] {
+    color: #fbbf24;
+}
+
+.settings-log-connection[data-status="connected"] {
+    color: #34d399;
+}
+
+.settings-log-connection[data-status="disconnected"] {
+    color: #94a3b8;
+}
+
+.settings-log-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px 14px;
+    padding: 11px 14px;
+    border-bottom: 1px solid rgba(148, 163, 184, .1);
+    background: rgba(2, 6, 23, .22);
+}
+
+.settings-log-filters,
+.settings-log-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px;
+}
+
+.settings-log-filters label {
+    display: grid;
+    gap: 4px;
+    color: #64748b;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .04em;
     text-transform: uppercase;
 }
 
-.settings-log-toolbar-placeholder {
-    display: flex;
-    gap: 7px;
-    padding: 10px 14px;
-    border-bottom: 1px solid rgba(148, 163, 184, .1);
-}
-
-.settings-log-toolbar-placeholder span {
-    width: 72px;
-    height: 25px;
+.settings-log-filters select,
+.settings-log-button {
+    min-height: 28px;
+    border: 1px solid rgba(148, 163, 184, .18);
     border-radius: 6px;
-    background: rgba(148, 163, 184, .08);
+    color: #cbd5e1;
+    background: rgba(30, 41, 59, .72);
+    font: 600 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.settings-log-toolbar-placeholder span:first-child {
-    width: 110px;
+.settings-log-filters select {
+    min-width: 76px;
+    padding: 4px 24px 4px 8px;
 }
 
-.settings-log-placeholder {
+.settings-log-button {
+    padding: 5px 9px;
+    cursor: pointer;
+}
+
+.settings-log-button:hover,
+.settings-log-button:focus-visible,
+.settings-log-filters select:focus-visible {
+    border-color: rgba(129, 140, 248, .58);
+    color: #fff;
+    outline: none;
+}
+
+.settings-log-button[aria-pressed="true"] {
+    border-color: rgba(251, 191, 36, .4);
+    color: #fbbf24;
+    background: rgba(120, 53, 15, .25);
+}
+
+.settings-log-autoscroll {
     display: flex;
-    flex: 1;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 42px;
+    gap: 5px;
+    min-height: 28px;
+    padding: 0 3px;
+    color: #94a3b8;
+    font: 600 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.settings-log-autoscroll input {
+    accent-color: #6366f1;
+}
+
+.settings-log-statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 15px;
+    border-bottom: 1px solid rgba(148, 163, 184, .08);
+    color: #475569;
+    font: 600 9px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+}
+
+.settings-log-entries {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 7px 0 18px;
+    scroll-behavior: smooth;
+}
+
+.settings-log-empty {
+    margin: 34px 16px;
+    color: #64748b;
+    font: 500 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
     text-align: center;
 }
 
-.settings-terminal-mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 54px;
-    height: 54px;
-    margin-bottom: 16px;
-    border: 1px solid rgba(129, 140, 248, .26);
-    border-radius: 14px;
-    color: #818cf8;
-    background: rgba(79, 70, 229, .1);
-    font-size: 27px;
+.settings-log-entry {
+    padding: 10px 15px 11px;
+    border-left: 2px solid transparent;
+    border-bottom: 1px solid rgba(148, 163, 184, .07);
+    font: 500 10px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.settings-log-placeholder h3 {
-    margin: 0;
+.settings-log-entry:hover {
+    background: rgba(30, 41, 59, .3);
+}
+
+.settings-log-entry[data-level="error"] {
+    border-left-color: #fb7185;
+}
+
+.settings-log-entry[data-level="warning"] {
+    border-left-color: #fbbf24;
+}
+
+.settings-log-entry[data-level="success"] {
+    border-left-color: #34d399;
+}
+
+.settings-log-entry[data-level="info"] {
+    border-left-color: #60a5fa;
+}
+
+.settings-log-entry-head,
+.settings-log-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+
+.settings-log-entry-head {
+    margin-bottom: 4px;
+}
+
+.settings-log-message {
+    margin: 2px 0 5px;
     color: #e2e8f0;
-    font-size: 15px;
-    font-weight: 750;
+    overflow-wrap: anywhere;
 }
 
-.settings-log-placeholder p {
-    max-width: 390px;
-    margin: 9px auto 17px;
-    color: #64748b;
-    font-size: 11px;
-    line-height: 1.7;
+.settings-log-field {
+    display: inline-flex;
+    gap: 3px;
+    min-width: 0;
 }
 
-.settings-log-placeholder code {
-    padding: 7px 10px;
-    border: 1px solid rgba(148, 163, 184, .14);
-    border-radius: 7px;
+.settings-log-field-label {
+    color: #475569;
+    user-select: none;
+}
+
+.settings-log-field-value {
     color: #94a3b8;
-    background: rgba(2, 6, 23, .55);
-    font-size: 10px;
+    overflow-wrap: anywhere;
+}
+
+.settings-log-message .settings-log-field-value {
+    color: #e2e8f0;
+}
+
+.settings-log-entry[data-level="error"] .is-level .settings-log-field-value {
+    color: #fb7185;
+}
+
+.settings-log-entry[data-level="warning"] .is-level .settings-log-field-value {
+    color: #fbbf24;
+}
+
+.settings-log-entry[data-level="success"] .is-level .settings-log-field-value {
+    color: #34d399;
+}
+
+.settings-log-entry[data-level="info"] .is-level .settings-log-field-value {
+    color: #60a5fa;
+}
+
+.settings-clipboard-buffer {
+    position: fixed;
+    top: -10000px;
+    left: -10000px;
 }
 
 .settings-editor-backdrop {
