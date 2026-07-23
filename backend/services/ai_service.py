@@ -1,16 +1,20 @@
 import json
 import logging
-import asyncio
 import time
 import random
-import os
-import base64
-from google import genai
-from google.genai import types
 from config import (
     GEMINI_API_KEY, GEMINI_MODEL_ID,
     AI_PROVIDER, VERTEX_PROJECT_ID, VERTEX_LOCATION, VERTEX_KEY_PATH
 )
+from services.ai_adapters import (
+    GeminiAdapter,
+    VertexAdapter,
+    convert_google_config,
+    convert_google_contents,
+    get_adapter,
+    google_response_to_dict,
+)
+from services.ai_config_service import ProviderSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -24,25 +28,30 @@ class AIService:
     _BACKOFF_FACTOR = 2
 
     @classmethod
-    def _get_client(cls, provider: str):
-        """获取 google-genai 客户端，调用方式参考 debug 目录测试脚本。"""
+    def _legacy_snapshot(cls, provider: str, model_id: str = None):
         provider = (provider or AI_PROVIDER).lower()
-        if provider in cls._clients:
-            return cls._clients[provider]
+        return ProviderSnapshot(
+            id=-2 if provider == "vertex" else -1,
+            capability="text",
+            name="Vertex AI" if provider == "vertex" else "Gemini API",
+            protocol=provider,
+            base_url=None,
+            api_key=None if provider == "vertex" else GEMINI_API_KEY,
+            vertex_project_id=VERTEX_PROJECT_ID if provider == "vertex" else None,
+            vertex_location=VERTEX_LOCATION if provider == "vertex" else None,
+            vertex_key_path=VERTEX_KEY_PATH if provider == "vertex" else None,
+            model=model_id or GEMINI_MODEL_ID,
+            timeout_seconds=120,
+            max_retries=cls._MAX_RETRIES,
+            config_version=0,
+        )
 
-        if provider == "vertex":
-            if VERTEX_KEY_PATH and os.path.exists(VERTEX_KEY_PATH):
-                os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", VERTEX_KEY_PATH)
-            client = genai.Client(
-                vertexai=True,
-                project=VERTEX_PROJECT_ID,
-                location=VERTEX_LOCATION,
-            )
-        else:
-            client = genai.Client(api_key=GEMINI_API_KEY)
-
-        cls._clients[provider] = client
-        return client
+    @classmethod
+    def _get_client(cls, provider: str, snapshot: ProviderSnapshot = None):
+        """Compatibility hook; provider clients are constructed by adapters."""
+        provider = (provider or AI_PROVIDER).lower()
+        adapter = get_adapter(provider)
+        return adapter._client(snapshot or cls._legacy_snapshot(provider))
 
     @classmethod
     async def call_ai(cls, prompt: str, provider: str = None, model_id: str = None,
@@ -79,26 +88,17 @@ class AIService:
         model_id = model_id or GEMINI_MODEL_ID
         logger.info(f"📡 [AI调用] 发送 SDK 请求 (provider={provider}, model={model_id})")
 
-        response = await asyncio.to_thread(
-            cls._generate_content_sync,
-            provider,
-            model_id,
-            cls._convert_contents(payload.get("contents", [])),
-            cls._convert_generation_config(payload.get("generationConfig") or payload.get("config") or {}),
+        snapshot = cls._legacy_snapshot(provider, model_id)
+        client = cls._get_client(provider, snapshot)
+        adapter = (
+            VertexAdapter(client=client)
+            if provider == "vertex"
+            else GeminiAdapter(client=client)
         )
-        return cls._response_to_dict(response)
-
-    @classmethod
-    def _generate_content_sync(cls, provider: str, model_id: str, contents, config):
-        client = cls._get_client(provider)
         last_error = None
         for attempt in range(cls._MAX_RETRIES):
             try:
-                return client.models.generate_content(
-                    model=model_id,
-                    contents=contents,
-                    config=config,
-                )
+                return await adapter.generate(snapshot, payload)
             except Exception as e:
                 last_error = e
                 if attempt == cls._MAX_RETRIES - 1:
@@ -114,80 +114,15 @@ class AIService:
 
     @staticmethod
     def _convert_contents(contents):
-        if isinstance(contents, str):
-            return contents
-        converted = []
-        for content in contents or []:
-            if isinstance(content, str):
-                converted.append(content)
-                continue
-            parts = []
-            for part in content.get("parts", []):
-                if "text" in part:
-                    parts.append(part["text"])
-                    continue
-                inline_data = part.get("inlineData") or part.get("inline_data")
-                if inline_data:
-                    data = inline_data.get("data", "")
-                    if isinstance(data, str):
-                        data = base64.b64decode(data)
-                    parts.append(types.Part.from_bytes(
-                        data=data,
-                        mime_type=inline_data.get("mimeType") or inline_data.get("mime_type"),
-                    ))
-            converted.append(types.Content(
-                role=content.get("role", "user"),
-                parts=[p if isinstance(p, types.Part) else types.Part(text=p) for p in parts],
-            ))
-        return converted
+        return convert_google_contents(contents)
 
     @staticmethod
     def _convert_generation_config(config: dict):
-        if not config:
-            return None
-
-        image_config = config.get("imageConfig") or config.get("image_config")
-        converted_image_config = None
-        if image_config:
-            converted_image_config = types.ImageConfig(
-                aspect_ratio=image_config.get("aspectRatio") or image_config.get("aspect_ratio"),
-                image_size=image_config.get("imageSize") or image_config.get("image_size"),
-            )
-
-        return types.GenerateContentConfig(
-            response_mime_type=config.get("responseMimeType") or config.get("response_mime_type"),
-            response_modalities=config.get("responseModalities") or config.get("response_modalities"),
-            image_config=converted_image_config,
-        )
+        return convert_google_config(config)
 
     @staticmethod
     def _response_to_dict(response) -> dict:
-        result = {"candidates": []}
-        for candidate in response.candidates or []:
-            parts = []
-            for part in candidate.content.parts or []:
-                if getattr(part, "thought", False):
-                    continue
-                if getattr(part, "text", None):
-                    parts.append({"text": part.text})
-                inline_data = getattr(part, "inline_data", None)
-                if inline_data:
-                    data = inline_data.data
-                    if isinstance(data, bytes):
-                        data = base64.b64encode(data).decode("utf-8")
-                    parts.append({
-                        "inlineData": {
-                            "mimeType": inline_data.mime_type,
-                            "data": data,
-                        }
-                    })
-            result["candidates"].append({
-                "content": {
-                    "role": getattr(candidate.content, "role", "model"),
-                    "parts": parts,
-                }
-            })
-        return result
+        return google_response_to_dict(response)
 
     @classmethod
     async def translate_text_batch(cls, text: str, target_langs: list, provider: str = None) -> dict:

@@ -48,6 +48,18 @@ def make_image_part(mime_type="image/png", data=b"aaaa"):
     return part
 
 
+def test_get_client_delegates_construction_to_google_adapter():
+    adapter = MagicMock()
+    adapter._client.return_value = MagicMock()
+
+    with patch("services.ai_service.get_adapter", return_value=adapter) as lookup:
+        client = AIService._get_client("gemini")
+
+    lookup.assert_called_once_with("gemini")
+    adapter._client.assert_called_once()
+    assert client is adapter._client.return_value
+
+
 @pytest.mark.asyncio
 async def test_call_ai_success():
     """文本调用：返回第一段文本"""
