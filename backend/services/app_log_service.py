@@ -1,0 +1,78 @@
+"""In-memory structured application logs with sensitive-value redaction."""
+
+import asyncio
+import datetime
+import re
+from collections import deque
+
+
+class AppLogService:
+    """Keep a bounded stream of safe log entries for application consumers."""
+
+    def __init__(self, capacity: int = 200):
+        self._entries = deque(maxlen=capacity)
+        self._subscribers: set[asyncio.Queue] = set()
+
+    @staticmethod
+    def _redact(value: str) -> str:
+        value = re.sub(
+            r"(?i)authorization\s*:\s*bearer\s+\S+",
+            "Authorization: [REDACTED]",
+            value,
+        )
+        value = re.sub(
+            r"data:image/[^;,\s]+;base64,[A-Za-z0-9+/=]+",
+            "[IMAGE REDACTED]",
+            value,
+        )
+        value = re.sub(
+            r"(?i)(?:\bx[-_])?(api[_ -]?key\b\s*(?:[:=]\s*['\"]?|['\"]?\s+))[^\s,;'\"]+",
+            r"\1[REDACTED]",
+            value,
+        )
+        return value[:1000]
+
+    def emit(
+        self,
+        *,
+        level: str,
+        source: str,
+        message: str,
+        capability: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        duration_ms: int | None = None,
+        retry: int | None = None,
+    ) -> dict:
+        entry = {
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+            "level": level,
+            "source": source,
+            "message": self._redact(str(message)),
+            "capability": capability,
+            "provider": provider,
+            "model": model,
+            "duration_ms": duration_ms,
+            "retry": retry,
+        }
+        self._entries.append(entry)
+        for queue in tuple(self._subscribers):
+            try:
+                queue.put_nowait(entry)
+            except asyncio.QueueFull:
+                continue
+        return entry
+
+    def recent(self) -> list[dict]:
+        return list(self._entries)
+
+    def subscribe(self) -> asyncio.Queue:
+        queue = asyncio.Queue(maxsize=200)
+        self._subscribers.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue) -> None:
+        self._subscribers.discard(queue)
+
+
+app_logs = AppLogService()

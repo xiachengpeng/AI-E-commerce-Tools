@@ -7,13 +7,17 @@ const API_BASE = "http://localhost:8000";
 /**
  * 将日志发送至后端终端
  */
-async function remoteLog(msg) {
+async function remoteLog(message, fields = {}) {
     try {
-        const cleanMsg = msg.replace(/%c/g, '');
         fetch(`${API_BASE}/log`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: cleanMsg })
+            body: JSON.stringify({
+                level: fields.level || "info",
+                source: fields.source || "frontend",
+                capability: fields.capability || null,
+                message: String(message).replace(/%c/g, "")
+            })
         }).catch(() => {});
     } catch (e) {}
 }
