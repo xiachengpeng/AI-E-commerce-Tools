@@ -1052,7 +1052,7 @@ async function generateSellingPoints() {
     try {
         const payload = { contents: [{ role: "user", parts: parts }] };
         remoteLog(`正在提取产品卖点 (视觉解析模式)...`);
-        const res = await callAI(TEXT_MODEL, payload);
+        const res = await callAI("text", payload);
         const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
             textArea.value = text;
@@ -1073,7 +1073,7 @@ async function generateSEOMetadata(task, sellingPoints) {
 
     try {
         remoteLog(`正在为模块 [${task.title}] 生成 SEO 元数据...`);
-        const res = await callAI(TEXT_MODEL, {
+        const res = await callAI("text", {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: { responseMimeType: "application/json" }
         });
@@ -1311,7 +1311,7 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
     };
 
     try {
-        const promises = [callAI(IMAGE_MODEL, payload)];
+        const promises = [callAI("image", payload)];
         if (!skipSEO) {
             promises.push(generateSEOMetadata(task, sellingPoints));
         }
@@ -1778,7 +1778,7 @@ ${guardrails ? `产品事实与禁用约束：\n${guardrails}\n` : ''}
 直接返回纯净的 JSON 数组，不要任何解释。`;
 
     try {
-        const res = await callAI(TEXT_MODEL, {
+        const res = await callAI("text", {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: { responseMimeType: "application/json" }
         });

@@ -51,7 +51,7 @@ async function postListingApi(path, payload) {
     const res = await fetch(`${API_BASE}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, ai_provider: AI_PROVIDER })
+        body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (data.status !== 'success') {

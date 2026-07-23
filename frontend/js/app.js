@@ -2,10 +2,18 @@
  * 全局应用逻辑
  */
 
-let API_KEY = "";
-let TEXT_MODEL  = "";
-let IMAGE_MODEL = "";
-let AI_PROVIDER = "gemini";
+let TEXT_ROUTE = {
+    capability: "text",
+    name: null,
+    protocol: null,
+    model: null
+};
+let IMAGE_ROUTE = {
+    capability: "image",
+    name: null,
+    protocol: null,
+    model: null
+};
 
 let CONCURRENCY_LIMIT = 2;
 let STAGGER_DELAY = 2000;
@@ -33,15 +41,18 @@ async function loadConfig() {
         clearTimeout(timeoutId);
         
         const cfg = await res.json();
-        API_KEY      = cfg.API_KEY;
-        TEXT_MODEL   = cfg.TEXT_MODEL;
-        IMAGE_MODEL  = cfg.IMAGE_MODEL;
-        AI_PROVIDER  = cfg.AI_PROVIDER || "gemini";
+        TEXT_ROUTE = cfg.TEXT_ROUTE || TEXT_ROUTE;
+        IMAGE_ROUTE = cfg.IMAGE_ROUTE || IMAGE_ROUTE;
         
         if (cfg.CONCURRENCY_LIMIT) CONCURRENCY_LIMIT = cfg.CONCURRENCY_LIMIT;
         if (cfg.STAGGER_DELAY) STAGGER_DELAY = cfg.STAGGER_DELAY;
         
-        const logMsg = `配置加载成功 | 平台: ${AI_PROVIDER} | 模型: ${TEXT_MODEL}`;
+        const routeLabel = route => (
+            route?.name && route?.model
+                ? `${route.name} / ${route.model}`
+                : "未配置"
+        );
+        const logMsg = `配置加载成功 | 文本: ${routeLabel(TEXT_ROUTE)} | 图片: ${routeLabel(IMAGE_ROUTE)}`;
         console.log(`%c[系统] ${logMsg}`, "color: #10b981; font-weight: bold;");
         remoteLog(logMsg);
     } catch (e) {
@@ -52,19 +63,21 @@ async function loadConfig() {
 /**
  * 统一 AI 调用封装
  */
-async function callAI(modelId, payload) {
-    const logMsg = `正在调用模型: ${modelId} (${AI_PROVIDER})`;
+async function callAI(capability, payload) {
+    const route = capability === "image" ? IMAGE_ROUTE : TEXT_ROUTE;
+    const routeName = (
+        route?.name && route?.model
+            ? `${route.name} / ${route.model}`
+            : `${capability} 路由未配置`
+    );
+    const logMsg = `正在调用: ${routeName}`;
     console.log(`%c[AI请求] ${logMsg}`, "color: #0891b2; font-weight: bold;");
     remoteLog(logMsg);
 
     return await fetchWithRetry(`${API_BASE}/api/ai/generate`, {
         method: 'POST',
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            model: modelId,
-            provider: AI_PROVIDER,
-            payload
-        })
+        body: JSON.stringify({ capability, payload })
     });
 }
 

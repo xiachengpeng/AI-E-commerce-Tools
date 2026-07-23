@@ -62,6 +62,7 @@ from services.ai_config_service import (
     create_provider,
     delete_provider,
     get_bindings,
+    get_snapshot,
     import_env_defaults_if_empty,
     list_providers,
     mask_secret,
@@ -73,7 +74,6 @@ from services.ai_adapters import get_adapter
 from services.ai_router import map_provider_error
 from services.app_log_service import APP_LOG_OVERFLOW, app_logs
 from config import (
-    AI_PROVIDER,
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
@@ -1042,16 +1042,35 @@ async def api_stream_logs(
         },
     )
 
+def serialize_public_snapshot(snapshot: ProviderSnapshot) -> dict:
+    return {
+        "capability": snapshot.capability,
+        "name": snapshot.name,
+        "protocol": snapshot.protocol,
+        "model": snapshot.model,
+    }
+
+
+def get_public_route(db: Session, capability: str) -> dict:
+    try:
+        return serialize_public_snapshot(get_snapshot(db, capability))
+    except ValueError:
+        return {
+            "capability": capability,
+            "name": None,
+            "protocol": None,
+            "model": None,
+        }
+
+
 @app.get("/config")
-async def get_frontend_config():
-    config = {
-        "AI_PROVIDER": AI_PROVIDER,
-        "TEXT_MODEL": os.getenv("FRONTEND_TEXT_MODEL", "gemini-3.1-pro-preview"),
-        "IMAGE_MODEL": os.getenv("FRONTEND_IMAGE_MODEL", "gemini-3.1-flash-image-preview"),
+async def get_frontend_config(db: Session = Depends(get_db)):
+    return {
+        "TEXT_ROUTE": get_public_route(db, "text"),
+        "IMAGE_ROUTE": get_public_route(db, "image"),
         "CONCURRENCY_LIMIT": FRONTEND_CONCURRENCY_LIMIT,
         "STAGGER_DELAY": FRONTEND_STAGGER_DELAY,
     }
-    return config
 
 
 @app.post("/api/square-redraw/batches")

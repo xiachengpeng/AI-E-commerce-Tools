@@ -180,16 +180,55 @@ def test_static_asset_cors_headers():
 # Config 端点
 # ============================================================
 
-def test_config_endpoint():
-    """GET /config 返回前端配置"""
+def test_config_exposes_public_routes_without_secrets():
+    """GET /config 只返回当前公共路由信息，不暴露连接配置。"""
     resp = client.get("/config")
     assert resp.status_code == 200
     data = resp.json()
-    assert "AI_PROVIDER" in data
-    assert data["TEXT_MODEL"] == "gemini-3.1-pro-preview"
-    assert data["IMAGE_MODEL"] == "gemini-3.1-flash-image-preview"
-    assert "API_KEY" not in data
-    assert "ACCESS_TOKEN" not in data
+    assert data["TEXT_ROUTE"]["capability"] == "text"
+    assert data["IMAGE_ROUTE"]["capability"] == "image"
+    assert set(data) == {
+        "TEXT_ROUTE",
+        "IMAGE_ROUTE",
+        "CONCURRENCY_LIMIT",
+        "STAGGER_DELAY",
+    }
+    assert set(data["TEXT_ROUTE"]) == {
+        "capability",
+        "name",
+        "protocol",
+        "model",
+    }
+    assert set(data["IMAGE_ROUTE"]) == {
+        "capability",
+        "name",
+        "protocol",
+        "model",
+    }
+    serialized = json.dumps(data).lower()
+    assert "api_key" not in serialized
+    assert "base_url" not in serialized
+    assert "vertex_key_path" not in serialized
+
+
+def test_config_represents_unconfigured_routes_without_internal_details():
+    with patch("main.get_snapshot", side_effect=ValueError("secret path /tmp/key.json")):
+        data = client.get("/config").json()
+
+    assert data["TEXT_ROUTE"] == {
+        "capability": "text",
+        "name": None,
+        "protocol": None,
+        "model": None,
+    }
+    assert data["IMAGE_ROUTE"] == {
+        "capability": "image",
+        "name": None,
+        "protocol": None,
+        "model": None,
+    }
+    assert "secret" not in json.dumps(data).lower()
+    assert "/tmp/key.json" not in json.dumps(data)
 
 
 @pytest.mark.parametrize(

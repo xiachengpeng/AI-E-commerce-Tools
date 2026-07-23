@@ -519,7 +519,7 @@ OUTPUT: You must generate and return the modified image.`;
             generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
         };
 
-        const result = await callAI(IMAGE_MODEL, payload);
+        const result = await callAI("image", payload);
 
         if (result.error) throw new Error(result.error.message);
         if (!result.candidates || result.candidates.length === 0) {

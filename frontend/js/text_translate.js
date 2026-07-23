@@ -110,8 +110,7 @@ async function executeBatchTextTranslation() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 text: inputText,
-                target_langs: languages,
-                ai_provider: AI_PROVIDER
+                target_langs: languages
             })
         });
         
