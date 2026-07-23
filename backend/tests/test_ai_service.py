@@ -132,11 +132,42 @@ async def test_call_ai_retries_then_success():
 
     with patch.object(AIService, "_get_client", return_value=mock_client):
         with patch.object(AIService, "_MAX_RETRIES", 2):
-            with patch("services.ai_service.time.sleep", return_value=None):
+            with patch(
+                "services.ai_service.asyncio.sleep", new=AsyncMock()
+            ):
                 result = await AIService.call_ai("test", provider="gemini")
 
     assert result == "recovered"
     assert mock_client.models.generate_content.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_call_ai_retry_backoff_uses_async_sleep():
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = [
+        RuntimeError("rate limited"),
+        make_sdk_response([make_text_part("recovered")]),
+    ]
+    async_sleep = AsyncMock()
+
+    with patch.object(AIService, "_get_client", return_value=mock_client):
+        with patch.object(AIService, "_MAX_RETRIES", 2):
+            with patch("asyncio.sleep", new=async_sleep):
+                with patch(
+                    "time.sleep",
+                    side_effect=AssertionError("blocking sleep called"),
+                ):
+                    with patch(
+                        "services.ai_service.random.uniform",
+                        return_value=0.25,
+                    ):
+                        result = await AIService.call_ai(
+                            "test", provider="gemini"
+                        )
+
+    assert result == "recovered"
+    assert mock_client.models.generate_content.call_count == 2
+    async_sleep.assert_awaited_once_with(2.25)
 
 
 @pytest.mark.asyncio
@@ -147,7 +178,9 @@ async def test_call_ai_retry_exhausted():
 
     with patch.object(AIService, "_get_client", return_value=mock_client):
         with patch.object(AIService, "_MAX_RETRIES", 2):
-            with patch("services.ai_service.time.sleep", return_value=None):
+            with patch(
+                "services.ai_service.asyncio.sleep", new=AsyncMock()
+            ):
                 with pytest.raises(RuntimeError):
                     await AIService.call_ai("test", provider="gemini")
 

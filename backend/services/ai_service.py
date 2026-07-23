@@ -1,6 +1,6 @@
+import asyncio
 import json
 import logging
-import time
 import random
 from config import (
     GEMINI_API_KEY, GEMINI_MODEL_ID,
@@ -109,7 +109,7 @@ class AIService:
                     f"⏳ [AI调用] 请求失败，{delay:.2f}s 后重试 "
                     f"({attempt + 1}/{cls._MAX_RETRIES - 1}): {e}"
                 )
-                time.sleep(delay)
+                await asyncio.sleep(delay)
         raise last_error or RuntimeError("AI调用失败：重试耗尽")
 
     @staticmethod

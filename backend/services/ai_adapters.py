@@ -1,11 +1,11 @@
 import asyncio
 import base64
-import os
 from abc import ABC, abstractmethod
 
 import httpx
 from google import genai
 from google.genai import types
+from google.oauth2 import service_account
 
 from services.ai_config_service import ProviderSnapshot
 
@@ -146,15 +146,18 @@ class GeminiAdapter(AIAdapter):
 
 class VertexAdapter(GeminiAdapter):
     def _build_client(self, snapshot: ProviderSnapshot):
+        client_options = {
+            "vertexai": True,
+            "project": snapshot.vertex_project_id,
+            "location": snapshot.vertex_location,
+        }
         if snapshot.vertex_key_path:
-            os.environ.setdefault(
-                "GOOGLE_APPLICATION_CREDENTIALS", snapshot.vertex_key_path
+            client_options["credentials"] = (
+                service_account.Credentials.from_service_account_file(
+                    snapshot.vertex_key_path
+                )
             )
-        return genai.Client(
-            vertexai=True,
-            project=snapshot.vertex_project_id,
-            location=snapshot.vertex_location,
-        )
+        return genai.Client(**client_options)
 
 
 def convert_openai_messages(contents):

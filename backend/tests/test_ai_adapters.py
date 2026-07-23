@@ -192,10 +192,10 @@ def test_gemini_client_cache_is_versioned_by_snapshot():
     client_factory.assert_any_call(api_key="gemini-key")
 
 
-def test_vertex_client_uses_snapshot_credentials_and_versioned_cache(
+def test_vertex_uses_explicit_credentials_without_mutating_environment(
     monkeypatch,
 ):
-    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/existing/adc.json")
     adapter = VertexAdapter()
     snapshot = make_snapshot(
         protocol="vertex",
@@ -206,19 +206,96 @@ def test_vertex_client_uses_snapshot_credentials_and_versioned_cache(
         vertex_key_path="/tmp/vertex-key.json",
     )
     client = MagicMock()
+    credentials = MagicMock(name="credentials")
 
-    with patch("services.ai_adapters.genai.Client", return_value=client) as factory:
-        assert adapter._client(snapshot) is client
-        assert adapter._client(snapshot) is client
+    with patch(
+        "google.oauth2.service_account.Credentials.from_service_account_file",
+        return_value=credentials,
+    ) as load_credentials:
+        with patch(
+            "services.ai_adapters.genai.Client", return_value=client
+        ) as factory:
+            assert adapter._client(snapshot) is client
 
+    load_credentials.assert_called_once_with("/tmp/vertex-key.json")
     factory.assert_called_once_with(
         vertexai=True,
         project="project-id",
         location="us-central1",
+        credentials=credentials,
     )
     assert (
         __import__("os").environ["GOOGLE_APPLICATION_CREDENTIALS"]
-        == "/tmp/vertex-key.json"
+        == "/existing/adc.json"
+    )
+
+
+def test_vertex_credentials_are_isolated_by_provider_and_config_version():
+    adapter = VertexAdapter()
+    provider_a_v1 = make_snapshot(
+        id=10,
+        protocol="vertex",
+        api_key=None,
+        base_url=None,
+        vertex_project_id="project-a",
+        vertex_location="us-central1",
+        vertex_key_path="/keys/a-v1.json",
+        config_version=1,
+    )
+    provider_b_v1 = replace(
+        provider_a_v1,
+        id=20,
+        vertex_project_id="project-b",
+        vertex_key_path="/keys/b-v1.json",
+    )
+    provider_a_v2 = replace(
+        provider_a_v1,
+        vertex_key_path="/keys/a-v2.json",
+        config_version=2,
+    )
+    credentials = [MagicMock(name=f"credentials-{i}") for i in range(3)]
+    clients = [MagicMock(name=f"client-{i}") for i in range(3)]
+
+    with patch(
+        "google.oauth2.service_account.Credentials.from_service_account_file",
+        side_effect=credentials,
+    ) as load_credentials:
+        with patch(
+            "services.ai_adapters.genai.Client",
+            side_effect=clients,
+        ) as client_factory:
+            assert adapter._client(provider_a_v1) is clients[0]
+            assert adapter._client(provider_a_v1) is clients[0]
+            assert adapter._client(provider_b_v1) is clients[1]
+            assert adapter._client(provider_a_v2) is clients[2]
+
+    assert [
+        item.args[0] for item in load_credentials.call_args_list
+    ] == ["/keys/a-v1.json", "/keys/b-v1.json", "/keys/a-v2.json"]
+    assert [
+        item.kwargs["credentials"]
+        for item in client_factory.call_args_list
+    ] == credentials
+
+
+def test_vertex_without_key_path_uses_application_default_credentials():
+    adapter = VertexAdapter()
+    snapshot = make_snapshot(
+        protocol="vertex",
+        api_key=None,
+        base_url=None,
+        vertex_project_id="project-id",
+        vertex_location="us-central1",
+        vertex_key_path=None,
+    )
+
+    with patch("services.ai_adapters.genai.Client") as client_factory:
+        adapter._client(snapshot)
+
+    client_factory.assert_called_once_with(
+        vertexai=True,
+        project="project-id",
+        location="us-central1",
     )
 
 
