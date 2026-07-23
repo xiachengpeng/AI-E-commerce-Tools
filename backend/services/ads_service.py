@@ -1,10 +1,8 @@
 import base64
 import json
-import os
 import re
 from typing import Any
 
-from config import GEMINI_MODEL_ID
 from services.ai_service import AIService
 from services.listing_service import parse_ai_json_object, first_text_from_response
 
@@ -20,15 +18,6 @@ AD_STYLE_DEFINITIONS = [
     ("scarcity_urgency", "Scarcity / Urgency", "稀缺 / 紧迫感型", "制造合理的限量、限时、补货或库存紧迫感。"),
     ("curiosity_entertainment", "Curiosity / Entertainment", "猎奇 / 趣味型", "用反常识、测试、幽默或反转吸引冷流量。"),
 ]
-
-
-def _ads_model_id() -> str:
-    return (
-        os.getenv("FRONTEND_VISION_MODEL")
-        or os.getenv("FRONTEND_TEXT_MODEL")
-        or "gemini-3.1-pro-preview"
-        or GEMINI_MODEL_ID
-    )
 
 
 def _text_pair(value: Any) -> dict:
@@ -212,9 +201,8 @@ async def generate_ad_copy(request) -> dict:
         "generationConfig": {"responseMimeType": "application/json"},
     }
     response = await AIService.generate_content(
-        model_id=_ads_model_id(),
         payload=payload,
-        provider=request.ai_provider,
+        capability="text",
     )
     text = first_text_from_response(response)
     return normalize_ad_copy_result(parse_ai_json_object(text), request.platforms)

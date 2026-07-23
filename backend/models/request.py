@@ -9,7 +9,6 @@ from typing import List, Union, Any, Optional
 
 class CompareRequest(BaseModel):
     urls: List[str]
-    ai_provider: str | None = None # 可选，支持 "gemini" 或 "vertex"
     force_refresh: bool = False
 
 class ProductCompareData(BaseModel):
@@ -132,7 +131,6 @@ class TranslationRequest(BaseModel):
     text: str
     target_lang: Optional[str] = None
     target_langs: Optional[List[str]] = None
-    ai_provider: str | None = None
 
 
 class ListingGenerateRequest(BaseModel):
@@ -144,7 +142,6 @@ class ListingGenerateRequest(BaseModel):
     marketing_theme: str | None = None
     marketing_theme_label: str | None = None
     target_language: str | None = None
-    ai_provider: str | None = None
 
     @field_validator('name', 'points', 'platform', 'region')
     @classmethod
@@ -180,14 +177,12 @@ class ListingGenerateRequest(BaseModel):
 
 class ListingImageExtractRequest(BaseModel):
     image_data: str
-    ai_provider: str | None = None
 
 
 class ListingComplianceRequest(BaseModel):
     listing: dict
     platform: str | None = None
     region: str | None = None
-    ai_provider: str | None = None
 
 
 class AdCopyGenerateRequest(BaseModel):
@@ -197,7 +192,6 @@ class AdCopyGenerateRequest(BaseModel):
     target_language: str | None = None
     marketing_theme: str | None = None
     marketing_theme_label: str | None = None
-    ai_provider: str | None = None
 
     @field_validator("image_data", "region")
     @classmethod

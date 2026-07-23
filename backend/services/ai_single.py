@@ -105,22 +105,26 @@ def _extract_json(text: str) -> str:
 from .ai_service import AIService
 
 
-async def _call_ai_service(prompt: str, provider: str = None) -> str:
+async def _call_ai_service(prompt: str) -> str:
     """封装调用 AIService 的异步逻辑"""
-    raw_text = await AIService.call_ai(prompt, provider=provider)
+    raw_text = await AIService.call_ai(
+        prompt,
+        capability="text",
+        response_mime_type="application/json",
+    )
     logger.info(f"AI Result: {raw_text[:200]}...")
     return _extract_json(raw_text)
 
 
-async def analyze_single_extract(structured_data: dict, provider: str = None) -> str:
+async def analyze_single_extract(structured_data: dict) -> str:
     product_data = json.dumps(structured_data.get("product_data", {}), ensure_ascii=False)
     market_data = json.dumps(structured_data.get("market_data", {}), ensure_ascii=False)
     prompt = PROMPT_TEMPLATE_EXTRACT.replace("{product_data}", product_data).replace("{market_data}", market_data)
-    return await _call_ai_service(prompt, provider=provider)
+    return await _call_ai_service(prompt)
 
 
-async def analyze_single_deep(structured_data: dict, provider: str = None) -> str:
+async def analyze_single_deep(structured_data: dict) -> str:
     product_data = json.dumps(structured_data.get("product_data", {}), ensure_ascii=False)
     market_data = json.dumps(structured_data.get("market_data", {}), ensure_ascii=False)
     prompt = PROMPT_TEMPLATE_DEEP.replace("{product_data}", product_data).replace("{market_data}", market_data)
-    return await _call_ai_service(prompt, provider=provider)
+    return await _call_ai_service(prompt)

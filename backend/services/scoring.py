@@ -77,12 +77,16 @@ def _extract_json(text: str) -> str:
 from .ai_service import AIService
 
 
-async def calculate_score(product_data: dict, provider: str = None) -> dict:
+async def calculate_score(product_data: dict) -> dict:
     prompt = PROMPT_TEMPLATE_SCORE.replace(
         "{product}", json.dumps(product_data, ensure_ascii=False, indent=2)
     )
     try:
-        json_str = await AIService.call_ai(prompt, provider=provider)
+        json_str = await AIService.call_ai(
+            prompt,
+            capability="text",
+            response_mime_type="application/json",
+        )
         parsed = json.loads(_extract_json(json_str))
         if isinstance(parsed, list):
             return {}

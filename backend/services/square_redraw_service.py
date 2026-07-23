@@ -213,10 +213,6 @@ def _read_static_url_bytes(static_url: str) -> bytes:
         return file.read()
 
 
-def _image_model_id() -> str:
-    return os.getenv("FRONTEND_IMAGE_MODEL", "gemini-3.1-flash-image-preview")
-
-
 async def process_square_redraw_batch(batch_id: int) -> None:
     db = SessionLocal()
     try:
@@ -272,7 +268,10 @@ async def process_square_redraw_item(item_id: int) -> None:
                 "imageConfig": {"aspectRatio": target_aspect_ratio},
             },
         }
-        response = await AIService.generate_content(model_id=_image_model_id(), payload=payload)
+        response = await AIService.generate_content(
+            payload=payload,
+            capability="image",
+        )
         image_part = next(
             (
                 part.get("inlineData")

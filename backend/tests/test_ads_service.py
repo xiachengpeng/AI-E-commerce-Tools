@@ -1,12 +1,10 @@
-from services.ads_service import _ads_model_id, normalize_ad_copy_result
+import base64
+from unittest.mock import AsyncMock, patch
 
+import pytest
 
-def test_ads_model_defaults_to_pro_preview_for_image_recognition(monkeypatch):
-    monkeypatch.delenv("FRONTEND_VISION_MODEL", raising=False)
-    monkeypatch.delenv("FRONTEND_IMAGE_MODEL", raising=False)
-    monkeypatch.delenv("FRONTEND_TEXT_MODEL", raising=False)
-
-    assert _ads_model_id() == "gemini-3.1-pro-preview"
+from models.request import AdCopyGenerateRequest
+from services.ads_service import generate_ad_copy, normalize_ad_copy_result
 
 
 def test_normalize_ad_copy_result_fills_all_styles_and_selected_platforms():
@@ -57,3 +55,27 @@ def test_normalize_ad_copy_result_supports_google_lists():
     assert style["google"]["descriptions"][0] == {"target": "Dries fast", "zh": "快速干燥"}
     assert style["google"]["keywords"][0] == {"target": "bath mat", "zh": "浴室垫"}
     assert style["google"]["sitelinks"][0] == {"target": "Shop Now", "zh": "立即购买"}
+
+
+@pytest.mark.asyncio
+async def test_generate_ad_copy_routes_image_analysis_to_text_capability():
+    request = AdCopyGenerateRequest(
+        image_data="data:image/png;base64," + base64.b64encode(b"fake").decode(),
+        platforms=["facebook"],
+        region="US Market",
+    )
+    response = {
+        "candidates": [{
+            "content": {
+                "parts": [{"text": '{"product":{"name":"Lamp"},"styles":[]}'}]
+            }
+        }]
+    }
+    with patch(
+        "services.ads_service.AIService.generate_content",
+        new=AsyncMock(return_value=response),
+    ) as mocked:
+        result = await generate_ad_copy(request)
+
+    assert result["product"]["name"]["target"] == "Lamp"
+    assert mocked.await_args.kwargs["capability"] == "text"

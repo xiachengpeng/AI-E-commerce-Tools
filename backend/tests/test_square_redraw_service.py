@@ -322,6 +322,7 @@ def test_process_non_square_uses_square_image_config():
     payload = mock_ai.await_args.kwargs["payload"]
     assert payload["generationConfig"]["responseModalities"] == ["IMAGE"]
     assert payload["generationConfig"]["imageConfig"]["aspectRatio"] == "1:1"
+    assert mock_ai.await_args.kwargs["capability"] == "image"
 
     db = SessionLocal()
     try:

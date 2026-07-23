@@ -47,24 +47,26 @@ DEEP_JSON = json.dumps({
 async def test_analyze_single_extract(sample_structured_data):
     """单品提取：正常返回 JSON"""
     with patch("services.ai_single.AIService.call_ai",
-               new=AsyncMock(return_value=EXTRACT_JSON)):
+               new=AsyncMock(return_value=EXTRACT_JSON)) as mocked:
         from services.ai_single import analyze_single_extract
-        result = await analyze_single_extract(sample_structured_data, provider="gemini")
+        result = await analyze_single_extract(sample_structured_data)
         parsed = json.loads(result)
         assert parsed["product_name"] == "测试产品 ||| Test Product"
         assert parsed["price"] == "$29.99"
+        assert mocked.await_args.kwargs["capability"] == "text"
 
 
 @pytest.mark.asyncio
 async def test_analyze_single_deep(sample_structured_data):
     """深度分析：正常返回 JSON"""
     with patch("services.ai_single.AIService.call_ai",
-               new=AsyncMock(return_value=DEEP_JSON)):
+               new=AsyncMock(return_value=DEEP_JSON)) as mocked:
         from services.ai_single import analyze_single_deep
-        result = await analyze_single_deep(sample_structured_data, provider="gemini")
+        result = await analyze_single_deep(sample_structured_data)
         parsed = json.loads(result)
         assert parsed["product_name"] == "深度测试 ||| Deep Test"
         assert len(parsed["target_countries"]) == 5
+        assert mocked.await_args.kwargs["capability"] == "text"
 
 
 @pytest.mark.asyncio

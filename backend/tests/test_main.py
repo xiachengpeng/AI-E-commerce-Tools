@@ -18,6 +18,14 @@ from main import (
     normalize_input_url,
     normalize_ai_json_object,
 )
+from models.request import (
+    AdCopyGenerateRequest,
+    CompareRequest,
+    ListingComplianceRequest,
+    ListingGenerateRequest,
+    ListingImageExtractRequest,
+    TranslationRequest,
+)
 
 client = TestClient(app)
 
@@ -184,20 +192,60 @@ def test_config_endpoint():
     assert "ACCESS_TOKEN" not in data
 
 
-def test_ai_generate_endpoint():
-    """POST /api/ai/generate 通过后端代理调用模型"""
+@pytest.mark.parametrize(
+    ("model_class", "payload"),
+    [
+        (CompareRequest, {"urls": ["https://example.com"]}),
+        (TranslationRequest, {"text": "你好"}),
+        (ListingGenerateRequest, {
+            "name": "吊灯",
+            "points": "藤编",
+            "platform": "Amazon",
+            "region": "US Market",
+        }),
+        (ListingImageExtractRequest, {"image_data": "data:image/png;base64,YQ=="}),
+        (ListingComplianceRequest, {"listing": {}}),
+        (AdCopyGenerateRequest, {
+            "image_data": "data:image/png;base64,YQ==",
+            "platforms": ["facebook"],
+            "region": "US Market",
+        }),
+    ],
+)
+def test_business_request_models_ignore_ai_provider(model_class, payload):
+    request = model_class.model_validate({**payload, "ai_provider": "vertex"})
+
+    assert "ai_provider" not in request.model_dump()
+
+
+def test_ai_generate_endpoint_routes_by_capability_and_ignores_browser_routing():
+    """POST /api/ai/generate 仅接受能力与 payload 作为路由输入"""
     result = {"candidates": [{"content": {"parts": [{"text": "ok"}]}}]}
     with patch("services.ai_service.AIService.generate_content",
                new=AsyncMock(return_value=result)) as mock_generate:
+        payload = {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]}
         resp = client.post("/api/ai/generate", json={
+            "capability": "image",
             "model": "gemini-test",
             "provider": "vertex",
-            "payload": {"contents": [{"role": "user", "parts": [{"text": "hi"}]}]},
+            "api_key": "browser-secret",
+            "payload": payload,
         })
 
     assert resp.status_code == 200
     assert resp.json() == result
-    mock_generate.assert_awaited_once()
+    mock_generate.assert_awaited_once_with(
+        payload=payload,
+        capability="image",
+    )
+
+
+@pytest.mark.parametrize("body", [{}, {"capability": "audio", "payload": {}}])
+def test_ai_generate_endpoint_rejects_missing_or_invalid_capability(body):
+    resp = client.post("/api/ai/generate", json=body)
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "capability 必须是 text 或 image"
 
 
 def test_listing_generate_endpoint():
@@ -494,12 +542,19 @@ def test_square_redraw_history_save_and_list():
 def test_translate_text_no_langs():
     """翻译端点：无目标语言 → 默认 English"""
     with patch("services.ai_service.AIService.translate_text_batch",
-               new=AsyncMock(return_value={"English": "Hello"})):
-        resp = client.post("/api/translate-text", json={"text": "你好"})
+               new=AsyncMock(return_value={"English": "Hello"})) as mocked:
+        resp = client.post("/api/translate-text", json={
+            "text": "你好",
+            "ai_provider": "vertex",
+        })
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "success"
         assert data["translations"]["English"] == "Hello"
+        mocked.assert_awaited_once_with(
+            text="你好",
+            target_langs=["English"],
+        )
 
 
 def test_translate_text_multi_lang():

@@ -27,12 +27,13 @@ async def test_compare_products_success():
         {"product_name": "产品B ||| Product B", "price": "$20"},
     ]
     with patch("services.ai_compare.AIService.call_ai",
-               new=AsyncMock(return_value=COMPARE_JSON)):
+               new=AsyncMock(return_value=COMPARE_JSON)) as mocked:
         from services.ai_compare import compare_products
-        result = await compare_products(products, provider="gemini")
+        result = await compare_products(products)
         assert result["market_position"] == "蓝海市场 ||| Blue ocean market"
         assert result["winner_product"] == "产品A ||| Product A"
         assert len(result["comprehensive_evaluation"]) == 1
+        assert mocked.await_args.kwargs["capability"] == "text"
 
 
 @pytest.mark.asyncio
@@ -41,7 +42,7 @@ async def test_compare_products_handles_list_response(sample_product_data):
     with patch("services.ai_compare.AIService.call_ai",
                new=AsyncMock(return_value="[]")):
         from services.ai_compare import compare_products
-        result = await compare_products([sample_product_data], provider="gemini")
+        result = await compare_products([sample_product_data])
         assert result == {}
 
 
@@ -52,4 +53,4 @@ async def test_compare_products_raises_on_ai_error(sample_product_data):
                new=AsyncMock(side_effect=Exception("AI error"))):
         from services.ai_compare import compare_products
         with pytest.raises(Exception, match="AI error"):
-            await compare_products([sample_product_data], provider="gemini")
+            await compare_products([sample_product_data])

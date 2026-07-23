@@ -325,7 +325,7 @@ def build_consistent_recommendations(products: list[dict], scores: list[dict]) -
     ]
 
 
-async def process_single_url(url: str, provider: str = None, markdown_content: str = None, force_refresh: bool = False) -> dict:
+async def process_single_url(url: str, markdown_content: str = None, force_refresh: bool = False) -> dict:
     try:
         logger.info(f"🔍 [单品处理] 开始处理 URL: {url}")
         if not markdown_content:
@@ -341,7 +341,7 @@ async def process_single_url(url: str, provider: str = None, markdown_content: s
         else:
             structured_data = parse_general(markdown_content, url=url)
 
-        ai_result_json_str = await analyze_single_extract(structured_data, provider=provider)
+        ai_result_json_str = await analyze_single_extract(structured_data)
         parsed_data = normalize_ai_json_object(json.loads(ai_result_json_str))
         parsed_data["source_url"] = url
         
@@ -354,7 +354,7 @@ async def process_single_url(url: str, provider: str = None, markdown_content: s
         logger.error(f"❌ [单品处理] 出错: {e}")
         raise e
 
-async def process_single_url_deep(url: str, provider: str = None, markdown_content: str = None, force_refresh: bool = False) -> dict:
+async def process_single_url_deep(url: str, markdown_content: str = None, force_refresh: bool = False) -> dict:
     try:
         if not markdown_content:
             markdown_content = await fetch_markdown(url, max_age=0 if force_refresh else 3600)
@@ -363,7 +363,7 @@ async def process_single_url_deep(url: str, provider: str = None, markdown_conte
         else:
             structured_data = parse_general(markdown_content, url=url)
 
-        ai_result_json_str = await analyze_single_deep(structured_data, provider=provider)
+        ai_result_json_str = await analyze_single_deep(structured_data)
         result = normalize_ai_json_object(json.loads(ai_result_json_str))
         result["source_url"] = url
         return result
@@ -408,7 +408,6 @@ analysis_cache = {}
 async def compare(request: CompareRequest):
     try:
         urls = request.urls
-        provider = request.ai_provider
         force_refresh = request.force_refresh
         unique_urls = list(dict.fromkeys([normalize_input_url(u) for u in urls if u.strip()]))
 
@@ -418,7 +417,7 @@ async def compare(request: CompareRequest):
             if err:
                 return CompareResponse(status="error", message=err)
 
-        cache_key = f"{';'.join(sorted(unique_urls))}_{provider}"
+        cache_key = ";".join(sorted(unique_urls))
         
         if not force_refresh and cache_key in analysis_cache:
             cached_time, cached_res = analysis_cache[cache_key]
@@ -428,8 +427,8 @@ async def compare(request: CompareRequest):
         if len(unique_urls) == 1:
             url = unique_urls[0]
             markdown_content = await fetch_markdown(url, max_age=0 if force_refresh else 3600)
-            basic_data = await process_single_url(url, provider=provider, markdown_content=markdown_content)
-            score_res = await calculate_score(basic_data, provider=provider)
+            basic_data = await process_single_url(url, markdown_content=markdown_content)
+            score_res = await calculate_score(basic_data)
             
             # 补全 ScoreCard 所需字段
             if not score_res.get("decision_details"):
@@ -440,7 +439,7 @@ async def compare(request: CompareRequest):
             score_res.setdefault("product", basic_data.get("product_name", "Product"))
             
             scores = [ScoreCard(**score_res)]
-            single_data = await process_single_url_deep(url, provider=provider, markdown_content=markdown_content)
+            single_data = await process_single_url_deep(url, markdown_content=markdown_content)
             response_data = CompareResponseData(
                 single_data=single_data,
                 scores=scores,
@@ -449,7 +448,7 @@ async def compare(request: CompareRequest):
             template_type = "single"
             msg = "分析完成"
         else:
-            tasks = [process_single_url(url, provider=provider, force_refresh=force_refresh) for url in unique_urls]
+            tasks = [process_single_url(url, force_refresh=force_refresh) for url in unique_urls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             valid_products = []
             url_statuses = []
@@ -462,7 +461,7 @@ async def compare(request: CompareRequest):
             if not valid_products:
                 return CompareResponse(status="error", message="所有 URL 均处理失败", data=CompareResponseData(url_statuses=url_statuses))
 
-            score_tasks = [calculate_score(p, provider=provider) for p in valid_products]
+            score_tasks = [calculate_score(p) for p in valid_products]
             score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
             scores = []
             score_dicts = []
@@ -497,7 +496,7 @@ async def compare(request: CompareRequest):
                 }
                 compare_input.append(enriched)
 
-            comp_result = await compare_products(compare_input or valid_products, provider=provider)
+            comp_result = await compare_products(compare_input or valid_products)
             comp_result = align_comparison_winner(comp_result, scored_products, score_dicts)
             consistent_recommendations = build_consistent_recommendations(scored_products, score_dicts)
             if consistent_recommendations:
@@ -545,7 +544,6 @@ async def api_translate_text(request: TranslationRequest):
         result_dict = await AIService.translate_text_batch(
             text=request.text,
             target_langs=langs,
-            provider=request.ai_provider
         )
         
         return {
@@ -603,24 +601,13 @@ async def api_ads_generate(request: AdCopyGenerateRequest):
 
 @app.post("/api/ai/generate")
 async def api_ai_generate(data: dict):
-    """
-    前端通用 AI 调用代理。
-    前端继续传旧版 REST 风格 payload，后端统一转为 google-genai SDK 调用。
-    """
-    try:
-        model_id = data.get("model")
-        payload = data.get("payload", {})
-        provider = data.get("provider")
-        if not model_id:
-            return {"error": {"message": "model 不能为空"}}
-        return await AIService.generate_content(
-            model_id=model_id,
-            payload=payload,
-            provider=provider,
-        )
-    except Exception as e:
-        logger.error(f"❌ [AI代理] 调用失败: {e}")
-        return {"error": {"message": str(e)}}
+    capability = data.get("capability")
+    if capability not in {"text", "image"}:
+        raise HTTPException(422, "capability 必须是 text 或 image")
+    return await AIService.generate_content(
+        payload=data.get("payload", {}),
+        capability=capability,
+    )
 
 @app.post("/log")
 async def receive_frontend_log(data: FrontendLogEvent):

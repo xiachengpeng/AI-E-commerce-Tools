@@ -55,13 +55,17 @@ def _extract_json(text: str) -> str:
 from .ai_service import AIService
 
 
-async def compare_products(products_data: list, provider: str = None) -> dict:
+async def compare_products(products_data: list) -> dict:
     prompt = PROMPT_TEMPLATE_COMPARE.replace(
         "{products}", json.dumps(products_data, ensure_ascii=False, indent=2)
     )
 
     try:
-        json_str = await AIService.call_ai(prompt, provider=provider)
+        json_str = await AIService.call_ai(
+            prompt,
+            capability="text",
+            response_mime_type="application/json",
+        )
         parsed = json.loads(_extract_json(json_str))
         logger.info(f"AI Compare Result Parsed: {parsed}")
         if isinstance(parsed, list):

@@ -1,11 +1,9 @@
 import base64
 import json
 import logging
-import os
 import re
 from typing import Any
 
-from config import GEMINI_MODEL_ID
 from services.ai_service import AIService
 
 
@@ -50,14 +48,6 @@ LISTING_SCHEMA = {
     ],
     "socialMedia": {"target": "Target-language social copy", "zh": "中文社媒文案"},
 }
-
-
-def _listing_model_id() -> str:
-    return os.getenv("FRONTEND_TEXT_MODEL") or GEMINI_MODEL_ID
-
-
-def _listing_image_model_id() -> str:
-    return os.getenv("FRONTEND_VISION_MODEL") or _listing_model_id()
 
 
 def strip_json_fences(text: str) -> str:
@@ -391,8 +381,7 @@ JSON schema:
 async def generate_listing(request) -> dict:
     text = await AIService.call_ai(
         _listing_prompt(request),
-        provider=request.ai_provider,
-        model_id=_listing_model_id(),
+        capability="text",
         response_mime_type="application/json",
     )
     return normalize_listing_result(parse_ai_json_object(text))
@@ -422,9 +411,8 @@ async def extract_listing_inputs(request) -> dict:
         "generationConfig": {"responseMimeType": "application/json"},
     }
     response = await AIService.generate_content(
-        model_id=_listing_image_model_id(),
         payload=payload,
-        provider=request.ai_provider,
+        capability="text",
     )
     text = first_text_from_response(response)
     data = parse_ai_json_object(text)
@@ -438,8 +426,7 @@ async def extract_listing_inputs(request) -> dict:
 async def check_listing_compliance(request) -> dict:
     text = await AIService.call_ai(
         _compliance_prompt(request),
-        provider=request.ai_provider,
-        model_id=_listing_model_id(),
+        capability="text",
         response_mime_type="application/json",
     )
     return normalize_compliance_result(parse_ai_json_object(text))

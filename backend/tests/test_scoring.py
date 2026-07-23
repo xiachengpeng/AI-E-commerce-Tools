@@ -31,12 +31,13 @@ async def test_calculate_score_success(sample_product_data):
 
     with patch("services.scoring.AIService.call_ai", new=AsyncMock(
         return_value=json.dumps(score_json, ensure_ascii=False)
-    )):
+    )) as mocked:
         result = await __import__("services.scoring", fromlist=["calculate_score"])\
-            .calculate_score(sample_product_data, provider="gemini")
+            .calculate_score(sample_product_data)
         assert result["opportunity_score"] == 78
         assert result["difficulty_score"] == 42
         assert "强烈建议" in result["final_decision"]
+        assert mocked.await_args.kwargs["capability"] == "text"
 
 
 @pytest.mark.asyncio
@@ -44,7 +45,7 @@ async def test_calculate_score_handles_list_response(sample_product_data):
     """AI 错误返回数组 → 返回空字典"""
     with patch("services.scoring.AIService.call_ai", new=AsyncMock(return_value="[]")):
         from services.scoring import calculate_score
-        result = await calculate_score(sample_product_data, provider="gemini")
+        result = await calculate_score(sample_product_data)
         assert result == {}
 
 
@@ -55,4 +56,4 @@ async def test_calculate_score_raises_on_ai_error(sample_product_data):
                new=AsyncMock(side_effect=RuntimeError("AI down"))):
         from services.scoring import calculate_score
         with pytest.raises(RuntimeError, match="AI down"):
-            await calculate_score(sample_product_data, provider="gemini")
+            await calculate_score(sample_product_data)
