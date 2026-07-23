@@ -958,7 +958,7 @@ def _connection_payload(capability: str) -> dict:
         if capability == "text"
         else "Generate a 1×1 image"
     )
-    return {
+    payload = {
         "contents": [
             {
                 "role": "user",
@@ -966,6 +966,57 @@ def _connection_payload(capability: str) -> dict:
             }
         ]
     }
+    if capability == "image":
+        payload["generationConfig"] = {
+            "responseModalities": ["IMAGE"],
+            "imageConfig": {"aspectRatio": "1:1"},
+        }
+    return payload
+
+
+def _connection_response_supports(
+    capability: str,
+    response: dict,
+) -> bool:
+    if not isinstance(response, dict):
+        return False
+    for candidate in response.get("candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content") or {}
+        if not isinstance(content, dict):
+            continue
+        for part in content.get("parts") or []:
+            if not isinstance(part, dict):
+                continue
+            if capability == "text":
+                text_value = part.get("text")
+                if isinstance(text_value, str) and text_value.strip():
+                    return True
+                continue
+            inline_data = (
+                part.get("inlineData")
+                or part.get("inline_data")
+                or {}
+            )
+            if not isinstance(inline_data, dict):
+                continue
+            mime_type = (
+                inline_data.get("mimeType")
+                or inline_data.get("mime_type")
+                or ""
+            )
+            data = inline_data.get("data")
+            if (
+                isinstance(mime_type, str)
+                and mime_type.lower().startswith("image/")
+                and (
+                    (isinstance(data, str) and bool(data.strip()))
+                    or (isinstance(data, bytes) and bool(data))
+                )
+            ):
+                return True
+    return False
 
 
 async def _run_ai_provider_connection_test(
@@ -998,10 +1049,20 @@ async def _run_ai_provider_connection_test(
     else:
         try:
             adapter = get_adapter(snapshot.protocol)
-            await adapter.generate(
+            provider_response = await adapter.generate(
                 snapshot,
                 _connection_payload(data.capability),
             )
+            if not _connection_response_supports(
+                data.capability,
+                provider_response,
+            ):
+                result_status = "error"
+                message = (
+                    "不支持文本生成"
+                    if data.capability == "text"
+                    else "不支持图片生成"
+                )
         except Exception as exc:
             mapped = map_provider_error(exc)
             result_status = "error"

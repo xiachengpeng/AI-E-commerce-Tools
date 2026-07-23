@@ -364,6 +364,131 @@ def test_prompt_and_response_separator_and_provider_key_variants_are_redacted():
     assert entry["message"].count("[REDACTED]") == 5
 
 
+@pytest.mark.parametrize(
+    ("message", "secrets", "preserved"),
+    [
+        (
+            (
+                '{"inlineData":{"metadata":{"data":"safe-metadata"},'
+                '"mimeType":"image/png","data":"ACTUAL-IMAGE-SECRET"}}'
+            ),
+            ["ACTUAL-IMAGE-SECRET"],
+            ["safe-metadata", "mimeType"],
+        ),
+        (
+            (
+                "{'imageBase64': 'CAMEL-IMAGE', "
+                "'base64_image': 'SNAKE-IMAGE', "
+                "'credentials': {'private_key_id': 'KEY-ID', "
+                "'client_email': 'service@example.com', "
+                "'client_id': 'CLIENT-ID', "
+                "'client_x509_cert_url': 'https://cert-secret', "
+                "'auth_uri': 'https://auth-secret', "
+                "'token_uri': 'https://token-secret', "
+                "'universe_domain': 'universe-secret'}}"
+            ),
+            [
+                "CAMEL-IMAGE",
+                "SNAKE-IMAGE",
+                "KEY-ID",
+                "service@example.com",
+                "CLIENT-ID",
+                "https://cert-secret",
+                "https://auth-secret",
+                "https://token-secret",
+                "universe-secret",
+            ],
+            ["credentials"],
+        ),
+        (
+            (
+                "upload=data:image/png;charset=utf-8;"
+                "name=preview.png;base64,PARAMETERIZEDSECRET status=ok"
+            ),
+            ["PARAMETERIZEDSECRET"],
+            ["status=ok"],
+        ),
+        (
+            (
+                "credential=-----BEGIN PRIVATE KEY-----\n"
+                "PEM-SECRET\n"
+                "-----END PRIVATE KEY----- status=loaded"
+            ),
+            ["PEM-SECRET"],
+            ["status=loaded"],
+        ),
+    ],
+)
+def test_bypass_variants_are_redacted_from_serialized_messages(
+    message,
+    secrets,
+    preserved,
+):
+    entry = AppLogService().emit(
+        level="info",
+        source="image",
+        message=message,
+    )
+
+    for secret in secrets:
+        assert secret not in str(entry["message"])
+    for value in preserved:
+        assert value in str(entry["message"])
+
+
+@pytest.mark.asyncio
+async def test_recursive_structured_sanitization_reaches_recent_and_subscriber():
+    logs = AppLogService()
+    queue = logs.subscribe()
+    structured = {
+        "event": "image-ready",
+        "items": [
+            {"image_base64": "STRUCTURED-IMAGE"},
+            {
+                "inline_data": {
+                    "mime_type": "image/png",
+                    "data": "STRUCTURED-INLINE",
+                }
+            },
+        ],
+        "google_credentials": {
+            "private_key": (
+                "-----BEGIN PRIVATE KEY-----\n"
+                "STRUCTURED-PEM\n"
+                "-----END PRIVATE KEY-----"
+            ),
+            "vertex_key_path": "/private/vertex.json",
+        },
+    }
+
+    returned = logs.emit(
+        level="info",
+        source="system",
+        message=structured,
+        provider={"client_email": "structured@example.com"},
+        model="{'private_key_id': 'MODEL-KEY-ID'}",
+    )
+    delivered = await asyncio.wait_for(queue.get(), 0.1)
+    recent = logs.recent()[0]
+
+    for entry in (returned, delivered, recent):
+        serialized = str(entry)
+        for secret in (
+            "STRUCTURED-IMAGE",
+            "STRUCTURED-INLINE",
+            "STRUCTURED-PEM",
+            "/private/vertex.json",
+            "structured@example.com",
+            "MODEL-KEY-ID",
+        ):
+            assert secret not in serialized
+        assert "image-ready" in serialized
+        assert "image/png" in serialized
+
+    returned["message"]["items"][0]["image_base64"] = "MUTATED"
+    assert "MUTATED" not in str(logs.recent())
+
+
 @pytest.mark.asyncio
 async def test_returned_history_and_subscriber_entries_are_independent_copies():
     logs = AppLogService()

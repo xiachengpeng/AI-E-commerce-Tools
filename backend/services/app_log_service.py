@@ -1,7 +1,10 @@
 """In-memory structured application logs with sensitive-value redaction."""
 
 import asyncio
+import ast
+import copy
 import datetime
+import json
 import re
 import threading
 import uuid
@@ -20,6 +23,28 @@ class _LogSubscriber:
 class AppLogService:
     """Keep a bounded stream of safe log entries for application consumers."""
 
+    _SENSITIVE_KEYS = {
+        "apikey",
+        "authorization",
+        "base64image",
+        "clientemail",
+        "clientid",
+        "clientx509certurl",
+        "imagebase64",
+        "imagedata",
+        "privatekey",
+        "privatekeyid",
+        "prompt",
+        "providerresponse",
+        "response",
+        "tokenuri",
+        "universedomain",
+        "vertexkeypath",
+        "xapikey",
+        "authuri",
+    }
+    _INLINE_CONTAINER_KEYS = {"inlinedata"}
+
     def __init__(
         self,
         capacity: int = 200,
@@ -36,7 +61,74 @@ class AppLogService:
         self._lock = threading.RLock()
 
     @staticmethod
-    def _redact(value: str) -> str:
+    def _normalized_key(value) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+    @classmethod
+    def _sanitize_structured(cls, value, parent_key: str | None = None):
+        if isinstance(value, dict):
+            sanitized = {}
+            parent_normalized = cls._normalized_key(parent_key or "")
+            for key, item in value.items():
+                normalized = cls._normalized_key(key)
+                if (
+                    normalized in cls._SENSITIVE_KEYS
+                    or (
+                        parent_normalized in cls._INLINE_CONTAINER_KEYS
+                        and normalized == "data"
+                    )
+                ):
+                    sanitized[key] = "[REDACTED]"
+                else:
+                    sanitized[key] = cls._sanitize_structured(item, str(key))
+            return sanitized
+        if isinstance(value, list):
+            return [
+                cls._sanitize_structured(item, parent_key)
+                for item in value
+            ]
+        if isinstance(value, tuple):
+            return tuple(
+                cls._sanitize_structured(item, parent_key)
+                for item in value
+            )
+        if isinstance(value, str):
+            return cls._redact_string(value)
+        return value
+
+    @classmethod
+    def _redact(cls, value):
+        if isinstance(value, (dict, list, tuple)):
+            return cls._sanitize_structured(value)
+        if not isinstance(value, str):
+            value = str(value)
+
+        stripped = value.strip()
+        if (
+            len(stripped) >= 2
+            and stripped[0] in "[{"
+            and stripped[-1] in "]}"
+        ):
+            for parser, serializer in (
+                (
+                    json.loads,
+                    lambda item: json.dumps(
+                        item,
+                        ensure_ascii=False,
+                    ),
+                ),
+                (ast.literal_eval, repr),
+            ):
+                try:
+                    parsed = parser(stripped)
+                except (ValueError, SyntaxError, TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(parsed, (dict, list, tuple)):
+                    return serializer(cls._sanitize_structured(parsed))[:1000]
+        return cls._redact_string(value)
+
+    @staticmethod
+    def _redact_string(value: str) -> str:
         value = re.sub(
             r"(?i)((?:[\"']authorization[\"'])\s*[:=]\s*)[\"'](?:[^\s,;\"']+\s+)?[^\s,;\"']+[\"']",
             r'\1"[REDACTED]"',
@@ -48,8 +140,17 @@ class AppLogService:
             value,
         )
         value = re.sub(
-            r"data:image/[^;,\s]+;base64,[A-Za-z0-9+/=]+",
+            r"(?i)data:image/[^,\s]+;base64,[A-Za-z0-9+/=_-]+",
             "[IMAGE REDACTED]",
+            value,
+        )
+        value = re.sub(
+            (
+                r"(?is)-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----"
+                r".*?"
+                r"-----END(?: [A-Z0-9]+)* PRIVATE KEY-----"
+            ),
+            "[REDACTED PEM]",
             value,
         )
         nested_inline_prefix = (
@@ -77,6 +178,15 @@ class AppLogService:
         sensitive_label = (
             r"(?:vertex[_ -]?key[_ -]?path"
             r"|image[_ -]?data"
+            r"|image[_ -]?base64"
+            r"|base64[_ -]?image"
+            r"|private[_ -]?key(?:[_ -]?id)?"
+            r"|client[_ -]?email"
+            r"|client[_ -]?id"
+            r"|client[_ -]?x509[_ -]?cert[_ -]?url"
+            r"|auth[_ -]?uri"
+            r"|token[_ -]?uri"
+            r"|universe[_ -]?domain"
             r"|inline(?:data|_data)\.data)"
         )
         value = re.sub(
@@ -120,8 +230,8 @@ class AppLogService:
         return value[:1000]
 
     @classmethod
-    def _redact_optional(cls, value: str | None) -> str | None:
-        return cls._redact(value) if isinstance(value, str) else value
+    def _redact_optional(cls, value):
+        return cls._redact(value) if value is not None else None
 
     @staticmethod
     def _coerce_int(value: int | str | None) -> int | None:
@@ -153,26 +263,26 @@ class AppLogService:
                 "timestamp": datetime.datetime.now(
                     datetime.UTC
                 ).isoformat(),
-                "level": self._redact(str(level)),
-                "source": self._redact(str(source)),
-                "message": self._redact(str(message)),
+                "level": self._redact(level),
+                "source": self._redact(source),
+                "message": self._redact(message),
                 "capability": self._redact_optional(capability),
                 "provider": self._redact_optional(provider),
                 "model": self._redact_optional(model),
                 "duration_ms": self._coerce_int(duration_ms),
                 "retry": self._coerce_int(retry),
             }
-            self._entries.append(dict(entry))
+            self._entries.append(copy.deepcopy(entry))
             for queue, subscriber in tuple(self._subscribers.items()):
                 try:
                     subscriber.loop.call_soon_threadsafe(
                         self._publish_to_subscriber,
                         queue,
-                        dict(entry),
+                        copy.deepcopy(entry),
                     )
                 except RuntimeError:
                     self._subscribers.pop(queue, None)
-            return dict(entry)
+            return copy.deepcopy(entry)
 
     def _publish_to_subscriber(
         self,
@@ -196,7 +306,7 @@ class AppLogService:
 
     def recent(self) -> list[dict]:
         with self._lock:
-            return [dict(entry) for entry in self._entries]
+            return [copy.deepcopy(entry) for entry in self._entries]
 
     def normalize_cursor(
         self,
@@ -227,7 +337,7 @@ class AppLogService:
                 )
             )
             entries = [
-                dict(entry)
+                copy.deepcopy(entry)
                 for entry in self._entries
                 if (
                     entry["session_id"] == normalized_session

@@ -1,3 +1,5 @@
+import datetime
+
 import pytest
 from sqlalchemy import event
 from sqlalchemy import create_engine
@@ -290,6 +292,96 @@ def test_update_increments_version_and_cannot_disable_bound_provider():
         assert False, "expected ProviderInUseError"
     except ValueError as exc:
         assert "正在使用" in str(exc)
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"protocol": "gemini"},
+        {"base_url": "https://new-relay.example.com"},
+        {"api_key": "new-secret"},
+        {"vertex_project_id": "new-project"},
+        {"vertex_location": "europe-west1"},
+        {"text_model": "new-text-model"},
+        {"image_model": "new-image-model"},
+        {"supports_text": False},
+        {"supports_image": False},
+        {"timeout_seconds": 61},
+        {"max_retries": 3},
+    ],
+)
+def test_effective_provider_update_clears_stale_connection_status(update):
+    db = make_db()
+    row = create_provider(db, provider_data(vertex_key_path=""))
+    row.last_test_status = "success"
+    row.last_test_message = "连接成功"
+    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+
+    updated = update_provider(db, row.id, update)
+
+    assert updated.last_test_status is None
+    assert updated.last_test_message is None
+    assert updated.last_tested_at is None
+
+
+def test_vertex_credential_path_update_clears_stale_connection_status(
+    tmp_path,
+):
+    db = make_db()
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+    first_path.write_text("{}", encoding="utf-8")
+    second_path.write_text("{}", encoding="utf-8")
+    row = create_provider(
+        db,
+        provider_data(
+            protocol="vertex",
+            base_url=None,
+            api_key=None,
+            vertex_project_id="project",
+            vertex_location="us-central1",
+            vertex_key_path=str(first_path),
+        ),
+    )
+    row.last_test_status = "success"
+    row.last_test_message = "连接成功"
+    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+
+    updated = update_provider(
+        db,
+        row.id,
+        {"vertex_key_path": str(second_path)},
+    )
+
+    assert updated.last_test_status is None
+    assert updated.last_test_message is None
+    assert updated.last_tested_at is None
+
+
+def test_noop_or_display_name_update_retains_connection_status():
+    db = make_db()
+    row = create_provider(db, provider_data())
+    tested_at = datetime.datetime.now(datetime.UTC)
+    row.last_test_status = "success"
+    row.last_test_message = "连接成功"
+    row.last_tested_at = tested_at
+    db.commit()
+
+    noop = update_provider(
+        db,
+        row.id,
+        {"timeout_seconds": row.timeout_seconds},
+    )
+    renamed = update_provider(db, row.id, {"name": "Display name only"})
+
+    assert (
+        renamed.last_test_status,
+        renamed.last_test_message,
+    ) == ("success", "连接成功")
+    assert renamed.last_tested_at is not None
+    assert noop.last_test_status == "success"
 
 
 def test_rejected_update_does_not_leak_mutations_into_later_commit():

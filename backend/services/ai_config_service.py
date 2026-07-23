@@ -56,6 +56,20 @@ PROVIDER_DEFAULTS = {
     "max_retries": 2,
     "enabled": True,
 }
+CONNECTION_TEST_RELEVANT_FIELDS = (
+    "protocol",
+    "base_url",
+    "api_key",
+    "vertex_project_id",
+    "vertex_location",
+    "vertex_key_path",
+    "text_model",
+    "image_model",
+    "supports_text",
+    "supports_image",
+    "timeout_seconds",
+    "max_retries",
+)
 
 
 @dataclass(frozen=True)
@@ -232,8 +246,16 @@ def update_provider(db, id, data):
         if not proposed["image_model"]:
             raise ValueError("图片模型正在使用，不能为空")
     _validate_provider_values(proposed)
+    invalidates_test_status = any(
+        getattr(row, key) != proposed[key]
+        for key in CONNECTION_TEST_RELEVANT_FIELDS
+    )
     for key, value in proposed.items():
         setattr(row, key, value)
+    if invalidates_test_status:
+        row.last_test_status = None
+        row.last_test_message = None
+        row.last_tested_at = None
     row.config_version += 1
     _commit(db)
     db.refresh(row)

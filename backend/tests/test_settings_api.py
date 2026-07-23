@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,6 +11,29 @@ from sqlalchemy.pool import StaticPool
 
 from db import Base, get_db
 from main import app
+
+
+VALID_TEXT_RESPONSE = {
+    "candidates": [
+        {"content": {"parts": [{"text": "OK"}]}}
+    ]
+}
+VALID_IMAGE_RESPONSE = {
+    "candidates": [
+        {
+            "content": {
+                "parts": [
+                    {
+                        "inlineData": {
+                            "mimeType": "image/png",
+                            "data": "aW1hZ2U=",
+                        }
+                    }
+                ]
+            }
+        }
+    ]
+}
 
 
 def _provider_data(**overrides):
@@ -164,6 +188,41 @@ def test_list_and_update_never_return_vertex_credentials_and_preserve_empty_secr
     assert updated.json()["has_api_key"] is True
     assert updated.json()["api_key_masked"] == "sk-****1234"
     assert stored_key == "sk-secret-1234"
+
+
+def test_provider_api_update_clears_stale_connection_metadata():
+    client, testing_session = _make_client()
+    try:
+        provider_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(),
+        ).json()["id"]
+
+        from db import AIProviderConfig
+
+        db = testing_session()
+        try:
+            row = db.get(AIProviderConfig, provider_id)
+            row.last_test_status = "success"
+            row.last_test_message = "连接成功"
+            row.last_tested_at = datetime.datetime.now(datetime.UTC)
+            db.commit()
+        finally:
+            db.close()
+
+        response = client.put(
+            f"/api/settings/ai/providers/{provider_id}",
+            json=_provider_data(
+                base_url="https://changed-relay.example.com",
+            ),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["last_test_status"] is None
+    assert response.json()["last_test_message"] is None
+    assert response.json()["last_tested_at"] is None
 
 
 def test_missing_provider_mutations_return_not_found():
@@ -398,7 +457,7 @@ def test_saved_connection_test_updates_metadata_without_changing_binding(
     adapter = type(
         "Adapter",
         (),
-        {"generate": AsyncMock(return_value={"candidates": []})},
+        {"generate": AsyncMock(return_value=VALID_TEXT_RESPONSE)},
     )()
     monkeypatch.setattr("main.get_adapter", lambda protocol: adapter, raising=False)
     try:
@@ -455,7 +514,7 @@ def test_draft_connection_test_does_not_persist_or_change_bindings(
     adapter = type(
         "Adapter",
         (),
-        {"generate": AsyncMock(return_value={"candidates": []})},
+        {"generate": AsyncMock(return_value=VALID_IMAGE_RESPONSE)},
     )()
     monkeypatch.setattr("main.get_adapter", lambda protocol: adapter, raising=False)
     try:
@@ -491,6 +550,10 @@ def test_draft_connection_test_does_not_persist_or_change_bindings(
     assert snapshot.name == "Unsaved"
     assert snapshot.capability == "image"
     assert "1×1" in payload["contents"][0]["parts"][0]["text"]
+    assert payload["generationConfig"] == {
+        "responseModalities": ["IMAGE"],
+        "imageConfig": {"aspectRatio": "1:1"},
+    }
 
 
 def test_edited_provider_connection_test_overlays_form_without_persisting(
@@ -500,7 +563,7 @@ def test_edited_provider_connection_test_overlays_form_without_persisting(
     adapter = type(
         "Adapter",
         (),
-        {"generate": AsyncMock(return_value={"candidates": []})},
+        {"generate": AsyncMock(return_value=VALID_TEXT_RESPONSE)},
     )()
     monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
     try:
@@ -572,7 +635,7 @@ def test_edited_provider_nonblank_secret_overrides_only_for_test(
     adapter = type(
         "Adapter",
         (),
-        {"generate": AsyncMock(return_value={"candidates": []})},
+        {"generate": AsyncMock(return_value=VALID_TEXT_RESPONSE)},
     )()
     monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
     try:
@@ -609,7 +672,7 @@ def test_saved_provider_connection_test_compatibility_alias(monkeypatch):
     adapter = type(
         "Adapter",
         (),
-        {"generate": AsyncMock(return_value={"candidates": []})},
+        {"generate": AsyncMock(return_value=VALID_TEXT_RESPONSE)},
     )()
     monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
     try:
@@ -630,6 +693,147 @@ def test_saved_provider_connection_test_compatibility_alias(monkeypatch):
     assert adapter.generate.await_args.args[0].id == provider_id
 
 
+def test_saved_image_connection_rejects_text_only_response_and_saves_error(
+    monkeypatch,
+):
+    client, testing_session = _make_client()
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value=VALID_TEXT_RESPONSE)},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    try:
+        provider_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(
+                supports_image=True,
+                image_model="image",
+            ),
+        ).json()["id"]
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={"provider_id": provider_id, "capability": "image"},
+        )
+
+        from db import AIProviderConfig
+
+        db = testing_session()
+        try:
+            stored = db.get(AIProviderConfig, provider_id)
+            persisted = (
+                stored.last_test_status,
+                stored.last_test_message,
+                stored.last_tested_at,
+            )
+        finally:
+            db.close()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "error"
+    assert response.json()["message"] == "不支持图片生成"
+    assert persisted[0:2] == ("error", "不支持图片生成")
+    assert persisted[2] is not None
+
+
+@pytest.mark.parametrize(
+    ("capability", "provider_response", "expected"),
+    [
+        ("text", {"candidates": []}, "不支持文本生成"),
+        ("text", VALID_IMAGE_RESPONSE, "不支持文本生成"),
+        ("image", {"candidates": []}, "不支持图片生成"),
+        ("image", VALID_TEXT_RESPONSE, "不支持图片生成"),
+    ],
+)
+def test_draft_connection_requires_normalized_capability_output(
+    monkeypatch,
+    capability,
+    provider_response,
+    expected,
+):
+    client, _ = _make_client()
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value=provider_response)},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    try:
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={
+                "draft": _provider_data(
+                    supports_image=True,
+                    image_model="image",
+                ),
+                "capability": capability,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "error",
+        "capability": capability,
+        "duration_ms": response.json()["duration_ms"],
+        "message": expected,
+    }
+
+
+def test_edited_overlay_accepts_valid_image_without_saving_test_metadata(
+    monkeypatch,
+):
+    client, testing_session = _make_client()
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value=VALID_IMAGE_RESPONSE)},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    try:
+        provider_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(
+                supports_image=True,
+                image_model="saved-image",
+            ),
+        ).json()["id"]
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={
+                "provider_id": provider_id,
+                "draft": _provider_data(
+                    supports_image=True,
+                    image_model="edited-image",
+                ),
+                "capability": "image",
+            },
+        )
+
+        from db import AIProviderConfig
+
+        db = testing_session()
+        try:
+            stored = db.get(AIProviderConfig, provider_id)
+            metadata = (
+                stored.last_test_status,
+                stored.last_test_message,
+                stored.last_tested_at,
+            )
+        finally:
+            db.close()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert adapter.generate.await_args.args[0].model == "edited-image"
+    assert metadata == (None, None, None)
+
+
 def test_connection_tests_emit_safe_start_and_result_events(monkeypatch):
     from services.app_log_service import AppLogService
 
@@ -638,7 +842,7 @@ def test_connection_tests_emit_safe_start_and_result_events(monkeypatch):
     adapter = type(
         "Adapter",
         (),
-        {"generate": AsyncMock(return_value={"candidates": []})},
+        {"generate": AsyncMock(return_value=VALID_TEXT_RESPONSE)},
     )()
     monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
     client, _ = _make_client()
