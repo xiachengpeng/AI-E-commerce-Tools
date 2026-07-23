@@ -106,6 +106,11 @@ def update_provider(db, id, data):
         for key in ("name", "protocol")
     }
     _validate_provider_data(merged)
+    base_url = (
+        validate_base_url(_data_value(data, "base_url"))
+        if _has_field(data, "base_url")
+        else None
+    )
     if _has_field(data, "enabled") and not _data_value(data, "enabled") and _bindings_for_provider(db, id):
         raise ValueError("该提供商正在使用，无法禁用")
     fields = (
@@ -117,8 +122,7 @@ def update_provider(db, id, data):
         if _has_field(data, key):
             setattr(row, key, _data_value(data, key))
     if _has_field(data, "base_url"):
-        base_url = _data_value(data, "base_url")
-        row.base_url = validate_base_url(base_url)
+        row.base_url = base_url
     row.config_version += 1
     _commit(db)
     db.refresh(row)

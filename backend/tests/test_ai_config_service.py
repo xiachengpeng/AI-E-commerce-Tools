@@ -98,3 +98,18 @@ def test_update_increments_version_and_cannot_disable_bound_provider():
         assert False, "expected ProviderInUseError"
     except ValueError as exc:
         assert "正在使用" in str(exc)
+
+
+def test_rejected_update_does_not_leak_mutations_into_later_commit():
+    db = make_db()
+    row = create_provider(db, provider_data())
+
+    try:
+        update_provider(db, row.id, {"name": "Should not persist", "base_url": "not-a-url"})
+        assert False, "expected invalid Base URL"
+    except ValueError as exc:
+        assert "Base URL" in str(exc)
+
+    set_provider_enabled(db, row.id, False)
+    db.refresh(row)
+    assert row.name == "Relay A"
