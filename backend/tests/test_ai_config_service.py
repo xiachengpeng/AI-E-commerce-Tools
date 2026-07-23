@@ -1,5 +1,7 @@
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from db import Base
 from services.ai_config_service import (
@@ -16,7 +18,11 @@ from services.ai_config_service import (
 
 
 def make_db():
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)()
 
@@ -113,3 +119,49 @@ def test_rejected_update_does_not_leak_mutations_into_later_commit():
     set_provider_enabled(db, row.id, False)
     db.refresh(row)
     assert row.name == "Relay A"
+
+
+@pytest.mark.parametrize(
+    ("capability", "invalid_update", "message"),
+    [
+        ("text", {"supports_text": False}, "文本能力"),
+        ("text", {"text_model": ""}, "文本模型"),
+        ("image", {"supports_image": False}, "图片能力"),
+        ("image", {"image_model": ""}, "图片模型"),
+    ],
+)
+def test_bound_provider_update_rejects_invalid_capability_without_dirtying_session(
+    capability,
+    invalid_update,
+    message,
+):
+    db = make_db()
+    row = create_provider(db, provider_data())
+    set_binding(db, capability, row.id)
+    original = {
+        "name": row.name,
+        "supports_text": row.supports_text,
+        "text_model": row.text_model,
+        "supports_image": row.supports_image,
+        "image_model": row.image_model,
+        "config_version": row.config_version,
+    }
+
+    with pytest.raises(ValueError, match=message):
+        update_provider(
+            db,
+            row.id,
+            {"name": "Must not persist", **invalid_update},
+        )
+
+    assert not db.dirty
+    db.commit()
+    db.refresh(row)
+    assert {
+        "name": row.name,
+        "supports_text": row.supports_text,
+        "text_model": row.text_model,
+        "supports_image": row.supports_image,
+        "image_model": row.image_model,
+        "config_version": row.config_version,
+    } == original

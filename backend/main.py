@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 import base64
 import datetime
@@ -97,6 +98,26 @@ init_db()
 initialize_ai_settings()
 
 app = FastAPI(title="AI Competitor Analyzer V2")
+
+
+@app.exception_handler(RequestValidationError)
+async def sanitized_request_validation_error(
+    request: Request,
+    exc: RequestValidationError,
+):
+    safe_errors = [
+        {
+            key: error[key]
+            for key in ("type", "loc", "msg")
+            if key in error
+        }
+        for error in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": safe_errors},
+    )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -849,7 +870,11 @@ def _save_connection_test_result(
     row.last_test_status = result_status
     row.last_test_message = message
     row.last_tested_at = datetime.datetime.now(datetime.UTC)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def _connection_payload(capability: str) -> dict:
@@ -925,9 +950,8 @@ def api_recent_logs():
 
 @app.get("/api/settings/logs/stream")
 async def api_stream_logs(request: Request):
-    queue = app_logs.subscribe()
-
     async def events():
+        queue = app_logs.subscribe()
         try:
             while not await request.is_disconnected():
                 try:

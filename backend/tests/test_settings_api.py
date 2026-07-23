@@ -1,5 +1,6 @@
 import asyncio
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -63,6 +64,24 @@ def test_provider_read_never_returns_secret():
     assert "sk-secret-1234" not in str(item)
     assert item["has_api_key"] is True
     assert item["api_key_masked"] == "sk-****1234"
+
+
+@pytest.mark.parametrize("length", range(1, 9))
+def test_provider_read_fully_masks_short_api_keys(length):
+    client, _ = _make_client()
+    api_key = "x" * length
+    try:
+        created = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(api_key=api_key),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert created.status_code == 201
+    masked = created.json()["api_key_masked"]
+    assert masked == "********"
+    assert set(masked) == {"*"}
 
 
 def test_bound_provider_delete_returns_conflict():
@@ -233,6 +252,71 @@ def test_incompatible_or_missing_binding_is_rejected():
     assert invalid_capability.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "invalid_update",
+    [
+        {"supports_text": False},
+        {"text_model": ""},
+        {"supports_image": False},
+        {"image_model": ""},
+    ],
+)
+def test_bound_provider_update_rejects_invalid_capability(invalid_update):
+    client, testing_session = _make_client()
+    try:
+        created = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(
+                supports_image=True,
+                image_model="image",
+            ),
+        )
+        provider_id = created.json()["id"]
+        client.put(
+            "/api/settings/ai/bindings/text",
+            json={"provider_config_id": provider_id},
+        )
+        client.put(
+            "/api/settings/ai/bindings/image",
+            json={"provider_config_id": provider_id},
+        )
+        update_payload = _provider_data(
+            supports_image=True,
+            image_model="image",
+        )
+        update_payload.update(invalid_update)
+        response = client.put(
+            f"/api/settings/ai/providers/{provider_id}",
+            json=update_payload,
+        )
+
+        from db import AIProviderConfig
+
+        db = testing_session()
+        try:
+            stored = db.get(AIProviderConfig, provider_id)
+            persisted = {
+                "supports_text": bool(stored.supports_text),
+                "text_model": stored.text_model,
+                "supports_image": bool(stored.supports_image),
+                "image_model": stored.image_model,
+                "config_version": stored.config_version,
+            }
+        finally:
+            db.close()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert persisted == {
+        "supports_text": True,
+        "text_model": "text",
+        "supports_image": True,
+        "image_model": "image",
+        "config_version": 1,
+    }
+
+
 def test_duplicate_provider_name_returns_conflict():
     client, _ = _make_client()
     try:
@@ -280,6 +364,41 @@ def test_connection_test_requires_exactly_one_provider_source():
 
     assert neither.status_code == 422
     assert both.status_code == 422
+
+
+def test_connection_validation_error_never_echoes_draft_secrets():
+    secrets = (
+        "draft-api-key-secret",
+        "draft-vertex-project-secret",
+        "draft-vertex-location-secret",
+        "/private/draft-vertex-key-secret.json",
+    )
+    client, _ = _make_client()
+    try:
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={
+                "provider_id": 1,
+                "draft": _provider_data(
+                    api_key=secrets[0],
+                    vertex_project_id=secrets[1],
+                    vertex_location=secrets[2],
+                    vertex_key_path=secrets[3],
+                ),
+                "capability": "text",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    for secret in secrets:
+        assert secret not in response.text
+    assert not any(
+        key == "input"
+        for error in response.json()["detail"]
+        for key in error
+    )
 
 
 def test_saved_connection_test_updates_metadata_without_changing_binding(
@@ -510,6 +629,31 @@ def test_connection_test_missing_provider_is_not_found():
     assert response.status_code == 404
 
 
+def test_saved_connection_metadata_rolls_back_when_commit_fails():
+    import main
+
+    db = SimpleNamespace(
+        commit=MagicMock(side_effect=RuntimeError("commit failed")),
+        rollback=MagicMock(),
+    )
+    row = SimpleNamespace(
+        last_test_status=None,
+        last_test_message=None,
+        last_tested_at=None,
+    )
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        main._save_connection_test_result(
+            db,
+            row,
+            "success",
+            "连接成功",
+        )
+
+    assert db.commit.call_count == 1
+    assert db.rollback.call_count == 1
+
+
 def test_frontend_log_is_structured_redacted_and_never_uses_raw_logger(
     monkeypatch,
 ):
@@ -571,14 +715,39 @@ async def test_sse_stream_sends_new_events_and_cleans_up_subscriber(
 
     response = await main.api_stream_logs(ConnectedRequest())
     assert response.media_type == "text/event-stream"
-    assert len(logs._subscribers) == 1
+    assert len(logs._subscribers) == 0
 
+    next_event = asyncio.create_task(anext(response.body_iterator))
+    await asyncio.sleep(0)
+    assert len(logs._subscribers) == 1
     logs.emit(level="success", source="test", message="new")
-    event = await anext(response.body_iterator)
+    event = await next_event
     await response.body_iterator.aclose()
 
     assert '"message": "new"' in event
     assert '"message": "old"' not in event
+    assert len(logs._subscribers) == 0
+
+
+@pytest.mark.asyncio
+async def test_sse_stream_closed_before_iteration_has_no_subscriber_leak(
+    monkeypatch,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    class ConnectedRequest:
+        async def is_disconnected(self):
+            return False
+
+    logs = AppLogService()
+    monkeypatch.setattr(main, "app_logs", logs)
+
+    response = await main.api_stream_logs(ConnectedRequest())
+    assert len(logs._subscribers) == 0
+
+    await response.body_iterator.aclose()
+
     assert len(logs._subscribers) == 0
 
 

@@ -29,7 +29,9 @@ class ProviderSnapshot:
 def mask_secret(value: str | None) -> str | None:
     if not value:
         return None
-    prefix = value[:3] if len(value) > 7 else ""
+    if len(value) <= 8:
+        return "********"
+    prefix = value[:3]
     return f"{prefix}****{value[-4:]}"
 
 
@@ -111,8 +113,39 @@ def update_provider(db, id, data):
         if _has_field(data, "base_url")
         else None
     )
-    if _has_field(data, "enabled") and not _data_value(data, "enabled") and _bindings_for_provider(db, id):
+    bindings = {
+        binding.capability
+        for binding in _bindings_for_provider(db, id)
+    }
+    if (
+        _has_field(data, "enabled")
+        and not _data_value(data, "enabled")
+        and bindings
+    ):
         raise ValueError("该提供商正在使用，无法禁用")
+    proposed = {
+        key: (
+            _data_value(data, key)
+            if _has_field(data, key)
+            else getattr(row, key)
+        )
+        for key in (
+            "supports_text",
+            "text_model",
+            "supports_image",
+            "image_model",
+        )
+    }
+    if "text" in bindings:
+        if not proposed["supports_text"]:
+            raise ValueError("文本能力正在使用，无法禁用")
+        if not proposed["text_model"]:
+            raise ValueError("文本模型正在使用，不能为空")
+    if "image" in bindings:
+        if not proposed["supports_image"]:
+            raise ValueError("图片能力正在使用，无法禁用")
+        if not proposed["image_model"]:
+            raise ValueError("图片模型正在使用，不能为空")
     fields = (
         "name", "protocol", "api_key", "vertex_project_id", "vertex_location",
         "vertex_key_path", "text_model", "image_model", "supports_text",
