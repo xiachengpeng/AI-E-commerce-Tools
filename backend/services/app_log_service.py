@@ -52,6 +52,51 @@ class AppLogService:
             "[IMAGE REDACTED]",
             value,
         )
+        nested_inline_prefix = (
+            r"(?is)("
+            r"(?:[\"']?inline(?:data|_data)[\"']?)"
+            r"\s*:\s*\{[^{}]{0,500}?"
+            r"(?:[\"']?data[\"']?)\s*:\s*"
+            r")"
+        )
+        value = re.sub(
+            nested_inline_prefix + r'"(?:\\.|[^"\\])*"',
+            r'\1"[REDACTED]"',
+            value,
+        )
+        value = re.sub(
+            nested_inline_prefix + r"'(?:\\.|[^'\\])*'",
+            r'\1"[REDACTED]"',
+            value,
+        )
+        value = re.sub(
+            nested_inline_prefix + r"(?![\"'])[^\s,;}}\]]+",
+            r"\1[REDACTED]",
+            value,
+        )
+        sensitive_label = (
+            r"(?:vertex[_ -]?key[_ -]?path"
+            r"|image[_ -]?data"
+            r"|inline(?:data|_data)\.data)"
+        )
+        value = re.sub(
+            rf"(?i)((?:[\"']?){sensitive_label}(?:[\"']?)"
+            r'\s*[:=]\s*)"(?:\\.|[^"\\])*"',
+            r'\1"[REDACTED]"',
+            value,
+        )
+        value = re.sub(
+            rf"(?i)((?:[\"']?){sensitive_label}(?:[\"']?)"
+            r"\s*[:=]\s*)'(?:\\.|[^'\\])*'",
+            r'\1"[REDACTED]"',
+            value,
+        )
+        value = re.sub(
+            rf"(?i)((?:[\"']?){sensitive_label}(?:[\"']?)"
+            r"\s*[:=]\s*)(?![\"'])[^\s,;}}\]]+",
+            r"\1[REDACTED]",
+            value,
+        )
         value = re.sub(
             r"(?i)(([\"']?)(?:x[-_ ]?)?api(?:[_ -]?key|key)\2(?:\s*[:=]\s*|\s+(?![:=])))([\"'])[^\"']*\3",
             r"\1\3[REDACTED]\3",
@@ -119,11 +164,14 @@ class AppLogService:
             }
             self._entries.append(dict(entry))
             for queue, subscriber in tuple(self._subscribers.items()):
-                subscriber.loop.call_soon_threadsafe(
-                    self._publish_to_subscriber,
-                    queue,
-                    dict(entry),
-                )
+                try:
+                    subscriber.loop.call_soon_threadsafe(
+                        self._publish_to_subscriber,
+                        queue,
+                        dict(entry),
+                    )
+                except RuntimeError:
+                    self._subscribers.pop(queue, None)
             return dict(entry)
 
     def _publish_to_subscriber(

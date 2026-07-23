@@ -7,6 +7,55 @@ from db import AICapabilityBinding, AIProviderConfig
 
 CAPABILITIES = {"text", "image"}
 PROTOCOLS = {"gemini", "vertex", "openai_compatible"}
+DEFAULT_TEXT_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview"
+PROVIDER_FIELDS = (
+    "name",
+    "protocol",
+    "base_url",
+    "api_key",
+    "vertex_project_id",
+    "vertex_location",
+    "vertex_key_path",
+    "text_model",
+    "image_model",
+    "supports_text",
+    "supports_image",
+    "timeout_seconds",
+    "max_retries",
+    "enabled",
+)
+STRING_FIELDS = {
+    "name",
+    "protocol",
+    "base_url",
+    "api_key",
+    "vertex_project_id",
+    "vertex_location",
+    "vertex_key_path",
+    "text_model",
+    "image_model",
+}
+BLANK_INHERITS_ON_UPDATE = {
+    "api_key",
+    "vertex_project_id",
+    "vertex_location",
+    "vertex_key_path",
+}
+PROVIDER_DEFAULTS = {
+    "base_url": None,
+    "api_key": None,
+    "vertex_project_id": None,
+    "vertex_location": None,
+    "vertex_key_path": None,
+    "text_model": None,
+    "image_model": None,
+    "supports_text": True,
+    "supports_image": False,
+    "timeout_seconds": 60,
+    "max_retries": 2,
+    "enabled": True,
+}
 
 
 @dataclass(frozen=True)
@@ -36,6 +85,7 @@ def mask_secret(value: str | None) -> str | None:
 
 
 def validate_base_url(value: str | None) -> str | None:
+    value = _clean_optional(value)
     if not value:
         return None
     parsed = urlparse(value)
@@ -60,12 +110,79 @@ def _has_field(data, key):
     return hasattr(data, key)
 
 
-def _validate_provider_data(data):
-    protocol = _data_value(data, "protocol")
+def _clean_optional(value):
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
+def _provider_values(data, existing=None):
+    values = {}
+    for key in PROVIDER_FIELDS:
+        if existing is not None and not _has_field(data, key):
+            value = getattr(existing, key)
+        else:
+            default = (
+                getattr(existing, key)
+                if existing is not None
+                else PROVIDER_DEFAULTS.get(key)
+            )
+            value = _data_value(data, key, default)
+            if (
+                existing is not None
+                and key in BLANK_INHERITS_ON_UPDATE
+                and _clean_optional(value) is None
+            ):
+                value = getattr(existing, key)
+        if key in STRING_FIELDS:
+            value = _clean_optional(value)
+        values[key] = value
+    values["protocol"] = (
+        values["protocol"].lower()
+        if isinstance(values["protocol"], str)
+        else values["protocol"]
+    )
+    values["base_url"] = validate_base_url(values["base_url"])
+    return values
+
+
+def _validate_provider_values(values):
+    protocol = values.get("protocol")
     if protocol not in PROTOCOLS:
         raise ValueError("不支持的 AI 协议")
-    if not _data_value(data, "name"):
+    if not values.get("name"):
         raise ValueError("提供商名称不能为空")
+    supports_text = bool(values.get("supports_text"))
+    supports_image = bool(values.get("supports_image"))
+    if not supports_text and not supports_image:
+        raise ValueError("请至少启用一种 AI 能力")
+    if supports_text and not values.get("text_model"):
+        raise ValueError("启用文本能力时必须配置文本模型")
+    if supports_image and not values.get("image_model"):
+        raise ValueError("启用图片能力时必须配置图片模型")
+
+    if protocol == "gemini":
+        if not values.get("api_key"):
+            raise ValueError("Gemini API Key 不能为空")
+    elif protocol == "vertex":
+        if not values.get("vertex_project_id"):
+            raise ValueError("Vertex Project ID 不能为空")
+        if not values.get("vertex_location"):
+            raise ValueError("Vertex Location 不能为空")
+        credential_path = values.get("vertex_key_path")
+        if credential_path and not (
+            os.path.isfile(credential_path)
+            and os.access(credential_path, os.R_OK)
+        ):
+            raise ValueError("Vertex 凭据文件路径无效或不可读")
+    elif not values.get("base_url"):
+        raise ValueError("OpenAI Compatible Base URL 不能为空")
+    return values
+
+
+def validate_provider_data(data, existing=None):
+    values = _provider_values(data, existing)
+    return _validate_provider_values(values)
 
 
 def _commit(db):
@@ -81,17 +198,7 @@ def list_providers(db):
 
 
 def create_provider(db, data):
-    _validate_provider_data(data)
-    values = {
-        key: _data_value(data, key)
-        for key in (
-            "name", "protocol", "api_key", "vertex_project_id", "vertex_location",
-            "vertex_key_path", "text_model", "image_model", "supports_text",
-            "supports_image", "timeout_seconds", "max_retries", "enabled",
-        )
-        if _data_value(data, key) is not None
-    }
-    values["base_url"] = validate_base_url(_data_value(data, "base_url"))
+    values = validate_provider_data(data)
     row = AIProviderConfig(**values)
     db.add(row)
     _commit(db)
@@ -103,16 +210,7 @@ def update_provider(db, id, data):
     row = db.get(AIProviderConfig, id)
     if not row:
         raise ValueError("AI 提供商不存在")
-    merged = {
-        key: _data_value(data, key) if _has_field(data, key) else getattr(row, key)
-        for key in ("name", "protocol")
-    }
-    _validate_provider_data(merged)
-    base_url = (
-        validate_base_url(_data_value(data, "base_url"))
-        if _has_field(data, "base_url")
-        else None
-    )
+    proposed = _provider_values(data, row)
     bindings = {
         binding.capability
         for binding in _bindings_for_provider(db, id)
@@ -123,19 +221,6 @@ def update_provider(db, id, data):
         and bindings
     ):
         raise ValueError("该提供商正在使用，无法禁用")
-    proposed = {
-        key: (
-            _data_value(data, key)
-            if _has_field(data, key)
-            else getattr(row, key)
-        )
-        for key in (
-            "supports_text",
-            "text_model",
-            "supports_image",
-            "image_model",
-        )
-    }
     if "text" in bindings:
         if not proposed["supports_text"]:
             raise ValueError("文本能力正在使用，无法禁用")
@@ -146,26 +231,9 @@ def update_provider(db, id, data):
             raise ValueError("图片能力正在使用，无法禁用")
         if not proposed["image_model"]:
             raise ValueError("图片模型正在使用，不能为空")
-    fields = (
-        "name", "protocol", "api_key", "vertex_project_id", "vertex_location",
-        "vertex_key_path", "text_model", "image_model", "supports_text",
-        "supports_image", "timeout_seconds", "max_retries", "enabled",
-    )
-    for key in fields:
-        if _has_field(data, key):
-            if (
-                key in {
-                    "api_key",
-                    "vertex_project_id",
-                    "vertex_location",
-                    "vertex_key_path",
-                }
-                and _data_value(data, key) == ""
-            ):
-                continue
-            setattr(row, key, _data_value(data, key))
-    if _has_field(data, "base_url"):
-        row.base_url = base_url
+    _validate_provider_values(proposed)
+    for key, value in proposed.items():
+        setattr(row, key, value)
     row.config_version += 1
     _commit(db)
     db.refresh(row)
@@ -215,6 +283,13 @@ def set_binding(db, capability, provider_id):
         raise ValueError("该提供商不支持文本能力")
     if capability == "image" and not provider.supports_image:
         raise ValueError("该提供商不支持图片能力")
+    model = (
+        provider.text_model
+        if capability == "text"
+        else provider.image_model
+    )
+    if not _clean_optional(model):
+        raise ValueError("该提供商未配置所选能力模型")
     binding = db.get(AICapabilityBinding, capability)
     if binding:
         binding.provider_config_id = provider_id
@@ -254,19 +329,53 @@ def get_snapshot(db, capability):
 def import_env_defaults_if_empty(db):
     if db.query(AIProviderConfig.id).first() is not None:
         return False
-    provider = os.getenv("AI_PROVIDER", "gemini").lower()
+    provider = (
+        (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
+    )
     is_vertex = provider == "vertex"
-    row = create_provider(db, {
+    text_model = (
+        (os.getenv("FRONTEND_TEXT_MODEL") or "").strip()
+        or (os.getenv("GEMINI_MODEL_ID") or "").strip()
+        or DEFAULT_TEXT_MODEL
+    )
+    image_model = (
+        (os.getenv("FRONTEND_IMAGE_MODEL") or "").strip()
+        or DEFAULT_IMAGE_MODEL
+    )
+    values = {
         "name": "Vertex AI" if is_vertex else "Gemini API",
         "protocol": "vertex" if is_vertex else "gemini",
         "api_key": None if is_vertex else os.getenv("GEMINI_API_KEY"),
         "vertex_project_id": os.getenv("VERTEX_PROJECT_ID") if is_vertex else None,
         "vertex_location": os.getenv("VERTEX_LOCATION") if is_vertex else None,
         "vertex_key_path": os.getenv("VERTEX_KEY_PATH") if is_vertex else None,
-        "text_model": os.getenv("FRONTEND_TEXT_MODEL", os.getenv("GEMINI_MODEL_ID", "gemini-3.1-pro-preview")),
-        "image_model": os.getenv("FRONTEND_IMAGE_MODEL", "gemini-3.1-flash-image-preview"),
+        "text_model": text_model,
+        "image_model": image_model,
         "supports_text": True, "supports_image": True, "enabled": True,
-    })
-    set_binding(db, "text", row.id)
-    set_binding(db, "image", row.id)
+    }
+    if provider not in {"gemini", "vertex"}:
+        return False
+    try:
+        values = validate_provider_data(values)
+    except ValueError:
+        db.rollback()
+        return False
+
+    try:
+        row = AIProviderConfig(**values)
+        db.add(row)
+        db.flush()
+        db.add_all(
+            [
+                AICapabilityBinding(
+                    capability=capability,
+                    provider_config_id=row.id,
+                )
+                for capability in ("text", "image")
+            ]
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return True

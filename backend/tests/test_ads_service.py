@@ -79,3 +79,34 @@ async def test_generate_ad_copy_routes_image_analysis_to_text_capability():
 
     assert result["product"]["name"]["target"] == "Lamp"
     assert mocked.await_args.kwargs["capability"] == "text"
+
+
+@pytest.mark.asyncio
+async def test_generate_ad_copy_emits_safe_image_processing_boundaries():
+    request = AdCopyGenerateRequest(
+        image_data="data:image/png;base64,"
+        + base64.b64encode(b"private-image").decode(),
+        platforms=["facebook"],
+        region="US Market",
+    )
+    response = {
+        "candidates": [{
+            "content": {
+                "parts": [{"text": '{"product":{},"styles":[]}'}]
+            }
+        }]
+    }
+    with patch(
+        "services.ads_service.AIService.generate_content",
+        new=AsyncMock(return_value=response),
+    ), patch(
+        "services.ads_service.app_logs.emit",
+    ) as emit:
+        await generate_ad_copy(request)
+
+    assert [call.kwargs["message"] for call in emit.call_args_list] == [
+        "图片广告处理开始",
+        "图片广告处理完成",
+    ]
+    assert all(call.kwargs["source"] == "image" for call in emit.call_args_list)
+    assert "private-image" not in repr(emit.call_args_list)

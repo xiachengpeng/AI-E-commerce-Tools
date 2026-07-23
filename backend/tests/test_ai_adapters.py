@@ -1,4 +1,6 @@
 from dataclasses import replace
+import asyncio
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,6 +11,7 @@ from services.ai_adapters import (
     VertexAdapter,
     convert_openai_messages,
     get_adapter,
+    close_adapters,
 )
 from services.ai_config_service import ProviderSnapshot
 
@@ -90,6 +93,31 @@ async def test_openai_text_path_and_normalized_response():
 
 
 @pytest.mark.asyncio
+async def test_openai_text_json_mime_type_requests_json_object_response():
+    response = MagicMock()
+    response.json.return_value = {
+        "choices": [{"message": {"content": "{}"}}]
+    }
+    transport = MagicMock()
+    transport.post = AsyncMock(return_value=response)
+    adapter = OpenAICompatibleAdapter(client=transport)
+
+    await adapter.generate(
+        make_snapshot(capability="text"),
+        {
+            "contents": [{"parts": [{"text": "Return JSON"}]}],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+            },
+        },
+    )
+
+    assert transport.post.await_args.kwargs["json"]["response_format"] == {
+        "type": "json_object"
+    }
+
+
+@pytest.mark.asyncio
 async def test_openai_image_path_and_normalized_response():
     response = MagicMock()
     response.status_code = 200
@@ -116,6 +144,76 @@ async def test_openai_image_path_and_normalized_response():
         result["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
         == "AAAA"
     )
+
+
+@pytest.mark.asyncio
+async def test_openai_image_forwards_inline_images_and_image_extensions():
+    response = MagicMock()
+    response.json.return_value = {"data": [{"b64_json": "RESULT"}]}
+    transport = MagicMock()
+    transport.post = AsyncMock(return_value=response)
+    adapter = OpenAICompatibleAdapter(client=transport)
+
+    await adapter.generate(
+        make_snapshot(capability="image"),
+        {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": "Redraw"},
+                        {
+                            "inlineData": {
+                                "mimeType": "image/png",
+                                "data": "SOURCE",
+                            }
+                        },
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "imageConfig": {
+                    "aspectRatio": "1:1",
+                    "imageSize": "2K",
+                }
+            },
+        },
+    )
+
+    body = transport.post.await_args.kwargs["json"]
+    assert body["input_images"] == [
+        {"url": "data:image/png;base64,SOURCE"}
+    ]
+    assert body["aspect_ratio"] == "1:1"
+    assert body["image_size"] == "2K"
+
+
+@pytest.mark.asyncio
+async def test_google_adapter_enforces_timeout_without_blocking_event_loop():
+    started = threading.Event()
+    release = threading.Event()
+    client = MagicMock()
+
+    def blocking_generate(**_kwargs):
+        started.set()
+        release.wait(1)
+        return MagicMock(candidates=[])
+
+    client.models.generate_content.side_effect = blocking_generate
+    adapter = GeminiAdapter(client=client)
+    snapshot = make_snapshot(
+        protocol="gemini",
+        base_url=None,
+        timeout_seconds=0.01,
+    )
+
+    heartbeat = asyncio.create_task(asyncio.sleep(0))
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await adapter.generate(snapshot, {"contents": []})
+        await heartbeat
+        assert started.is_set()
+    finally:
+        release.set()
 
 
 @pytest.mark.asyncio
@@ -190,6 +288,103 @@ def test_gemini_client_cache_is_versioned_by_snapshot():
 
     assert client_factory.call_count == 2
     client_factory.assert_any_call(api_key="gemini-key")
+
+
+def test_consecutive_draft_google_credentials_never_share_cached_client():
+    adapter = GeminiAdapter()
+    first = make_snapshot(
+        id=0,
+        protocol="gemini",
+        api_key="first-draft-key",
+        base_url=None,
+    )
+    second = replace(first, api_key="second-draft-key")
+    clients = [MagicMock(), MagicMock()]
+
+    with patch(
+        "services.ai_adapters.genai.Client",
+        side_effect=clients,
+    ) as factory:
+        assert adapter._client(first) is clients[0]
+        assert adapter._client(second) is clients[1]
+
+    assert factory.call_args_list[0].kwargs["api_key"] == "first-draft-key"
+    assert factory.call_args_list[1].kwargs["api_key"] == "second-draft-key"
+
+
+def test_superseded_google_client_is_evicted_and_closed():
+    adapter = GeminiAdapter()
+    first = make_snapshot(protocol="gemini", base_url=None)
+    old_client = MagicMock()
+    new_client = MagicMock()
+
+    with patch(
+        "services.ai_adapters.genai.Client",
+        side_effect=[old_client, new_client],
+    ):
+        assert adapter._client(first) is old_client
+        assert adapter._client(
+            replace(first, config_version=2)
+        ) is new_client
+
+    old_client.close.assert_called_once_with()
+
+
+def test_provider_invalidation_evicts_cached_google_clients(monkeypatch):
+    import services.ai_adapters as adapter_module
+
+    adapter = GeminiAdapter()
+    current = make_snapshot(protocol="gemini", base_url=None)
+    client = MagicMock()
+    monkeypatch.setattr(
+        adapter_module,
+        "_ADAPTERS",
+        {"gemini": adapter},
+    )
+
+    with patch("services.ai_adapters.genai.Client", return_value=client):
+        adapter._client(current)
+        adapter_module.invalidate_provider_clients(current.id)
+
+    client.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_inflight_google_client_is_closed_only_after_request_finishes():
+    adapter = GeminiAdapter()
+    first = make_snapshot(
+        protocol="gemini",
+        base_url=None,
+        timeout_seconds=2,
+    )
+    second = replace(first, config_version=2)
+    started = threading.Event()
+    release = threading.Event()
+    old_client = MagicMock()
+    new_client = MagicMock()
+
+    def old_generate(**_kwargs):
+        started.set()
+        release.wait(1)
+        return MagicMock(candidates=[])
+
+    old_client.models.generate_content.side_effect = old_generate
+    new_client.models.generate_content.return_value = MagicMock(candidates=[])
+
+    with patch(
+        "services.ai_adapters.genai.Client",
+        side_effect=[old_client, new_client],
+    ):
+        old_request = asyncio.create_task(
+            adapter.generate(first, {"contents": []})
+        )
+        assert await asyncio.to_thread(started.wait, 0.5)
+        await adapter.generate(second, {"contents": []})
+        old_client.close.assert_not_called()
+        release.set()
+        await old_request
+
+    old_client.close.assert_called_once_with()
 
 
 def test_vertex_uses_explicit_credentials_without_mutating_environment(
@@ -314,6 +509,34 @@ def test_get_adapter_returns_protocol_adapter(protocol, adapter_type):
 def test_get_adapter_rejects_unknown_protocol():
     with pytest.raises(ValueError, match="Unsupported AI protocol"):
         get_adapter("unknown")
+
+
+@pytest.mark.asyncio
+async def test_openai_adapter_closes_owned_async_client():
+    client = MagicMock()
+    client.aclose = AsyncMock()
+    adapter = OpenAICompatibleAdapter(client=client)
+
+    await adapter.close()
+
+    client.aclose.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_close_adapters_closes_global_openai_client(monkeypatch):
+    first = MagicMock()
+    first.close = AsyncMock()
+    second = MagicMock()
+    second.close = AsyncMock()
+    monkeypatch.setattr(
+        "services.ai_adapters._ADAPTERS",
+        {"first": first, "second": second},
+    )
+
+    await close_adapters()
+
+    first.close.assert_awaited_once_with()
+    second.close.assert_awaited_once_with()
 
 
 def test_openai_messages_map_google_model_role_to_assistant():

@@ -1,9 +1,11 @@
 import base64
 import json
 import re
+import time
 from typing import Any
 
 from services.ai_service import AIService
+from services.app_log_service import app_logs
 from services.listing_service import parse_ai_json_object, first_text_from_response
 
 
@@ -189,20 +191,48 @@ JSON schema:
 
 
 async def generate_ad_copy(request) -> dict:
-    mime_type, encoded = _validate_image_data(request.image_data)
-    payload = {
-        "contents": [{
-            "role": "user",
-            "parts": [
-                {"text": _ads_prompt(request)},
-                {"inlineData": {"mimeType": mime_type, "data": encoded}},
-            ],
-        }],
-        "generationConfig": {"responseMimeType": "application/json"},
-    }
-    response = await AIService.generate_content(
-        payload=payload,
+    started = time.monotonic()
+    app_logs.emit(
+        level="info",
+        source="image",
+        message="图片广告处理开始",
         capability="text",
     )
-    text = first_text_from_response(response)
-    return normalize_ad_copy_result(parse_ai_json_object(text), request.platforms)
+    try:
+        mime_type, encoded = _validate_image_data(request.image_data)
+        payload = {
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {"text": _ads_prompt(request)},
+                    {"inlineData": {"mimeType": mime_type, "data": encoded}},
+                ],
+            }],
+            "generationConfig": {"responseMimeType": "application/json"},
+        }
+        response = await AIService.generate_content(
+            payload=payload,
+            capability="text",
+        )
+        text = first_text_from_response(response)
+        result = normalize_ad_copy_result(
+            parse_ai_json_object(text),
+            request.platforms,
+        )
+        app_logs.emit(
+            level="success",
+            source="image",
+            message="图片广告处理完成",
+            capability="text",
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
+        return result
+    except Exception:
+        app_logs.emit(
+            level="error",
+            source="image",
+            message="图片广告处理失败",
+            capability="text",
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
+        raise

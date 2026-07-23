@@ -27,6 +27,26 @@ async def test_fetch_markdown_success_v1():
 
 
 @pytest.mark.asyncio
+async def test_fetch_markdown_emits_safe_start_and_success_events(monkeypatch):
+    secret_url = "https://example.com/product?token=query-secret"
+    resp = make_http_response(200, {"markdown": "# Safe"})
+    emit = MagicMock()
+    monkeypatch.setattr("services.firecrawl.app_logs.emit", emit)
+
+    with patch.object(firecrawl, "_get_client") as mock_get:
+        mock_get.return_value.post = AsyncMock(return_value=resp)
+        await firecrawl.fetch_markdown(secret_url)
+
+    assert [call.kwargs["message"] for call in emit.call_args_list] == [
+        "爬虫请求开始",
+        "爬虫请求完成",
+    ]
+    assert all(call.kwargs["source"] == "crawler" for call in emit.call_args_list)
+    assert "query-secret" not in repr(emit.call_args_list)
+    assert secret_url not in repr(emit.call_args_list)
+
+
+@pytest.mark.asyncio
 async def test_fetch_markdown_success_v2():
     """Firecrawl V2 响应结构：data.markdown"""
     resp = make_http_response(200, {"data": {"markdown": "# V2 Content"}})
@@ -57,3 +77,30 @@ async def test_fetch_markdown_http_error():
         mock_get.return_value.post = AsyncMock(return_value=resp)
         with pytest.raises(Exception):
             await firecrawl.fetch_markdown("https://blocked.com")
+
+
+@pytest.mark.asyncio
+async def test_fetch_markdown_failure_event_excludes_url_and_response_body(
+    monkeypatch,
+):
+    secret_url = "https://blocked.com/?key=query-secret"
+    resp = make_http_response(403, {"error": "body-secret"})
+    resp.text = "body-secret"
+    resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "provider-secret",
+        request=MagicMock(),
+        response=resp,
+    )
+    emit = MagicMock()
+    monkeypatch.setattr("services.firecrawl.app_logs.emit", emit)
+
+    with patch.object(firecrawl, "_get_client") as mock_get:
+        mock_get.return_value.post = AsyncMock(return_value=resp)
+        with pytest.raises(Exception) as raised:
+            await firecrawl.fetch_markdown(secret_url)
+
+    assert emit.call_args_list[-1].kwargs["message"] == "爬虫请求失败"
+    rendered = f"{raised.value!s} {emit.call_args_list!r}"
+    assert "query-secret" not in rendered
+    assert "body-secret" not in rendered
+    assert "provider-secret" not in rendered

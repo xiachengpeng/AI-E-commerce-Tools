@@ -37,6 +37,29 @@ async def test_compare_products_success():
 
 
 @pytest.mark.asyncio
+async def test_compare_ai_log_contains_only_parsed_metadata(caplog):
+    secret = "RAW-COMPARE-MODEL-OUTPUT"
+    response = json.dumps(
+        {
+            "market_position": secret,
+            "competition_level": "low",
+            "winner_product": "A",
+        }
+    )
+
+    with caplog.at_level("INFO"), patch(
+        "services.ai_compare.AIService.call_ai",
+        new=AsyncMock(return_value=response),
+    ):
+        from services.ai_compare import compare_products
+
+        await compare_products([{"product_name": "A"}])
+
+    assert secret not in caplog.text
+    assert "keys=" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_compare_products_handles_list_response(sample_product_data):
     """AI 错误返回数组 → 返回空字典"""
     with patch("services.ai_compare.AIService.call_ai",

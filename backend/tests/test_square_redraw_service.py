@@ -333,6 +333,53 @@ def test_process_non_square_uses_square_image_config():
         db.close()
 
 
+def test_square_redraw_emits_safe_image_generation_boundaries():
+    from db import SessionLocal
+
+    clear_square_redraw_tables()
+    request = SquareRedrawBatchRequest(images=[{
+        "filename": "private-name.png",
+        "image_data": make_data_url(40, 80),
+        "width": 40,
+        "height": 80,
+    }])
+    db = SessionLocal()
+    try:
+        batch = create_square_redraw_batch(db, request)
+        batch_id = batch.id
+    finally:
+        db.close()
+
+    ai_response = {
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "inlineData": {
+                        "mimeType": "image/png",
+                        "data": base64.b64encode(b"private-output").decode(),
+                    }
+                }]
+            }
+        }]
+    }
+    with patch(
+        "services.square_redraw_service.AIService.generate_content",
+        new=AsyncMock(return_value=ai_response),
+    ), patch(
+        "services.square_redraw_service.app_logs.emit",
+    ) as emit:
+        asyncio.run(process_square_redraw_batch(batch_id))
+
+    assert [call.kwargs["message"] for call in emit.call_args_list] == [
+        "方图重绘开始",
+        "方图重绘完成",
+    ]
+    assert all(call.kwargs["source"] == "image" for call in emit.call_args_list)
+    rendered = repr(emit.call_args_list)
+    assert "private-name" not in rendered
+    assert "private-output" not in rendered
+
+
 def test_process_uses_custom_target_aspect_ratio():
     from db import SessionLocal
 

@@ -3,6 +3,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 import base64
 import datetime
 import uuid
@@ -35,8 +36,9 @@ from models.settings import (
     FrontendLogEvent,
     ProviderConnectionTest,
     ProviderConnectionTestResult,
+    SavedProviderConnectionTest,
 )
-from services.firecrawl import fetch_markdown
+from services.firecrawl import close_client as close_firecrawl_client, fetch_markdown
 from services.cleaner import clean_content, check_block
 from services.amazon_parser import parse_amazon, parse_general, is_amazon
 from services.ai_single import analyze_single_extract, analyze_single_deep
@@ -69,8 +71,13 @@ from services.ai_config_service import (
     set_binding,
     set_provider_enabled,
     update_provider,
+    validate_provider_data,
 )
-from services.ai_adapters import get_adapter
+from services.ai_adapters import (
+    close_adapters,
+    get_adapter,
+    invalidate_provider_clients,
+)
 from services.ai_router import map_provider_error
 from services.app_log_service import APP_LOG_OVERFLOW, app_logs
 from config import (
@@ -89,7 +96,31 @@ logger = logging.getLogger(__name__)
 def initialize_ai_settings():
     db = SessionLocal()
     try:
-        import_env_defaults_if_empty(db)
+        imported = import_env_defaults_if_empty(db)
+        has_provider = (
+            db.query(AIProviderConfig.id).first() is not None
+        )
+        if imported:
+            message = "AI 默认配置已导入"
+            level = "success"
+        elif has_provider:
+            message = "AI 数据库配置已加载"
+            level = "success"
+        else:
+            message = "AI 尚未配置，可在设置中修复"
+            level = "warning"
+        app_logs.emit(
+            level=level,
+            source="system",
+            message=message,
+        )
+    except Exception:
+        app_logs.emit(
+            level="error",
+            source="system",
+            message="AI 配置初始化失败",
+        )
+        raise
     finally:
         db.close()
 
@@ -97,7 +128,25 @@ def initialize_ai_settings():
 init_db()
 initialize_ai_settings()
 
-app = FastAPI(title="AI Competitor Analyzer V2")
+
+@asynccontextmanager
+async def app_lifespan(_app):
+    try:
+        yield
+    finally:
+        await close_adapters()
+        await close_firecrawl_client()
+
+
+app = FastAPI(
+    title="AI Competitor Analyzer V2",
+    lifespan=app_lifespan,
+)
+app_logs.emit(
+    level="success",
+    source="system",
+    message="系统启动完成",
+)
 
 
 @app.exception_handler(RequestValidationError)
@@ -404,6 +453,25 @@ def validate_url(url: str) -> str | None:
 # --- 缓存 ---
 analysis_cache = {}
 
+
+def analysis_cache_key(unique_urls: list[str]) -> str:
+    db = SessionLocal()
+    try:
+        try:
+            snapshot = get_snapshot(db, "text")
+            route_identity = (
+                f"{snapshot.id}:{snapshot.config_version}"
+            )
+        except ValueError:
+            route_identity = "unconfigured"
+    finally:
+        db.close()
+    return (
+        f"{';'.join(sorted(unique_urls))}"
+        f"|text-route={route_identity}"
+    )
+
+
 @app.post("/compare", response_model=CompareResponse)
 async def compare(request: CompareRequest):
     try:
@@ -417,7 +485,7 @@ async def compare(request: CompareRequest):
             if err:
                 return CompareResponse(status="error", message=err)
 
-        cache_key = ";".join(sorted(unique_urls))
+        cache_key = analysis_cache_key(unique_urls)
         
         if not force_refresh and cache_key in analysis_cache:
             cached_time, cached_res = analysis_cache[cache_key]
@@ -716,7 +784,9 @@ def api_update_ai_provider(
     db: Session = Depends(get_db),
 ):
     try:
-        return serialize_provider(update_provider(db, provider_id, data))
+        updated = update_provider(db, provider_id, data)
+        invalidate_provider_clients(provider_id)
+        return serialize_provider(updated)
     except IntegrityError as exc:
         raise HTTPException(
             status_code=409,
@@ -733,6 +803,7 @@ def api_delete_ai_provider(
 ):
     try:
         delete_provider(db, provider_id)
+        invalidate_provider_clients(provider_id)
     except ValueError as exc:
         _settings_error(exc, missing_is_404=True)
     return {"status": "success"}
@@ -740,9 +811,9 @@ def api_delete_ai_provider(
 
 def _set_ai_provider_enabled(provider_id: int, enabled: bool, db: Session):
     try:
-        return serialize_provider(
-            set_provider_enabled(db, provider_id, enabled)
-        )
+        updated = set_provider_enabled(db, provider_id, enabled)
+        invalidate_provider_clients(provider_id)
+        return serialize_provider(updated)
     except ValueError as exc:
         _settings_error(exc, missing_is_404=True)
 
@@ -804,6 +875,7 @@ def _connection_test_snapshot(
     db: Session,
 ) -> tuple[ProviderSnapshot | None, AIProviderConfig | None, str | None]:
     row = None
+    persisted_result_row = None
     if data.provider_id is not None:
         row = db.get(AIProviderConfig, data.provider_id)
         if row is None:
@@ -811,46 +883,55 @@ def _connection_test_snapshot(
                 status_code=404,
                 detail="AI 提供商不存在",
             )
-        source = row
-        snapshot_id = row.id
-        config_version = row.config_version
+        if data.draft is not None:
+            source_values = validate_provider_data(
+                data.draft,
+                row,
+            )
+            snapshot_id = 0
+            config_version = 1
+        else:
+            source_values = validate_provider_data({}, row)
+            snapshot_id = row.id
+            config_version = row.config_version
+            persisted_result_row = row
     else:
-        source = data.draft
+        source_values = validate_provider_data(data.draft)
         snapshot_id = 0
         config_version = 1
 
     supported = (
-        source.supports_text
+        source_values["supports_text"]
         if data.capability == "text"
-        else source.supports_image
+        else source_values["supports_image"]
     )
     if not supported:
-        return None, row, f"该提供商不支持{'文本' if data.capability == 'text' else '图片'}能力"
+        return None, persisted_result_row, f"该提供商不支持{'文本' if data.capability == 'text' else '图片'}能力"
 
     model = (
-        source.text_model
+        source_values["text_model"]
         if data.capability == "text"
-        else source.image_model
+        else source_values["image_model"]
     )
     if not model:
-        return None, row, f"未配置{'文本' if data.capability == 'text' else '图片'}模型"
+        return None, persisted_result_row, f"未配置{'文本' if data.capability == 'text' else '图片'}模型"
 
     snapshot = ProviderSnapshot(
         id=snapshot_id,
         capability=data.capability,
-        name=source.name,
-        protocol=source.protocol,
-        base_url=source.base_url,
-        api_key=source.api_key,
-        vertex_project_id=source.vertex_project_id,
-        vertex_location=source.vertex_location,
-        vertex_key_path=source.vertex_key_path,
+        name=source_values["name"],
+        protocol=source_values["protocol"],
+        base_url=source_values["base_url"],
+        api_key=source_values["api_key"],
+        vertex_project_id=source_values["vertex_project_id"],
+        vertex_location=source_values["vertex_location"],
+        vertex_key_path=source_values["vertex_key_path"],
         model=model,
-        timeout_seconds=source.timeout_seconds,
-        max_retries=source.max_retries,
+        timeout_seconds=source_values["timeout_seconds"],
+        max_retries=source_values["max_retries"],
         config_version=config_version,
     )
-    return snapshot, row, None
+    return snapshot, persisted_result_row, None
 
 
 def _save_connection_test_result(
@@ -887,18 +968,29 @@ def _connection_payload(capability: str) -> dict:
     }
 
 
-@app.post(
-    "/api/settings/ai/providers/test",
-    response_model=ProviderConnectionTestResult,
-)
-async def api_test_ai_provider(
+async def _run_ai_provider_connection_test(
     data: ProviderConnectionTest,
-    db: Session = Depends(get_db),
+    db: Session,
 ):
-    snapshot, row, validation_message = _connection_test_snapshot(data, db)
+    try:
+        snapshot, row, validation_message = (
+            _connection_test_snapshot(data, db)
+        )
+    except ValueError as exc:
+        snapshot = None
+        row = None
+        validation_message = str(exc)
     started = time.monotonic()
     result_status = "success"
     message = "连接成功"
+    app_logs.emit(
+        level="info",
+        source="system",
+        message="AI 连接测试开始",
+        capability=data.capability,
+        provider=snapshot.name if snapshot else None,
+        model=snapshot.model if snapshot else None,
+    )
 
     if validation_message is not None:
         result_status = "error"
@@ -929,12 +1021,50 @@ async def api_test_ai_provider(
         result_status,
         message,
     )
+    app_logs.emit(
+        level="success" if result_status == "success" else "error",
+        source="system",
+        message="AI 连接测试完成",
+        capability=data.capability,
+        provider=snapshot.name if snapshot else None,
+        model=snapshot.model if snapshot else None,
+        duration_ms=duration_ms,
+    )
     return {
         "status": result_status,
         "capability": data.capability,
         "duration_ms": duration_ms,
         "message": message,
     }
+
+
+@app.post(
+    "/api/settings/ai/providers/test",
+    response_model=ProviderConnectionTestResult,
+)
+async def api_test_ai_provider(
+    data: ProviderConnectionTest,
+    db: Session = Depends(get_db),
+):
+    return await _run_ai_provider_connection_test(data, db)
+
+
+@app.post(
+    "/api/settings/ai/providers/{provider_id}/test",
+    response_model=ProviderConnectionTestResult,
+)
+async def api_test_saved_ai_provider(
+    provider_id: int,
+    data: SavedProviderConnectionTest,
+    db: Session = Depends(get_db),
+):
+    return await _run_ai_provider_connection_test(
+        ProviderConnectionTest(
+            provider_id=provider_id,
+            capability=data.capability,
+        ),
+        db,
+    )
 
 
 @app.get("/api/settings/logs/recent")
@@ -1194,13 +1324,30 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
                 target_aspect_ratio=data.get("target_aspect_ratio") or result.get("target_aspect_ratio") or "1:1",
                 result=result,
             )
-        else: return {"status": "error"}
+        else:
+            app_logs.emit(
+                level="error",
+                source="history",
+                message="历史记录保存失败",
+            )
+            return {"status": "error"}
         
         db.add(hist)
         db.commit()
+        app_logs.emit(
+            level="success",
+            source="history",
+            message="历史记录保存成功",
+        )
         return {"status": "success", "id": hist.id}
     except Exception as e:
         logger.error(f"❌ [历史] 失败: {e}")
+        db.rollback()
+        app_logs.emit(
+            level="error",
+            source="history",
+            message="历史记录保存失败",
+        )
         return {"status": "error"}
 
 @app.get("/api/history/{module}")
@@ -1214,12 +1361,32 @@ async def get_history(module: str, db: Session = Depends(get_db)):
 async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
     mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory, "square-redraw": SquareRedrawHistory}
     model = mapping.get(module)
-    if not model: return {"status": "error"}
-    item = db.query(model).filter(model.id == id).first()
-    if item:
-        db.delete(item)
-        db.commit()
-    return {"status": "success"}
+    if not model:
+        app_logs.emit(
+            level="error",
+            source="history",
+            message="历史记录删除失败",
+        )
+        return {"status": "error"}
+    try:
+        item = db.query(model).filter(model.id == id).first()
+        if item:
+            db.delete(item)
+            db.commit()
+        app_logs.emit(
+            level="success",
+            source="history",
+            message="历史记录删除成功",
+        )
+        return {"status": "success"}
+    except Exception:
+        db.rollback()
+        app_logs.emit(
+            level="error",
+            source="history",
+            message="历史记录删除失败",
+        )
+        return {"status": "error"}
 
 if __name__ == "__main__":
     import uvicorn

@@ -2,9 +2,11 @@ import base64
 import json
 import logging
 import re
+import time
 from typing import Any
 
 from services.ai_service import AIService
+from services.app_log_service import app_logs
 
 
 logger = logging.getLogger(__name__)
@@ -165,9 +167,11 @@ def parse_ai_json_object(text: str) -> dict:
     try:
         parsed = parse_lenient_json(clean_text)
     except json.JSONDecodeError as exc:
-        preview = (text or "").replace("\r", "\\r").replace("\n", "\\n")[:500]
-        logger.warning("Listing AI JSON parse failed. Raw preview: %s", preview)
-        raise ValueError(f"AI 返回的 JSON 格式无效，原始片段: {preview}") from exc
+        logger.warning(
+            "Listing AI JSON parse failed: response_length=%s",
+            len(text or ""),
+        )
+        raise ValueError("AI 返回的 JSON 格式无效") from exc
     return normalize_json_object(parsed)
 
 
@@ -388,39 +392,64 @@ async def generate_listing(request) -> dict:
 
 
 async def extract_listing_inputs(request) -> dict:
-    if not request.image_data.startswith("data:image") or "," not in request.image_data:
-        raise ValueError("图片格式无效")
-
-    header, encoded = request.image_data.split(",", 1)
-    if len(encoded) > 8_000_000:
-        raise ValueError("图片过大，请压缩后再上传")
-
-    mime_match = re.search(r"data:([^;]+);base64", header)
-    if not mime_match:
-        raise ValueError("图片 MIME 类型无效")
-
-    base64.b64decode(encoded, validate=True)
-    payload = {
-        "contents": [{
-            "role": "user",
-            "parts": [
-                {"text": _image_extract_prompt()},
-                {"inlineData": {"mimeType": mime_match.group(1), "data": encoded}},
-            ],
-        }],
-        "generationConfig": {"responseMimeType": "application/json"},
-    }
-    response = await AIService.generate_content(
-        payload=payload,
+    started = time.monotonic()
+    app_logs.emit(
+        level="info",
+        source="image",
+        message="图片解析开始",
         capability="text",
     )
-    text = first_text_from_response(response)
-    data = parse_ai_json_object(text)
-    return {
-        "name": str(data.get("name") or ""),
-        "points": str(data.get("points") or ""),
-        "keywords": str(data.get("keywords") or ""),
-    }
+    try:
+        if not request.image_data.startswith("data:image") or "," not in request.image_data:
+            raise ValueError("图片格式无效")
+
+        header, encoded = request.image_data.split(",", 1)
+        if len(encoded) > 8_000_000:
+            raise ValueError("图片过大，请压缩后再上传")
+
+        mime_match = re.search(r"data:([^;]+);base64", header)
+        if not mime_match:
+            raise ValueError("图片 MIME 类型无效")
+
+        base64.b64decode(encoded, validate=True)
+        payload = {
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {"text": _image_extract_prompt()},
+                    {"inlineData": {"mimeType": mime_match.group(1), "data": encoded}},
+                ],
+            }],
+            "generationConfig": {"responseMimeType": "application/json"},
+        }
+        response = await AIService.generate_content(
+            payload=payload,
+            capability="text",
+        )
+        text = first_text_from_response(response)
+        data = parse_ai_json_object(text)
+        result = {
+            "name": str(data.get("name") or ""),
+            "points": str(data.get("points") or ""),
+            "keywords": str(data.get("keywords") or ""),
+        }
+        app_logs.emit(
+            level="success",
+            source="image",
+            message="图片解析完成",
+            capability="text",
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
+        return result
+    except Exception:
+        app_logs.emit(
+            level="error",
+            source="image",
+            message="图片解析失败",
+            capability="text",
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
+        raise
 
 
 async def check_listing_compliance(request) -> dict:

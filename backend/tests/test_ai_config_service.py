@@ -1,9 +1,10 @@
 import pytest
+from sqlalchemy import event
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from db import Base
+from db import AICapabilityBinding, AIProviderConfig, Base
 from services.ai_config_service import (
     create_provider,
     delete_provider,
@@ -78,6 +79,191 @@ def test_import_env_only_when_provider_table_is_empty(monkeypatch):
     assert import_env_defaults_if_empty(db) is False
     assert get_snapshot(db, "text").model == "text-1"
     assert get_snapshot(db, "image").model == "image-1"
+
+
+def test_empty_env_model_values_use_nonempty_fallbacks(monkeypatch):
+    db = make_db()
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "key")
+    monkeypatch.setenv("GEMINI_MODEL_ID", "")
+    monkeypatch.setenv("FRONTEND_TEXT_MODEL", "")
+    monkeypatch.setenv("FRONTEND_IMAGE_MODEL", "")
+
+    assert import_env_defaults_if_empty(db) is True
+    assert get_snapshot(db, "text").model == "gemini-3.1-pro-preview"
+    assert (
+        get_snapshot(db, "image").model
+        == "gemini-3.1-flash-image-preview"
+    )
+
+
+def test_invalid_env_defaults_leave_database_unconfigured(monkeypatch):
+    db = make_db()
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "   ")
+
+    assert import_env_defaults_if_empty(db) is False
+    assert db.query(AIProviderConfig).count() == 0
+    assert db.query(AICapabilityBinding).count() == 0
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {
+                "protocol": "gemini",
+                "base_url": None,
+                "api_key": " ",
+            },
+            "API Key",
+        ),
+        (
+            {
+                "protocol": "vertex",
+                "base_url": None,
+                "api_key": None,
+                "vertex_project_id": "",
+                "vertex_location": "us-central1",
+            },
+            "Project",
+        ),
+        (
+            {
+                "protocol": "vertex",
+                "base_url": None,
+                "api_key": None,
+                "vertex_project_id": "project-id",
+                "vertex_location": "",
+            },
+            "Location",
+        ),
+        (
+            {
+                "protocol": "vertex",
+                "base_url": None,
+                "api_key": None,
+                "vertex_project_id": "project-id",
+                "vertex_location": "us-central1",
+                "vertex_key_path": "/definitely/missing/credentials.json",
+            },
+            "凭据",
+        ),
+        (
+            {
+                "protocol": "openai_compatible",
+                "base_url": "ftp://relay.example.com",
+            },
+            "Base URL",
+        ),
+        (
+            {
+                "supports_text": False,
+                "supports_image": False,
+            },
+            "至少",
+        ),
+        (
+            {
+                "supports_text": True,
+                "text_model": " ",
+            },
+            "文本模型",
+        ),
+        (
+            {
+                "supports_image": True,
+                "image_model": None,
+            },
+            "图片模型",
+        ),
+    ],
+)
+def test_provider_protocol_and_capability_combinations_are_validated(
+    overrides,
+    message,
+):
+    db = make_db()
+
+    with pytest.raises(ValueError, match=message):
+        create_provider(db, provider_data(**overrides))
+
+    assert db.query(AIProviderConfig).count() == 0
+
+
+def test_vertex_accepts_existing_optional_credential_file(tmp_path):
+    db = make_db()
+    credential_path = tmp_path / "vertex.json"
+    credential_path.write_text("{}", encoding="utf-8")
+
+    row = create_provider(
+        db,
+        provider_data(
+            protocol="vertex",
+            base_url=None,
+            api_key=None,
+            vertex_project_id="project-id",
+            vertex_location="us-central1",
+            vertex_key_path=str(credential_path),
+        ),
+    )
+
+    assert row.vertex_key_path == str(credential_path)
+
+
+@pytest.mark.parametrize(
+    ("capability", "model_field"),
+    [("text", "text_model"), ("image", "image_model")],
+)
+def test_set_binding_independently_rejects_missing_capability_model(
+    capability,
+    model_field,
+):
+    db = make_db()
+    row = AIProviderConfig(
+        name="Legacy invalid row",
+        protocol="openai_compatible",
+        base_url="https://relay.example.com",
+        supports_text=True,
+        supports_image=True,
+        text_model="text-model",
+        image_model="image-model",
+        enabled=True,
+    )
+    setattr(row, model_field, None)
+    db.add(row)
+    db.commit()
+
+    with pytest.raises(ValueError, match="模型"):
+        set_binding(db, capability, row.id)
+
+    assert db.query(AICapabilityBinding).count() == 0
+
+
+def test_first_run_import_rolls_back_provider_and_bindings_atomically(
+    monkeypatch,
+):
+    db = make_db()
+    monkeypatch.setenv("AI_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "key")
+
+    def reject_binding_flush(session, _flush_context, _instances):
+        if any(
+            isinstance(item, AICapabilityBinding)
+            for item in session.new
+        ):
+            raise RuntimeError("binding insert failed")
+
+    event.listen(db, "before_flush", reject_binding_flush)
+    try:
+        with pytest.raises(RuntimeError, match="binding insert failed"):
+            import_env_defaults_if_empty(db)
+    finally:
+        event.remove(db, "before_flush", reject_binding_flush)
+
+    assert not db.new
+    assert db.query(AIProviderConfig).count() == 0
+    assert db.query(AICapabilityBinding).count() == 0
 
 
 def test_base_url_validation_requires_clean_http_url():

@@ -112,7 +112,7 @@ async def _call_ai_service(prompt: str) -> str:
         capability="text",
         response_mime_type="application/json",
     )
-    logger.info(f"AI Result: {raw_text[:200]}...")
+    logger.info("AI response received: length=%s", len(raw_text))
     return _extract_json(raw_text)
 
 

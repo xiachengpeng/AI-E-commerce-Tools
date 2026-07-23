@@ -7,12 +7,15 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), overrid
 # Firecrawl 默认配置
 FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "http://localhost:3002/v1/scrape")
 
-# AI 提供商配置 (gemini 或 vertex)
-AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")
+# AI 提供商配置仅作为首次启动导入来源。
+AI_PROVIDER = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
 
 # Gemini 默认配置
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL_ID = os.getenv("GEMINI_MODEL_ID", "gemini-3.1-pro-preview")
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
+GEMINI_MODEL_ID = (
+    (os.getenv("GEMINI_MODEL_ID") or "").strip()
+    or "gemini-3.1-pro-preview"
+)
 
 # Vertex AI 默认配置
 VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "project-926fcb81-e62c-4158-927")
@@ -30,6 +33,3 @@ FRONTEND_STAGGER_DELAY = int(os.getenv("FRONTEND_STAGGER_DELAY", "2000"))
 
 # URL 校验
 MAX_URL_LENGTH = int(os.getenv("MAX_URL_LENGTH", "2048"))
-
-if not GEMINI_API_KEY and AI_PROVIDER == "gemini":
-    raise EnvironmentError("GEMINI_API_KEY 未配置，请在 backend/.env 文件中设置。")

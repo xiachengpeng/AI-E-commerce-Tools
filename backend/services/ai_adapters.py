@@ -1,5 +1,8 @@
 import asyncio
 import base64
+from dataclasses import dataclass
+import inspect
+import threading
 from abc import ABC, abstractmethod
 
 import httpx
@@ -14,6 +17,9 @@ class AIAdapter(ABC):
     @abstractmethod
     async def generate(self, snapshot: ProviderSnapshot, payload: dict) -> dict:
         """Generate content using a provider snapshot."""
+
+    async def close(self) -> None:
+        """Release resources owned by this adapter."""
 
 
 def convert_google_contents(contents):
@@ -116,32 +122,154 @@ def google_response_to_dict(response) -> dict:
 class GeminiAdapter(AIAdapter):
     def __init__(self, client=None):
         self._fixed_client = client
-        self._clients = {}
+        self._clients: dict[tuple[int, int], _GoogleClientEntry] = {}
+        self._retired_clients: list[_GoogleClientEntry] = []
+        self._client_lock = threading.RLock()
 
     def _build_client(self, snapshot: ProviderSnapshot):
         return genai.Client(api_key=snapshot.api_key)
 
+    @staticmethod
+    def _close_client(entry):
+        if entry.closed:
+            return
+        close = getattr(entry.client, "close", None)
+        if callable(close):
+            close()
+        entry.closed = True
+
+    def _retire_superseded_clients(
+        self,
+        snapshot: ProviderSnapshot,
+        current_key: tuple[int, int],
+    ) -> None:
+        for key, entry in tuple(self._clients.items()):
+            if key[0] != snapshot.id or key == current_key:
+                continue
+            self._clients.pop(key, None)
+            entry.stale = True
+            if entry.active == 0:
+                self._close_client(entry)
+            else:
+                self._retired_clients.append(entry)
+
+    def _entry(self, snapshot: ProviderSnapshot) -> "_GoogleClientEntry":
+        if snapshot.id <= 0:
+            return _GoogleClientEntry(
+                client=self._build_client(snapshot),
+                stale=True,
+            )
+        key = (snapshot.id, snapshot.config_version)
+        with self._client_lock:
+            self._retire_superseded_clients(snapshot, key)
+            entry = self._clients.get(key)
+            if entry is None:
+                entry = _GoogleClientEntry(
+                    client=self._build_client(snapshot)
+                )
+                self._clients[key] = entry
+            return entry
+
     def _client(self, snapshot: ProviderSnapshot):
         if self._fixed_client is not None:
             return self._fixed_client
-        key = (snapshot.id, snapshot.config_version)
-        if key not in self._clients:
-            self._clients[key] = self._build_client(snapshot)
-        return self._clients[key]
+        return self._entry(snapshot).client
+
+    def invalidate_provider(self, provider_id: int) -> None:
+        if self._fixed_client is not None:
+            return
+        with self._client_lock:
+            for key, entry in tuple(self._clients.items()):
+                if key[0] != provider_id:
+                    continue
+                self._clients.pop(key, None)
+                entry.stale = True
+                if entry.active == 0:
+                    self._close_client(entry)
+                elif entry not in self._retired_clients:
+                    self._retired_clients.append(entry)
+
+    def _acquire_client(
+        self,
+        snapshot: ProviderSnapshot,
+    ) -> tuple[object, "_GoogleClientEntry | None"]:
+        if self._fixed_client is not None:
+            return self._fixed_client, None
+        with self._client_lock:
+            entry = self._entry(snapshot)
+            entry.active += 1
+            return entry.client, entry
+
+    def _release_client(self, entry: "_GoogleClientEntry | None") -> None:
+        if entry is None:
+            return
+        with self._client_lock:
+            entry.active = max(0, entry.active - 1)
+            if entry.stale and entry.active == 0:
+                self._close_client(entry)
+                if entry in self._retired_clients:
+                    self._retired_clients.remove(entry)
 
     async def generate(self, snapshot: ProviderSnapshot, payload: dict) -> dict:
-        client = self._client(snapshot)
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model=snapshot.model,
-            contents=convert_google_contents(payload.get("contents", [])),
-            config=convert_google_config(
-                payload.get("generationConfig")
-                or payload.get("config")
-                or {}
-            ),
+        client, entry = self._acquire_client(snapshot)
+        task = asyncio.create_task(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model=snapshot.model,
+                contents=convert_google_contents(
+                    payload.get("contents", [])
+                ),
+                config=convert_google_config(
+                    payload.get("generationConfig")
+                    or payload.get("config")
+                    or {}
+                ),
+            )
         )
-        return google_response_to_dict(response)
+        release_on_exit = True
+        try:
+            response = await asyncio.wait_for(
+                asyncio.shield(task),
+                timeout=snapshot.timeout_seconds,
+            )
+            return google_response_to_dict(response)
+        except BaseException:
+            if not task.done():
+                release_on_exit = False
+
+                def release_when_done(completed_task):
+                    try:
+                        completed_task.exception()
+                    except (asyncio.CancelledError, Exception):
+                        pass
+                    self._release_client(entry)
+
+                task.add_done_callback(release_when_done)
+            raise
+        finally:
+            if release_on_exit:
+                self._release_client(entry)
+
+    async def close(self) -> None:
+        if self._fixed_client is not None:
+            return
+        with self._client_lock:
+            entries = list(self._clients.values())
+            self._clients.clear()
+            for entry in entries:
+                entry.stale = True
+                if entry.active == 0:
+                    self._close_client(entry)
+                elif entry not in self._retired_clients:
+                    self._retired_clients.append(entry)
+
+
+@dataclass
+class _GoogleClientEntry:
+    client: object
+    active: int = 0
+    stale: bool = False
+    closed: bool = False
 
 
 class VertexAdapter(GeminiAdapter):
@@ -220,6 +348,31 @@ def extract_text_prompt(payload):
     return "\n".join(texts)
 
 
+def extract_inline_image_urls(payload):
+    images = []
+    for content in payload.get("contents", []) or []:
+        if isinstance(content, str):
+            continue
+        for part in content.get("parts", []):
+            inline_data = part.get("inlineData") or part.get("inline_data")
+            if not inline_data:
+                continue
+            mime_type = (
+                inline_data.get("mimeType")
+                or inline_data.get("mime_type")
+                or "application/octet-stream"
+            )
+            images.append(
+                {
+                    "url": (
+                        f"data:{mime_type};base64,"
+                        f"{inline_data.get('data', '')}"
+                    )
+                }
+            )
+    return images
+
+
 def normalized_text_response(text):
     return {
         "candidates": [
@@ -258,7 +411,9 @@ class OpenAICompatibleAdapter(AIAdapter):
         self.client = client or httpx.AsyncClient()
 
     async def generate(self, snapshot: ProviderSnapshot, payload: dict) -> dict:
-        headers = {"Authorization": f"Bearer {snapshot.api_key}"}
+        headers = {}
+        if snapshot.api_key:
+            headers["Authorization"] = f"Bearer {snapshot.api_key}"
         base_url = (snapshot.base_url or "").rstrip("/")
 
         if snapshot.capability == "image":
@@ -267,6 +422,31 @@ class OpenAICompatibleAdapter(AIAdapter):
                 "prompt": extract_text_prompt(payload),
                 "response_format": "b64_json",
             }
+            input_images = extract_inline_image_urls(payload)
+            if input_images:
+                body["input_images"] = input_images
+            generation_config = (
+                payload.get("generationConfig")
+                or payload.get("config")
+                or {}
+            )
+            image_config = (
+                generation_config.get("imageConfig")
+                or generation_config.get("image_config")
+                or {}
+            )
+            aspect_ratio = (
+                image_config.get("aspectRatio")
+                or image_config.get("aspect_ratio")
+            )
+            image_size = (
+                image_config.get("imageSize")
+                or image_config.get("image_size")
+            )
+            if aspect_ratio:
+                body["aspect_ratio"] = aspect_ratio
+            if image_size:
+                body["image_size"] = image_size
             response = await self.client.post(
                 f"{base_url}/v1/images/generations",
                 headers=headers,
@@ -281,6 +461,17 @@ class OpenAICompatibleAdapter(AIAdapter):
             "model": snapshot.model,
             "messages": convert_openai_messages(payload.get("contents", [])),
         }
+        generation_config = (
+            payload.get("generationConfig")
+            or payload.get("config")
+            or {}
+        )
+        response_mime_type = (
+            generation_config.get("responseMimeType")
+            or generation_config.get("response_mime_type")
+        )
+        if response_mime_type == "application/json":
+            body["response_format"] = {"type": "json_object"}
         response = await self.client.post(
             f"{base_url}/v1/chat/completions",
             headers=headers,
@@ -290,6 +481,13 @@ class OpenAICompatibleAdapter(AIAdapter):
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         return normalized_text_response(content)
+
+    async def close(self) -> None:
+        close = getattr(self.client, "aclose", None)
+        if callable(close):
+            result = close()
+            if inspect.isawaitable(result):
+                await result
 
 
 _ADAPTERS = {
@@ -304,3 +502,20 @@ def get_adapter(protocol: str) -> AIAdapter:
         return _ADAPTERS[protocol.lower()]
     except (AttributeError, KeyError) as exc:
         raise ValueError(f"Unsupported AI protocol: {protocol}") from exc
+
+
+def invalidate_provider_clients(provider_id: int) -> None:
+    for adapter in tuple(dict.fromkeys(_ADAPTERS.values())):
+        invalidate = getattr(adapter, "invalidate_provider", None)
+        if callable(invalidate):
+            invalidate(provider_id)
+
+
+async def close_adapters() -> None:
+    for adapter in tuple(dict.fromkeys(_ADAPTERS.values())):
+        close = getattr(adapter, "close", None)
+        if not callable(close):
+            continue
+        result = close()
+        if inspect.isawaitable(result):
+            await result

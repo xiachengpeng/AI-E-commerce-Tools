@@ -66,10 +66,14 @@ class ProviderConnectionTest(BaseModel):
     capability: Literal["text", "image"]
 
     @model_validator(mode="after")
-    def require_exactly_one_provider_source(self):
-        if (self.provider_id is None) == (self.draft is None):
-            raise ValueError("provider_id 和 draft 必须且只能提供一个")
+    def require_provider_source(self):
+        if self.provider_id is None and self.draft is None:
+            raise ValueError("provider_id 和 draft 至少提供一个")
         return self
+
+
+class SavedProviderConnectionTest(BaseModel):
+    capability: Literal["text", "image"]
 
 
 class ProviderConnectionTestResult(BaseModel):

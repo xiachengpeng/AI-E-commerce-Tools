@@ -70,6 +70,25 @@ async def test_analyze_single_deep(sample_structured_data):
 
 
 @pytest.mark.asyncio
+async def test_single_ai_log_contains_only_response_metadata(
+    sample_structured_data,
+    caplog,
+):
+    secret = '{"secret":"RAW-SINGLE-MODEL-OUTPUT"}'
+
+    with caplog.at_level("INFO"), patch(
+        "services.ai_single.AIService.call_ai",
+        new=AsyncMock(return_value=secret),
+    ):
+        from services.ai_single import analyze_single_extract
+
+        await analyze_single_extract(sample_structured_data)
+
+    assert "RAW-SINGLE-MODEL-OUTPUT" not in caplog.text
+    assert "length=" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_extract_json_removes_markdown_fence():
     """_extract_json 能清理 ```json``` 包裹"""
     from services.ai_single import _extract_json

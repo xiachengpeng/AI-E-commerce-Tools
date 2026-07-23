@@ -54,6 +54,36 @@ async def test_next_request_uses_new_binding(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ai_request_emits_start_before_success(monkeypatch):
+    selected = snapshot(id=3)
+    monkeypatch.setattr(
+        "services.ai_router.get_snapshot",
+        lambda db, capability: selected,
+    )
+    adapter = AsyncMock(return_value={"candidates": []})
+    provider_adapter = MagicMock()
+    provider_adapter.generate = adapter
+    monkeypatch.setattr(
+        "services.ai_router.get_adapter",
+        lambda protocol: provider_adapter,
+    )
+    emit = MagicMock()
+    monkeypatch.setattr("services.ai_router.app_logs.emit", emit)
+
+    await AIRouter().generate("text", {}, db=object())
+
+    assert [call.kwargs["message"] for call in emit.call_args_list] == [
+        "AI 请求开始",
+        "AI 请求完成",
+    ]
+    assert all(
+        call.kwargs["provider"] == "Provider 3"
+        and call.kwargs["model"] == "model-3"
+        for call in emit.call_args_list
+    )
+
+
+@pytest.mark.asyncio
 async def test_retry_does_not_change_provider(monkeypatch):
     selected = snapshot(id=9, max_retries=2)
     get_snapshot = MagicMock(return_value=selected)

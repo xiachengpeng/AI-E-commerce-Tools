@@ -560,6 +560,96 @@ def test_initialize_ai_settings_imports_defaults_and_closes_session(
     db.close.assert_called_once_with()
 
 
+def test_initialize_ai_settings_logs_unconfigured_repair_state(monkeypatch):
+    import main
+
+    db = MagicMock()
+    db.query.return_value.first.return_value = None
+    monkeypatch.setattr(main, "SessionLocal", MagicMock(return_value=db))
+    monkeypatch.setattr(
+        main,
+        "import_env_defaults_if_empty",
+        MagicMock(return_value=False),
+    )
+    emit = MagicMock()
+    monkeypatch.setattr(main.app_logs, "emit", emit)
+
+    main.initialize_ai_settings()
+
+    emit.assert_called_once_with(
+        level="warning",
+        source="system",
+        message="AI 尚未配置，可在设置中修复",
+    )
+    db.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_closes_global_async_clients(monkeypatch):
+    import main
+
+    close_ai = AsyncMock()
+    close_crawler = AsyncMock()
+    monkeypatch.setattr(main, "close_adapters", close_ai)
+    monkeypatch.setattr(main, "close_firecrawl_client", close_crawler)
+
+    async with main.app_lifespan(main.app):
+        pass
+
+    close_ai.assert_awaited_once_with()
+    close_crawler.assert_awaited_once_with()
+
+
+def test_analysis_cache_key_changes_with_text_route(monkeypatch):
+    import main
+    from services.ai_config_service import ProviderSnapshot
+
+    db = MagicMock()
+    db.close = MagicMock()
+    snapshots = [
+        ProviderSnapshot(
+            id=1,
+            capability="text",
+            name="First",
+            protocol="gemini",
+            base_url=None,
+            api_key="key",
+            vertex_project_id=None,
+            vertex_location=None,
+            vertex_key_path=None,
+            model="model-a",
+            timeout_seconds=30,
+            max_retries=0,
+            config_version=1,
+        ),
+        ProviderSnapshot(
+            id=2,
+            capability="text",
+            name="Second",
+            protocol="gemini",
+            base_url=None,
+            api_key="key",
+            vertex_project_id=None,
+            vertex_location=None,
+            vertex_key_path=None,
+            model="model-b",
+            timeout_seconds=30,
+            max_retries=0,
+            config_version=4,
+        ),
+    ]
+    monkeypatch.setattr(main, "SessionLocal", lambda: db)
+    monkeypatch.setattr(main, "get_snapshot", MagicMock(side_effect=snapshots))
+
+    first = main.analysis_cache_key(["https://example.com/product"])
+    second = main.analysis_cache_key(["https://example.com/product"])
+
+    assert first != second
+    assert first.endswith("|text-route=1:1")
+    assert second.endswith("|text-route=2:4")
+    assert db.close.call_count == 2
+
+
 # ============================================================
 # 历史 API
 # ============================================================
@@ -599,6 +689,46 @@ def test_square_redraw_history_save_and_list():
     saved = next(item for item in data if item["batch_id"] == 123)
     assert saved["target_aspect_ratio"] == "1:1"
     assert saved["result"]["summary"]["done"] == 1
+
+
+def test_history_save_and_delete_emit_structured_events(monkeypatch):
+    emit = MagicMock()
+    monkeypatch.setattr("main.app_logs.emit", emit)
+
+    saved = client.post(
+        "/api/history/listing",
+        json={
+            "name": "private product name",
+            "platform": "Amazon",
+            "result": {"private": "response content"},
+        },
+    )
+    history_id = saved.json()["id"]
+    deleted = client.delete(f"/api/history/listing/{history_id}")
+
+    assert saved.json()["status"] == "success"
+    assert deleted.json()["status"] == "success"
+    messages = [call.kwargs["message"] for call in emit.call_args_list]
+    assert messages == ["历史记录保存成功", "历史记录删除成功"]
+    assert all(call.kwargs["source"] == "history" for call in emit.call_args_list)
+    rendered = repr(emit.call_args_list)
+    assert "private product name" not in rendered
+    assert "response content" not in rendered
+
+
+def test_invalid_history_save_emits_failure(monkeypatch):
+    emit = MagicMock()
+    monkeypatch.setattr("main.app_logs.emit", emit)
+
+    response = client.post(
+        "/api/history/invalid",
+        json={"image_data": "data:image/png;base64,PRIVATE"},
+    )
+
+    assert response.json()["status"] == "error"
+    assert emit.call_args.kwargs["source"] == "history"
+    assert emit.call_args.kwargs["message"] == "历史记录保存失败"
+    assert "PRIVATE" not in repr(emit.call_args)
 
 
 # ============================================================

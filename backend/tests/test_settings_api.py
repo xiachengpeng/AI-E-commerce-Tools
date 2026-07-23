@@ -344,26 +344,17 @@ def test_duplicate_provider_name_returns_conflict():
     assert renamed.status_code == 409
 
 
-def test_connection_test_requires_exactly_one_provider_source():
+def test_connection_test_requires_at_least_one_provider_source():
     client, _ = _make_client()
     try:
         neither = client.post(
             "/api/settings/ai/providers/test",
             json={"capability": "text"},
         )
-        both = client.post(
-            "/api/settings/ai/providers/test",
-            json={
-                "provider_id": 1,
-                "draft": _provider_data(),
-                "capability": "text",
-            },
-        )
     finally:
         app.dependency_overrides.clear()
 
     assert neither.status_code == 422
-    assert both.status_code == 422
 
 
 def test_connection_validation_error_never_echoes_draft_secrets():
@@ -385,7 +376,6 @@ def test_connection_validation_error_never_echoes_draft_secrets():
                     vertex_location=secrets[2],
                     vertex_key_path=secrets[3],
                 ),
-                "capability": "text",
             },
         )
     finally:
@@ -501,6 +491,179 @@ def test_draft_connection_test_does_not_persist_or_change_bindings(
     assert snapshot.name == "Unsaved"
     assert snapshot.capability == "image"
     assert "1×1" in payload["contents"][0]["parts"][0]["text"]
+
+
+def test_edited_provider_connection_test_overlays_form_without_persisting(
+    monkeypatch,
+):
+    client, testing_session = _make_client()
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value={"candidates": []})},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    try:
+        created = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(
+                name="Saved Relay",
+                api_key="saved-secret",
+                text_model="saved-model",
+            ),
+        )
+        provider_id = created.json()["id"]
+        client.put(
+            "/api/settings/ai/bindings/text",
+            json={"provider_config_id": provider_id},
+        )
+
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={
+                "provider_id": provider_id,
+                "draft": _provider_data(
+                    name="Edited Relay",
+                    api_key="",
+                    text_model="edited-model",
+                    timeout_seconds=17,
+                ),
+                "capability": "text",
+            },
+        )
+
+        from db import AICapabilityBinding, AIProviderConfig
+
+        db = testing_session()
+        try:
+            stored = db.get(AIProviderConfig, provider_id)
+            binding = db.get(AICapabilityBinding, "text")
+            persisted = {
+                "name": stored.name,
+                "api_key": stored.api_key,
+                "text_model": stored.text_model,
+                "last_test_status": stored.last_test_status,
+                "binding": binding.provider_config_id,
+            }
+        finally:
+            db.close()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    snapshot = adapter.generate.await_args.args[0]
+    assert snapshot.name == "Edited Relay"
+    assert snapshot.api_key == "saved-secret"
+    assert snapshot.model == "edited-model"
+    assert snapshot.timeout_seconds == 17
+    assert persisted == {
+        "name": "Saved Relay",
+        "api_key": "saved-secret",
+        "text_model": "saved-model",
+        "last_test_status": None,
+        "binding": provider_id,
+    }
+
+
+def test_edited_provider_nonblank_secret_overrides_only_for_test(
+    monkeypatch,
+):
+    client, testing_session = _make_client()
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value={"candidates": []})},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    try:
+        created = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(api_key="saved-secret"),
+        )
+        provider_id = created.json()["id"]
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={
+                "provider_id": provider_id,
+                "draft": _provider_data(api_key="draft-secret"),
+                "capability": "text",
+            },
+        )
+        from db import AIProviderConfig
+
+        db = testing_session()
+        try:
+            persisted_key = db.get(AIProviderConfig, provider_id).api_key
+        finally:
+            db.close()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert adapter.generate.await_args.args[0].api_key == "draft-secret"
+    assert persisted_key == "saved-secret"
+
+
+def test_saved_provider_connection_test_compatibility_alias(monkeypatch):
+    client, _ = _make_client()
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value={"candidates": []})},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    try:
+        provider_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(),
+        ).json()["id"]
+
+        response = client.post(
+            f"/api/settings/ai/providers/{provider_id}/test",
+            json={"capability": "text"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert adapter.generate.await_args.args[0].id == provider_id
+
+
+def test_connection_tests_emit_safe_start_and_result_events(monkeypatch):
+    from services.app_log_service import AppLogService
+
+    logs = AppLogService(session_id="boot-a")
+    monkeypatch.setattr("main.app_logs", logs)
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value={"candidates": []})},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    client, _ = _make_client()
+    try:
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={
+                "draft": _provider_data(
+                    api_key="draft-secret",
+                    name="Safe name",
+                ),
+                "capability": "text",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    entries = logs.recent()
+    assert [entry["message"] for entry in entries] == [
+        "AI 连接测试开始",
+        "AI 连接测试完成",
+    ]
+    assert all(entry["source"] == "system" for entry in entries)
+    assert "draft-secret" not in str(entries)
 
 
 class _ProviderFailure(Exception):

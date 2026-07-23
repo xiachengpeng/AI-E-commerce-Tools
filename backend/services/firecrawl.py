@@ -1,8 +1,10 @@
 import logging
+import time
 
 import httpx
 
 from config import FIRECRAWL_API_URL
+from services.app_log_service import app_logs
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +51,14 @@ async def fetch_markdown(url: str, max_age: int = 3600) -> str:
 
     headers = {"Content-Type": "application/json"}
     client = _get_client()
+    started = time.monotonic()
 
-    logger.info(f"🕸️ [爬虫] 正在通过 Firecrawl 异步抓取页面: {url}...")
+    logger.info("Firecrawl request started")
+    app_logs.emit(
+        level="info",
+        source="crawler",
+        message="爬虫请求开始",
+    )
     try:
         response = await client.post(
             FIRECRAWL_API_URL,
@@ -66,14 +74,59 @@ async def fetch_markdown(url: str, max_age: int = 3600) -> str:
         elif "markdown" in data:
             md = data["markdown"]
         else:
-            logger.error(f"❌ [爬虫] 响应格式不匹配: {data.keys()}")
+            logger.error(
+                "Firecrawl response missing markdown: field_count=%s",
+                len(data) if isinstance(data, dict) else 0,
+            )
             raise ValueError("Markdown content not found in Firecrawl response.")
 
-        logger.info(f"✅ [爬虫] 页面抓取成功: {url} (长度: {len(md)})")
+        duration_ms = round((time.monotonic() - started) * 1000)
+        logger.info(
+            "Firecrawl request completed: content_length=%s duration_ms=%s",
+            len(md),
+            duration_ms,
+        )
+        app_logs.emit(
+            level="success",
+            source="crawler",
+            message="爬虫请求完成",
+            duration_ms=duration_ms,
+        )
         return md
     except httpx.HTTPStatusError as e:
-        logger.error(f"❌ [爬虫] HTTP {e.response.status_code}: {e.response.text}")
-        raise Exception(f"Firecrawl HTTP {e.response.status_code}: {e.response.text}")
-    except Exception as e:
-        logger.error(f"❌ [爬虫] 抓取失败: {e}")
-        raise Exception(f"Failed to fetch content from Firecrawl: {e}")
+        status_code = getattr(e.response, "status_code", None)
+        logger.error("Firecrawl HTTP failure: status=%s", status_code)
+        app_logs.emit(
+            level="error",
+            source="crawler",
+            message="爬虫请求失败",
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
+        raise Exception(
+            f"Firecrawl HTTP {status_code}"
+        ) from None
+    except ValueError as exc:
+        app_logs.emit(
+            level="error",
+            source="crawler",
+            message="爬虫请求失败",
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
+        raise Exception(str(exc)) from None
+    except Exception:
+        logger.error("Firecrawl request failed")
+        app_logs.emit(
+            level="error",
+            source="crawler",
+            message="爬虫请求失败",
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
+        raise Exception("Failed to fetch content from Firecrawl") from None
+
+
+async def close_client() -> None:
+    global _client
+    client = _client
+    _client = None
+    if client is not None:
+        await client.aclose()

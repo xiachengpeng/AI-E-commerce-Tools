@@ -61,6 +61,16 @@ def test_parse_ai_json_object_empty_text_has_clear_error():
         parse_ai_json_object("")
 
 
+def test_invalid_ai_json_never_logs_or_raises_raw_response(caplog):
+    secret = "RAW-MODEL-RESPONSE-SECRET"
+
+    with pytest.raises(ValueError, match="AI 返回的 JSON 格式无效") as raised:
+        parse_ai_json_object(f'{{"broken":"{secret}"')
+
+    assert secret not in caplog.text
+    assert secret not in str(raised.value)
+
+
 def test_first_text_from_response_handles_empty_candidates():
     assert first_text_from_response({"candidates": []}) == ""
 
@@ -152,6 +162,41 @@ async def test_extract_listing_inputs_routes_image_analysis_to_text_capability()
 
     assert result["name"] == "Lamp"
     assert mocked.await_args.kwargs["capability"] == "text"
+
+
+@pytest.mark.asyncio
+async def test_extract_listing_inputs_emits_safe_image_boundaries(monkeypatch):
+    image_data = "data:image/png;base64," + base64.b64encode(
+        b"image-secret"
+    ).decode()
+    request = ListingImageExtractRequest(image_data=image_data)
+    response = {
+        "candidates": [{
+            "content": {
+                "parts": [{"text": '{"name":"Lamp"}'}]
+            }
+        }]
+    }
+    emit = AsyncMock()
+    safe_emit = patch(
+        "services.listing_service.app_logs.emit",
+    )
+    with safe_emit as mocked_emit, patch(
+        "services.listing_service.AIService.generate_content",
+        new=AsyncMock(return_value=response),
+    ):
+        await extract_listing_inputs(request)
+
+    messages = [
+        call.kwargs["message"]
+        for call in mocked_emit.call_args_list
+    ]
+    assert messages == ["图片解析开始", "图片解析完成"]
+    assert all(
+        call.kwargs["source"] == "image"
+        for call in mocked_emit.call_args_list
+    )
+    assert "image-secret" not in repr(mocked_emit.call_args_list)
 
 
 @pytest.mark.asyncio

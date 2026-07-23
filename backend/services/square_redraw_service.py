@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -13,6 +14,7 @@ from PIL import Image
 from config import FRONTEND_CONCURRENCY_LIMIT
 from db import SessionLocal, SquareRedrawBatch, SquareRedrawItem
 from services.ai_service import AIService
+from services.app_log_service import app_logs
 
 
 MAX_SQUARE_REDRAW_BATCH_SIZE = 100
@@ -241,11 +243,20 @@ async def process_square_redraw_batch(batch_id: int) -> None:
 async def process_square_redraw_item(item_id: int) -> None:
     db = SessionLocal()
     item = None
+    started = time.monotonic()
+    event_started = False
     try:
         item = db.query(SquareRedrawItem).filter(SquareRedrawItem.id == item_id).first()
         if not item or item.status != "queued":
             return
 
+        app_logs.emit(
+            level="info",
+            source="image",
+            message="方图重绘开始",
+            capability="image",
+        )
+        event_started = True
         item.status = "running"
         item.error_message = None
         db.commit()
@@ -293,12 +304,29 @@ async def process_square_redraw_item(item_id: int) -> None:
         )
         item.status = "done"
         item.error_message = None
+        app_logs.emit(
+            level="success",
+            source="image",
+            message="方图重绘完成",
+            capability="image",
+            duration_ms=round((time.monotonic() - started) * 1000),
+        )
     except Exception as exc:
         if item is None:
             item = db.query(SquareRedrawItem).filter(SquareRedrawItem.id == item_id).first()
         if item:
             item.status = "failed"
             item.error_message = str(exc)[:500]
+        if event_started:
+            app_logs.emit(
+                level="error",
+                source="image",
+                message="方图重绘失败",
+                capability="image",
+                duration_ms=round(
+                    (time.monotonic() - started) * 1000
+                ),
+            )
     finally:
         if item:
             db.commit()

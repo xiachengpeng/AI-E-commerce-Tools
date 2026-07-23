@@ -41,6 +41,14 @@ function buildProviderPayload(values) {
     return payload;
 }
 
+function buildProviderTestRequestBody(providerId, draft, capability) {
+    const request = { draft, capability };
+    if (providerId !== null && providerId !== undefined) {
+        request.provider_id = Number(providerId);
+    }
+    return request;
+}
+
 function replaceProviderInList(providers, updatedProvider) {
     const exists = providers.some(
         provider => Number(provider.id) === Number(updatedProvider.id)
@@ -1124,15 +1132,17 @@ async function testProviderConnection(button) {
         return;
     }
 
-    const requestBody = settingsState.editingProviderId === null
-        ? { draft: payload, capability }
-        : { provider_id: settingsState.editingProviderId, capability };
+    const requestBody = buildProviderTestRequestBody(
+        settingsState.editingProviderId,
+        payload,
+        capability
+    );
     const resultElement = settingsElement("settingsTestResult");
     setSettingsButtonBusy(button, true);
     if (resultElement) {
         resultElement.textContent = settingsState.editingProviderId === null
             ? "正在测试当前表单配置…"
-            : "正在测试已保存配置…";
+            : "正在测试当前编辑配置…";
         resultElement.className = "settings-test-result";
     }
 
@@ -1286,6 +1296,7 @@ if (typeof module !== "undefined") {
     module.exports = {
         providerSupportsCapability,
         buildProviderPayload,
+        buildProviderTestRequestBody,
         maskedKeyPlaceholder,
         replaceProviderInList,
         removeProviderFromList,

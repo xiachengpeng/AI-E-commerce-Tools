@@ -131,6 +131,97 @@ def test_log_buffer_is_bounded_and_redacted():
     assert "key-secret" not in str(recent)
 
 
+@pytest.mark.parametrize(
+    ("message", "secrets"),
+    [
+        (
+            'vertex_key_path="/private/vertex-secret.json" status=ready',
+            ["/private/vertex-secret.json"],
+        ),
+        (
+            '{"vertex_key_path": "/private/json-secret.json", "count": 2}',
+            ["/private/json-secret.json"],
+        ),
+        (
+            "image_data=data:image/png;base64,QUJDRA== count=1",
+            ["QUJDRA=="],
+        ),
+        (
+            '{"image_data": "opaque-image-secret", "count": 3}',
+            ["opaque-image-secret"],
+        ),
+        (
+            '{"inlineData": {"mimeType": "image/png", "data": "INLINESECRET"}, "count": 4}',
+            ["INLINESECRET"],
+        ),
+        (
+            "{'inline_data': {'mime_type': 'image/png', 'data': 'SNAKESECRET'}, 'count': 5}",
+            ["SNAKESECRET"],
+        ),
+        (
+            "inlineData.data=DOTSECRET status=ok",
+            ["DOTSECRET"],
+        ),
+        (
+            "{inlineData: {mimeType: image/png, data: BARESECRET}, count: 6}",
+            ["BARESECRET"],
+        ),
+    ],
+)
+def test_sensitive_credential_and_image_variants_are_redacted(
+    message,
+    secrets,
+):
+    entry = AppLogService().emit(
+        level="info",
+        source="image",
+        message=message,
+    )
+
+    for secret in secrets:
+        assert secret not in entry["message"]
+    assert "[REDACTED]" in entry["message"] or "[IMAGE REDACTED]" in entry["message"]
+    for safe_metadata in ("count", "status", "mimeType", "mime_type"):
+        if safe_metadata in message:
+            assert safe_metadata in entry["message"]
+
+
+@pytest.mark.asyncio
+async def test_recent_and_subscriber_never_expose_inline_image_data():
+    logs = AppLogService()
+    queue = logs.subscribe()
+
+    logs.emit(
+        level="info",
+        source="image",
+        message='{"inlineData":{"data":"VERYSECRET"},"status":"done"}',
+    )
+
+    delivered = await asyncio.wait_for(queue.get(), 0.1)
+    assert "VERYSECRET" not in str(delivered)
+    assert "VERYSECRET" not in str(logs.recent())
+    assert "status" in delivered["message"]
+
+
+def test_closed_subscriber_loop_is_pruned_without_breaking_emit():
+    logs = AppLogService()
+
+    async def subscribe_once():
+        return logs.subscribe()
+
+    queue = asyncio.run(subscribe_once())
+
+    entry = logs.emit(
+        level="success",
+        source="system",
+        message="business request completed",
+    )
+
+    assert entry["message"] == "business request completed"
+    assert logs.recent() == [entry]
+    assert queue not in logs._subscribers
+
+
 @pytest.mark.asyncio
 async def test_subscriber_receives_new_entry():
     logs = AppLogService()

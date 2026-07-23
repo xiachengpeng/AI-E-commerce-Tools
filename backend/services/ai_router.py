@@ -139,6 +139,15 @@ class AIRouter:
 
         adapter = get_adapter(snapshot.protocol)
         started = time.monotonic()
+        app_logs.emit(
+            level="info",
+            source="ai",
+            message="AI 请求开始",
+            capability=capability,
+            provider=snapshot.name,
+            model=snapshot.model,
+            retry=0,
+        )
         terminal_error = None
         for attempt in range(snapshot.max_retries + 1):
             try:

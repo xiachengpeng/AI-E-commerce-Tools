@@ -67,7 +67,12 @@ async def compare_products(products_data: list) -> dict:
             response_mime_type="application/json",
         )
         parsed = json.loads(_extract_json(json_str))
-        logger.info(f"AI Compare Result Parsed: {parsed}")
+        item_count = len(parsed) if isinstance(parsed, (dict, list)) else 0
+        logger.info(
+            "AI comparison parsed: type=%s keys=%s",
+            type(parsed).__name__,
+            item_count,
+        )
         if isinstance(parsed, list):
             return {}
         return parsed

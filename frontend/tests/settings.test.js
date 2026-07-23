@@ -1,7 +1,10 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
     providerSupportsCapability,
     buildProviderPayload,
+    buildProviderTestRequestBody,
     maskedKeyPlaceholder,
     refreshSettingsAfterSuccess,
     replaceProviderInList,
@@ -48,6 +51,41 @@ assert.deepEqual(buildProviderPayload({
     max_retries: 2,
     enabled: true
 });
+
+const editedDraft = {
+    name: "Edited",
+    protocol: "gemini",
+    api_key: null,
+    text_model: "edited-model",
+    supports_text: true,
+    supports_image: false
+};
+assert.deepEqual(
+    buildProviderTestRequestBody(42, editedDraft, "text"),
+    {
+        provider_id: 42,
+        draft: editedDraft,
+        capability: "text"
+    }
+);
+
+const settingsHtml = fs.readFileSync(
+    path.join(__dirname, "..", "index.html"),
+    "utf8"
+);
+for (const source of ["crawler", "image", "history", "system"]) {
+    assert.match(
+        settingsHtml,
+        new RegExp(`<option value="${source}">`)
+    );
+}
+assert.deepEqual(
+    buildProviderTestRequestBody(null, editedDraft, "text"),
+    {
+        draft: editedDraft,
+        capability: "text"
+    }
+);
 
 function fakeElement(tagName) {
     return {
