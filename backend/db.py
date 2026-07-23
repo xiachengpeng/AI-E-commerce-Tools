@@ -118,10 +118,45 @@ class SquareRedrawItem(Base):
     output_url = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
 
+
+class AIProviderConfig(Base):
+    __tablename__ = "ai_provider_configs"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False, unique=True)
+    protocol = Column(String(32), nullable=False)
+    base_url = Column(Text, nullable=True)
+    api_key = Column(Text, nullable=True)
+    vertex_project_id = Column(Text, nullable=True)
+    vertex_location = Column(String(80), nullable=True)
+    vertex_key_path = Column(Text, nullable=True)
+    text_model = Column(Text, nullable=True)
+    image_model = Column(Text, nullable=True)
+    supports_text = Column(Integer, nullable=False, default=1)
+    supports_image = Column(Integer, nullable=False, default=0)
+    timeout_seconds = Column(Integer, nullable=False, default=60)
+    max_retries = Column(Integer, nullable=False, default=2)
+    enabled = Column(Integer, nullable=False, default=1)
+    last_test_status = Column(String(30), nullable=True)
+    last_test_message = Column(Text, nullable=True)
+    last_tested_at = Column(DateTime, nullable=True)
+    config_version = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class AICapabilityBinding(Base):
+    __tablename__ = "ai_capability_bindings"
+    capability = Column(String(16), primary_key=True)
+    provider_config_id = Column(
+        Integer, ForeignKey("ai_provider_configs.id"), nullable=False
+    )
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
 # 创建所有表
 def init_db():
     Base.metadata.create_all(bind=engine)
     migrate_square_redraw_tables()
+    migrate_ai_settings_tables()
 
 
 def migrate_square_redraw_tables():
@@ -136,6 +171,11 @@ def migrate_square_redraw_tables():
     with engine.begin() as connection:
         if "target_aspect_ratio" not in existing_columns:
             connection.execute(text("ALTER TABLE square_redraw_batches ADD COLUMN target_aspect_ratio VARCHAR(20) DEFAULT '1:1'"))
+
+
+def migrate_ai_settings_tables():
+    """Create the settings tables without modifying existing table columns."""
+    Base.metadata.create_all(bind=engine)
 
 def get_db():
     db = SessionLocal()
