@@ -100,6 +100,10 @@ function switchMainTab(tabId) {
     if (tabId === 'analysis' && typeof xp_init === 'function') {
         xp_init();
     }
+
+    if (tabId === "settings" && typeof initSettings === "function") {
+        initSettings();
+    }
 }
 
 /**

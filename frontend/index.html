@@ -22,6 +22,7 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/square_redraw.css?v=20260625-square-redraw-size-delete">
     <link rel="stylesheet" href="css/analysis.css">
+    <link rel="stylesheet" href="css/settings.css">
 
     <!-- 基础配置与工具 (必须优先加载) -->
     <script src="js/config.js"></script>
@@ -69,6 +70,9 @@
         </button>
 
         <div class="mt-auto mb-4 flex flex-col items-center gap-4">
+            <button id="tab-settings" onclick="switchMainTab('settings')" class="side-tab" title="系统设置">
+                <i class="ph ph-gear-six"></i><span>设置</span>
+            </button>
             <button id="btnOpenHistory" onclick="toggleGlobalHistory()" class="side-tab" title="历史记录中心">
                 <i class="ph ph-clock-counter-clockwise"></i><span>历史</span>
             </button>
@@ -1195,6 +1199,303 @@
             </div>
         </div>
 
+        <!-- ============================================== -->
+        <!-- 视图：系统设置 (VIEW: SETTINGS) -->
+        <!-- ============================================== -->
+        <div id="view-settings" class="hidden flex-1 overflow-hidden bg-slate-50">
+            <div class="settings-shell">
+                <section class="settings-config-column custom-scrollbar" aria-labelledby="settingsPageTitle">
+                    <header class="settings-page-header">
+                        <div>
+                            <div class="settings-eyebrow">Operations Console</div>
+                            <h1 id="settingsPageTitle">AI 线路设置</h1>
+                            <p>分别配置文本与图片能力，保存后新请求立即使用所选线路。</p>
+                        </div>
+                        <button type="button" class="settings-button settings-button-primary"
+                            onclick="openProviderEditor()">
+                            <i class="ph ph-plus"></i> 新增线路
+                        </button>
+                    </header>
+
+                    <section class="settings-card" aria-labelledby="settingsBindingsTitle">
+                        <div class="settings-card-header">
+                            <div>
+                                <span class="settings-section-icon settings-section-icon-indigo">
+                                    <i class="ph ph-arrows-split"></i>
+                                </span>
+                                <div>
+                                    <h2 id="settingsBindingsTitle">能力路由</h2>
+                                    <p>仅显示已启用且支持对应能力的线路。</p>
+                                </div>
+                            </div>
+                            <button type="button" class="settings-icon-button" title="刷新设置"
+                                aria-label="刷新设置" onclick="refreshSettings(this)">
+                                <i class="ph ph-arrow-clockwise"></i>
+                            </button>
+                        </div>
+
+                        <div class="settings-binding-list">
+                            <div class="settings-binding-row">
+                                <div class="settings-binding-name">
+                                    <span class="settings-capability-icon">
+                                        <i class="ph ph-text-aa"></i>
+                                    </span>
+                                    <div>
+                                        <strong>文本 AI</strong>
+                                        <span>分析、Listing 与文案生成</span>
+                                    </div>
+                                </div>
+                                <select id="settingsTextProvider" class="settings-select"
+                                    aria-label="文本 AI 线路"></select>
+                                <button type="button" id="settingsSaveTextBinding"
+                                    class="settings-button settings-button-secondary"
+                                    onclick="saveCapabilityBinding('text', this)">保存</button>
+                            </div>
+                            <div class="settings-binding-row">
+                                <div class="settings-binding-name">
+                                    <span class="settings-capability-icon settings-capability-icon-image">
+                                        <i class="ph ph-image"></i>
+                                    </span>
+                                    <div>
+                                        <strong>图片 AI</strong>
+                                        <span>生图、翻译与尺寸重绘</span>
+                                    </div>
+                                </div>
+                                <select id="settingsImageProvider" class="settings-select"
+                                    aria-label="图片 AI 线路"></select>
+                                <button type="button" id="settingsSaveImageBinding"
+                                    class="settings-button settings-button-secondary"
+                                    onclick="saveCapabilityBinding('image', this)">保存</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="settings-card settings-provider-card" aria-labelledby="settingsProvidersTitle">
+                        <div class="settings-card-header">
+                            <div>
+                                <span class="settings-section-icon settings-section-icon-slate">
+                                    <i class="ph ph-plugs-connected"></i>
+                                </span>
+                                <div>
+                                    <h2 id="settingsProvidersTitle">API 线路</h2>
+                                    <p>管理协议、模型、凭据和连接状态。</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="settingsProviderList" class="settings-provider-list" aria-live="polite">
+                            <div class="settings-empty-state">
+                                <i class="ph ph-spinner-gap settings-spin"></i>
+                                <p>正在加载线路…</p>
+                            </div>
+                        </div>
+                    </section>
+                </section>
+
+                <aside class="settings-log-column custom-scrollbar" aria-labelledby="settingsLogTitle">
+                    <section id="settingsLogPanel" class="settings-log-panel">
+                        <div class="settings-log-header">
+                            <div>
+                                <div class="settings-log-title-row">
+                                    <span class="settings-log-dot"></span>
+                                    <h2 id="settingsLogTitle">实时运行日志</h2>
+                                </div>
+                                <p>连接测试、AI 请求与应用事件将在此持续显示。</p>
+                            </div>
+                            <span class="settings-task-badge">Task 8</span>
+                        </div>
+                        <div class="settings-log-toolbar-placeholder" aria-hidden="true">
+                            <span></span><span></span><span></span>
+                        </div>
+                        <div class="settings-log-placeholder">
+                            <div class="settings-terminal-mark">
+                                <i class="ph ph-terminal-window"></i>
+                            </div>
+                            <h3>日志终端即将接入</h3>
+                            <p>本区域已为实时日志流预留稳定容器。下一阶段将加入 SSE 连接、筛选、暂停和复制操作。</p>
+                            <code>GET /api/settings/logs/stream</code>
+                        </div>
+                    </section>
+                </aside>
+            </div>
+
+            <div id="settingsProviderEditor" class="settings-editor-backdrop hidden"
+                role="dialog" aria-modal="true" aria-labelledby="settingsEditorTitle">
+                <form id="settingsProviderForm" class="settings-editor-panel"
+                    onsubmit="saveProvider(event)">
+                    <div class="settings-editor-header">
+                        <div>
+                            <span class="settings-eyebrow">Provider Configuration</span>
+                            <h2 id="settingsEditorTitle">新增 AI 线路</h2>
+                        </div>
+                        <button type="button" class="settings-icon-button"
+                            onclick="closeProviderEditor()" aria-label="关闭线路编辑器">
+                            <i class="ph ph-x"></i>
+                        </button>
+                    </div>
+
+                    <div class="settings-editor-body custom-scrollbar">
+                        <input type="hidden" id="settingsProviderId">
+
+                        <div class="settings-form-grid settings-form-grid-two">
+                            <label class="settings-field">
+                                <span>线路名称 <b>*</b></span>
+                                <input id="settingsProviderName" type="text" maxlength="120"
+                                    placeholder="例如：Gemini 主线路" required>
+                            </label>
+                            <label class="settings-field">
+                                <span>协议类型 <b>*</b></span>
+                                <select id="settingsProviderProtocol"
+                                    onchange="updateProviderProtocolFields()" required>
+                                    <option value="gemini">Gemini API</option>
+                                    <option value="vertex">Vertex AI</option>
+                                    <option value="openai_compatible">OpenAI Compatible</option>
+                                </select>
+                            </label>
+                        </div>
+
+                        <div id="settingsApiKeyFields" class="settings-form-section">
+                            <div class="settings-form-section-title">
+                                <i class="ph ph-key"></i>
+                                <span>API 凭据</span>
+                            </div>
+                            <label class="settings-field">
+                                <span>API Key</span>
+                                <input id="settingsProviderApiKey" type="password"
+                                    autocomplete="new-password" placeholder="输入 API Key">
+                                <small>编辑时输入框保持为空；留空会保留已保存的 Key。</small>
+                            </label>
+                        </div>
+
+                        <div id="settingsOpenAiFields" class="settings-form-section hidden">
+                            <div class="settings-form-section-title">
+                                <i class="ph ph-link"></i>
+                                <span>OpenAI Compatible</span>
+                            </div>
+                            <label class="settings-field">
+                                <span>Base URL <b>*</b></span>
+                                <input id="settingsProviderBaseUrl" type="url"
+                                    placeholder="https://api.example.com">
+                                <small>填写服务根地址；后端会自动拼接对应的 v1 接口路径。</small>
+                            </label>
+                        </div>
+
+                        <div id="settingsVertexFields" class="settings-form-section hidden">
+                            <div class="settings-form-section-title">
+                                <i class="ph ph-cloud"></i>
+                                <span>Vertex AI 凭据</span>
+                            </div>
+                            <div class="settings-form-grid settings-form-grid-two">
+                                <label class="settings-field">
+                                    <span>Project ID</span>
+                                    <input id="settingsVertexProjectId" type="text"
+                                        autocomplete="off" placeholder="Google Cloud Project ID">
+                                </label>
+                                <label class="settings-field">
+                                    <span>Location</span>
+                                    <input id="settingsVertexLocation" type="text"
+                                        autocomplete="off" placeholder="例如：us-central1">
+                                </label>
+                            </div>
+                            <label class="settings-field">
+                                <span>凭据文件路径</span>
+                                <input id="settingsVertexKeyPath" type="text"
+                                    autocomplete="off" placeholder="/path/to/service-account.json">
+                                <small>敏感字段不会回传；编辑时留空表示保留已保存值。</small>
+                            </label>
+                        </div>
+
+                        <div class="settings-form-section">
+                            <div class="settings-form-section-title">
+                                <i class="ph ph-cpu"></i>
+                                <span>能力与模型</span>
+                            </div>
+                            <div class="settings-capability-options">
+                                <label class="settings-check-card">
+                                    <input id="settingsSupportsText" type="checkbox"
+                                        onchange="updateProviderCapabilityFields()" checked>
+                                    <span>
+                                        <i class="ph ph-text-aa"></i>
+                                        <strong>文本能力</strong>
+                                    </span>
+                                </label>
+                                <label class="settings-check-card">
+                                    <input id="settingsSupportsImage" type="checkbox"
+                                        onchange="updateProviderCapabilityFields()">
+                                    <span>
+                                        <i class="ph ph-image"></i>
+                                        <strong>图片能力</strong>
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="settings-form-grid settings-form-grid-two">
+                                <label id="settingsTextModelField" class="settings-field">
+                                    <span>文本模型</span>
+                                    <input id="settingsTextModel" type="text"
+                                        placeholder="例如：gemini-2.5-pro">
+                                </label>
+                                <label id="settingsImageModelField" class="settings-field settings-field-muted">
+                                    <span>图片模型</span>
+                                    <input id="settingsImageModel" type="text"
+                                        placeholder="例如：gemini-2.5-flash-image" disabled>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-form-section">
+                            <div class="settings-form-section-title">
+                                <i class="ph ph-sliders-horizontal"></i>
+                                <span>运行参数</span>
+                            </div>
+                            <div class="settings-form-grid settings-form-grid-three">
+                                <label class="settings-field">
+                                    <span>请求超时（秒）</span>
+                                    <input id="settingsTimeoutSeconds" type="number"
+                                        min="1" max="600" value="60" required>
+                                </label>
+                                <label class="settings-field">
+                                    <span>最大重试次数</span>
+                                    <input id="settingsMaxRetries" type="number"
+                                        min="0" max="10" value="2" required>
+                                </label>
+                                <label class="settings-switch-field">
+                                    <span>启用线路</span>
+                                    <span class="settings-switch">
+                                        <input id="settingsProviderEnabled" type="checkbox" checked>
+                                        <span class="settings-switch-track"></span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-test-box">
+                            <div>
+                                <label for="settingsTestCapability">连接测试能力</label>
+                                <select id="settingsTestCapability">
+                                    <option value="text">文本能力</option>
+                                    <option value="image">图片能力</option>
+                                </select>
+                            </div>
+                            <button type="button" id="settingsTestProviderButton"
+                                class="settings-button settings-button-outline"
+                                onclick="testProviderConnection(this)">
+                                <i class="ph ph-plugs"></i> 测试连接
+                            </button>
+                            <p id="settingsTestResult" class="settings-test-result" aria-live="polite"></p>
+                        </div>
+                    </div>
+
+                    <div class="settings-editor-footer">
+                        <button type="button" class="settings-button settings-button-ghost"
+                            onclick="closeProviderEditor()">取消</button>
+                        <button type="submit" id="settingsSaveProviderButton"
+                            class="settings-button settings-button-primary">
+                            <i class="ph ph-floppy-disk"></i> 保存线路
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <!-- 全局历史记录面板 -->
         <div id="globalHistoryPanel" class="global-history-panel">
             <div class="history-header">
@@ -1223,6 +1524,7 @@
     <script>
         console.log("%c[System] DOM fully loaded, starting app.js...", "color: #4f46e5; font-weight: bold;");
     </script>
+    <script src="js/settings.js"></script>
     <script src="js/app.js"></script>
     <script src="js/details.js"></script>
     <script src="js/listing.js"></script>
