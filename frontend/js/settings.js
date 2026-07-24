@@ -162,6 +162,56 @@ function formatSettingsLogLine(entry) {
         .join(" ");
 }
 
+function settingsLogSummary(entry) {
+    const message = entry?.message;
+    if (message && typeof message === "object" && !Array.isArray(message)) {
+        return String(message.summary ?? "—");
+    }
+    return String(message ?? "—");
+}
+
+function settingsLogDetailValue(value) {
+    if (typeof value === "string") return value;
+    if (value && typeof value === "object") {
+        try {
+            return JSON.stringify(value);
+        } catch (_) {
+            return String(value);
+        }
+    }
+    return String(value);
+}
+
+function settingsLogDetails(entry) {
+    const message = entry?.message;
+    if (!message || typeof message !== "object" || Array.isArray(message)) {
+        return [];
+    }
+
+    const diagnostic = message.diagnostic;
+    if (!diagnostic || typeof diagnostic !== "object" || Array.isArray(diagnostic)) {
+        return [];
+    }
+
+    const details = [
+        ["HTTP 状态", diagnostic.http_status],
+        ["提供商代码", diagnostic.provider_code],
+        ["异常类型", diagnostic.exception_type],
+        ["请求 ID", diagnostic.request_id],
+        ["上游消息", diagnostic.upstream_message],
+        ["响应正文", diagnostic.response_body]
+    ].filter(([, value]) => value !== null && value !== undefined && value !== "")
+        .map(([label, value]) => [label, settingsLogDetailValue(value)]);
+
+    if (message.attempt !== null && message.attempt !== undefined) {
+        const attempt = message.max_attempts !== null && message.max_attempts !== undefined
+            ? `${message.attempt} / ${message.max_attempts}`
+            : message.attempt;
+        details.push(["尝试", settingsLogDetailValue(attempt)]);
+    }
+    return details;
+}
+
 function shouldConnectSettingsLogs(state) {
     return !state.logSource && !state.logConnecting;
 }
@@ -318,7 +368,7 @@ function renderSettingsLogs() {
             row.appendChild(head);
 
             const message = createSettingsLogElement("div", "settings-log-message", "");
-            appendSettingsLogField(message, "message", entry?.message);
+            appendSettingsLogField(message, "message", settingsLogSummary(entry));
             row.appendChild(message);
 
             const meta = createSettingsLogElement("div", "settings-log-meta", "");
@@ -328,6 +378,46 @@ function renderSettingsLogs() {
             appendSettingsLogField(meta, "duration_ms", entry?.duration_ms);
             appendSettingsLogField(meta, "retry", entry?.retry);
             row.appendChild(meta);
+
+            const detailRows = settingsLogDetails(entry);
+            if (detailRows.length) {
+                const details = createSettingsLogElement(
+                    "details",
+                    "settings-log-details",
+                    ""
+                );
+                details.appendChild(createSettingsLogElement(
+                    "summary",
+                    "settings-log-details-summary",
+                    "查看错误详情"
+                ));
+
+                const content = createSettingsLogElement(
+                    "div",
+                    "settings-log-details-content",
+                    ""
+                );
+                detailRows.forEach(([label, value]) => {
+                    const detail = createSettingsLogElement(
+                        "div",
+                        "settings-log-detail-row",
+                        ""
+                    );
+                    detail.appendChild(createSettingsLogElement(
+                        "span",
+                        "settings-log-detail-label",
+                        label
+                    ));
+                    detail.appendChild(createSettingsLogElement(
+                        "span",
+                        "settings-log-detail-value",
+                        value
+                    ));
+                    content.appendChild(detail);
+                });
+                details.appendChild(content);
+                row.appendChild(details);
+            }
             container.appendChild(row);
         });
     }
@@ -1346,6 +1436,8 @@ if (typeof module !== "undefined") {
         disconnectSettingsLogs,
         appendSettingsLog,
         formatSettingsLogLine,
+        settingsLogSummary,
+        settingsLogDetails,
         settingsLogId,
         settingsLogKey,
         mergeSettingsLogSnapshot

@@ -18,6 +18,8 @@ const {
     disconnectSettingsLogs,
     appendSettingsLog,
     formatSettingsLogLine,
+    settingsLogSummary,
+    settingsLogDetails,
     settingsLogId,
     settingsLogKey,
     mergeSettingsLogSnapshot
@@ -206,6 +208,51 @@ assert.equal(formatSettingsLogLine({
     duration_ms: 125,
     retry: 2
 }), "timestamp=2026-07-23T10:00:00Z level=error source=ai message=<script>alert(1)</script> capability=image provider=Relay model=vision-v1 duration_ms=125 retry=2");
+
+const structuredDiagnosticLog = {
+    message: {
+        summary: "AI 提供商请求频率受限",
+        diagnostic: {
+            http_status: 429,
+            provider_code: "RATE_LIMITED",
+            exception_type: "HTTPStatusError",
+            request_id: "request-429",
+            upstream_message: "provider returned 429",
+            response_body: {
+                error: { code: "RATE_LIMITED", message: "retry later" }
+            }
+        },
+        attempt: 2,
+        max_attempts: 2
+    }
+};
+assert.equal(
+    settingsLogSummary(structuredDiagnosticLog),
+    "AI 提供商请求频率受限"
+);
+assert.deepEqual(settingsLogDetails(structuredDiagnosticLog), [
+    ["HTTP 状态", "429"],
+    ["提供商代码", "RATE_LIMITED"],
+    ["异常类型", "HTTPStatusError"],
+    ["请求 ID", "request-429"],
+    ["上游消息", "provider returned 429"],
+    ["响应正文", '{"error":{"code":"RATE_LIMITED","message":"retry later"}}'],
+    ["尝试", "2 / 2"]
+]);
+
+const diagnosticAttack = '<img src=x onerror="globalThis.settingsLogXss=true">';
+const maliciousDiagnosticLog = {
+    message: {
+        summary: diagnosticAttack,
+        diagnostic: { upstream_message: diagnosticAttack }
+    }
+};
+assert.equal(settingsLogSummary(maliciousDiagnosticLog), diagnosticAttack);
+assert.deepEqual(settingsLogDetails(maliciousDiagnosticLog), [
+    ["上游消息", diagnosticAttack]
+]);
+assert.equal(settingsLogSummary({ message: diagnosticAttack }), diagnosticAttack);
+assert.deepEqual(settingsLogDetails({ message: diagnosticAttack }), []);
 
 const snapshotLog = {
     session_id: "boot-a",
