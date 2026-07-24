@@ -6,9 +6,11 @@ import httpx
 import pytest
 
 from services.ai_config_service import ProviderSnapshot
+from services.app_log_service import AppLogService
 from services.ai_router import (
     AIProviderRequestError,
     AIRouter,
+    diagnose_provider_error,
     map_provider_error,
 )
 
@@ -204,10 +206,11 @@ async def test_exhausted_retry_raises_and_logs_safe_domain_error(
     assert "header-secret" not in rendered_error
     error_log = emit.call_args_list[-1].kwargs
     assert error_log["level"] == "error"
-    assert error_log["message"] == "AI 提供商认证失败"
-    assert "query-secret" not in repr(error_log)
-    assert "body-secret" not in repr(error_log)
-    assert "header-secret" not in repr(error_log)
+    assert error_log["message"]["summary"] == "AI 提供商认证失败"
+    assert error_log["message"]["diagnostic"]["category"] == "authentication"
+    assert "query-secret" not in error_log["message"]["summary"]
+    assert "body-secret" not in error_log["message"]["summary"]
+    assert "header-secret" not in error_log["message"]["summary"]
 
 
 class ProviderError(RuntimeError):
@@ -296,3 +299,107 @@ def test_provider_errors_map_to_safe_categories(error, category, message):
     assert mapped.category == category
     assert str(mapped) == message
     assert "secret" not in str(mapped)
+
+
+def test_diagnose_provider_error_normalizes_http_response_details():
+    request = httpx.Request("POST", "https://provider.invalid/generate")
+    response = httpx.Response(
+        429,
+        headers={"x-request-id": "request-429"},
+        json={
+            "error": {
+                "code": "RATE_LIMITED",
+                "message": "retry later",
+            }
+        },
+        request=request,
+    )
+    error = httpx.HTTPStatusError(
+        "provider returned 429",
+        request=request,
+        response=response,
+    )
+
+    diagnostic = diagnose_provider_error(error)
+
+    assert diagnostic.category == "rate_limit"
+    assert diagnostic.http_status == 429
+    assert diagnostic.provider_code == "RATE_LIMITED"
+    assert diagnostic.request_id == "request-429"
+    assert diagnostic.exception_type == "HTTPStatusError"
+    assert diagnostic.upstream_message == "provider returned 429"
+    assert diagnostic.response_body == {
+        "error": {"code": "RATE_LIMITED", "message": "retry later"}
+    }
+    assert map_provider_error(error).diagnostic == diagnostic
+
+
+def test_diagnose_provider_error_reads_provider_code_attribute():
+    diagnostic = diagnose_provider_error(
+        ProviderError("rate limited", code="RATE_LIMITED")
+    )
+
+    assert diagnostic.category == "rate_limit"
+    assert diagnostic.provider_code == "RATE_LIMITED"
+
+
+@pytest.mark.asyncio
+async def test_detailed_retry_and_terminal_logs_include_diagnostics(
+    monkeypatch,
+):
+    selected = snapshot(max_retries=1)
+    monkeypatch.setattr(
+        "services.ai_router.get_snapshot", lambda db, cap: selected
+    )
+    request = httpx.Request("POST", "https://provider.invalid/generate")
+    response = httpx.Response(
+        429,
+        headers={"x-goog-request-id": "google-request-429"},
+        json={
+            "error": {"code": "RATE_LIMITED", "message": "retry later"},
+            "api_key": "body-api-secret",
+        },
+        request=request,
+    )
+    error = httpx.HTTPStatusError(
+        "Authorization: Bearer message-secret",
+        request=request,
+        response=response,
+    )
+    adapter = AsyncMock()
+    adapter.generate.side_effect = error
+    monkeypatch.setattr(
+        "services.ai_router.get_adapter", lambda protocol: adapter
+    )
+    monkeypatch.setattr("services.ai_router.asyncio.sleep", AsyncMock())
+    logs = AppLogService()
+    monkeypatch.setattr("services.ai_router.app_logs", logs)
+
+    with pytest.raises(AIProviderRequestError):
+        await AIRouter(base_delay=0).generate("text", {}, db=object())
+
+    retry_log, terminal_log = [
+        entry
+        for entry in logs.recent()
+        if entry["level"] in {"warning", "error"}
+    ]
+    for log in (retry_log, terminal_log):
+        assert log["duration_ms"] >= 0
+        diagnostic = log["message"]["diagnostic"]
+        assert diagnostic["category"] == "rate_limit"
+        assert diagnostic["http_status"] == 429
+        assert diagnostic["provider_code"] == "RATE_LIMITED"
+        assert diagnostic["request_id"] == "google-request-429"
+        assert diagnostic["exception_type"] == "HTTPStatusError"
+        assert diagnostic["response_body"]["error"] == {
+            "code": "RATE_LIMITED",
+            "message": "retry later",
+        }
+        assert "message-secret" not in str(log)
+        assert "body-api-secret" not in str(log)
+    assert retry_log["message"]["summary"] == "AI 请求重试"
+    assert retry_log["message"]["attempt"] == 1
+    assert retry_log["message"]["max_attempts"] == 2
+    assert terminal_log["message"]["summary"] == "AI 提供商请求频率受限"
+    assert terminal_log["message"]["attempt"] == 2
+    assert terminal_log["message"]["max_attempts"] == 2

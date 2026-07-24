@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import time
 
 import httpx
@@ -44,11 +45,33 @@ _PROTOCOL_CODES = {
     "UNIMPLEMENTED",
     "UNSUPPORTED",
 }
+_DIAGNOSTIC_TEXT_LIMIT = 1000
+_DIAGNOSTIC_MAX_DEPTH = 6
+_DIAGNOSTIC_MAX_ITEMS = 100
+
+
+@dataclasses.dataclass(frozen=True)
+class ProviderErrorDiagnostic:
+    category: str
+    http_status: int | None
+    provider_code: str | None
+    request_id: str | None
+    exception_type: str
+    upstream_message: str
+    response_body: object | None
+
+    def as_log_dict(self) -> dict:
+        return dataclasses.asdict(self)
 
 
 class AIProviderRequestError(RuntimeError):
-    def __init__(self, category: str):
+    def __init__(
+        self,
+        category: str,
+        diagnostic: ProviderErrorDiagnostic | None = None,
+    ):
         self.category = category
+        self.diagnostic = diagnostic
         super().__init__(_ERROR_MESSAGES[category])
 
 
@@ -83,22 +106,139 @@ def _safe_error_codes(exc: Exception) -> tuple[set[int], set[str]]:
     return numeric_codes, named_codes
 
 
-def map_provider_error(exc: Exception) -> AIProviderRequestError:
+def _safe_text(value) -> str | None:
+    if value is None:
+        return None
+    try:
+        rendered = str(value)
+    except Exception:
+        return None
+    return rendered[:_DIAGNOSTIC_TEXT_LIMIT]
+
+
+def _safe_attribute(owner, attribute: str):
+    try:
+        return getattr(owner, attribute, None)
+    except Exception:
+        return None
+
+
+def _safe_http_status(response, numeric_codes: set[int]) -> int | None:
+    for owner in (response,):
+        for attribute in ("status_code", "status", "code"):
+            value = _safe_attribute(owner, attribute)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str) and value.strip().isdigit():
+                return int(value.strip())
+    return next(iter(numeric_codes), None)
+
+
+def _safe_response_headers(response) -> object | None:
+    return _safe_attribute(response, "headers")
+
+
+def _safe_request_id(response) -> str | None:
+    headers = _safe_response_headers(response)
+    if headers is None:
+        return None
+    for name in ("x-request-id", "x-goog-request-id"):
+        try:
+            value = headers.get(name)
+        except Exception:
+            value = None
+        if value is not None:
+            return _safe_text(value)
+    try:
+        items = headers.items()
+    except Exception:
+        return None
+    try:
+        for name, value in items:
+            if str(name).lower() in {"x-request-id", "x-goog-request-id"}:
+                return _safe_text(value)
+    except Exception:
+        return None
+    return None
+
+
+def _bound_diagnostic_value(value, depth: int = 0):
+    if depth >= _DIAGNOSTIC_MAX_DEPTH:
+        return "[TRUNCATED]"
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value[:_DIAGNOSTIC_TEXT_LIMIT]
+    if isinstance(value, dict):
+        return {
+            _safe_text(key) or "": _bound_diagnostic_value(item, depth + 1)
+            for key, item in list(value.items())[:_DIAGNOSTIC_MAX_ITEMS]
+        }
+    if isinstance(value, (list, tuple)):
+        return [
+            _bound_diagnostic_value(item, depth + 1)
+            for item in value[:_DIAGNOSTIC_MAX_ITEMS]
+        ]
+    return _safe_text(value)
+
+
+def _safe_response_body(response) -> object | None:
+    if response is None:
+        return None
+    try:
+        body = response.json()
+    except Exception:
+        body = _safe_attribute(response, "text")
+    if body in (None, ""):
+        return None
+    return _bound_diagnostic_value(body)
+
+
+def _find_provider_code(value) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    candidates = (value, value.get("error"))
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        code = candidate.get("code")
+        if code is not None:
+            return _safe_text(code)
+    return None
+
+
+def _safe_provider_code(exc: Exception, response, response_body) -> str | None:
+    for owner in (exc, response):
+        for attribute in ("code", "status"):
+            value = _safe_attribute(owner, attribute)
+            if isinstance(value, bool) or value is None:
+                continue
+            code = _safe_text(value)
+            if code and not code.strip().isdigit():
+                return code
+    return _find_provider_code(response_body)
+
+
+def _classify_provider_error(
+    exc: Exception,
+    numeric_codes: set[int],
+    named_codes: set[str],
+) -> str:
     if isinstance(
         exc,
         (TimeoutError, asyncio.TimeoutError, httpx.TimeoutException),
     ):
-        return AIProviderRequestError("timeout")
-
-    numeric_codes, named_codes = _safe_error_codes(exc)
+        return "timeout"
     if numeric_codes & {401, 403} or named_codes & _AUTH_CODES:
-        return AIProviderRequestError("authentication")
+        return "authentication"
     if 404 in numeric_codes or named_codes & _MODEL_CODES:
-        return AIProviderRequestError("model_not_found")
+        return "model_not_found"
     if 429 in numeric_codes or named_codes & _RATE_LIMIT_CODES:
-        return AIProviderRequestError("rate_limit")
+        return "rate_limit"
     if named_codes & _TIMEOUT_CODES:
-        return AIProviderRequestError("timeout")
+        return "timeout"
     if (
         numeric_codes & {400, 405, 501}
         or named_codes & _PROTOCOL_CODES
@@ -115,8 +255,32 @@ def map_provider_error(exc: Exception) -> AIProviderRequestError:
             ),
         )
     ):
-        return AIProviderRequestError("protocol_incompatible")
-    return AIProviderRequestError("upstream_failure")
+        return "protocol_incompatible"
+    return "upstream_failure"
+
+
+def diagnose_provider_error(exc: Exception) -> ProviderErrorDiagnostic:
+    numeric_codes, named_codes = _safe_error_codes(exc)
+    response = _safe_attribute(exc, "response")
+    response_body = _safe_response_body(response)
+    provider_code = _safe_provider_code(exc, response, response_body)
+    if provider_code:
+        named_codes.add(provider_code.strip().upper().replace("-", "_"))
+    category = _classify_provider_error(exc, numeric_codes, named_codes)
+    return ProviderErrorDiagnostic(
+        category=category,
+        http_status=_safe_http_status(response, numeric_codes),
+        provider_code=provider_code,
+        request_id=_safe_request_id(response),
+        exception_type=type(exc).__name__,
+        upstream_message=_safe_text(exc) or "",
+        response_body=response_body,
+    )
+
+
+def map_provider_error(exc: Exception) -> AIProviderRequestError:
+    diagnostic = diagnose_provider_error(exc)
+    return AIProviderRequestError(diagnostic.category, diagnostic)
 
 
 class AIRouter:
@@ -166,25 +330,40 @@ class AIRouter:
                 )
                 return result
             except Exception as exc:
+                mapped = map_provider_error(exc)
+                diagnostic = mapped.diagnostic
+                duration_ms = round((time.monotonic() - started) * 1000)
                 if attempt >= snapshot.max_retries:
-                    terminal_error = map_provider_error(exc)
+                    terminal_error = mapped
                     app_logs.emit(
                         level="error",
                         source="ai",
-                        message=str(terminal_error),
+                        message={
+                            "summary": str(mapped),
+                            "diagnostic": diagnostic.as_log_dict(),
+                            "attempt": attempt + 1,
+                            "max_attempts": snapshot.max_retries + 1,
+                        },
                         capability=capability,
                         provider=snapshot.name,
                         model=snapshot.model,
-                        retry=attempt,
+                        duration_ms=duration_ms,
+                        retry=attempt + 1,
                     )
                     break
                 app_logs.emit(
                     level="warning",
                     source="ai",
-                    message="AI 请求重试",
+                    message={
+                        "summary": "AI 请求重试",
+                        "diagnostic": diagnostic.as_log_dict(),
+                        "attempt": attempt + 1,
+                        "max_attempts": snapshot.max_retries + 1,
+                    },
                     capability=capability,
                     provider=snapshot.name,
                     model=snapshot.model,
+                    duration_ms=duration_ms,
                     retry=attempt + 1,
                 )
                 await asyncio.sleep(self.base_delay * (2**attempt))

@@ -773,6 +773,48 @@ def test_duration_and_retry_are_coerced_to_integers_or_none():
     assert "duration-secret" not in str(invalid)
 
 
+def test_structured_provider_diagnostic_redacts_embedded_credentials():
+    entry = AppLogService().emit(
+        level="error",
+        source="ai",
+        message={
+            "summary": "AI 提供商请求频率受限",
+            "diagnostic": {
+                "category": "rate_limit",
+                "http_status": 429,
+                "provider_code": "RATE_LIMITED",
+                "request_id": "request-429",
+                "exception_type": "HTTPStatusError",
+                "upstream_message": (
+                    "Authorization: Bearer message-secret"
+                ),
+                "response_body": {
+                    "api_key": "body-api-secret",
+                    "nested": {
+                        "authorization": "Bearer body-auth-secret"
+                    },
+                    "error": {"code": "RATE_LIMITED"},
+                },
+            },
+            "attempt": 2,
+            "max_attempts": 2,
+        },
+    )
+
+    rendered = str(entry)
+    for secret in (
+        "message-secret",
+        "body-api-secret",
+        "body-auth-secret",
+    ):
+        assert secret not in rendered
+    diagnostic = entry["message"]["diagnostic"]
+    assert diagnostic["http_status"] == 429
+    assert diagnostic["provider_code"] == "RATE_LIMITED"
+    assert diagnostic["request_id"] == "request-429"
+    assert diagnostic["response_body"]["error"] == {"code": "RATE_LIMITED"}
+
+
 @pytest.mark.asyncio
 async def test_unsubscribed_queue_does_not_receive_new_entries():
     logs = AppLogService()
