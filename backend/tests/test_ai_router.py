@@ -240,7 +240,9 @@ async def test_raised_provider_diagnostic_is_sanitized_before_attachment(
             "api_key=message-api-key-secret "
             "vertex_key_path=/private/message-key.json "
             "prompt: message-prompt-secret "
-            "image_data=message-image-secret status=retryable"
+            "image_data=message-image-secret "
+            "FileNotFoundError: /private/unlabeled-key.json "
+            r"[Errno 2] D:\keys\service.json status=retryable"
         ),
         request=request,
         response=response,
@@ -262,6 +264,8 @@ async def test_raised_provider_diagnostic_is_sanitized_before_attachment(
         "/private/message-key.json",
         "message-prompt-secret",
         "message-image-secret",
+        "/private/unlabeled-key.json",
+        r"D:\keys\service.json",
         "body-api-key-secret",
         "body-token-secret",
         "/private/body-key.json",

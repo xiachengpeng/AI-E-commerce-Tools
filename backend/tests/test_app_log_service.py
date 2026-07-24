@@ -815,6 +815,91 @@ def test_structured_provider_diagnostic_redacts_embedded_credentials():
     assert diagnostic["response_body"]["error"] == {"code": "RATE_LIMITED"}
 
 
+@pytest.mark.parametrize(
+    ("message", "credential_paths", "safe_text"),
+    [
+        (
+            "FileNotFoundError: /private/key.json status=retryable",
+            ("/private/key.json",),
+            "FileNotFoundError",
+        ),
+        (
+            "[Errno 2] No such file or directory: '/private/key.json'",
+            ("/private/key.json",),
+            "[Errno 2]",
+        ),
+        (
+            r"FileNotFoundError: D:\keys\service.json status=retryable",
+            (r"D:\keys\service.json",),
+            "FileNotFoundError",
+        ),
+        (
+            (
+                "credential files missing: /srv/service-account.json "
+                "/srv/signing.pem /srv/signing.key "
+                "/srv/signing.p12 /srv/signing.pfx status=retryable"
+            ),
+            (
+                "/srv/service-account.json",
+                "/srv/signing.pem",
+                "/srv/signing.key",
+                "/srv/signing.p12",
+                "/srv/signing.pfx",
+            ),
+            "credential files",
+        ),
+    ],
+)
+def test_public_sanitize_redacts_unlabeled_credential_paths(
+    message,
+    credential_paths,
+    safe_text,
+):
+    sanitized = AppLogService.sanitize(message)
+
+    for path in credential_paths:
+        assert path not in sanitized
+    assert safe_text in sanitized
+
+
+def test_public_sanitize_preserves_safe_paths_urls_and_redacts_prompt():
+    message = (
+        "invalid prompt: customer text\n"
+        "artifact=/tmp/customer-data.json status=retryable "
+        "docs=https://provider.example/status/key.json"
+    )
+
+    sanitized = AppLogService.sanitize(message)
+
+    assert "customer text" not in sanitized
+    assert "invalid prompt: [REDACTED]" in sanitized
+    assert "/tmp/customer-data.json" in sanitized
+    assert "status=retryable" in sanitized
+    assert "https://provider.example/status/key.json" in sanitized
+
+
+@pytest.mark.asyncio
+async def test_unlabeled_credential_paths_are_redacted_from_all_log_copies():
+    logs = AppLogService()
+    queue = logs.subscribe()
+    message = (
+        "FileNotFoundError: /private/key.json "
+        r"[Errno 2] D:\keys\service.json "
+        "status=retryable"
+    )
+
+    returned = logs.emit(level="error", source="ai", message=message)
+    delivered = await asyncio.wait_for(queue.get(), 0.1)
+    recent = logs.recent()[0]
+
+    for entry in (returned, delivered, recent):
+        rendered = str(entry)
+        assert "/private/key.json" not in rendered
+        assert r"D:\keys\service.json" not in rendered
+        assert "FileNotFoundError" in rendered
+        assert "status=retryable" in rendered
+
+
 @pytest.mark.asyncio
 async def test_unsubscribed_queue_does_not_receive_new_entries():
     logs = AppLogService()

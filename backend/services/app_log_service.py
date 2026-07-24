@@ -129,6 +129,34 @@ class AppLogService:
         \s*[:=]
         """
     )
+    _CREDENTIAL_PATH_RE = re.compile(
+        r"""(?ix)
+        (?<![A-Za-z0-9:/.\\])
+        (?P<path>
+            (?:[A-Z]:[\\/]|/)
+            [^\s"'<>|,;]+?
+            \.(?P<extension>json|pem|key|p12|pfx)
+        )
+        (?![A-Za-z0-9])
+        """
+    )
+    _CREDENTIAL_PATH_SEGMENTS = {
+        "credential",
+        "credentials",
+        "key",
+        "keys",
+        "private",
+        "secret",
+        "secrets",
+        "vertex",
+    }
+    _CREDENTIAL_JSON_MARKERS = {
+        "credential",
+        "key",
+        "secret",
+        "serviceaccount",
+        "vertex",
+    }
 
     def __init__(
         self,
@@ -251,6 +279,7 @@ class AppLogService:
 
     @classmethod
     def _redact_string(cls, value: str) -> str:
+        value = cls._redact_credential_paths(value)
         value = re.sub(
             (
                 r"(?is)data:image/[^\r\n,]*?;\s*base64\s*,[ \t]*"
@@ -292,6 +321,35 @@ class AppLogService:
             value,
         )
         return cls._redact_labeled_values(value)[:1000]
+
+    @classmethod
+    def _redact_credential_paths(cls, value: str) -> str:
+        def replace(match: re.Match) -> str:
+            path = match.group("path")
+            extension = match.group("extension").lower()
+            if extension != "json":
+                return "[REDACTED PATH]"
+
+            segments = [
+                cls._normalized_key(segment)
+                for segment in re.split(r"[\\/]", path)
+                if segment
+            ]
+            filename = segments[-1] if segments else ""
+            if (
+                any(
+                    segment in cls._CREDENTIAL_PATH_SEGMENTS
+                    for segment in segments[:-1]
+                )
+                or any(
+                    marker in filename
+                    for marker in cls._CREDENTIAL_JSON_MARKERS
+                )
+            ):
+                return "[REDACTED PATH]"
+            return path
+
+        return cls._CREDENTIAL_PATH_RE.sub(replace, value)
 
     @classmethod
     def _redact_labeled_values(cls, value: str) -> str:
