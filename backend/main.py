@@ -1294,7 +1294,13 @@ async def _run_ai_provider_connection_test(
                     else "不支持图片生成"
                 )
         except Exception as exc:
-            diagnostic = diagnose_provider_error(exc)
+            diagnostic = diagnose_provider_error(
+                exc,
+                sensitive_values=(
+                    snapshot.api_key,
+                    snapshot.vertex_key_path,
+                ),
+            )
             provider_diagnostic = AppLogService.sanitize(
                 diagnostic.as_log_dict()
             )

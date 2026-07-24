@@ -305,6 +305,18 @@ class AppLogService:
             parent_normalized = cls._normalized_key(parent_key or "")
             sensitive_loc_input = cls._loc_targets_sensitive_input(value)
             items = list(value.items())
+            if _depth == 0:
+                core_order = {
+                    "summary": 0,
+                    "attempt": 1,
+                    "maxattempts": 2,
+                }
+                items.sort(
+                    key=lambda pair: core_order.get(
+                        cls._normalized_key(pair[0]),
+                        len(core_order),
+                    )
+                )
             for index, (key, item) in enumerate(items):
                 if _budget["items"] <= 0:
                     break

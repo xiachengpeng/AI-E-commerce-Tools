@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from google.genai.errors import ClientError
 
 from services.ai_config_service import ProviderSnapshot
 from services.app_log_service import AppLogService
@@ -310,6 +311,47 @@ async def test_exhausted_retry_error_carries_sanitized_request_context(
 
 
 @pytest.mark.asyncio
+async def test_runtime_exact_scrubs_arbitrary_snapshot_vertex_key_path(
+    monkeypatch,
+):
+    credential_path = "/Users/alice/Downloads/project-4f8821.json"
+    selected = dataclasses.replace(
+        snapshot(max_retries=0),
+        vertex_key_path=credential_path,
+    )
+    monkeypatch.setattr(
+        "services.ai_router.get_snapshot", lambda db, cap: selected
+    )
+    request = httpx.Request("POST", "https://provider.invalid/generate")
+    response = httpx.Response(
+        500,
+        json={
+            "debug_path": credential_path,
+            "safe_detail": "SAFE-RUNTIME-DETAIL",
+        },
+        request=request,
+    )
+    adapter = AsyncMock()
+    adapter.generate.side_effect = httpx.HTTPStatusError(
+        f"failed to open {credential_path}; SAFE-RUNTIME-MESSAGE",
+        request=request,
+        response=response,
+    )
+    monkeypatch.setattr(
+        "services.ai_router.get_adapter", lambda protocol: adapter
+    )
+
+    with pytest.raises(AIProviderRequestError) as raised:
+        await AIRouter(base_delay=0).generate("text", {}, db=object())
+
+    diagnostic = raised.value.diagnostic
+    assert credential_path not in str(diagnostic)
+    assert diagnostic.response_body["debug_path"] == "[REDACTED]"
+    assert "SAFE-RUNTIME-DETAIL" in str(diagnostic)
+    assert "SAFE-RUNTIME-MESSAGE" in diagnostic.upstream_message
+
+
+@pytest.mark.asyncio
 async def test_terminal_log_preserves_zero_based_retry_semantics(monkeypatch):
     selected = snapshot(max_retries=0)
     monkeypatch.setattr(
@@ -487,6 +529,60 @@ def test_diagnose_provider_error_redacts_pydantic_input_by_loc_context():
     assert "IMAGE-SECRET" not in str(diagnostic)
 
 
+def test_real_google_client_error_scrubs_loc_inputs_from_upstream_message():
+    response_json = {
+        "status": "INVALID_ARGUMENT",
+        "detail": [
+            {
+                "loc": ["body", "prompt"],
+                "msg": "SAFE-PROMPT-DETAIL",
+                "input": "SDK-PROMPT-SECRET",
+            },
+            {
+                "loc": ["body", "input_images", 0],
+                "msg": "SAFE-IMAGE-DETAIL",
+                "input": "SDK-IMAGE-SECRET",
+            },
+        ],
+    }
+    request = httpx.Request("POST", "https://provider.invalid/generate")
+    response = httpx.Response(
+        422,
+        json=response_json,
+        request=request,
+    )
+    error = ClientError(422, response_json, response)
+
+    diagnostic = diagnose_provider_error(error)
+
+    assert diagnostic.response_body["detail"][0]["input"] == "[REDACTED]"
+    assert diagnostic.response_body["detail"][1]["input"] == "[REDACTED]"
+    assert "SDK-PROMPT-SECRET" not in diagnostic.upstream_message
+    assert "SDK-IMAGE-SECRET" not in diagnostic.upstream_message
+    assert "SAFE-PROMPT-DETAIL" in diagnostic.upstream_message
+    assert "SAFE-IMAGE-DETAIL" in diagnostic.upstream_message
+
+
+def test_google_client_error_without_response_uses_safe_details_body():
+    response_json = {
+        "status": "INVALID_ARGUMENT",
+        "detail": [
+            {
+                "loc": ["body", "prompt"],
+                "msg": "SAFE-NO-RESPONSE-DETAIL",
+                "input": "NO-RESPONSE-PROMPT-SECRET",
+            }
+        ],
+    }
+    error = ClientError(422, response_json)
+
+    diagnostic = diagnose_provider_error(error)
+
+    assert diagnostic.response_body["detail"][0]["input"] == "[REDACTED]"
+    assert "NO-RESPONSE-PROMPT-SECRET" not in diagnostic.upstream_message
+    assert "SAFE-NO-RESPONSE-DETAIL" in diagnostic.upstream_message
+
+
 def test_diagnose_provider_error_applies_shared_response_body_budget():
     request = httpx.Request("POST", "https://provider.invalid/generate")
     response = httpx.Response(
@@ -617,3 +713,69 @@ async def test_detailed_retry_and_terminal_logs_include_diagnostics(
     assert terminal_log["retry"] == 1
     assert terminal_log["message"]["attempt"] == 2
     assert terminal_log["message"]["max_attempts"] == 2
+
+
+@pytest.mark.asyncio
+async def test_huge_retry_diagnostics_preserve_core_message_metadata(
+    monkeypatch,
+):
+    selected = snapshot(max_retries=1)
+    monkeypatch.setattr(
+        "services.ai_router.get_snapshot", lambda db, cap: selected
+    )
+    request = httpx.Request("POST", "https://provider.invalid/generate")
+    response = httpx.Response(
+        500,
+        json={
+            "groups": [
+                {
+                    f"leaf-{leaf}": "safe-value-" + ("x" * 1000)
+                    for leaf in range(150)
+                }
+                for _ in range(150)
+            ]
+        },
+        request=request,
+    )
+    adapter = AsyncMock()
+    adapter.generate.side_effect = httpx.HTTPStatusError(
+        "SAFE-HUGE-FAILURE",
+        request=request,
+        response=response,
+    )
+    monkeypatch.setattr(
+        "services.ai_router.get_adapter", lambda protocol: adapter
+    )
+    monkeypatch.setattr("services.ai_router.asyncio.sleep", AsyncMock())
+    logs = AppLogService()
+    monkeypatch.setattr("services.ai_router.app_logs", logs)
+
+    with pytest.raises(AIProviderRequestError):
+        await AIRouter(base_delay=0).generate("text", {}, db=object())
+
+    retry_log, terminal_log = [
+        entry
+        for entry in logs.recent()
+        if entry["level"] in {"warning", "error"}
+    ]
+
+    def structured_slots(value):
+        if isinstance(value, dict):
+            return len(value) + sum(
+                structured_slots(item) for item in value.values()
+            )
+        if isinstance(value, (list, tuple)):
+            return len(value) + sum(
+                structured_slots(item) for item in value
+            )
+        return 0
+
+    for log, expected_attempt in (
+        (retry_log, 1),
+        (terminal_log, 2),
+    ):
+        assert log["message"]["summary"]
+        assert log["message"]["attempt"] == expected_attempt
+        assert log["message"]["max_attempts"] == 2
+        assert structured_slots(log["message"]) <= 100
+        assert "[TRUNCATED]" in str(log["message"]["diagnostic"])

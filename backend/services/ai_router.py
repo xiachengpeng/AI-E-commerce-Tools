@@ -181,7 +181,7 @@ def _sanitize_diagnostic_value(value):
     return AppLogService.sanitize(value)
 
 
-def _safe_response_body(response) -> object | None:
+def _raw_response_body(response) -> object | None:
     if response is None:
         return None
     try:
@@ -190,7 +190,83 @@ def _safe_response_body(response) -> object | None:
         body = _safe_attribute(response, "text")
     if body in (None, ""):
         return None
-    return _sanitize_diagnostic_value(body)
+    return body
+
+
+def _loc_sensitive_strings(value) -> tuple[str, ...]:
+    found = []
+    remaining = 100
+
+    def collect_strings(item, depth=0):
+        nonlocal remaining
+        if remaining <= 0 or depth >= 12:
+            return
+        if isinstance(item, str) and item:
+            remaining -= 1
+            found.append(item)
+        elif isinstance(item, (list, tuple)):
+            remaining -= 1
+            for nested in item:
+                collect_strings(nested, depth + 1)
+
+    def visit(item, depth=0):
+        nonlocal remaining
+        if remaining <= 0 or depth >= 12:
+            return
+        if isinstance(item, dict):
+            remaining -= 1
+            if AppLogService._loc_targets_sensitive_input(item):
+                collect_strings(item.get("input"), depth + 1)
+            for nested in item.values():
+                visit(nested, depth + 1)
+        elif isinstance(item, (list, tuple)):
+            remaining -= 1
+            for nested in item:
+                visit(nested, depth + 1)
+
+    visit(value)
+    return tuple(sorted(set(found), key=len, reverse=True))
+
+
+def _scrub_exact_text(value: str | None, sensitive_values) -> str | None:
+    if value is None:
+        return None
+    for sensitive in _normalized_sensitive_strings(sensitive_values):
+        value = value.replace(sensitive, "[REDACTED]")
+    return value
+
+
+def _normalized_sensitive_strings(sensitive_values) -> tuple[str, ...]:
+    return tuple(sorted({
+        value
+        for value in sensitive_values
+        if isinstance(value, str) and value
+    }, key=len, reverse=True))
+
+
+def _scrub_exact_value(value, sensitive_values):
+    normalized = _normalized_sensitive_strings(sensitive_values)
+    if isinstance(value, str):
+        return _scrub_exact_text(value, normalized)
+    if isinstance(value, dict):
+        return {
+            _scrub_exact_text(str(key), normalized): _scrub_exact_value(
+                item,
+                normalized,
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _scrub_exact_value(item, normalized)
+            for item in value
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            _scrub_exact_value(item, normalized)
+            for item in value
+        )
+    return value
 
 
 def _find_provider_code(value) -> str | None:
@@ -258,11 +334,24 @@ def _classify_provider_error(
     return "upstream_failure"
 
 
-def diagnose_provider_error(exc: Exception) -> ProviderErrorDiagnostic:
+def diagnose_provider_error(
+    exc: Exception,
+    *,
+    sensitive_values=(),
+) -> ProviderErrorDiagnostic:
     numeric_codes, named_codes = _safe_error_codes(exc)
     response = _safe_attribute(exc, "response")
-    response_body = _sanitize_diagnostic_value(
-        _safe_response_body(response)
+    raw_response_body = _raw_response_body(response)
+    if raw_response_body is None:
+        raw_response_body = _safe_attribute(exc, "details")
+    loc_sensitive_values = _loc_sensitive_strings(raw_response_body)
+    exact_sensitive_values = (
+        *loc_sensitive_values,
+        *_normalized_sensitive_strings(sensitive_values),
+    )
+    response_body = _scrub_exact_value(
+        _sanitize_diagnostic_value(raw_response_body),
+        exact_sensitive_values,
     )
     provider_code = _safe_provider_code(exc, response, response_body)
     if provider_code:
@@ -271,10 +360,19 @@ def diagnose_provider_error(exc: Exception) -> ProviderErrorDiagnostic:
     return ProviderErrorDiagnostic(
         category=category,
         http_status=_safe_http_status(response, numeric_codes),
-        provider_code=_sanitize_diagnostic_value(provider_code),
-        request_id=_sanitize_diagnostic_value(_safe_request_id(response)),
+        provider_code=_sanitize_diagnostic_value(
+            _scrub_exact_text(provider_code, exact_sensitive_values)
+        ),
+        request_id=_sanitize_diagnostic_value(
+            _scrub_exact_text(
+                _safe_request_id(response),
+                exact_sensitive_values,
+            )
+        ),
         exception_type=type(exc).__name__,
-        upstream_message=_sanitize_diagnostic_value(_safe_text(exc)) or "",
+        upstream_message=_sanitize_diagnostic_value(
+            _scrub_exact_text(_safe_text(exc), exact_sensitive_values)
+        ) or "",
         response_body=response_body,
     )
 
@@ -286,8 +384,12 @@ def map_provider_error(
     model: str | None = None,
     capability: str | None = None,
     retry: int | None = None,
+    sensitive_values=(),
 ) -> AIProviderRequestError:
-    diagnostic = diagnose_provider_error(exc)
+    diagnostic = diagnose_provider_error(
+        exc,
+        sensitive_values=sensitive_values,
+    )
     return AIProviderRequestError(
         diagnostic.category,
         diagnostic,
@@ -351,6 +453,10 @@ class AIRouter:
                     model=snapshot.model,
                     capability=capability,
                     retry=attempt,
+                    sensitive_values=(
+                        snapshot.api_key,
+                        snapshot.vertex_key_path,
+                    ),
                 )
                 diagnostic = mapped.diagnostic
                 duration_ms = round((time.monotonic() - started) * 1000)

@@ -1878,6 +1878,64 @@ def test_connection_log_redacts_pydantic_input_using_loc_context(
     assert "CONNECTION-IMAGE-SECRET" not in str(logs.recent())
 
 
+def test_connection_exact_scrubs_arbitrary_vertex_key_path(
+    monkeypatch,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    credential_path = "/Users/alice/Downloads/project-4f8821.json"
+    adapter = type(
+        "Adapter",
+        (),
+        {
+            "generate": AsyncMock(
+                side_effect=RuntimeError(
+                    f"failed to open {credential_path}; "
+                    "SAFE-CONNECTION-MESSAGE"
+                )
+            )
+        },
+    )()
+    logs = AppLogService(session_id="boot-a")
+    monkeypatch.setattr(main, "app_logs", logs)
+    monkeypatch.setattr(main, "get_adapter", lambda protocol: adapter)
+    monkeypatch.setattr(
+        "services.ai_config_service.os.path.isfile",
+        lambda path: path == credential_path,
+    )
+    monkeypatch.setattr(
+        "services.ai_config_service.os.access",
+        lambda path, mode: path == credential_path,
+    )
+    client, _ = _make_client()
+    try:
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={
+                "draft": _provider_data(
+                    protocol="vertex",
+                    base_url=None,
+                    api_key=None,
+                    vertex_project_id="project",
+                    vertex_location="us-central1",
+                    vertex_key_path=credential_path,
+                ),
+                "capability": "text",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "error"
+    adapter.generate.assert_awaited_once()
+    assert credential_path not in response.text
+    assert "SAFE-CONNECTION-MESSAGE" in response.json()["message"]
+    assert credential_path not in str(logs.recent())
+    assert "SAFE-CONNECTION-MESSAGE" in str(logs.recent())
+
+
 def test_connection_test_missing_provider_is_not_found():
     client, _ = _make_client()
     try:
