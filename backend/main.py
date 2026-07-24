@@ -1150,8 +1150,10 @@ def _connection_payload(capability: str) -> dict:
     return payload
 
 
-def _format_provider_diagnostic(diagnostic) -> str:
-    safe_diagnostic = AppLogService.sanitize(diagnostic.as_log_dict())
+def _format_provider_diagnostic(
+    diagnostic,
+    safe_diagnostic: dict,
+) -> str:
     parts = [
         str(AIProviderRequestError(diagnostic.category, diagnostic)),
     ]
@@ -1237,6 +1239,7 @@ async def _run_ai_provider_connection_test(
     started = time.monotonic()
     result_status = "success"
     message = "连接成功"
+    provider_diagnostic = None
     app_logs.emit(
         level="info",
         source="system",
@@ -1268,8 +1271,14 @@ async def _run_ai_provider_connection_test(
                 )
         except Exception as exc:
             diagnostic = diagnose_provider_error(exc)
+            provider_diagnostic = AppLogService.sanitize(
+                diagnostic.as_log_dict()
+            )
             result_status = "error"
-            message = _format_provider_diagnostic(diagnostic)
+            message = _format_provider_diagnostic(
+                diagnostic,
+                provider_diagnostic,
+            )
 
     duration_ms = round((time.monotonic() - started) * 1000)
     if persisted_result_context is not None:
@@ -1292,10 +1301,16 @@ async def _run_ai_provider_connection_test(
         if not result_saved:
             result_status = "error"
             message = "配置已变更，请重新测试"
+    completion_log_message = "AI 连接测试完成"
+    if provider_diagnostic is not None:
+        completion_log_message = {
+            "summary": completion_log_message,
+            "diagnostic": provider_diagnostic,
+        }
     app_logs.emit(
         level="success" if result_status == "success" else "error",
         source="system",
-        message="AI 连接测试完成",
+        message=completion_log_message,
         capability=data.capability,
         provider=snapshot.name if snapshot else None,
         model=snapshot.model if snapshot else None,

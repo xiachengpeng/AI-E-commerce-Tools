@@ -1746,6 +1746,80 @@ def test_detailed_connection_error_includes_safe_provider_diagnostic(
     assert "upstream=provider asked clients to retry" in message
 
 
+def test_connection_failure_log_exposes_sanitized_timeout_diagnostic(
+    monkeypatch,
+):
+    import main
+    from db import AIProviderConfig
+    from services.app_log_service import AppLogService
+
+    logs = AppLogService(session_id="boot-a")
+    monkeypatch.setattr(main, "app_logs", logs)
+    adapter = type(
+        "Adapter",
+        (),
+        {
+            "generate": AsyncMock(
+                side_effect=asyncio.TimeoutError(
+                    "provider timeout; api_key=connection-secret"
+                )
+            )
+        },
+    )()
+    monkeypatch.setattr(main, "get_adapter", lambda protocol: adapter)
+    client, testing_session = _make_client()
+    try:
+        provider_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(),
+        ).json()["id"]
+        response = client.post(
+            f"/api/settings/ai/providers/{provider_id}/test",
+            json={"capability": "text"},
+        )
+        recent = client.get("/api/settings/logs/recent")
+
+        db = testing_session()
+        try:
+            provider = db.get(AIProviderConfig, provider_id)
+            persisted = {
+                "status": provider.last_test_status,
+                "message": provider.last_test_message,
+                "tested_at": provider.last_tested_at,
+                "capability": provider.last_test_capability,
+            }
+        finally:
+            db.close()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert set(response.json()) == {
+        "status",
+        "capability",
+        "duration_ms",
+        "message",
+    }
+    assert response.json()["status"] == "error"
+    assert response.json()["capability"] == "text"
+    assert persisted["status"] == "error"
+    assert persisted["message"] == response.json()["message"]
+    assert persisted["tested_at"] is not None
+    assert persisted["capability"] == "text"
+
+    assert recent.status_code == 200
+    completion = recent.json()["items"][-1]
+    assert isinstance(completion["message"], dict)
+    assert completion["message"]["summary"] == "AI 连接测试完成"
+    diagnostic = completion["message"]["diagnostic"]
+    assert diagnostic["category"] == "timeout"
+    assert diagnostic["exception_type"] == "TimeoutError"
+    assert "provider timeout" in diagnostic["upstream_message"]
+    assert "connection-secret" not in str(response.json())
+    assert "connection-secret" not in str(persisted)
+    assert "connection-secret" not in str(recent.json())
+
+
 def test_connection_test_missing_provider_is_not_found():
     client, _ = _make_client()
     try:
