@@ -8,6 +8,7 @@ import os
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
+from google.genai.errors import ClientError
 
 from main import app
 from main import (
@@ -417,6 +418,48 @@ def test_provider_error_response_includes_sanitized_request_context():
         "MODEL-SECRET",
     ):
         assert secret not in response.text
+
+
+def test_provider_error_api_never_exposes_nested_loc_input_secrets():
+    response_json = {
+        "status": "INVALID_ARGUMENT",
+        "safe_detail": "SAFE-PUBLIC-DETAIL",
+        "detail": [
+            {
+                "loc": ["body", "input_images", 0],
+                "input": {
+                    "primary": "PUBLIC-PROMPT-SECRET",
+                    "attachment": "PUBLIC-IMAGE-SECRET",
+                },
+            }
+        ],
+    }
+    diagnostic = diagnose_provider_error(
+        ClientError(422, response_json)
+    )
+    provider_error = AIProviderRequestError(
+        diagnostic.category,
+        diagnostic,
+        capability="image",
+        retry=0,
+    )
+    safe_client = TestClient(app, raise_server_exceptions=False)
+
+    with patch(
+        "services.ai_service.AIService.generate_content",
+        new=AsyncMock(side_effect=provider_error),
+    ):
+        response = safe_client.post(
+            "/api/ai/generate",
+            json={"capability": "image", "payload": {}},
+        )
+
+    assert response.status_code == 502
+    detail = response.json()["detail"]["diagnostic"]
+    assert detail["response_body"]["detail"][0]["input"] == "[REDACTED]"
+    assert "SAFE-PUBLIC-DETAIL" in response.text
+    assert "PUBLIC-PROMPT-SECRET" not in response.text
+    assert "PUBLIC-IMAGE-SECRET" not in response.text
 
 
 @pytest.mark.parametrize(

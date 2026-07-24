@@ -583,6 +583,122 @@ def test_google_client_error_without_response_uses_safe_details_body():
     assert "SAFE-NO-RESPONSE-DETAIL" in diagnostic.upstream_message
 
 
+def test_nested_dict_loc_input_is_scrubbed_from_diagnostic_and_log_copies():
+    response_json = {
+        "status": "INVALID_ARGUMENT",
+        "safe_detail": "SAFE-NESTED-DETAIL",
+        "detail": [
+            {
+                "loc": ["body", "prompt"],
+                "input": {
+                    "payload": {
+                        "primary": "NESTED-PROMPT-SECRET",
+                        "attachment": "NESTED-IMAGE-SECRET",
+                    }
+                },
+            }
+        ],
+    }
+    diagnostic = diagnose_provider_error(
+        ClientError(422, response_json)
+    )
+    logs = AppLogService(session_id="boot-a")
+    returned = logs.emit(
+        level="error",
+        source="ai",
+        message={
+            "summary": "provider rejected request",
+            "diagnostic": diagnostic.as_log_dict(),
+        },
+    )
+
+    for value in (
+        diagnostic.as_log_dict(),
+        returned,
+        logs.recent()[0],
+    ):
+        rendered = str(value)
+        assert "NESTED-PROMPT-SECRET" not in rendered
+        assert "NESTED-IMAGE-SECRET" not in rendered
+        assert "SAFE-NESTED-DETAIL" in rendered
+    assert diagnostic.response_body["detail"][0]["input"] == "[REDACTED]"
+
+
+def test_incomplete_loc_scan_fails_closed_before_late_sensitive_input():
+    response_json = {
+        "status": "INVALID_ARGUMENT",
+        "detail": [
+            *({} for _ in range(101)),
+            {
+                "loc": ["body", "prompt"],
+                "input": "LATE-PROMPT-SECRET",
+            },
+        ],
+    }
+
+    diagnostic = diagnose_provider_error(
+        ClientError(422, response_json)
+    )
+    rendered_body = json.dumps(
+        diagnostic.response_body,
+        ensure_ascii=False,
+    )
+    logs = AppLogService(session_id="boot-a")
+    returned = logs.emit(
+        level="error",
+        source="ai",
+        message={
+            "summary": "late validation failure",
+            "diagnostic": diagnostic.as_log_dict(),
+        },
+    )
+
+    assert "LATE-PROMPT-SECRET" not in diagnostic.upstream_message
+    assert "LATE-PROMPT-SECRET" not in rendered_body
+    assert "LATE-PROMPT-SECRET" not in str(returned)
+    assert "LATE-PROMPT-SECRET" not in str(logs.recent())
+    assert diagnostic.upstream_message == (
+        "ClientError: structured upstream response omitted"
+    )
+    assert "[TRUNCATED]" in rendered_body
+    assert len(rendered_body) <= 20_000
+
+
+def test_long_loc_secret_is_scrubbed_before_upstream_message_truncation():
+    long_secret = "LONG-PROMPT-SECRET-" + ("x" * 1500)
+    response_json = {
+        "status": "INVALID_ARGUMENT",
+        "safe_detail": "SAFE-LONG-DETAIL",
+        "detail": [
+            {
+                "loc": ["body", "prompt"],
+                "input": long_secret,
+            }
+        ],
+    }
+
+    diagnostic = diagnose_provider_error(
+        ClientError(422, response_json)
+    )
+    logs = AppLogService(session_id="boot-a")
+    returned = logs.emit(
+        level="error",
+        source="ai",
+        message={
+            "summary": "long validation failure",
+            "diagnostic": diagnostic.as_log_dict(),
+        },
+    )
+
+    assert "LONG-PROMPT-SECRET-" not in diagnostic.upstream_message
+    assert ("x" * 200) not in diagnostic.upstream_message
+    assert "LONG-PROMPT-SECRET-" not in str(returned)
+    assert "LONG-PROMPT-SECRET-" not in str(logs.recent())
+    assert "SAFE-LONG-DETAIL" in diagnostic.upstream_message
+    assert len(diagnostic.upstream_message) <= 1000
+    assert diagnostic.response_body["detail"][0]["input"] == "[REDACTED]"
+
+
 def test_diagnose_provider_error_applies_shared_response_body_budget():
     request = httpx.Request("POST", "https://provider.invalid/generate")
     response = httpx.Response(
