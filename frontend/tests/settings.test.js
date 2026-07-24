@@ -213,6 +213,7 @@ const structuredDiagnosticLog = {
     message: {
         summary: "AI 提供商请求频率受限",
         diagnostic: {
+            category: "rate_limit",
             http_status: 429,
             provider_code: "RATE_LIMITED",
             exception_type: "HTTPStatusError",
@@ -231,6 +232,7 @@ assert.equal(
     "AI 提供商请求频率受限"
 );
 assert.deepEqual(settingsLogDetails(structuredDiagnosticLog), [
+    ["分类", "rate_limit"],
     ["HTTP 状态", "429"],
     ["提供商代码", "RATE_LIMITED"],
     ["异常类型", "HTTPStatusError"],
@@ -239,6 +241,24 @@ assert.deepEqual(settingsLogDetails(structuredDiagnosticLog), [
     ["响应正文", '{"error":{"code":"RATE_LIMITED","message":"retry later"}}'],
     ["尝试", "2 / 2"]
 ]);
+const structuredLogLine = formatSettingsLogLine({
+    timestamp: "2026-07-23T10:00:00Z",
+    level: "error",
+    source: "ai",
+    ...structuredDiagnosticLog,
+    capability: "text",
+    provider: "Relay",
+    model: "text-v1",
+    duration_ms: 125,
+    retry: 1
+});
+assert.ok(structuredLogLine.includes(
+    "message=AI 提供商请求频率受限"
+));
+assert.ok(structuredLogLine.includes(
+    `diagnostic=${JSON.stringify(structuredDiagnosticLog.message.diagnostic)}`
+));
+assert.equal(structuredLogLine.includes("[object Object]"), false);
 
 const diagnosticAttack = '<img src=x onerror="globalThis.settingsLogXss=true">';
 const maliciousDiagnosticLog = {
@@ -251,6 +271,9 @@ assert.equal(settingsLogSummary(maliciousDiagnosticLog), diagnosticAttack);
 assert.deepEqual(settingsLogDetails(maliciousDiagnosticLog), [
     ["上游消息", diagnosticAttack]
 ]);
+assert.ok(formatSettingsLogLine(maliciousDiagnosticLog).includes(
+    `diagnostic=${JSON.stringify(maliciousDiagnosticLog.message.diagnostic)}`
+));
 assert.equal(settingsLogSummary({ message: diagnosticAttack }), diagnosticAttack);
 assert.deepEqual(settingsLogDetails({ message: diagnosticAttack }), []);
 

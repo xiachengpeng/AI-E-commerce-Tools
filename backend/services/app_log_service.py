@@ -23,6 +23,10 @@ class _LogSubscriber:
 class AppLogService:
     """Keep a bounded stream of safe log entries for application consumers."""
 
+    _STRUCTURED_CHARACTER_BUDGET = 12_000
+    _STRUCTURED_ITEM_BUDGET = 100
+    _STRUCTURED_MAX_DEPTH = 12
+    _TRUNCATED = "[TRUNCATED]"
     _SENSITIVE_KEYS = {
         "accesstoken",
         "apikey",
@@ -140,6 +144,34 @@ class AppLogService:
         (?![A-Za-z0-9])
         """
     )
+    _QUOTED_CREDENTIAL_PATH_RE = re.compile(
+        r"""(?ix)
+        (?P<quote>["'])
+        (?P<path>
+            (?:
+                file:///
+              |
+                [A-Z]:[\\/]
+              |
+                /
+            )
+            [^"'<>|\r\n]+?
+            \.(?P<extension>json|pem|key|p12|pfx)
+        )
+        (?P=quote)
+        """
+    )
+    _FILE_CREDENTIAL_URI_RE = re.compile(
+        r"""(?ix)
+        (?<![A-Za-z0-9:/.\\])
+        (?P<path>
+            file:///
+            [^\s"'<>|,;]+?
+            \.(?P<extension>json|pem|key|p12|pfx)
+        )
+        (?![A-Za-z0-9])
+        """
+    )
     _CREDENTIAL_PATH_SEGMENTS = {
         "credential",
         "credentials",
@@ -210,35 +242,149 @@ class AppLogService:
         )
 
     @classmethod
-    def _sanitize_structured(cls, value, parent_key: str | None = None):
+    def _loc_targets_sensitive_input(cls, value: dict) -> bool:
+        loc = value.get("loc")
+        if not isinstance(loc, (list, tuple)):
+            return False
+        for segment in loc:
+            normalized = cls._normalized_key(segment)
+            if cls._is_sensitive_key(normalized):
+                return True
+            if (
+                normalized.startswith("input")
+                and cls._is_sensitive_key(normalized.removeprefix("input"))
+            ):
+                return True
+        return False
+
+    @classmethod
+    def _bounded_safe_string(cls, value: str, budget: dict) -> str:
+        safe = cls._redact_string(value)
+        encoded_length = len(json.dumps(safe, ensure_ascii=False))
+        remaining = budget["characters"]
+        if encoded_length <= remaining:
+            budget["characters"] -= encoded_length
+            return safe
+
+        marker = cls._TRUNCATED
+        if remaining <= len(json.dumps(marker, ensure_ascii=False)):
+            budget["characters"] = 0
+            return marker
+        low = 0
+        high = len(safe)
+        while low < high:
+            midpoint = (low + high + 1) // 2
+            candidate = safe[:midpoint] + marker
+            if len(json.dumps(candidate, ensure_ascii=False)) <= remaining:
+                low = midpoint
+            else:
+                high = midpoint - 1
+        budget["characters"] = 0
+        return safe[:low] + marker
+
+    @classmethod
+    def _sanitize_structured(
+        cls,
+        value,
+        parent_key: str | None = None,
+        *,
+        _budget: dict | None = None,
+        _depth: int = 0,
+    ):
+        if _budget is None:
+            _budget = {
+                "characters": cls._STRUCTURED_CHARACTER_BUDGET,
+                "items": cls._STRUCTURED_ITEM_BUDGET,
+            }
+        if _depth >= cls._STRUCTURED_MAX_DEPTH:
+            return cls._TRUNCATED
         if isinstance(value, dict):
+            if value and _budget["items"] <= 0:
+                return cls._TRUNCATED
             sanitized = {}
             parent_normalized = cls._normalized_key(parent_key or "")
-            for key, item in value.items():
+            sensitive_loc_input = cls._loc_targets_sensitive_input(value)
+            items = list(value.items())
+            for index, (key, item) in enumerate(items):
+                if _budget["items"] <= 0:
+                    break
+                if (
+                    _budget["items"] == 1
+                    and len(items) - index > 1
+                ):
+                    sanitized["_truncated"] = cls._TRUNCATED
+                    _budget["items"] -= 1
+                    break
+                _budget["items"] -= 1
+                safe_key = cls._bounded_safe_string(str(key), _budget)
                 normalized = cls._normalized_key(key)
                 if (
                     cls._is_sensitive_key(normalized)
+                    or (sensitive_loc_input and normalized == "input")
                     or (
                         parent_normalized in cls._INLINE_CONTAINER_KEYS
                         and normalized == "data"
                     )
                 ):
-                    sanitized[key] = "[REDACTED]"
+                    sanitized[safe_key] = "[REDACTED]"
                 else:
-                    sanitized[key] = cls._sanitize_structured(item, str(key))
+                    sanitized[safe_key] = cls._sanitize_structured(
+                        item,
+                        str(key),
+                        _budget=_budget,
+                        _depth=_depth + 1,
+                    )
             return sanitized
         if isinstance(value, list):
-            return [
-                cls._sanitize_structured(item, parent_key)
-                for item in value
-            ]
+            if value and _budget["items"] <= 0:
+                return cls._TRUNCATED
+            sanitized = []
+            for index, item in enumerate(value):
+                if _budget["items"] <= 0:
+                    break
+                if (
+                    _budget["items"] == 1
+                    and len(value) - index > 1
+                ):
+                    sanitized.append(cls._TRUNCATED)
+                    _budget["items"] -= 1
+                    break
+                _budget["items"] -= 1
+                sanitized.append(
+                    cls._sanitize_structured(
+                        item,
+                        parent_key,
+                        _budget=_budget,
+                        _depth=_depth + 1,
+                    )
+                )
+            return sanitized
         if isinstance(value, tuple):
-            return tuple(
-                cls._sanitize_structured(item, parent_key)
-                for item in value
-            )
+            if value and _budget["items"] <= 0:
+                return cls._TRUNCATED
+            sanitized = []
+            for index, item in enumerate(value):
+                if _budget["items"] <= 0:
+                    break
+                if (
+                    _budget["items"] == 1
+                    and len(value) - index > 1
+                ):
+                    sanitized.append(cls._TRUNCATED)
+                    _budget["items"] -= 1
+                    break
+                _budget["items"] -= 1
+                sanitized.append(
+                    cls._sanitize_structured(
+                        item,
+                        parent_key,
+                        _budget=_budget,
+                        _depth=_depth + 1,
+                    )
+                )
+            return tuple(sanitized)
         if isinstance(value, str):
-            return cls._redact_string(value)
+            return cls._bounded_safe_string(value, _budget)
         return value
 
     @classmethod
@@ -324,15 +470,14 @@ class AppLogService:
 
     @classmethod
     def _redact_credential_paths(cls, value: str) -> str:
-        def replace(match: re.Match) -> str:
-            path = match.group("path")
-            extension = match.group("extension").lower()
+        def replacement(path: str, extension: str) -> str:
             if extension != "json":
                 return "[REDACTED PATH]"
 
+            normalized_path = re.sub(r"(?i)^file://", "", path)
             segments = [
                 cls._normalized_key(segment)
-                for segment in re.split(r"[\\/]", path)
+                for segment in re.split(r"[\\/]", normalized_path)
                 if segment
             ]
             filename = segments[-1] if segments else ""
@@ -349,6 +494,25 @@ class AppLogService:
                 return "[REDACTED PATH]"
             return path
 
+        def replace(match: re.Match) -> str:
+            return replacement(
+                match.group("path"),
+                match.group("extension").lower(),
+            )
+
+        def replace_quoted(match: re.Match) -> str:
+            quote = match.group("quote")
+            redacted = replacement(
+                match.group("path"),
+                match.group("extension").lower(),
+            )
+            return f"{quote}{redacted}{quote}"
+
+        value = cls._QUOTED_CREDENTIAL_PATH_RE.sub(
+            replace_quoted,
+            value,
+        )
+        value = cls._FILE_CREDENTIAL_URI_RE.sub(replace, value)
         return cls._CREDENTIAL_PATH_RE.sub(replace, value)
 
     @classmethod

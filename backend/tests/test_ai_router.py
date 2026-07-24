@@ -1,4 +1,6 @@
 import asyncio
+import dataclasses
+import json
 import traceback
 from unittest.mock import AsyncMock, MagicMock
 
@@ -278,6 +280,36 @@ async def test_raised_provider_diagnostic_is_sanitized_before_attachment(
 
 
 @pytest.mark.asyncio
+async def test_exhausted_retry_error_carries_sanitized_request_context(
+    monkeypatch,
+):
+    selected = dataclasses.replace(
+        snapshot(max_retries=0),
+        name="Relay api_key=PROVIDER-SECRET",
+        model="vision vertex_key_path=/private/MODEL-SECRET.json",
+    )
+    monkeypatch.setattr(
+        "services.ai_router.get_snapshot", lambda db, cap: selected
+    )
+    adapter = AsyncMock()
+    adapter.generate.side_effect = RuntimeError("provider unavailable")
+    monkeypatch.setattr(
+        "services.ai_router.get_adapter", lambda protocol: adapter
+    )
+
+    with pytest.raises(AIProviderRequestError) as raised:
+        await AIRouter(base_delay=0).generate("image", {}, db=object())
+
+    error = raised.value
+    assert error.provider == "Relay api_key=[REDACTED]"
+    assert error.model == "vision vertex_key_path=[REDACTED]"
+    assert error.capability == "image"
+    assert error.retry == 0
+    assert "PROVIDER-SECRET" not in str(error.__dict__)
+    assert "MODEL-SECRET" not in str(error.__dict__)
+
+
+@pytest.mark.asyncio
 async def test_terminal_log_preserves_zero_based_retry_semantics(monkeypatch):
     selected = snapshot(max_retries=0)
     monkeypatch.setattr(
@@ -421,6 +453,69 @@ def test_diagnose_provider_error_normalizes_http_response_details():
     assert map_provider_error(error).diagnostic == diagnostic
 
 
+def test_diagnose_provider_error_redacts_pydantic_input_by_loc_context():
+    request = httpx.Request("POST", "https://provider.invalid/generate")
+    response = httpx.Response(
+        422,
+        json={
+            "detail": [
+                {
+                    "loc": ["body", "prompt"],
+                    "msg": "Invalid prompt",
+                    "input": "PROMPT-SECRET",
+                },
+                {
+                    "loc": ["body", "input_images", 0],
+                    "msg": "Invalid image",
+                    "input": "IMAGE-SECRET",
+                },
+            ]
+        },
+        request=request,
+    )
+    error = httpx.HTTPStatusError(
+        "provider returned validation errors",
+        request=request,
+        response=response,
+    )
+
+    diagnostic = diagnose_provider_error(error)
+
+    assert diagnostic.response_body["detail"][0]["input"] == "[REDACTED]"
+    assert diagnostic.response_body["detail"][1]["input"] == "[REDACTED]"
+    assert "PROMPT-SECRET" not in str(diagnostic)
+    assert "IMAGE-SECRET" not in str(diagnostic)
+
+
+def test_diagnose_provider_error_applies_shared_response_body_budget():
+    request = httpx.Request("POST", "https://provider.invalid/generate")
+    response = httpx.Response(
+        500,
+        json={
+            "groups": [
+                {
+                    f"leaf-{leaf}": "safe-value-" + ("x" * 1000)
+                    for leaf in range(150)
+                }
+                for _ in range(150)
+            ]
+        },
+        request=request,
+    )
+    error = httpx.HTTPStatusError(
+        "provider returned a large response",
+        request=request,
+        response=response,
+    )
+
+    diagnostic = diagnose_provider_error(error)
+    rendered = json.dumps(diagnostic.as_log_dict(), ensure_ascii=False)
+
+    assert len(rendered) <= 20_000
+    assert rendered.count('"leaf-') <= 100
+    assert "[TRUNCATED]" in rendered
+
+
 def test_diagnose_provider_error_reads_provider_code_attribute():
     diagnostic = diagnose_provider_error(
         ProviderError("rate limited", code="RATE_LIMITED")
@@ -428,6 +523,36 @@ def test_diagnose_provider_error_reads_provider_code_attribute():
 
     assert diagnostic.category == "rate_limit"
     assert diagnostic.provider_code == "RATE_LIMITED"
+
+
+@pytest.mark.parametrize(
+    ("http_status", "expected_category"),
+    [
+        (403, "authentication"),
+        (408, "timeout"),
+        (504, "timeout"),
+    ],
+)
+def test_real_httpx_status_errors_preserve_auth_and_timeout_semantics(
+    http_status,
+    expected_category,
+):
+    request = httpx.Request("POST", "https://provider.invalid/generate")
+    response = httpx.Response(
+        http_status,
+        text="upstream failure",
+        request=request,
+    )
+    error = httpx.HTTPStatusError(
+        f"provider returned {http_status}",
+        request=request,
+        response=response,
+    )
+
+    diagnostic = diagnose_provider_error(error)
+
+    assert diagnostic.category == expected_category
+    assert diagnostic.http_status == http_status
 
 
 @pytest.mark.asyncio

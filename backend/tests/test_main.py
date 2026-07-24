@@ -382,6 +382,96 @@ def test_provider_http_error_returns_sanitized_diagnostic(
     assert "browser-secret" not in response.text
 
 
+def test_provider_error_response_includes_sanitized_request_context():
+    diagnostic = diagnose_provider_error(
+        RuntimeError("api_key=UPSTREAM-SECRET")
+    )
+    provider_error = AIProviderRequestError(
+        "upstream_failure",
+        diagnostic,
+        provider="Relay api_key=PROVIDER-SECRET",
+        model="model vertex_key_path=/private/MODEL-SECRET.json",
+        capability="text",
+        retry=2,
+    )
+    safe_client = TestClient(app, raise_server_exceptions=False)
+
+    with patch(
+        "services.ai_service.AIService.generate_content",
+        new=AsyncMock(side_effect=provider_error),
+    ):
+        response = safe_client.post(
+            "/api/ai/generate",
+            json={"capability": "text", "payload": {}},
+        )
+
+    assert response.status_code == 502
+    detail = response.json()["detail"]
+    assert detail["provider"] == "Relay api_key=[REDACTED]"
+    assert detail["model"] == "model vertex_key_path=[REDACTED]"
+    assert detail["capability"] == "text"
+    assert detail["retry"] == 2
+    for secret in (
+        "UPSTREAM-SECRET",
+        "PROVIDER-SECRET",
+        "MODEL-SECRET",
+    ):
+        assert secret not in response.text
+
+
+@pytest.mark.parametrize(
+    ("upstream_status", "expected_category", "expected_status"),
+    [
+        (403, "authentication", 403),
+        (408, "timeout", 504),
+        (504, "timeout", 504),
+    ],
+)
+def test_real_httpx_provider_status_maps_to_public_http_status(
+    upstream_status,
+    expected_category,
+    expected_status,
+):
+    import httpx
+
+    request = httpx.Request(
+        "POST",
+        "https://provider.invalid/generate",
+    )
+    response = httpx.Response(
+        upstream_status,
+        text="provider failed",
+        request=request,
+    )
+    failure = httpx.HTTPStatusError(
+        f"provider returned {upstream_status}",
+        request=request,
+        response=response,
+    )
+    diagnostic = diagnose_provider_error(failure)
+    provider_error = AIProviderRequestError(
+        diagnostic.category,
+        diagnostic,
+    )
+    safe_client = TestClient(app, raise_server_exceptions=False)
+
+    with patch(
+        "services.ai_service.AIService.generate_content",
+        new=AsyncMock(side_effect=provider_error),
+    ):
+        api_response = safe_client.post(
+            "/api/ai/generate",
+            json={"capability": "text", "payload": {}},
+        )
+
+    assert api_response.status_code == expected_status
+    assert api_response.json()["detail"]["category"] == expected_category
+    assert (
+        api_response.json()["detail"]["diagnostic"]["http_status"]
+        == upstream_status
+    )
+
+
 @pytest.mark.parametrize("body", [{}, {"capability": "audio", "payload": {}}])
 def test_ai_generate_endpoint_rejects_missing_or_invalid_capability(body):
     resp = client.post("/api/ai/generate", json=body)

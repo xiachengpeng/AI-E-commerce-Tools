@@ -157,9 +157,17 @@ function mergeSettingsLogSnapshot(snapshot, buffered, limit = 200) {
 }
 
 function formatSettingsLogLine(entry) {
-    return SETTINGS_LOG_FIELDS
-        .map(field => `${field}=${entry?.[field] ?? "—"}`)
-        .join(" ");
+    const fields = SETTINGS_LOG_FIELDS.map(field => {
+        const value = field === "message"
+            ? settingsLogSummary(entry)
+            : entry?.[field] ?? "—";
+        return `${field}=${value}`;
+    });
+    const diagnostic = entry?.message?.diagnostic;
+    if (diagnostic && typeof diagnostic === "object" && !Array.isArray(diagnostic)) {
+        fields.push(`diagnostic=${settingsLogDetailValue(diagnostic)}`);
+    }
+    return fields.join(" ");
 }
 
 function settingsLogSummary(entry) {
@@ -176,7 +184,7 @@ function settingsLogDetailValue(value) {
         try {
             return JSON.stringify(value);
         } catch (_) {
-            return String(value);
+            return "[Unserializable object]";
         }
     }
     return String(value);
@@ -194,6 +202,7 @@ function settingsLogDetails(entry) {
     }
 
     const details = [
+        ["分类", diagnostic.category],
         ["HTTP 状态", diagnostic.http_status],
         ["提供商代码", diagnostic.provider_code],
         ["异常类型", diagnostic.exception_type],

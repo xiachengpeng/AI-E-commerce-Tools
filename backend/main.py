@@ -758,14 +758,38 @@ async def api_ai_generate(data: dict):
             if exc.diagnostic is not None
             else {"category": exc.category}
         )
+        provider = (
+            AppLogService.sanitize(exc.provider)
+            if exc.provider is not None
+            else None
+        )
+        model = (
+            AppLogService.sanitize(exc.model)
+            if exc.model is not None
+            else None
+        )
+        safe_capability = AppLogService.sanitize(
+            exc.capability or capability
+        )
+        public_status = _PROVIDER_ERROR_HTTP_STATUS.get(
+            exc.category,
+            status.HTTP_502_BAD_GATEWAY,
+        )
+        if (
+            exc.category == "authentication"
+            and exc.diagnostic is not None
+            and exc.diagnostic.http_status == 403
+        ):
+            public_status = status.HTTP_403_FORBIDDEN
         raise HTTPException(
-            status_code=_PROVIDER_ERROR_HTTP_STATUS.get(
-                exc.category,
-                status.HTTP_502_BAD_GATEWAY,
-            ),
+            status_code=public_status,
             detail={
                 "category": exc.category,
                 "diagnostic": diagnostic,
+                "provider": provider,
+                "model": model,
+                "capability": safe_capability,
+                "retry": exc.retry,
             },
         ) from None
     except ValueError:

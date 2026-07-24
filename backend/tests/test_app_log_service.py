@@ -1,4 +1,5 @@
 import asyncio
+import json
 import threading
 
 import pytest
@@ -815,6 +816,98 @@ def test_structured_provider_diagnostic_redacts_embedded_credentials():
     assert diagnostic["response_body"]["error"] == {"code": "RATE_LIMITED"}
 
 
+@pytest.mark.asyncio
+async def test_pydantic_loc_context_redacts_input_from_all_log_copies():
+    logs = AppLogService(session_id="boot-a")
+    queue = logs.subscribe()
+    diagnostic = {
+        "errors": [
+            {
+                "type": "missing",
+                "loc": ["body", "prompt"],
+                "msg": "Field required",
+                "input": "PROMPT-SECRET",
+            },
+            {
+                "type": "image_type",
+                "loc": ["body", "input_images", 0],
+                "msg": "Invalid image",
+                "input": "IMAGE-SECRET",
+            },
+            {
+                "type": "string_type",
+                "loc": ["body", "title"],
+                "msg": "Input should be a string",
+                "input": "safe-title",
+            },
+        ]
+    }
+
+    sanitized = AppLogService.sanitize(diagnostic)
+    returned = logs.emit(
+        level="error",
+        source="ai",
+        message={"summary": "validation failed", "diagnostic": diagnostic},
+    )
+    delivered = await asyncio.wait_for(queue.get(), 0.1)
+    recent = logs.recent()[0]
+
+    for value in (
+        sanitized,
+        returned["message"]["diagnostic"],
+        delivered["message"]["diagnostic"],
+        recent["message"]["diagnostic"],
+    ):
+        rendered = str(value)
+        assert "PROMPT-SECRET" not in rendered
+        assert "IMAGE-SECRET" not in rendered
+        assert value["errors"][0]["input"] == "[REDACTED]"
+        assert value["errors"][1]["input"] == "[REDACTED]"
+        assert value["errors"][2]["input"] == "safe-title"
+        assert value["errors"][0]["loc"] == ["body", "prompt"]
+
+
+def test_structured_diagnostic_has_shared_size_and_item_budgets():
+    diagnostic = {
+        "response_body": {
+            f"group-{group}": {
+                f"leaf-{leaf}": "safe-value-" + ("x" * 1000)
+                for leaf in range(150)
+            }
+            for group in range(150)
+        }
+    }
+
+    sanitized = AppLogService.sanitize(diagnostic)
+    rendered = json.dumps(sanitized, ensure_ascii=False)
+    many_items = AppLogService.sanitize({
+        "response_body": {
+            f"group-{group}": {
+                f"leaf-{leaf}": "v"
+                for leaf in range(150)
+            }
+            for group in range(150)
+        }
+    })
+
+    def structured_slots(value):
+        if isinstance(value, dict):
+            return len(value) + sum(
+                structured_slots(item) for item in value.values()
+            )
+        if isinstance(value, (list, tuple)):
+            return len(value) + sum(
+                structured_slots(item) for item in value
+            )
+        return 0
+
+    assert len(rendered) <= 20_000
+    assert structured_slots(sanitized) <= 100
+    assert structured_slots(many_items) <= 100
+    assert "[TRUNCATED]" in rendered
+    assert "[TRUNCATED]" in str(many_items)
+
+
 @pytest.mark.parametrize(
     ("message", "credential_paths", "safe_text"),
     [
@@ -876,6 +969,30 @@ def test_public_sanitize_preserves_safe_paths_urls_and_redacts_prompt():
     assert "/tmp/customer-data.json" in sanitized
     assert "status=retryable" in sanitized
     assert "https://provider.example/status/key.json" in sanitized
+
+
+def test_public_sanitize_redacts_quoted_spaced_and_file_uri_credential_paths():
+    credential_paths = (
+        "/Users/alice/Google Credentials/service account.json",
+        r"C:\Users\Alice\Secret Keys\service account.json",
+        "file:///private/key.json",
+    )
+    message = (
+        f'credentials missing: "{credential_paths[0]}" '
+        f"windows='{credential_paths[1]}' "
+        f"uri={credential_paths[2]} "
+        "safe=/tmp/customer-data.json "
+        "docs=https://provider.example/status/key.json "
+        "status=retryable"
+    )
+
+    sanitized = AppLogService.sanitize(message)
+
+    for path in credential_paths:
+        assert path not in sanitized
+    assert "safe=/tmp/customer-data.json" in sanitized
+    assert "https://provider.example/status/key.json" in sanitized
+    assert "status=retryable" in sanitized
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@ import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -1820,6 +1821,63 @@ def test_connection_failure_log_exposes_sanitized_timeout_diagnostic(
     assert "connection-secret" not in str(recent.json())
 
 
+def test_connection_log_redacts_pydantic_input_using_loc_context(
+    monkeypatch,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    request = httpx.Request(
+        "POST",
+        "https://provider.invalid/generate",
+    )
+    failure = httpx.HTTPStatusError(
+        "provider validation failed",
+        request=request,
+        response=httpx.Response(
+            422,
+            json={
+                "detail": [
+                    {
+                        "loc": ["body", "prompt"],
+                        "msg": "Invalid prompt",
+                        "input": "CONNECTION-PROMPT-SECRET",
+                    },
+                    {
+                        "loc": ["body", "input_images", 0],
+                        "msg": "Invalid image",
+                        "input": "CONNECTION-IMAGE-SECRET",
+                    },
+                ]
+            },
+            request=request,
+        ),
+    )
+    logs = AppLogService(session_id="boot-a")
+    monkeypatch.setattr(main, "app_logs", logs)
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(side_effect=failure)},
+    )()
+    monkeypatch.setattr(main, "get_adapter", lambda protocol: adapter)
+    client, _ = _make_client()
+    try:
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={"draft": _provider_data(), "capability": "text"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    diagnostic = logs.recent()[-1]["message"]["diagnostic"]
+    assert diagnostic["response_body"]["detail"][0]["input"] == "[REDACTED]"
+    assert diagnostic["response_body"]["detail"][1]["input"] == "[REDACTED]"
+    assert "CONNECTION-PROMPT-SECRET" not in str(logs.recent())
+    assert "CONNECTION-IMAGE-SECRET" not in str(logs.recent())
+
+
 def test_connection_test_missing_provider_is_not_found():
     client, _ = _make_client()
     try:
@@ -1977,6 +2035,59 @@ async def test_sse_stream_redacts_vertex_and_image_aliases_but_keeps_metadata(
     assert '"status": "ready"' in frame
     assert '"count": 1' in frame
     assert '"mime_type": "image/png"' in frame
+
+
+@pytest.mark.asyncio
+async def test_recent_api_and_sse_redact_pydantic_input_using_loc_context(
+    monkeypatch,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    class ReconnectRequest:
+        headers = {}
+
+        async def is_disconnected(self):
+            return False
+
+    logs = AppLogService(session_id="boot-a")
+    monkeypatch.setattr(main, "app_logs", logs)
+    logs.emit(
+        level="error",
+        source="ai",
+        message={
+            "summary": "validation failed",
+            "diagnostic": {
+                "detail": [
+                    {
+                        "loc": ["body", "prompt"],
+                        "input": "API-PROMPT-SECRET",
+                    },
+                    {
+                        "loc": ["body", "input_images", 0],
+                        "input": "API-IMAGE-SECRET",
+                    },
+                ]
+            },
+        },
+    )
+
+    recent = main.api_recent_logs()
+    response = await main.api_stream_logs(ReconnectRequest())
+    frame = await anext(response.body_iterator)
+    await response.body_iterator.aclose()
+
+    assert (
+        recent["items"][0]["message"]["diagnostic"]["detail"][0]["input"]
+        == "[REDACTED]"
+    )
+    assert (
+        recent["items"][0]["message"]["diagnostic"]["detail"][1]["input"]
+        == "[REDACTED]"
+    )
+    for secret in ("API-PROMPT-SECRET", "API-IMAGE-SECRET"):
+        assert secret not in str(recent)
+        assert secret not in frame
 
 
 @pytest.mark.parametrize(

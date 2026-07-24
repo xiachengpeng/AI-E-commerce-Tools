@@ -46,8 +46,6 @@ _PROTOCOL_CODES = {
     "UNSUPPORTED",
 }
 _DIAGNOSTIC_TEXT_LIMIT = 1000
-_DIAGNOSTIC_MAX_DEPTH = 6
-_DIAGNOSTIC_MAX_ITEMS = 100
 
 
 @dataclasses.dataclass(frozen=True)
@@ -69,9 +67,22 @@ class AIProviderRequestError(RuntimeError):
         self,
         category: str,
         diagnostic: ProviderErrorDiagnostic | None = None,
+        *,
+        provider: str | None = None,
+        model: str | None = None,
+        capability: str | None = None,
+        retry: int | None = None,
     ):
         self.category = category
         self.diagnostic = diagnostic
+        self.provider = _sanitize_diagnostic_value(provider)
+        self.model = _sanitize_diagnostic_value(model)
+        self.capability = _sanitize_diagnostic_value(capability)
+        self.retry = (
+            retry
+            if isinstance(retry, int) and not isinstance(retry, bool)
+            else None
+        )
         super().__init__(_ERROR_MESSAGES[category])
 
 
@@ -164,26 +175,6 @@ def _safe_request_id(response) -> str | None:
     return None
 
 
-def _bound_diagnostic_value(value, depth: int = 0):
-    if depth >= _DIAGNOSTIC_MAX_DEPTH:
-        return "[TRUNCATED]"
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
-    if isinstance(value, str):
-        return value[:_DIAGNOSTIC_TEXT_LIMIT]
-    if isinstance(value, dict):
-        return {
-            _safe_text(key) or "": _bound_diagnostic_value(item, depth + 1)
-            for key, item in list(value.items())[:_DIAGNOSTIC_MAX_ITEMS]
-        }
-    if isinstance(value, (list, tuple)):
-        return [
-            _bound_diagnostic_value(item, depth + 1)
-            for item in value[:_DIAGNOSTIC_MAX_ITEMS]
-        ]
-    return _safe_text(value)
-
-
 def _sanitize_diagnostic_value(value):
     if value is None:
         return None
@@ -199,7 +190,7 @@ def _safe_response_body(response) -> object | None:
         body = _safe_attribute(response, "text")
     if body in (None, ""):
         return None
-    return _bound_diagnostic_value(body)
+    return _sanitize_diagnostic_value(body)
 
 
 def _find_provider_code(value) -> str | None:
@@ -239,6 +230,8 @@ def _classify_provider_error(
         return "timeout"
     if numeric_codes & {401, 403} or named_codes & _AUTH_CODES:
         return "authentication"
+    if numeric_codes & {408, 504}:
+        return "timeout"
     if 404 in numeric_codes or named_codes & _MODEL_CODES:
         return "model_not_found"
     if 429 in numeric_codes or named_codes & _RATE_LIMIT_CODES:
@@ -286,9 +279,23 @@ def diagnose_provider_error(exc: Exception) -> ProviderErrorDiagnostic:
     )
 
 
-def map_provider_error(exc: Exception) -> AIProviderRequestError:
+def map_provider_error(
+    exc: Exception,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    capability: str | None = None,
+    retry: int | None = None,
+) -> AIProviderRequestError:
     diagnostic = diagnose_provider_error(exc)
-    return AIProviderRequestError(diagnostic.category, diagnostic)
+    return AIProviderRequestError(
+        diagnostic.category,
+        diagnostic,
+        provider=provider,
+        model=model,
+        capability=capability,
+        retry=retry,
+    )
 
 
 class AIRouter:
@@ -338,7 +345,13 @@ class AIRouter:
                 )
                 return result
             except Exception as exc:
-                mapped = map_provider_error(exc)
+                mapped = map_provider_error(
+                    exc,
+                    provider=snapshot.name,
+                    model=snapshot.model,
+                    capability=capability,
+                    retry=attempt,
+                )
                 diagnostic = mapped.diagnostic
                 duration_ms = round((time.monotonic() - started) * 1000)
                 if attempt >= snapshot.max_retries:
