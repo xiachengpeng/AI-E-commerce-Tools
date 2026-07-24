@@ -122,7 +122,10 @@ def google_response_to_dict(response) -> dict:
 class GeminiAdapter(AIAdapter):
     def __init__(self, client=None):
         self._fixed_client = client
-        self._clients: dict[tuple[int, int], _GoogleClientEntry] = {}
+        self._clients: dict[
+            tuple[int, str, int],
+            _GoogleClientEntry,
+        ] = {}
         self._retired_clients: list[_GoogleClientEntry] = []
         self._client_lock = threading.RLock()
 
@@ -141,7 +144,7 @@ class GeminiAdapter(AIAdapter):
     def _retire_superseded_clients(
         self,
         snapshot: ProviderSnapshot,
-        current_key: tuple[int, int],
+        current_key: tuple[int, str, int],
     ) -> None:
         for key, entry in tuple(self._clients.items()):
             if key[0] != snapshot.id or key == current_key:
@@ -159,7 +162,11 @@ class GeminiAdapter(AIAdapter):
                 client=self._build_client(snapshot),
                 stale=True,
             )
-        key = (snapshot.id, snapshot.config_version)
+        key = (
+            snapshot.id,
+            snapshot.incarnation_id,
+            snapshot.config_version,
+        )
         with self._client_lock:
             self._retire_superseded_clients(snapshot, key)
             entry = self._clients.get(key)

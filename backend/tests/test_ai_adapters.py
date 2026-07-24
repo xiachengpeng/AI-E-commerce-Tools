@@ -19,6 +19,7 @@ from services.ai_config_service import ProviderSnapshot
 def make_snapshot(capability="text", **overrides):
     values = {
         "id": 1,
+        "incarnation_id": "provider-incarnation-1",
         "capability": capability,
         "name": "Test provider",
         "protocol": "openai_compatible",
@@ -288,6 +289,31 @@ def test_gemini_client_cache_is_versioned_by_snapshot():
 
     assert client_factory.call_count == 2
     client_factory.assert_any_call(api_key="gemini-key")
+
+
+def test_gemini_client_cache_isolated_by_provider_incarnation():
+    adapter = GeminiAdapter()
+    first = make_snapshot(
+        protocol="gemini",
+        api_key="first-key",
+        base_url=None,
+    )
+    replacement = replace(
+        first,
+        incarnation_id="replacement-incarnation",
+        api_key="replacement-key",
+    )
+    first_client = MagicMock()
+    replacement_client = MagicMock()
+
+    with patch(
+        "services.ai_adapters.genai.Client",
+        side_effect=[first_client, replacement_client],
+    ):
+        assert adapter._client(first) is first_client
+        assert adapter._client(replacement) is replacement_client
+
+    first_client.close.assert_called_once_with()
 
 
 def test_consecutive_draft_google_credentials_never_share_cached_client():

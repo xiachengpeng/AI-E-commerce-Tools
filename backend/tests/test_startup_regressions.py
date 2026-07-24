@@ -5,6 +5,8 @@ import shutil
 import subprocess
 import sys
 
+import pytest
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -59,6 +61,16 @@ def test_config_import_does_not_require_legacy_gemini_key(tmp_path):
     assert result.stdout.strip() == "CONFIG_OK"
 
 
+def test_backend_avoids_python_311_datetime_utc_alias():
+    forbidden = "datetime" + "." + "UTC"
+    offenders = []
+    for path in BACKEND_DIR.rglob("*.py"):
+        if forbidden in path.read_text(encoding="utf-8"):
+            offenders.append(str(path.relative_to(BACKEND_DIR)))
+
+    assert offenders == []
+
+
 def test_ai_settings_migration_adds_last_test_capability_to_legacy_table(
     monkeypatch,
     tmp_path,
@@ -89,6 +101,77 @@ def test_ai_settings_migration_adds_last_test_capability_to_legacy_table(
         )
     }
     assert "last_test_capability" in columns
+
+
+def test_ai_settings_migration_backfills_unique_provider_incarnations(
+    monkeypatch,
+    tmp_path,
+):
+    import uuid
+
+    import db as db_module
+    from sqlalchemy import create_engine, inspect, text
+    from sqlalchemy.exc import IntegrityError
+
+    legacy_engine = create_engine(
+        f"sqlite:///{tmp_path / 'legacy-incarnations.db'}"
+    )
+    with legacy_engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE ai_provider_configs ("
+                "id INTEGER PRIMARY KEY, "
+                "name VARCHAR(120) NOT NULL UNIQUE"
+                ")"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO ai_provider_configs (id, name) "
+                "VALUES (1, 'first'), (2, 'second')"
+            )
+        )
+    monkeypatch.setattr(db_module, "engine", legacy_engine)
+
+    db_module.migrate_ai_settings_tables()
+    columns = {
+        column["name"]
+        for column in inspect(legacy_engine).get_columns(
+            "ai_provider_configs"
+        )
+    }
+    assert "incarnation_id" in columns
+
+    with legacy_engine.connect() as connection:
+        first_values = connection.execute(
+            text(
+                "SELECT incarnation_id FROM ai_provider_configs "
+                "ORDER BY id"
+            )
+        ).scalars().all()
+
+    assert len(set(first_values)) == 2
+    assert all(uuid.UUID(value).version == 4 for value in first_values)
+
+    db_module.migrate_ai_settings_tables()
+    with legacy_engine.connect() as connection:
+        second_values = connection.execute(
+            text(
+                "SELECT incarnation_id FROM ai_provider_configs "
+                "ORDER BY id"
+            )
+        ).scalars().all()
+    assert second_values == first_values
+
+    with pytest.raises(IntegrityError):
+        with legacy_engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE ai_provider_configs "
+                    "SET incarnation_id = :duplicate WHERE id = 2"
+                ),
+                {"duplicate": first_values[0]},
+            )
 
 
 def test_existing_sqlite_vertex_configuration_starts_without_gemini_key(

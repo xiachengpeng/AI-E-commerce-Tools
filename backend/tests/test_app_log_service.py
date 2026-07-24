@@ -533,6 +533,155 @@ async def test_vertex_service_account_and_image_aliases_are_redacted_everywhere(
         assert entry["message"]["mime_type"] == "image/png"
 
 
+@pytest.mark.asyncio
+async def test_google_oauth_credential_containers_fail_closed_everywhere():
+    logs = AppLogService()
+    queue = logs.subscribe()
+    structured = {
+        "headers": {
+            "x-goog-api-key": "GOOGLE-HEADER-SECRET",
+            "Authorization": "Bearer AUTHORIZATION-SECRET",
+        },
+        "credentials": {
+            "refresh_token": "REFRESH-TOKEN-SECRET",
+            "accessToken": "ACCESS-TOKEN-SECRET",
+            "id_token": "ID-TOKEN-SECRET",
+            "client_secret": "CLIENT-SECRET",
+        },
+        "serviceAccount": {
+            "private_key": "PRIVATE-KEY-SECRET",
+            "client_x509_cert_url": "CERTIFICATE-SECRET",
+        },
+        "client": {
+            "password": "PASSWORD-SECRET",
+            "apiKey": "CLIENT-API-SECRET",
+        },
+        "image": "RAW-IMAGE-SECRET",
+        "imageB64": "IMAGE-B64-SECRET",
+        "status": "ready",
+        "count": 2,
+        "mime_type": "image/png",
+        "model": "safe-model",
+        "provider": "safe-provider",
+        "capability": "image",
+        "duration_ms": 12,
+        "retry": 1,
+        "config_version": 7,
+    }
+
+    returned = logs.emit(
+        level="info",
+        source="image",
+        message=structured,
+    )
+    delivered = await asyncio.wait_for(queue.get(), 0.1)
+    recent = logs.recent()[0]
+
+    for entry in (returned, delivered, recent):
+        rendered = str(entry)
+        for secret in (
+            "GOOGLE-HEADER-SECRET",
+            "AUTHORIZATION-SECRET",
+            "REFRESH-TOKEN-SECRET",
+            "ACCESS-TOKEN-SECRET",
+            "ID-TOKEN-SECRET",
+            "CLIENT-SECRET",
+            "PRIVATE-KEY-SECRET",
+            "CERTIFICATE-SECRET",
+            "PASSWORD-SECRET",
+            "CLIENT-API-SECRET",
+            "RAW-IMAGE-SECRET",
+            "IMAGE-B64-SECRET",
+        ):
+            assert secret not in rendered
+        assert entry["message"]["status"] == "ready"
+        assert entry["message"]["count"] == 2
+        assert entry["message"]["mime_type"] == "image/png"
+        assert entry["message"]["model"] == "safe-model"
+        assert entry["message"]["provider"] == "safe-provider"
+        assert entry["message"]["capability"] == "image"
+        assert entry["message"]["duration_ms"] == 12
+        assert entry["message"]["retry"] == 1
+        assert entry["message"]["config_version"] == 7
+
+
+STRING_FALLBACK_BYPASSES = [
+    (
+        r'{\"x-goog-api-key\":\"ESCAPED-GOOGLE-SECRET\", '
+        r'\"status\":\"ready\"}',
+        ("ESCAPED-GOOGLE-SECRET",),
+        ("status", "ready"),
+    ),
+    (
+        '{"refresh_token":"TRUNCATED-REFRESH-SECRET',
+        ("TRUNCATED-REFRESH-SECRET",),
+        (),
+    ),
+    (
+        "{'accessToken'='ACCESS-TOKEN-SECRET', count=2}",
+        ("ACCESS-TOKEN-SECRET",),
+        ("count=2",),
+    ),
+    (
+        "{client_credentials=[{'client_secret':'CLIENT-SECRET'}] "
+        "status=ready}",
+        ("CLIENT-SECRET",),
+        ("status=ready",),
+    ),
+    (
+        "auth = Bearer AUTH-HEADER-SECRET; config_version=4",
+        ("AUTH-HEADER-SECRET",),
+        ("config_version=4",),
+    ),
+    (
+        "upload=data:image/png;charset=utf-8;name=preview.png;base64,"
+        "QUJD\r\n  REVGRw== status=ready",
+        ("QUJD", "REVGRw=="),
+        ("status=ready",),
+    ),
+    (
+        r'{\"b64_json\":\"QUJD\r\n  REVGRw==',
+        ("QUJD", "REVGRw=="),
+        (),
+    ),
+    (
+        "certificate=-----BEGIN CERTIFICATE-----\n"
+        "CERTIFICATE-BLOCK-SECRET",
+        ("CERTIFICATE-BLOCK-SECRET",),
+        (),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("message", "secrets", "safe_fragments"),
+    STRING_FALLBACK_BYPASSES,
+)
+@pytest.mark.asyncio
+async def test_string_fallback_bypasses_are_redacted_from_all_log_copies(
+    message,
+    secrets,
+    safe_fragments,
+):
+    logs = AppLogService()
+    queue = logs.subscribe()
+
+    returned = logs.emit(
+        level="info",
+        source="system",
+        message=message,
+    )
+    delivered = await asyncio.wait_for(queue.get(), 0.1)
+    recent = logs.recent()[0]
+
+    for entry in (returned, delivered, recent):
+        rendered = str(entry)
+        for secret in secrets:
+            assert secret not in rendered
+        for fragment in safe_fragments:
+            assert fragment in rendered
+
+
 @pytest.mark.parametrize(
     ("message", "secret", "safe_metadata"),
     [

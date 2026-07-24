@@ -24,32 +24,111 @@ class AppLogService:
     """Keep a bounded stream of safe log entries for application consumers."""
 
     _SENSITIVE_KEYS = {
+        "accesstoken",
         "apikey",
+        "auth",
         "authproviderx509certurl",
+        "authentication",
         "authorization",
+        "authtoken",
         "b64json",
         "base64",
         "base64image",
+        "certificate",
+        "clientsecret",
         "clientemail",
         "clientid",
         "clientx509certurl",
+        "credential",
+        "credentials",
+        "googcredentials",
+        "googlecredentials",
+        "idtoken",
+        "image",
         "imagebase64",
+        "imageb64",
         "imagedata",
+        "images",
+        "inlinedatadata",
+        "password",
+        "passwd",
         "privatekey",
         "privatekeyid",
         "projectid",
         "prompt",
+        "proxyauthorization",
         "providerresponse",
+        "refreshtoken",
         "response",
+        "serviceaccount",
+        "serviceaccountcredentials",
+        "token",
         "tokenuri",
         "universedomain",
         "vertexlocation",
         "vertexprojectid",
         "vertexkeypath",
         "xapikey",
+        "xauthtoken",
+        "xgoogapikey",
         "authuri",
     }
+    _SENSITIVE_CONTAINER_KEYS = {
+        "client",
+        "clientcredential",
+        "clientcredentials",
+        "credential",
+        "credentials",
+        "googlecredential",
+        "googlecredentials",
+        "oauth",
+        "oauthcredential",
+        "oauthcredentials",
+        "serviceaccount",
+        "serviceaccountcredential",
+        "serviceaccountcredentials",
+    }
+    _SAFE_METADATA_KEYS = {
+        "capability",
+        "configversion",
+        "count",
+        "duration",
+        "durationms",
+        "imagemodel",
+        "mime",
+        "mimetype",
+        "model",
+        "provider",
+        "retry",
+        "status",
+        "textmodel",
+    }
     _INLINE_CONTAINER_KEYS = {"inlinedata"}
+    _LABELED_VALUE_RE = re.compile(
+        r"""(?ix)
+        (?<![A-Za-z0-9])
+        (?:
+            (?:\\?["'])
+            (?P<quoted_label>[^"'\\\r\n]{1,80})
+            (?:\\?["'])
+          |
+            (?P<bare_label>
+                [A-Za-z][A-Za-z0-9_.-]*
+                (?:[ \t]+(?:key|response|credentials?))?
+            )
+        )
+        \s*[:=]\s*
+        """
+    )
+    _FIELD_START_RE = re.compile(
+        r"""(?ix)
+        (?:\\?["'])?
+        [A-Za-z][A-Za-z0-9_.-]*
+        (?:[ \t]+(?:key|response|credentials?))?
+        (?:\\?["'])?
+        \s*[:=]
+        """
+    )
 
     def __init__(
         self,
@@ -71,6 +150,38 @@ class AppLogService:
         return re.sub(r"[^a-z0-9]", "", str(value).lower())
 
     @classmethod
+    def _is_sensitive_key(cls, value) -> bool:
+        normalized = cls._normalized_key(value)
+        if normalized in cls._SAFE_METADATA_KEYS:
+            return False
+        if (
+            normalized in cls._SENSITIVE_KEYS
+            or normalized in cls._SENSITIVE_CONTAINER_KEYS
+        ):
+            return True
+        if (
+            "base64" in normalized
+            or normalized == "b64"
+            or normalized.startswith("b64")
+            or normalized.endswith("b64")
+        ):
+            return True
+        if (
+            "credential" in normalized
+            or "privatekey" in normalized
+            or "x509cert" in normalized
+            or normalized.endswith("password")
+            or normalized.endswith("certificate")
+            or normalized.endswith("apikey")
+        ):
+            return True
+        return (
+            normalized.startswith("image")
+            and normalized.removeprefix("image")
+            in {"", "content", "data", "bytes", "payload", "source"}
+        )
+
+    @classmethod
     def _sanitize_structured(cls, value, parent_key: str | None = None):
         if isinstance(value, dict):
             sanitized = {}
@@ -78,7 +189,7 @@ class AppLogService:
             for key, item in value.items():
                 normalized = cls._normalized_key(key)
                 if (
-                    normalized in cls._SENSITIVE_KEYS
+                    cls._is_sensitive_key(normalized)
                     or (
                         parent_normalized in cls._INLINE_CONTAINER_KEYS
                         and normalized == "data"
@@ -133,28 +244,22 @@ class AppLogService:
                     return serializer(cls._sanitize_structured(parsed))[:1000]
         return cls._redact_string(value)
 
-    @staticmethod
-    def _redact_string(value: str) -> str:
+    @classmethod
+    def _redact_string(cls, value: str) -> str:
         value = re.sub(
-            r"(?i)((?:[\"']authorization[\"'])\s*[:=]\s*)[\"'](?:[^\s,;\"']+\s+)?[^\s,;\"']+[\"']",
-            r'\1"[REDACTED]"',
-            value,
-        )
-        value = re.sub(
-            r"(?i)(\bauthorization\b\s*[:=]\s*)(?:[^\s,;]+\s+)?[^\s,;]+",
-            "Authorization: [REDACTED]",
-            value,
-        )
-        value = re.sub(
-            r"(?i)data:image/[^,\s]+;base64,[A-Za-z0-9+/=_-]+",
+            (
+                r"(?is)data:image/[^\r\n,]*?;\s*base64\s*,[ \t]*"
+                r"[A-Za-z0-9+/_-]+={0,2}"
+                r"(?:(?:[ \t]*(?:\r?\n|\\r\\n|\\n)[ \t]*)"
+                r"[A-Za-z0-9+/_-]+={0,2})*"
+            ),
             "[IMAGE REDACTED]",
             value,
         )
         value = re.sub(
             (
-                r"(?is)-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----"
-                r".*?"
-                r"-----END(?: [A-Z0-9]+)* PRIVATE KEY-----"
+                r"(?is)-----BEGIN [A-Z0-9 ]+-----.*?"
+                r"(?:-----END [A-Z0-9 ]+-----|$)"
             ),
             "[REDACTED PEM]",
             value,
@@ -181,65 +286,193 @@ class AppLogService:
             r"\1[REDACTED]",
             value,
         )
-        sensitive_label = (
-            r"(?:vertex[_ -]?key[_ -]?path"
-            r"|vertex[_ -]?project[_ -]?id"
-            r"|vertex[_ -]?location"
-            r"|project[_ -]?id"
-            r"|auth[_ -]?provider[_ -]?x509[_ -]?cert[_ -]?url"
-            r"|image[_ -]?data"
-            r"|image[_ -]?base64"
-            r"|base64[_ -]?image"
-            r"|base64"
-            r"|b64[_ -]?json"
-            r"|private[_ -]?key(?:[_ -]?id)?"
-            r"|client[_ -]?email"
-            r"|client[_ -]?id"
-            r"|client[_ -]?x509[_ -]?cert[_ -]?url"
-            r"|auth[_ -]?uri"
-            r"|token[_ -]?uri"
-            r"|universe[_ -]?domain"
-            r"|inline(?:data|_data)\.data)"
+        return cls._redact_labeled_values(value)[:1000]
+
+    @classmethod
+    def _redact_labeled_values(cls, value: str) -> str:
+        output = []
+        cursor = 0
+        search_from = 0
+        while True:
+            match = cls._LABELED_VALUE_RE.search(value, search_from)
+            if match is None:
+                output.append(value[cursor:])
+                return "".join(output)
+            label = (
+                match.group("quoted_label")
+                or match.group("bare_label")
+                or ""
+            )
+            if not cls._is_sensitive_key(label):
+                search_from = match.end()
+                continue
+            start = match.end()
+            end, replacement = cls._sensitive_value_span(
+                value,
+                start,
+                cls._normalized_key(label),
+            )
+            output.append(value[cursor:start])
+            output.append(replacement)
+            cursor = end
+            search_from = end
+
+    @classmethod
+    def _sensitive_value_span(
+        cls,
+        value: str,
+        start: int,
+        normalized_label: str,
+    ) -> tuple[int, str]:
+        if start >= len(value):
+            return start, "[REDACTED]"
+        for quote in ('\\"', "\\'", '"', "'"):
+            if not value.startswith(quote, start):
+                continue
+            closing = cls._find_closing_quote(
+                value,
+                start + len(quote),
+                quote,
+            )
+            if closing is not None:
+                return (
+                    closing + len(quote),
+                    f"{quote}[REDACTED]{quote}",
+                )
+            end = cls._find_safe_value_end(
+                value,
+                start + len(quote),
+                normalized_label,
+            )
+            return end, f"{quote}[REDACTED]"
+
+        if value[start] in "[{":
+            balanced_end = cls._find_balanced_end(value, start)
+            if balanced_end is not None:
+                return balanced_end, "[REDACTED]"
+            return (
+                cls._find_container_fallback_end(value, start),
+                "[REDACTED]",
+            )
+
+        return (
+            cls._find_safe_value_end(
+                value,
+                start,
+                normalized_label,
+            ),
+            "[REDACTED]",
         )
-        value = re.sub(
-            rf"(?i)((?:[\"']?){sensitive_label}(?:[\"']?)"
-            r'\s*[:=]\s*)"(?:\\.|[^"\\])*"',
-            r'\1"[REDACTED]"',
-            value,
+
+    @staticmethod
+    def _find_closing_quote(
+        value: str,
+        start: int,
+        quote: str,
+    ) -> int | None:
+        cursor = start
+        while cursor < len(value):
+            found = value.find(quote, cursor)
+            if found < 0:
+                return None
+            if quote.startswith("\\"):
+                return found
+            backslashes = 0
+            index = found - 1
+            while index >= 0 and value[index] == "\\":
+                backslashes += 1
+                index -= 1
+            if backslashes % 2 == 0:
+                return found
+            cursor = found + 1
+        return None
+
+    @staticmethod
+    def _find_balanced_end(value: str, start: int) -> int | None:
+        pairs = {"[": "]", "{": "}"}
+        stack = []
+        quote = None
+        cursor = start
+        while cursor < len(value):
+            char = value[cursor]
+            if quote is not None:
+                if char == "\\":
+                    cursor += 2
+                    continue
+                if char == quote:
+                    quote = None
+                cursor += 1
+                continue
+            if char in "\"'":
+                quote = char
+            elif char in pairs:
+                stack.append(pairs[char])
+            elif stack and char == stack[-1]:
+                stack.pop()
+                if not stack:
+                    return cursor + 1
+            cursor += 1
+        return None
+
+    @classmethod
+    def _find_container_fallback_end(
+        cls,
+        value: str,
+        start: int,
+    ) -> int:
+        cursor = start
+        while cursor < len(value):
+            if value[cursor].isspace():
+                next_field = cursor
+                while (
+                    next_field < len(value)
+                    and value[next_field].isspace()
+                ):
+                    next_field += 1
+                if cls._FIELD_START_RE.match(value, next_field):
+                    return cursor
+            cursor += 1
+        return len(value)
+
+    @classmethod
+    def _find_safe_value_end(
+        cls,
+        value: str,
+        start: int,
+        normalized_label: str,
+    ) -> int:
+        base64_value = (
+            "base64" in normalized_label
+            or normalized_label.startswith("b64")
+            or normalized_label.endswith("b64")
+            or normalized_label.startswith("image")
         )
-        value = re.sub(
-            rf"(?i)((?:[\"']?){sensitive_label}(?:[\"']?)"
-            r"\s*[:=]\s*)'(?:\\.|[^'\\])*'",
-            r'\1"[REDACTED]"',
-            value,
-        )
-        value = re.sub(
-            rf"(?i)((?:[\"']?){sensitive_label}(?:[\"']?)"
-            r"\s*[:=]\s*)(?![\"'])[^\s,;}}\]]+",
-            r"\1[REDACTED]",
-            value,
-        )
-        value = re.sub(
-            r"(?i)(([\"']?)(?:x[-_ ]?)?api(?:[_ -]?key|key)\2(?:\s*[:=]\s*|\s+(?![:=])))([\"'])[^\"']*\3",
-            r"\1\3[REDACTED]\3",
-            value,
-        )
-        value = re.sub(
-            r"(?i)(([\"']?)(?:x[-_ ]?)?api(?:[_ -]?key|key)\2(?:\s*[:=]\s*|\s+(?![:=])))(?![\"'])[^\s,;}\]]+",
-            r"\1[REDACTED]",
-            value,
-        )
-        value = re.sub(
-            r"(?im)(\b(?:prompt|response|provider[_ -]?response|providerresponse)\s*[:=]\s*)[^\r\n]*",
-            r"\1[REDACTED]",
-            value,
-        )
-        value = re.sub(
-            r"(?i)([\"'](?:prompt|response|provider[_-]?response|providerresponse)[\"']\s*:\s*)(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^,}\]\r\n]+)",
-            r'\1"[REDACTED]"',
-            value,
-        )
-        return value[:1000]
+        cursor = start
+        while cursor < len(value):
+            char = value[cursor]
+            if char in ",;}]" or (
+                char in "\r\n" and not base64_value
+            ):
+                return cursor
+            if char.isspace():
+                next_field = cursor
+                while (
+                    next_field < len(value)
+                    and value[next_field].isspace()
+                ):
+                    next_field += 1
+                if base64_value:
+                    continuation = re.match(
+                        r"[A-Za-z0-9+/_-]+={0,2}(?=$|[\s,;}\]])",
+                        value[next_field:],
+                    )
+                    if continuation is not None:
+                        cursor = next_field + continuation.end()
+                        continue
+                if cls._FIELD_START_RE.match(value, next_field):
+                    return cursor
+            cursor += 1
+        return len(value)
 
     @classmethod
     def _redact_optional(cls, value):
@@ -273,7 +506,7 @@ class AppLogService:
                 "session_id": self.session_id,
                 "id": entry_id,
                 "timestamp": datetime.datetime.now(
-                    datetime.UTC
+                    datetime.timezone.utc
                 ).isoformat(),
                 "level": self._redact(level),
                 "source": self._redact(source),

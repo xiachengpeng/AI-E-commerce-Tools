@@ -315,7 +315,7 @@ def test_effective_provider_update_clears_stale_connection_status(update):
     row = create_provider(db, provider_data(vertex_key_path=""))
     row.last_test_status = "success"
     row.last_test_message = "连接成功"
-    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    row.last_tested_at = datetime.datetime.now(datetime.timezone.utc)
     db.commit()
 
     updated = update_provider(db, row.id, update)
@@ -348,7 +348,7 @@ def test_vertex_credential_path_update_clears_stale_connection_status(
     )
     row.last_test_status = "success"
     row.last_test_message = "连接成功"
-    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    row.last_tested_at = datetime.datetime.now(datetime.timezone.utc)
     db.commit()
 
     updated = update_provider(
@@ -365,7 +365,7 @@ def test_vertex_credential_path_update_clears_stale_connection_status(
 def test_noop_or_display_name_update_retains_connection_status():
     db = make_db()
     row = create_provider(db, provider_data())
-    tested_at = datetime.datetime.now(datetime.UTC)
+    tested_at = datetime.datetime.now(datetime.timezone.utc)
     row.last_test_status = "success"
     row.last_test_message = "连接成功"
     row.last_tested_at = tested_at
@@ -393,7 +393,7 @@ def test_provider_enabled_noop_is_stable_and_effective_change_clears_test_state(
     row = create_provider(db, provider_data())
     row.last_test_status = "success"
     row.last_test_message = "连接成功"
-    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    row.last_tested_at = datetime.datetime.now(datetime.timezone.utc)
     row.last_test_capability = "image"
     db.commit()
 

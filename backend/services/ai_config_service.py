@@ -79,6 +79,7 @@ RUNTIME_RELEVANT_FIELDS = (
 @dataclass(frozen=True)
 class ProviderSnapshot:
     id: int
+    incarnation_id: str
     capability: str
     name: str
     protocol: str
@@ -351,7 +352,8 @@ def get_snapshot(db, capability):
     if not model:
         raise ValueError("绑定的 AI 提供商未配置模型")
     return ProviderSnapshot(
-        id=provider.id, capability=capability, name=provider.name,
+        id=provider.id, incarnation_id=provider.incarnation_id,
+        capability=capability, name=provider.name,
         protocol=provider.protocol, base_url=provider.base_url, api_key=provider.api_key,
         vertex_project_id=provider.vertex_project_id, vertex_location=provider.vertex_location,
         vertex_key_path=provider.vertex_key_path, model=model,

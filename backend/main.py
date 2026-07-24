@@ -13,7 +13,9 @@ import logging
 import asyncio
 import os
 import re
+import threading
 import time
+import warnings
 from typing import List, Literal, Union, Any, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -87,6 +89,10 @@ from config import (
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
 from db import init_db, get_db, SessionLocal, AICapabilityBinding, AIProviderConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory
+
+MAX_CONNECTION_IMAGE_BYTES = 25 * 1024 * 1024
+MAX_CONNECTION_IMAGE_DIMENSION = 8192
+MAX_CONNECTION_IMAGE_PIXELS = 20_000_000
 
 # 加载配置
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
@@ -454,27 +460,51 @@ def validate_url(url: str) -> str | None:
 
 # --- 缓存 ---
 analysis_cache = {}
+_analysis_cache_lock = threading.RLock()
+_analysis_cache_generation = 0
+_ANALYSIS_ROUTE_UNSET = object()
 
 
 def invalidate_analysis_cache() -> None:
-    analysis_cache.clear()
+    global _analysis_cache_generation
+    with _analysis_cache_lock:
+        _analysis_cache_generation += 1
+        analysis_cache.clear()
 
 
-def analysis_cache_key(unique_urls: list[str]) -> str:
+def analysis_route_identity() -> tuple[int, str, int] | None:
     db = SessionLocal()
     try:
         try:
             snapshot = get_snapshot(db, "text")
-            route_identity = (
-                f"{snapshot.id}:{snapshot.config_version}"
+            return (
+                snapshot.id,
+                snapshot.incarnation_id,
+                snapshot.config_version,
             )
         except ValueError:
-            route_identity = "unconfigured"
+            return None
     finally:
         db.close()
+
+
+def analysis_cache_key(
+    unique_urls: list[str],
+    route_identity: tuple[int, str, int] | None | object = (
+        _ANALYSIS_ROUTE_UNSET
+    ),
+) -> str:
+    if route_identity is _ANALYSIS_ROUTE_UNSET:
+        route_identity = analysis_route_identity()
+    if route_identity is None:
+        serialized_identity = "unconfigured"
+    else:
+        serialized_identity = ":".join(
+            str(part) for part in route_identity
+        )
     return (
         f"{';'.join(sorted(unique_urls))}"
-        f"|text-route={route_identity}"
+        f"|text-route={serialized_identity}"
     )
 
 
@@ -491,10 +521,25 @@ async def compare(request: CompareRequest):
             if err:
                 return CompareResponse(status="error", message=err)
 
-        cache_key = analysis_cache_key(unique_urls)
-        
-        if not force_refresh and cache_key in analysis_cache:
-            cached_time, cached_res = analysis_cache[cache_key]
+        with _analysis_cache_lock:
+            cache_generation = _analysis_cache_generation
+        route_identity = analysis_route_identity()
+        cache_key = analysis_cache_key(
+            unique_urls,
+            route_identity,
+        )
+
+        with _analysis_cache_lock:
+            cached_entry = (
+                analysis_cache.get(cache_key)
+                if (
+                    not force_refresh
+                    and cache_generation == _analysis_cache_generation
+                )
+                else None
+            )
+        if cached_entry is not None:
+            cached_time, cached_res = cached_entry
             if asyncio.get_event_loop().time() - cached_time < 30:
                 return cached_res
         
@@ -599,7 +644,16 @@ async def compare(request: CompareRequest):
             db.close()
 
         final_res = CompareResponse(status="success", template_type=template_type, data=response_data, message=msg)
-        analysis_cache[cache_key] = (asyncio.get_event_loop().time(), final_res)
+        current_route_identity = analysis_route_identity()
+        with _analysis_cache_lock:
+            if (
+                cache_generation == _analysis_cache_generation
+                and current_route_identity == route_identity
+            ):
+                analysis_cache[cache_key] = (
+                    asyncio.get_event_loop().time(),
+                    final_res,
+                )
         return final_res
     except Exception as e:
         logger.error(f"❌ [分析] 失败: {e}")
@@ -912,7 +966,7 @@ def _connection_test_snapshot(
     db: Session,
 ) -> tuple[
     ProviderSnapshot | None,
-    tuple[int, int] | None,
+    tuple[int, str, int] | None,
     str | None,
 ]:
     row = None
@@ -931,18 +985,22 @@ def _connection_test_snapshot(
                     row,
                 )
                 snapshot_id = 0
+                incarnation_id = ""
                 config_version = 1
             else:
                 persisted_result_context = (
                     row.id,
+                    row.incarnation_id,
                     row.config_version,
                 )
                 source_values = validate_provider_data({}, row)
                 snapshot_id = row.id
+                incarnation_id = row.incarnation_id
                 config_version = row.config_version
         else:
             source_values = validate_provider_data(data.draft)
             snapshot_id = 0
+            incarnation_id = ""
             config_version = 1
     except ValueError as exc:
         if persisted_result_context is not None:
@@ -967,6 +1025,7 @@ def _connection_test_snapshot(
 
     snapshot = ProviderSnapshot(
         id=snapshot_id,
+        incarnation_id=incarnation_id,
         capability=data.capability,
         name=source_values["name"],
         protocol=source_values["protocol"],
@@ -989,12 +1048,13 @@ def _save_connection_test_result(
     result_status: str,
     message: str,
     *,
+    expected_incarnation_id: str | None = None,
     expected_config_version: int | None = None,
     capability: str | None = None,
 ) -> bool:
     if row_or_provider_id is None:
         return False
-    tested_at = datetime.datetime.now(datetime.UTC)
+    tested_at = datetime.datetime.now(datetime.timezone.utc)
     if expected_config_version is None:
         row_or_provider_id.last_test_status = result_status
         row_or_provider_id.last_test_message = message
@@ -1011,6 +1071,8 @@ def _save_connection_test_result(
             db.query(AIProviderConfig)
             .filter(
                 AIProviderConfig.id == provider_id,
+                AIProviderConfig.incarnation_id
+                == expected_incarnation_id,
                 AIProviderConfig.config_version
                 == expected_config_version,
             )
@@ -1108,19 +1170,60 @@ def _verified_image_matches_mime(data, mime_type) -> bool:
 
     try:
         if isinstance(data, str):
+            max_encoded_length = 4 * (
+                (MAX_CONNECTION_IMAGE_BYTES + 2) // 3
+            )
+            if len(data) > max_encoded_length:
+                return False
             image_bytes = base64.b64decode(
-                data.strip(),
+                data,
                 validate=True,
             )
         elif isinstance(data, bytes):
             image_bytes = data
         else:
             return False
-        if not image_bytes:
+        if (
+            not image_bytes
+            or len(image_bytes) > MAX_CONNECTION_IMAGE_BYTES
+        ):
             return False
-        with Image.open(BytesIO(image_bytes)) as image:
-            image_format = image.format
-            image.verify()
+        with warnings.catch_warnings():
+            warnings.simplefilter(
+                "error",
+                Image.DecompressionBombWarning,
+            )
+            with Image.open(BytesIO(image_bytes)) as image:
+                image_format = image.format
+                width, height = image.size
+                if (
+                    width <= 0
+                    or height <= 0
+                    or width > MAX_CONNECTION_IMAGE_DIMENSION
+                    or height > MAX_CONNECTION_IMAGE_DIMENSION
+                    or width * height > MAX_CONNECTION_IMAGE_PIXELS
+                ):
+                    return False
+                image.verify()
+            if (
+                image_format == "PNG"
+                and not image_bytes.endswith(
+                    b"\x00\x00\x00\x00IEND\xaeB`\x82"
+                )
+            ):
+                return False
+            if (
+                image_format == "JPEG"
+                and not image_bytes.endswith(b"\xff\xd9")
+            ):
+                return False
+            with Image.open(BytesIO(image_bytes)) as decoded:
+                if (
+                    decoded.format != image_format
+                    or decoded.size != (width, height)
+                ):
+                    return False
+                decoded.load()
         actual_mime = Image.MIME.get(image_format, "").lower()
     except Exception:
         return False
@@ -1187,7 +1290,11 @@ async def _run_ai_provider_connection_test(
 
     duration_ms = round((time.monotonic() - started) * 1000)
     if persisted_result_context is not None:
-        provider_id, tested_config_version = (
+        (
+            provider_id,
+            tested_incarnation_id,
+            tested_config_version,
+        ) = (
             persisted_result_context
         )
         result_saved = _save_connection_test_result(
@@ -1195,6 +1302,7 @@ async def _run_ai_provider_connection_test(
             provider_id,
             result_status,
             message,
+            expected_incarnation_id=tested_incarnation_id,
             expected_config_version=tested_config_version,
             capability=data.capability,
         )

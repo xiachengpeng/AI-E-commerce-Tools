@@ -1,6 +1,8 @@
 import datetime
 import json
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, event, inspect, text
+import uuid
+
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, Index, event, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
@@ -121,7 +123,20 @@ class SquareRedrawItem(Base):
 
 class AIProviderConfig(Base):
     __tablename__ = "ai_provider_configs"
+    __table_args__ = (
+        Index(
+            "ux_ai_provider_configs_incarnation_id",
+            "incarnation_id",
+            unique=True,
+        ),
+    )
+
     id = Column(Integer, primary_key=True)
+    incarnation_id = Column(
+        String(36),
+        nullable=False,
+        default=lambda: str(uuid.uuid4()),
+    )
     name = Column(String(120), nullable=False, unique=True)
     protocol = Column(String(32), nullable=False)
     base_url = Column(Text, nullable=True)
@@ -196,6 +211,55 @@ def migrate_ai_settings_tables():
                     "ADD COLUMN last_test_capability VARCHAR(16)"
                 )
             )
+    if "incarnation_id" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN incarnation_id VARCHAR(36)"
+                )
+            )
+
+    with engine.begin() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT id, incarnation_id "
+                "FROM ai_provider_configs ORDER BY id"
+            )
+        ).mappings()
+        seen = set()
+        for row in rows:
+            value = row["incarnation_id"]
+            valid = False
+            if isinstance(value, str) and value.strip():
+                try:
+                    uuid.UUID(value)
+                    valid = value not in seen
+                except ValueError:
+                    valid = False
+            if not valid:
+                value = str(uuid.uuid4())
+                while value in seen:
+                    value = str(uuid.uuid4())
+                connection.execute(
+                    text(
+                        "UPDATE ai_provider_configs "
+                        "SET incarnation_id = :incarnation_id "
+                        "WHERE id = :provider_id"
+                    ),
+                    {
+                        "incarnation_id": value,
+                        "provider_id": row["id"],
+                    },
+                )
+            seen.add(value)
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "ux_ai_provider_configs_incarnation_id "
+                "ON ai_provider_configs (incarnation_id)"
+            )
+        )
 
 def get_db():
     db = SessionLocal()

@@ -16,6 +16,7 @@ from services.ai_router import (
 def snapshot(*, id=1, max_retries=0, protocol="gemini"):
     return ProviderSnapshot(
         id=id,
+        incarnation_id=f"provider-incarnation-{id}",
         capability="text",
         name=f"Provider {id}",
         protocol=protocol,

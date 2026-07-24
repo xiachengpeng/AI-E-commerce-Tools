@@ -107,6 +107,7 @@ def test_provider_read_never_returns_secret():
     assert created.status_code == 201
     item = created.json()
     assert "sk-secret-1234" not in str(item)
+    assert "incarnation_id" not in item
     assert item["has_api_key"] is True
     assert item["api_key_masked"] == "sk-****1234"
 
@@ -226,7 +227,7 @@ def test_provider_api_update_clears_stale_connection_metadata():
             row = db.get(AIProviderConfig, provider_id)
             row.last_test_status = "success"
             row.last_test_message = "连接成功"
-            row.last_tested_at = datetime.datetime.now(datetime.UTC)
+            row.last_tested_at = datetime.datetime.now(datetime.timezone.utc)
             db.commit()
         finally:
             db.close()
@@ -266,7 +267,7 @@ def test_display_name_update_does_not_churn_runtime_or_analysis_cache(
             row = db.get(AIProviderConfig, provider_id)
             row.last_test_status = "success"
             row.last_test_message = "连接成功"
-            row.last_tested_at = datetime.datetime.now(datetime.UTC)
+            row.last_tested_at = datetime.datetime.now(datetime.timezone.utc)
             row.last_test_capability = "text"
             db.commit()
         finally:
@@ -314,7 +315,7 @@ def test_effective_update_bumps_version_retires_clients_and_clears_cache(
             row = db.get(AIProviderConfig, provider_id)
             row.last_test_status = "success"
             row.last_test_message = "连接成功"
-            row.last_tested_at = datetime.datetime.now(datetime.UTC)
+            row.last_tested_at = datetime.datetime.now(datetime.timezone.utc)
             row.last_test_capability = "text"
             db.commit()
         finally:
@@ -742,7 +743,7 @@ def test_saved_preflight_failure_replaces_prior_success_metadata(
             row = db.get(AIProviderConfig, provider_id)
             row.last_test_status = "success"
             row.last_test_message = "连接成功"
-            row.last_tested_at = datetime.datetime.now(datetime.UTC)
+            row.last_tested_at = datetime.datetime.now(datetime.timezone.utc)
             db.commit()
         finally:
             db.close()
@@ -799,7 +800,7 @@ async def test_saved_connection_result_is_discarded_after_concurrent_edit(
     provider_id = row.id
     row.last_test_status = "success"
     row.last_test_message = "连接成功"
-    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    row.last_tested_at = datetime.datetime.now(datetime.timezone.utc)
     setup_db.commit()
     setup_db.close()
 
@@ -853,6 +854,187 @@ async def test_saved_connection_result_is_discarded_after_concurrent_edit(
     assert result["status"] == "error"
     assert result["message"] == "配置已变更，请重新测试"
     assert metadata == (None, None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_saved_connection_result_is_discarded_after_delete_recreate(
+    monkeypatch,
+    tmp_path,
+):
+    import main
+    from models.settings import ProviderConnectionTest
+    from services.ai_config_service import create_provider, delete_provider
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'connection-delete-recreate.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    setup_db = sessions()
+    original = create_provider(
+        setup_db,
+        _provider_data(name="Original incarnation"),
+    )
+    provider_id = original.id
+    original_incarnation = original.incarnation_id
+    setup_db.close()
+
+    test_db = sessions()
+    mutation_db = sessions()
+    request_started = asyncio.Event()
+    release_response = asyncio.Event()
+
+    class BlockingAdapter:
+        async def generate(self, snapshot, payload):
+            request_started.set()
+            await release_response.wait()
+            return VALID_TEXT_RESPONSE
+
+    monkeypatch.setattr(main, "get_adapter", lambda protocol: BlockingAdapter())
+    pending = asyncio.create_task(
+        main._run_ai_provider_connection_test(
+            ProviderConnectionTest(
+                provider_id=provider_id,
+                capability="text",
+            ),
+            test_db,
+        )
+    )
+    await asyncio.wait_for(request_started.wait(), 0.5)
+
+    delete_provider(mutation_db, provider_id)
+    replacement = create_provider(
+        mutation_db,
+        _provider_data(name="Replacement incarnation"),
+    )
+    assert replacement.id == provider_id
+    assert replacement.config_version == 1
+    assert replacement.incarnation_id != original_incarnation
+
+    release_response.set()
+    result = await asyncio.wait_for(pending, 0.5)
+
+    verify_db = sessions()
+    try:
+        persisted = verify_db.get(main.AIProviderConfig, provider_id)
+        metadata = (
+            persisted.last_test_status,
+            persisted.last_test_message,
+            persisted.last_tested_at,
+            persisted.last_test_capability,
+        )
+    finally:
+        test_db.close()
+        mutation_db.close()
+        verify_db.close()
+
+    assert result["status"] == "error"
+    assert result["message"] == "配置已变更，请重新测试"
+    assert metadata == (None, None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_inflight_analysis_does_not_cache_after_delete_recreate(
+    monkeypatch,
+    tmp_path,
+):
+    import main
+    from db import AICapabilityBinding
+    from models.request import CompareRequest
+    from services.ai_config_service import (
+        create_provider,
+        delete_provider,
+        set_binding,
+    )
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'analysis-delete-recreate.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    setup_db = sessions()
+    original = create_provider(
+        setup_db,
+        _provider_data(name="Original analysis provider"),
+    )
+    set_binding(setup_db, "text", original.id)
+    provider_id = original.id
+    original_incarnation = original.incarnation_id
+    setup_db.close()
+
+    request_started = asyncio.Event()
+    release_response = asyncio.Event()
+
+    async def blocking_fetch(url, max_age):
+        request_started.set()
+        await release_response.wait()
+        return "product markdown"
+
+    async def product_summary(url, **kwargs):
+        return {
+            "product_name": "Old analysis",
+            "price": "$1",
+            "core_selling_points": [],
+            "target_audience": [],
+            "use_scenarios": [],
+            "strengths": "strength",
+            "weaknesses": "weakness",
+            "reviews_count": "0",
+            "source_url": url,
+        }
+
+    async def score(_product):
+        return {
+            "product": "Old analysis",
+            "opportunity_score": 1,
+            "difficulty_score": 1,
+            "final_decision": "Pending",
+            "decision_details": {
+                "confidence": "medium",
+                "reason": "",
+            },
+            "sub_scores": {},
+        }
+
+    async def deep_analysis(url, **kwargs):
+        return {"source_url": url, "marker": "old-incarnation"}
+
+    monkeypatch.setattr(main, "SessionLocal", sessions)
+    monkeypatch.setattr(main, "analysis_cache", {})
+    monkeypatch.setattr(main, "fetch_markdown", blocking_fetch)
+    monkeypatch.setattr(main, "process_single_url", product_summary)
+    monkeypatch.setattr(main, "calculate_score", score)
+    monkeypatch.setattr(main, "process_single_url_deep", deep_analysis)
+
+    pending = asyncio.create_task(
+        main.compare(
+            CompareRequest(urls=["https://example.com/product"])
+        )
+    )
+    await asyncio.wait_for(request_started.wait(), 0.5)
+
+    mutation_db = sessions()
+    binding = mutation_db.get(AICapabilityBinding, "text")
+    mutation_db.delete(binding)
+    mutation_db.commit()
+    delete_provider(mutation_db, provider_id)
+    replacement = create_provider(
+        mutation_db,
+        _provider_data(name="Replacement analysis provider"),
+    )
+    set_binding(mutation_db, "text", replacement.id)
+    assert replacement.id == provider_id
+    assert replacement.config_version == 1
+    assert replacement.incarnation_id != original_incarnation
+
+    release_response.set()
+    result = await asyncio.wait_for(pending, 0.5)
+    mutation_db.close()
+
+    assert result.status == "success"
+    assert main.analysis_cache == {}
 
 
 def test_draft_connection_test_does_not_persist_or_change_bindings(
@@ -1220,6 +1402,98 @@ def test_image_connection_accepts_verified_image_bytes(
     assert main._connection_response_supports("image", response) is True
 
 
+@pytest.mark.parametrize(
+    ("mime_type", "image_data", "removed_bytes"),
+    [
+        ("image/png", TINY_PNG_BASE64, 1),
+        ("image/jpeg", TINY_JPEG_BASE64, 2),
+    ],
+)
+def test_image_connection_rejects_truncated_real_images(
+    mime_type,
+    image_data,
+    removed_bytes,
+):
+    import base64
+
+    import main
+
+    raw = base64.b64decode(image_data)
+    truncated = base64.b64encode(
+        raw[:-removed_bytes]
+    ).decode("ascii")
+
+    assert main._verified_image_matches_mime(
+        truncated,
+        mime_type,
+    ) is False
+
+
+def test_image_connection_requires_strict_unwrapped_base64():
+    import main
+
+    assert main._verified_image_matches_mime(
+        f"\n{TINY_PNG_BASE64}\n",
+        "image/png",
+    ) is False
+
+
+def test_image_connection_enforces_decoded_byte_limit(monkeypatch):
+    import base64
+
+    import main
+
+    raw = base64.b64decode(TINY_PNG_BASE64)
+    monkeypatch.setattr(
+        main,
+        "MAX_CONNECTION_IMAGE_BYTES",
+        len(raw) - 1,
+        raising=False,
+    )
+
+    assert main._verified_image_matches_mime(
+        TINY_PNG_BASE64,
+        "image/png",
+    ) is False
+
+
+@pytest.mark.parametrize(
+    ("limit_name", "limit"),
+    [
+        ("MAX_CONNECTION_IMAGE_DIMENSION", 1),
+        ("MAX_CONNECTION_IMAGE_PIXELS", 1),
+    ],
+)
+def test_image_connection_rejects_dimension_and_pixel_bombs(
+    monkeypatch,
+    limit_name,
+    limit,
+):
+    import base64
+    from io import BytesIO
+
+    import main
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (2, 2), color="red").save(
+        buffer,
+        format="PNG",
+    )
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    monkeypatch.setattr(
+        main,
+        limit_name,
+        limit,
+        raising=False,
+    )
+
+    assert main._verified_image_matches_mime(
+        encoded,
+        "image/png",
+    ) is False
+
+
 def test_edited_overlay_accepts_valid_image_without_saving_test_metadata(
     monkeypatch,
 ):
@@ -1577,6 +1851,135 @@ async def test_sse_stream_redacts_vertex_and_image_aliases_but_keeps_metadata(
     assert '"status": "ready"' in frame
     assert '"count": 1' in frame
     assert '"mime_type": "image/png"' in frame
+
+
+@pytest.mark.parametrize(
+    ("message", "secrets", "safe_fragments"),
+    [
+        (
+            {
+                "headers": {
+                    "x-goog-api-key": "SSE-GOOGLE-HEADER-SECRET",
+                    "authorization": "Bearer SSE-AUTH-SECRET",
+                },
+                "credentials": {
+                    "refresh_token": "SSE-REFRESH-SECRET",
+                    "access_token": "SSE-ACCESS-SECRET",
+                    "idToken": "SSE-ID-SECRET",
+                    "clientSecret": "SSE-CLIENT-SECRET",
+                },
+                "service_account": {
+                    "private_key": "SSE-PRIVATE-KEY",
+                },
+                "client": {"password": "SSE-PASSWORD"},
+                "image_b64": "SSE-IMAGE-B64",
+                "status": "ready",
+                "count": 1,
+                "mime_type": "image/png",
+                "model": "safe-model",
+                "provider": "safe-provider",
+                "capability": "image",
+                "duration": 9,
+                "retry": 1,
+                "config_version": 3,
+            },
+            (
+                "SSE-GOOGLE-HEADER-SECRET",
+                "SSE-AUTH-SECRET",
+                "SSE-REFRESH-SECRET",
+                "SSE-ACCESS-SECRET",
+                "SSE-ID-SECRET",
+                "SSE-CLIENT-SECRET",
+                "SSE-PRIVATE-KEY",
+                "SSE-PASSWORD",
+                "SSE-IMAGE-B64",
+            ),
+            (
+                '"status": "ready"',
+                '"count": 1',
+                '"mime_type": "image/png"',
+                '"model": "safe-model"',
+                '"provider": "safe-provider"',
+                '"capability": "image"',
+                '"duration": 9',
+                '"retry": 1',
+                '"config_version": 3',
+            ),
+        ),
+        (
+            r'{\"x-goog-api-key\":\"SSE-ESCAPED-SECRET\", '
+            r'\"status\":\"ready\"}',
+            ("SSE-ESCAPED-SECRET",),
+            ("status", "ready"),
+        ),
+        (
+            '{"refresh_token":"SSE-TRUNCATED-SECRET',
+            ("SSE-TRUNCATED-SECRET",),
+            (),
+        ),
+        (
+            "{'accessToken'='SSE-ACCESS-TOKEN', count=2}",
+            ("SSE-ACCESS-TOKEN",),
+            ("count=2",),
+        ),
+        (
+            "{client_credentials=[{'client_secret':'SSE-CLIENT-SECRET'}] "
+            "status=ready}",
+            ("SSE-CLIENT-SECRET",),
+            ("status=ready",),
+        ),
+        (
+            "auth=Bearer SSE-AUTH-HEADER; config_version=4",
+            ("SSE-AUTH-HEADER",),
+            ("config_version=4",),
+        ),
+        (
+            "upload=data:image/png;charset=utf-8;name=preview.png;base64,"
+            "QUJD\r\n  U1NFLUlNQUdF status=ready",
+            ("QUJD", "U1NFLUlNQUdF"),
+            ("status=ready",),
+        ),
+        (
+            r'{\"b64_json\":\"U1NFLU1VTFRJTElORQ==\r\n  U0VDUkVU',
+            ("U1NFLU1VTFRJTElORQ==", "U0VDUkVU"),
+            (),
+        ),
+        (
+            "certificate=-----BEGIN CERTIFICATE-----\n"
+            "SSE-CERTIFICATE-BLOCK-SECRET",
+            ("SSE-CERTIFICATE-BLOCK-SECRET",),
+            (),
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_sse_stream_redacts_fail_closed_bypass_corpus(
+    monkeypatch,
+    message,
+    secrets,
+    safe_fragments,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    class ReconnectRequest:
+        headers = {}
+
+        async def is_disconnected(self):
+            return False
+
+    logs = AppLogService(session_id="boot-a")
+    monkeypatch.setattr(main, "app_logs", logs)
+    logs.emit(level="info", source="test", message=message)
+
+    response = await main.api_stream_logs(ReconnectRequest())
+    frame = await anext(response.body_iterator)
+    await response.body_iterator.aclose()
+
+    for secret in secrets:
+        assert secret not in frame
+    for fragment in safe_fragments:
+        assert fragment in frame
 
 
 @pytest.mark.asyncio

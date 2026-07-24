@@ -600,7 +600,7 @@ async def test_app_lifespan_closes_global_async_clients(monkeypatch):
     close_crawler.assert_awaited_once_with()
 
 
-def test_analysis_cache_key_changes_with_text_route(monkeypatch):
+def test_analysis_cache_key_changes_with_provider_incarnation(monkeypatch):
     import main
     from services.ai_config_service import ProviderSnapshot
 
@@ -609,6 +609,7 @@ def test_analysis_cache_key_changes_with_text_route(monkeypatch):
     snapshots = [
         ProviderSnapshot(
             id=1,
+            incarnation_id="first-incarnation",
             capability="text",
             name="First",
             protocol="gemini",
@@ -623,7 +624,8 @@ def test_analysis_cache_key_changes_with_text_route(monkeypatch):
             config_version=1,
         ),
         ProviderSnapshot(
-            id=2,
+            id=1,
+            incarnation_id="second-incarnation",
             capability="text",
             name="Second",
             protocol="gemini",
@@ -635,7 +637,7 @@ def test_analysis_cache_key_changes_with_text_route(monkeypatch):
             model="model-b",
             timeout_seconds=30,
             max_retries=0,
-            config_version=4,
+            config_version=1,
         ),
     ]
     monkeypatch.setattr(main, "SessionLocal", lambda: db)
@@ -645,8 +647,8 @@ def test_analysis_cache_key_changes_with_text_route(monkeypatch):
     second = main.analysis_cache_key(["https://example.com/product"])
 
     assert first != second
-    assert first.endswith("|text-route=1:1")
-    assert second.endswith("|text-route=2:4")
+    assert first.endswith("|text-route=1:first-incarnation:1")
+    assert second.endswith("|text-route=1:second-incarnation:1")
     assert db.close.call_count == 2
 
 
