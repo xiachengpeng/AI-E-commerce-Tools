@@ -39,12 +39,80 @@ def make_data_url(width=10, height=20, fmt="PNG"):
     return f"data:{mime};base64,{encoded}"
 
 
+def make_encoded_image(width=10, height=20, fmt="PNG", mode="RGB"):
+    buffer = io.BytesIO()
+    Image.new(mode, (width, height), "white").save(
+        buffer,
+        format=fmt,
+    )
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def make_inline_image_response(mime_type, data):
+    return {
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "inlineData": {
+                        "mimeType": mime_type,
+                        "data": data,
+                    }
+                }]
+            }
+        }]
+    }
+
+
 def make_test_session(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'square_redraw.db'}")
     enable_sqlite_foreign_keys(engine)
     Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
     return Session()
+
+
+def make_isolated_processing_batch(tmp_path, monkeypatch):
+    import services.square_redraw_service as square_service
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'square-redraw-process.db'}"
+    )
+    enable_sqlite_foreign_keys(engine)
+    Session = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=engine,
+    )
+    Base.metadata.create_all(bind=engine)
+    static_dir = tmp_path / "static"
+    output_root = static_dir / "outputs" / "square-redraw"
+    monkeypatch.setattr(square_service, "SessionLocal", Session)
+    monkeypatch.setattr(
+        square_service,
+        "STATIC_DIR",
+        str(static_dir),
+    )
+    monkeypatch.setattr(
+        square_service,
+        "SQUARE_OUTPUT_ROOT",
+        str(output_root),
+    )
+
+    db = Session()
+    try:
+        batch = create_square_redraw_batch(
+            db,
+            SquareRedrawBatchRequest(images=[{
+                "filename": "portrait.png",
+                "image_data": make_data_url(4, 8),
+                "width": 4,
+                "height": 8,
+            }]),
+        )
+        batch_id = batch.id
+    finally:
+        db.close()
+    return Session, output_root, batch_id
 
 
 def test_square_redraw_models_are_registered():
@@ -310,7 +378,7 @@ def test_process_non_square_uses_square_image_config():
                 "parts": [{
                     "inlineData": {
                         "mimeType": "image/png",
-                        "data": base64.b64encode(b"fake-image").decode("utf-8"),
+                        "data": make_encoded_image(2, 2, "PNG"),
                     }
                 }]
             }
@@ -331,6 +399,129 @@ def test_process_non_square_uses_square_image_config():
         assert item.output_url.startswith("/static/outputs/square-redraw/")
     finally:
         db.close()
+
+
+@pytest.mark.parametrize(
+    "response_kind",
+    [
+        "invalid_base64",
+        "truncated_png",
+        "mismatched_mime",
+        "oversized",
+        "over_pixel_limit",
+    ],
+)
+def test_process_rejects_unsafe_model_images_without_writing_or_done(
+    tmp_path,
+    monkeypatch,
+    response_kind,
+):
+    Session, output_root, batch_id = make_isolated_processing_batch(
+        tmp_path,
+        monkeypatch,
+    )
+    if response_kind == "invalid_base64":
+        response = make_inline_image_response(
+            "image/png",
+            "!!!!",
+        )
+    elif response_kind == "truncated_png":
+        raw = base64.b64decode(make_encoded_image(2, 2, "PNG"))
+        response = make_inline_image_response(
+            "image/png",
+            base64.b64encode(raw[:-1]).decode("ascii"),
+        )
+    elif response_kind == "mismatched_mime":
+        response = make_inline_image_response(
+            "image/jpeg",
+            make_encoded_image(2, 2, "PNG"),
+        )
+    elif response_kind == "oversized":
+        response = make_inline_image_response(
+            "image/png",
+            base64.b64encode(
+                b"x" * (25 * 1024 * 1024 + 1)
+            ).decode("ascii"),
+        )
+    else:
+        response = make_inline_image_response(
+            "image/png",
+            make_encoded_image(
+                5000,
+                5000,
+                "PNG",
+                mode="1",
+            ),
+        )
+
+    with patch(
+        "services.square_redraw_service.AIService.generate_content",
+        new=AsyncMock(return_value=response),
+    ):
+        asyncio.run(process_square_redraw_batch(batch_id))
+
+    db = Session()
+    try:
+        item = (
+            db.query(SquareRedrawItem)
+            .filter(SquareRedrawItem.batch_id == batch_id)
+            .one()
+        )
+        assert item.status == "failed"
+        assert item.output_url is None
+        assert item.error_message
+    finally:
+        db.close()
+    redrawn_dir = output_root / str(batch_id) / "redrawn"
+    assert not redrawn_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("mime_type", "fmt"),
+    [
+        ("image/png", "PNG"),
+        ("image/jpeg", "JPEG"),
+    ],
+)
+def test_process_writes_verified_png_and_jpeg_model_images(
+    tmp_path,
+    monkeypatch,
+    mime_type,
+    fmt,
+):
+    Session, output_root, batch_id = make_isolated_processing_batch(
+        tmp_path,
+        monkeypatch,
+    )
+    response = make_inline_image_response(
+        mime_type,
+        make_encoded_image(3, 3, fmt),
+    )
+
+    with patch(
+        "services.square_redraw_service.AIService.generate_content",
+        new=AsyncMock(return_value=response),
+    ):
+        asyncio.run(process_square_redraw_batch(batch_id))
+
+    db = Session()
+    try:
+        item = (
+            db.query(SquareRedrawItem)
+            .filter(SquareRedrawItem.batch_id == batch_id)
+            .one()
+        )
+        assert item.status == "done"
+        assert item.output_url
+        assert item.error_message is None
+    finally:
+        db.close()
+    written = list(
+        (output_root / str(batch_id) / "redrawn").iterdir()
+    )
+    assert len(written) == 1
+    with Image.open(written[0]) as image:
+        assert image.format == fmt
 
 
 def test_square_redraw_emits_safe_image_generation_boundaries():
@@ -356,7 +547,7 @@ def test_square_redraw_emits_safe_image_generation_boundaries():
                 "parts": [{
                     "inlineData": {
                         "mimeType": "image/png",
-                        "data": base64.b64encode(b"private-output").decode(),
+                        "data": make_encoded_image(2, 2, "PNG"),
                     }
                 }]
             }
@@ -406,7 +597,7 @@ def test_process_uses_custom_target_aspect_ratio():
                 "parts": [{
                     "inlineData": {
                         "mimeType": "image/png",
-                        "data": base64.b64encode(b"fake-image").decode("utf-8"),
+                        "data": make_encoded_image(2, 2, "PNG"),
                     }
                 }]
             }
@@ -450,7 +641,7 @@ def test_process_batch_runs_items_concurrently(monkeypatch):
                     "parts": [{
                         "inlineData": {
                             "mimeType": "image/png",
-                            "data": base64.b64encode(b"fake-image").decode("utf-8"),
+                            "data": make_encoded_image(2, 2, "PNG"),
                         }
                     }]
                 }

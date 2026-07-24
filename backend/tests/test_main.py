@@ -490,7 +490,7 @@ def test_square_redraw_process_item_runs_single_task():
                 "parts": [{
                     "inlineData": {
                         "mimeType": "image/png",
-                        "data": base64.b64encode(b"fake-image").decode("utf-8"),
+                        "data": make_route_image(2, 2).split(",", 1)[1],
                     }
                 }]
             }

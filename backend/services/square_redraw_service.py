@@ -15,6 +15,7 @@ from config import FRONTEND_CONCURRENCY_LIMIT
 from db import SessionLocal, SquareRedrawBatch, SquareRedrawItem
 from services.ai_service import AIService
 from services.app_log_service import app_logs
+from services.image_validation import validate_image_payload
 
 
 MAX_SQUARE_REDRAW_BATCH_SIZE = 100
@@ -294,12 +295,17 @@ async def process_square_redraw_item(item_id: int) -> None:
         if not image_part:
             raise ValueError("模型未返回图像数据")
 
-        output_bytes = base64.b64decode(image_part["data"])
+        output_image = validate_image_payload(
+            image_part.get("data"),
+            image_part.get("mimeType")
+            or image_part.get("mime_type")
+            or "",
+        )
         item.output_url = save_bytes_for_item(
             item.batch_id,
             f"{safe_output_basename(item.source_filename)}-square.png",
-            output_bytes,
-            image_part.get("mimeType") or "image/png",
+            output_image.data,
+            output_image.mime_type,
             "redrawn",
         )
         item.status = "done"

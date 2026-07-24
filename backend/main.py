@@ -4,7 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from io import BytesIO
 import base64
 import datetime
 import uuid
@@ -15,12 +14,10 @@ import os
 import re
 import threading
 import time
-import warnings
 from typing import List, Literal, Union, Any, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
-from PIL import Image
 
 from models.request import (
     CompareRequest, CompareResponse, CompareResponseData, ProductCompareData,
@@ -84,15 +81,21 @@ from services.ai_adapters import (
 )
 from services.ai_router import map_provider_error
 from services.app_log_service import APP_LOG_OVERFLOW, app_logs
+from services.image_validation import (
+    MAX_IMAGE_BYTES,
+    MAX_IMAGE_DIMENSION,
+    MAX_IMAGE_PIXELS,
+    validate_image_payload,
+)
 from config import (
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
 from db import init_db, get_db, SessionLocal, AICapabilityBinding, AIProviderConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory
 
-MAX_CONNECTION_IMAGE_BYTES = 25 * 1024 * 1024
-MAX_CONNECTION_IMAGE_DIMENSION = 8192
-MAX_CONNECTION_IMAGE_PIXELS = 20_000_000
+MAX_CONNECTION_IMAGE_BYTES = MAX_IMAGE_BYTES
+MAX_CONNECTION_IMAGE_DIMENSION = MAX_IMAGE_DIMENSION
+MAX_CONNECTION_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 # 加载配置
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
@@ -1158,76 +1161,17 @@ def _connection_response_supports(
 
 
 def _verified_image_matches_mime(data, mime_type) -> bool:
-    if not isinstance(mime_type, str):
-        return False
-    declared_mime = mime_type.split(";", 1)[0].strip().lower()
-    declared_mime = {
-        "image/jpg": "image/jpeg",
-        "image/x-png": "image/png",
-    }.get(declared_mime, declared_mime)
-    if not declared_mime.startswith("image/"):
-        return False
-
     try:
-        if isinstance(data, str):
-            max_encoded_length = 4 * (
-                (MAX_CONNECTION_IMAGE_BYTES + 2) // 3
-            )
-            if len(data) > max_encoded_length:
-                return False
-            image_bytes = base64.b64decode(
-                data,
-                validate=True,
-            )
-        elif isinstance(data, bytes):
-            image_bytes = data
-        else:
-            return False
-        if (
-            not image_bytes
-            or len(image_bytes) > MAX_CONNECTION_IMAGE_BYTES
-        ):
-            return False
-        with warnings.catch_warnings():
-            warnings.simplefilter(
-                "error",
-                Image.DecompressionBombWarning,
-            )
-            with Image.open(BytesIO(image_bytes)) as image:
-                image_format = image.format
-                width, height = image.size
-                if (
-                    width <= 0
-                    or height <= 0
-                    or width > MAX_CONNECTION_IMAGE_DIMENSION
-                    or height > MAX_CONNECTION_IMAGE_DIMENSION
-                    or width * height > MAX_CONNECTION_IMAGE_PIXELS
-                ):
-                    return False
-                image.verify()
-            if (
-                image_format == "PNG"
-                and not image_bytes.endswith(
-                    b"\x00\x00\x00\x00IEND\xaeB`\x82"
-                )
-            ):
-                return False
-            if (
-                image_format == "JPEG"
-                and not image_bytes.endswith(b"\xff\xd9")
-            ):
-                return False
-            with Image.open(BytesIO(image_bytes)) as decoded:
-                if (
-                    decoded.format != image_format
-                    or decoded.size != (width, height)
-                ):
-                    return False
-                decoded.load()
-        actual_mime = Image.MIME.get(image_format, "").lower()
-    except Exception:
+        validate_image_payload(
+            data,
+            mime_type,
+            max_bytes=MAX_CONNECTION_IMAGE_BYTES,
+            max_dimension=MAX_CONNECTION_IMAGE_DIMENSION,
+            max_pixels=MAX_CONNECTION_IMAGE_PIXELS,
+        )
+    except ValueError:
         return False
-    return bool(actual_mime) and declared_mime == actual_mime
+    return True
 
 
 async def _run_ai_provider_connection_test(
