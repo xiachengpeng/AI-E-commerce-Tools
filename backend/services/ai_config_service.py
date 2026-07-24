@@ -70,6 +70,10 @@ CONNECTION_TEST_RELEVANT_FIELDS = (
     "timeout_seconds",
     "max_retries",
 )
+RUNTIME_RELEVANT_FIELDS = (
+    *CONNECTION_TEST_RELEVANT_FIELDS,
+    "enabled",
+)
 
 
 @dataclass(frozen=True)
@@ -246,17 +250,18 @@ def update_provider(db, id, data):
         if not proposed["image_model"]:
             raise ValueError("图片模型正在使用，不能为空")
     _validate_provider_values(proposed)
-    invalidates_test_status = any(
+    runtime_changed = any(
         getattr(row, key) != proposed[key]
-        for key in CONNECTION_TEST_RELEVANT_FIELDS
+        for key in RUNTIME_RELEVANT_FIELDS
     )
     for key, value in proposed.items():
         setattr(row, key, value)
-    if invalidates_test_status:
+    if runtime_changed:
         row.last_test_status = None
         row.last_test_message = None
         row.last_tested_at = None
-    row.config_version += 1
+        row.last_test_capability = None
+        row.config_version += 1
     _commit(db)
     db.refresh(row)
     return row
@@ -282,7 +287,14 @@ def set_provider_enabled(db, id, enabled):
         raise ValueError("AI 提供商不存在")
     if not enabled and _bindings_for_provider(db, id):
         raise ValueError("该提供商正在使用，无法禁用")
-    row.enabled = bool(enabled)
+    enabled = bool(enabled)
+    if bool(row.enabled) == enabled:
+        return row
+    row.enabled = enabled
+    row.last_test_status = None
+    row.last_test_message = None
+    row.last_tested_at = None
+    row.last_test_capability = None
     row.config_version += 1
     _commit(db)
     db.refresh(row)

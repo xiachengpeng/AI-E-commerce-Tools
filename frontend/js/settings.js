@@ -6,6 +6,12 @@ function providerSupportsCapability(provider, capability) {
     return provider.enabled && provider[`supports_${capability}`] === true;
 }
 
+function providerTestCapabilities(provider) {
+    return ["text", "image"].filter(
+        capability => provider?.[`supports_${capability}`] === true
+    );
+}
+
 function maskedKeyPlaceholder(provider) {
     if (!provider || !provider.has_api_key || !provider.api_key_masked) {
         return "未保存 API Key";
@@ -813,13 +819,49 @@ function providerTestStatusMarkup(provider) {
     }
     const success = status === "success";
     const message = provider.last_test_message || (success ? "连接成功" : "连接失败");
+    const capabilityLabel = {
+        text: "文本",
+        image: "图片"
+    }[provider.last_test_capability] || "";
+    const displayMessage = capabilityLabel
+        ? `${capabilityLabel} · ${message}`
+        : message;
     return `
         <span class="settings-test-status ${success ? "is-success" : "is-error"}"
-            title="${escapeSettingsHtml(message)}">
+            title="${escapeSettingsHtml(displayMessage)}">
             <i class="ph ${success ? "ph-check-circle" : "ph-warning-circle"}"></i>
-            <span class="settings-test-message">${escapeSettingsHtml(message)}</span>
+            <span class="settings-test-message">${capabilityLabel
+                ? `<span class="settings-test-capability">${capabilityLabel}</span> · `
+                : ""}${escapeSettingsHtml(message)}</span>
         </span>
     `;
+}
+
+function providerTestActionsMarkup(provider) {
+    const capabilities = providerTestCapabilities(provider);
+    if (!capabilities.length) {
+        return `
+            <button type="button"
+                class="settings-provider-action settings-provider-test-action"
+                title="未声明可测试能力" aria-label="未声明可测试能力"
+                disabled>
+                <i class="ph ph-plugs"></i><span>不可测试</span>
+            </button>
+        `;
+    }
+    return capabilities.map(capability => {
+        const label = capability === "text" ? "文本" : "图片";
+        const icon = capability === "text" ? "ph-text-aa" : "ph-image";
+        return `
+            <button type="button"
+                class="settings-provider-action settings-provider-test-action"
+                title="测试${label}连接"
+                aria-label="测试${label} ${escapeSettingsHtml(provider.name)}"
+                onclick="testSavedProvider(${Number(provider.id)}, '${capability}', this)">
+                <i class="ph ${icon}"></i><span>测试${label}</span>
+            </button>
+        `;
+    }).join("");
 }
 
 function renderProviderList() {
@@ -839,9 +881,6 @@ function renderProviderList() {
     list.innerHTML = settingsState.providers.map(provider => {
         const boundCapabilities = boundCapabilitiesForProvider(provider.id);
         const inUse = boundCapabilities.length > 0;
-        const testCapability = provider.supports_text
-            ? "text"
-            : (provider.supports_image ? "image" : "");
         const capabilityBadges = [
             provider.supports_text
                 ? '<span class="settings-badge settings-badge-capability"><i class="ph ph-text-aa"></i> 文本</span>'
@@ -883,13 +922,7 @@ function renderProviderList() {
                             onclick="openProviderEditor(${Number(provider.id)})">
                             <i class="ph ph-pencil-simple"></i>
                         </button>
-                        <button type="button" class="settings-provider-action"
-                            title="${testCapability ? `测试${testCapability === "text" ? "文本" : "图片"}连接` : "未声明可测试能力"}"
-                            aria-label="测试 ${escapeSettingsHtml(provider.name)}"
-                            onclick="testSavedProvider(${Number(provider.id)}, '${testCapability}', this)"
-                            ${testCapability ? "" : "disabled"}>
-                            <i class="ph ph-plugs"></i>
-                        </button>
+                        ${providerTestActionsMarkup(provider)}
                         <button type="button" class="settings-provider-action"
                             title="${escapeSettingsHtml(conflictTitle || (provider.enabled ? "停用线路" : "启用线路"))}"
                             aria-label="${provider.enabled ? "停用" : "启用"} ${escapeSettingsHtml(provider.name)}"
@@ -1295,6 +1328,9 @@ async function deleteProvider(providerId, button) {
 if (typeof module !== "undefined") {
     module.exports = {
         providerSupportsCapability,
+        providerTestCapabilities,
+        providerTestActionsMarkup,
+        providerTestStatusMarkup,
         buildProviderPayload,
         buildProviderTestRequestBody,
         maskedKeyPlaceholder,

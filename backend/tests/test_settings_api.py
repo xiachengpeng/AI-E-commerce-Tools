@@ -18,6 +18,27 @@ VALID_TEXT_RESPONSE = {
         {"content": {"parts": [{"text": "OK"}]}}
     ]
 }
+TINY_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+    "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+)
+TINY_JPEG_BASE64 = (
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsL"
+    "DBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/"
+    "2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy"
+    "MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QA"
+    "HwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUF"
+    "BAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkK"
+    "FhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1"
+    "dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXG"
+    "x8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEB"
+    "AQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAEC"
+    "AxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRom"
+    "JygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOE"
+    "hYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU"
+    "1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDi6KKK+ZP3"
+    "E//Z"
+)
 VALID_IMAGE_RESPONSE = {
     "candidates": [
         {
@@ -26,7 +47,7 @@ VALID_IMAGE_RESPONSE = {
                     {
                         "inlineData": {
                             "mimeType": "image/png",
-                            "data": "aW1hZ2U=",
+                            "data": TINY_PNG_BASE64,
                         }
                     }
                 ]
@@ -223,6 +244,161 @@ def test_provider_api_update_clears_stale_connection_metadata():
     assert response.json()["last_test_status"] is None
     assert response.json()["last_test_message"] is None
     assert response.json()["last_tested_at"] is None
+
+
+def test_display_name_update_does_not_churn_runtime_or_analysis_cache(
+    monkeypatch,
+):
+    import main
+    from db import AIProviderConfig
+
+    invalidate_clients = MagicMock()
+    monkeypatch.setattr(main, "invalidate_provider_clients", invalidate_clients)
+    monkeypatch.setattr(main, "analysis_cache", {})
+    client, testing_session = _make_client()
+    try:
+        provider_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(),
+        ).json()["id"]
+        db = testing_session()
+        try:
+            row = db.get(AIProviderConfig, provider_id)
+            row.last_test_status = "success"
+            row.last_test_message = "连接成功"
+            row.last_tested_at = datetime.datetime.now(datetime.UTC)
+            row.last_test_capability = "text"
+            db.commit()
+        finally:
+            db.close()
+        main.analysis_cache["existing-analysis"] = ("time", "result")
+
+        response = client.put(
+            f"/api/settings/ai/providers/{provider_id}",
+            json=_provider_data(name="Display name only"),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["config_version"] == 1
+    assert response.json()["last_test_status"] == "success"
+    assert response.json()["last_test_capability"] == "text"
+    invalidate_clients.assert_not_called()
+    assert main.analysis_cache == {
+        "existing-analysis": ("time", "result")
+    }
+
+
+def test_effective_update_bumps_version_retires_clients_and_clears_cache(
+    monkeypatch,
+):
+    import main
+    from db import AIProviderConfig
+
+    invalidate_clients = MagicMock()
+    monkeypatch.setattr(main, "invalidate_provider_clients", invalidate_clients)
+    monkeypatch.setattr(
+        main,
+        "analysis_cache",
+        {"existing-analysis": ("time", "result")},
+    )
+    client, testing_session = _make_client()
+    try:
+        provider_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(),
+        ).json()["id"]
+        db = testing_session()
+        try:
+            row = db.get(AIProviderConfig, provider_id)
+            row.last_test_status = "success"
+            row.last_test_message = "连接成功"
+            row.last_tested_at = datetime.datetime.now(datetime.UTC)
+            row.last_test_capability = "text"
+            db.commit()
+        finally:
+            db.close()
+        main.analysis_cache["existing-analysis"] = ("time", "result")
+
+        response = client.put(
+            f"/api/settings/ai/providers/{provider_id}",
+            json=_provider_data(
+                base_url="https://changed-relay.example.com",
+            ),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["config_version"] == 2
+    assert response.json()["last_test_status"] is None
+    assert response.json()["last_test_message"] is None
+    assert response.json()["last_tested_at"] is None
+    assert response.json()["last_test_capability"] is None
+    invalidate_clients.assert_called_once_with(provider_id)
+    assert main.analysis_cache == {}
+
+
+def test_delete_recreate_same_provider_identity_cannot_reuse_analysis_cache(
+    monkeypatch,
+):
+    import main
+
+    monkeypatch.setattr(main, "analysis_cache", {})
+    client, _ = _make_client()
+    try:
+        first = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(name="First incarnation"),
+        ).json()
+        identity = (first["id"], first["config_version"])
+        main.analysis_cache["old-result"] = ("time", "first result")
+
+        deleted = client.delete(
+            f"/api/settings/ai/providers/{first['id']}"
+        )
+        replacement = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(name="Replacement incarnation"),
+        ).json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert deleted.status_code == 200
+    assert (replacement["id"], replacement["config_version"]) == identity
+    assert "old-result" not in main.analysis_cache
+
+
+def test_binding_change_invalidates_analysis_cache(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main, "analysis_cache", {})
+    client, _ = _make_client()
+    try:
+        first_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(name="First"),
+        ).json()["id"]
+        second_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(name="Second"),
+        ).json()["id"]
+        client.put(
+            "/api/settings/ai/bindings/text",
+            json={"provider_config_id": first_id},
+        )
+        main.analysis_cache["bound-first"] = ("time", "first result")
+
+        switched = client.put(
+            "/api/settings/ai/bindings/text",
+            json={"provider_config_id": second_id},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert switched.status_code == 200
+    assert main.analysis_cache == {}
 
 
 def test_missing_provider_mutations_return_not_found():
@@ -507,6 +683,178 @@ def test_saved_connection_test_updates_metadata_without_changing_binding(
     assert payload["contents"][0]["parts"][0]["text"] == "Reply with OK"
 
 
+def test_saved_connection_test_serializes_the_tested_capability(monkeypatch):
+    client, _ = _make_client()
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value=VALID_TEXT_RESPONSE)},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    try:
+        provider_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(
+                supports_image=True,
+                image_model="image",
+            ),
+        ).json()["id"]
+
+        tested = client.post(
+            f"/api/settings/ai/providers/{provider_id}/test",
+            json={"capability": "text"},
+        )
+        listed = client.get("/api/settings/ai/providers")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert tested.status_code == 200
+    assert tested.json()["capability"] == "text"
+    assert listed.json()["items"][0]["last_test_capability"] == "text"
+
+
+def test_saved_preflight_failure_replaces_prior_success_metadata(
+    monkeypatch,
+    tmp_path,
+):
+    credential_path = tmp_path / "vertex-service-account.json"
+    credential_path.write_text("{}", encoding="utf-8")
+    adapter = type("Adapter", (), {"generate": AsyncMock()})()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    client, testing_session = _make_client()
+    try:
+        provider_id = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(
+                protocol="vertex",
+                base_url=None,
+                api_key=None,
+                vertex_project_id="project",
+                vertex_location="us-central1",
+                vertex_key_path=str(credential_path),
+            ),
+        ).json()["id"]
+
+        from db import AIProviderConfig
+
+        db = testing_session()
+        try:
+            row = db.get(AIProviderConfig, provider_id)
+            row.last_test_status = "success"
+            row.last_test_message = "连接成功"
+            row.last_tested_at = datetime.datetime.now(datetime.UTC)
+            db.commit()
+        finally:
+            db.close()
+        credential_path.unlink()
+
+        response = client.post(
+            f"/api/settings/ai/providers/{provider_id}/test",
+            json={"capability": "text"},
+        )
+
+        db = testing_session()
+        try:
+            row = db.get(AIProviderConfig, provider_id)
+            persisted = (
+                row.last_test_status,
+                row.last_test_message,
+                row.last_tested_at,
+                getattr(row, "last_test_capability", None),
+            )
+        finally:
+            db.close()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "error"
+    assert response.json()["message"] == "Vertex 凭据文件路径无效或不可读"
+    assert persisted[0:2] == (
+        "error",
+        "Vertex 凭据文件路径无效或不可读",
+    )
+    assert persisted[2] is not None
+    assert persisted[3] == "text"
+    adapter.generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_saved_connection_result_is_discarded_after_concurrent_edit(
+    monkeypatch,
+    tmp_path,
+):
+    import main
+    from models.settings import ProviderConnectionTest
+    from services.ai_config_service import create_provider, update_provider
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'connection-test-race.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    setup_db = sessions()
+    row = create_provider(setup_db, _provider_data())
+    provider_id = row.id
+    row.last_test_status = "success"
+    row.last_test_message = "连接成功"
+    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    setup_db.commit()
+    setup_db.close()
+
+    test_db = sessions()
+    edit_db = sessions()
+    request_started = asyncio.Event()
+    release_response = asyncio.Event()
+
+    class BlockingAdapter:
+        async def generate(self, snapshot, payload):
+            request_started.set()
+            await release_response.wait()
+            return VALID_TEXT_RESPONSE
+
+    monkeypatch.setattr(main, "get_adapter", lambda protocol: BlockingAdapter())
+    pending = asyncio.create_task(
+        main._run_ai_provider_connection_test(
+            ProviderConnectionTest(
+                provider_id=provider_id,
+                capability="text",
+            ),
+            test_db,
+        )
+    )
+    await asyncio.wait_for(request_started.wait(), 0.5)
+
+    updated = update_provider(
+        edit_db,
+        provider_id,
+        {"base_url": "https://changed-relay.example.com"},
+    )
+    assert updated.config_version == 2
+    assert updated.last_test_status is None
+    release_response.set()
+    result = await asyncio.wait_for(pending, 0.5)
+
+    verify_db = sessions()
+    try:
+        persisted = verify_db.get(main.AIProviderConfig, provider_id)
+        metadata = (
+            persisted.last_test_status,
+            persisted.last_test_message,
+            persisted.last_tested_at,
+            getattr(persisted, "last_test_capability", None),
+        )
+    finally:
+        test_db.close()
+        edit_db.close()
+        verify_db.close()
+
+    assert result["status"] == "error"
+    assert result["message"] == "配置已变更，请重新测试"
+    assert metadata == (None, None, None, None)
+
+
 def test_draft_connection_test_does_not_persist_or_change_bindings(
     monkeypatch,
 ):
@@ -781,6 +1129,95 @@ def test_draft_connection_requires_normalized_capability_output(
         "duration_ms": response.json()["duration_ms"],
         "message": expected,
     }
+
+
+@pytest.mark.parametrize(
+    ("mime_type", "image_data"),
+    [
+        ("image/png", "not-base64"),
+        ("image/png", "cGxhaW4gdGV4dA=="),
+        ("image/jpeg", TINY_PNG_BASE64),
+    ],
+)
+def test_image_connection_rejects_invalid_or_mislabeled_image_bytes(
+    monkeypatch,
+    mime_type,
+    image_data,
+):
+    provider_response = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "inlineData": {
+                                "mimeType": mime_type,
+                                "data": image_data,
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value=provider_response)},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    client, _ = _make_client()
+    try:
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={
+                "draft": _provider_data(
+                    supports_image=True,
+                    image_model="image",
+                ),
+                "capability": "image",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "error"
+    assert response.json()["message"] == "不支持图片生成"
+
+
+@pytest.mark.parametrize(
+    ("mime_type", "image_data"),
+    [
+        ("image/png", TINY_PNG_BASE64),
+        ("image/jpeg", TINY_JPEG_BASE64),
+        ("image/jpg", TINY_JPEG_BASE64),
+    ],
+)
+def test_image_connection_accepts_verified_image_bytes(
+    mime_type,
+    image_data,
+):
+    import main
+
+    response = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": image_data,
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    assert main._connection_response_supports("image", response) is True
 
 
 def test_edited_overlay_accepts_valid_image_without_saving_test_metadata(
@@ -1102,6 +1539,44 @@ async def test_sse_stream_sends_new_events_and_cleans_up_subscriber(
     assert '"message": "new"' in event
     assert '"message": "old"' not in event
     assert len(logs._subscribers) == 0
+
+
+@pytest.mark.asyncio
+async def test_sse_stream_redacts_vertex_and_image_aliases_but_keeps_metadata(
+    monkeypatch,
+):
+    import main
+    from services.app_log_service import AppLogService
+
+    class ReconnectRequest:
+        headers = {}
+
+        async def is_disconnected(self):
+            return False
+
+    logs = AppLogService(session_id="boot-a")
+    monkeypatch.setattr(main, "app_logs", logs)
+    logs.emit(
+        level="info",
+        source="test",
+        message={
+            "vertex_project_id": "sse-project-secret",
+            "b64_json": "sse-image-secret",
+            "status": "ready",
+            "count": 1,
+            "mime_type": "image/png",
+        },
+    )
+
+    response = await main.api_stream_logs(ReconnectRequest())
+    frame = await anext(response.body_iterator)
+    await response.body_iterator.aclose()
+
+    assert "sse-project-secret" not in frame
+    assert "sse-image-secret" not in frame
+    assert '"status": "ready"' in frame
+    assert '"count": 1' in frame
+    assert '"mime_type": "image/png"' in frame
 
 
 @pytest.mark.asyncio

@@ -25,7 +25,10 @@ class AppLogService:
 
     _SENSITIVE_KEYS = {
         "apikey",
+        "authproviderx509certurl",
         "authorization",
+        "b64json",
+        "base64",
         "base64image",
         "clientemail",
         "clientid",
@@ -34,11 +37,14 @@ class AppLogService:
         "imagedata",
         "privatekey",
         "privatekeyid",
+        "projectid",
         "prompt",
         "providerresponse",
         "response",
         "tokenuri",
         "universedomain",
+        "vertexlocation",
+        "vertexprojectid",
         "vertexkeypath",
         "xapikey",
         "authuri",
@@ -177,9 +183,15 @@ class AppLogService:
         )
         sensitive_label = (
             r"(?:vertex[_ -]?key[_ -]?path"
+            r"|vertex[_ -]?project[_ -]?id"
+            r"|vertex[_ -]?location"
+            r"|project[_ -]?id"
+            r"|auth[_ -]?provider[_ -]?x509[_ -]?cert[_ -]?url"
             r"|image[_ -]?data"
             r"|image[_ -]?base64"
             r"|base64[_ -]?image"
+            r"|base64"
+            r"|b64[_ -]?json"
             r"|private[_ -]?key(?:[_ -]?id)?"
             r"|client[_ -]?email"
             r"|client[_ -]?id"

@@ -139,6 +139,7 @@ class AIProviderConfig(Base):
     last_test_status = Column(String(30), nullable=True)
     last_test_message = Column(Text, nullable=True)
     last_tested_at = Column(DateTime, nullable=True)
+    last_test_capability = Column(String(16), nullable=True)
     config_version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, default=datetime.datetime.now)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
@@ -174,8 +175,27 @@ def migrate_square_redraw_tables():
 
 
 def migrate_ai_settings_tables():
-    """Create the settings tables without modifying existing table columns."""
+    """Create settings tables and add backward-compatible optional columns."""
     Base.metadata.create_all(bind=engine)
+    if engine.dialect.name != "sqlite":
+        return
+
+    inspector = inspect(engine)
+    if "ai_provider_configs" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"]
+        for column in inspector.get_columns("ai_provider_configs")
+    }
+    if "last_test_capability" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN last_test_capability VARCHAR(16)"
+                )
+            )
 
 def get_db():
     db = SessionLocal()

@@ -59,6 +59,38 @@ def test_config_import_does_not_require_legacy_gemini_key(tmp_path):
     assert result.stdout.strip() == "CONFIG_OK"
 
 
+def test_ai_settings_migration_adds_last_test_capability_to_legacy_table(
+    monkeypatch,
+    tmp_path,
+):
+    import db as db_module
+    from sqlalchemy import create_engine, inspect, text
+
+    legacy_engine = create_engine(
+        f"sqlite:///{tmp_path / 'legacy-settings.db'}"
+    )
+    with legacy_engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE ai_provider_configs ("
+                "id INTEGER PRIMARY KEY, "
+                "name VARCHAR(120) NOT NULL UNIQUE"
+                ")"
+            )
+        )
+    monkeypatch.setattr(db_module, "engine", legacy_engine)
+
+    db_module.migrate_ai_settings_tables()
+
+    columns = {
+        column["name"]
+        for column in inspect(legacy_engine).get_columns(
+            "ai_provider_configs"
+        )
+    }
+    assert "last_test_capability" in columns
+
+
 def test_existing_sqlite_vertex_configuration_starts_without_gemini_key(
     tmp_path,
 ):

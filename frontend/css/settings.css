@@ -414,6 +414,18 @@
     font-size: 15px;
 }
 
+.settings-provider-test-action {
+    gap: 4px;
+    width: auto;
+    padding: 0 8px;
+    font-size: 10px;
+    font-weight: 750;
+}
+
+.settings-provider-test-action i {
+    font-size: 13px;
+}
+
 .settings-provider-action:hover:not(:disabled) {
     color: var(--settings-indigo);
     background: var(--settings-indigo-soft);

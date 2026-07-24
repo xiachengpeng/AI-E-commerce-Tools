@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from io import BytesIO
 import base64
 import datetime
 import uuid
@@ -17,6 +18,7 @@ from typing import List, Literal, Union, Any, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
+from PIL import Image
 
 from models.request import (
     CompareRequest, CompareResponse, CompareResponseData, ProductCompareData,
@@ -84,7 +86,7 @@ from config import (
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
-from db import init_db, get_db, SessionLocal, AIProviderConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory
+from db import init_db, get_db, SessionLocal, AICapabilityBinding, AIProviderConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory
 
 # 加载配置
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
@@ -454,6 +456,10 @@ def validate_url(url: str) -> str | None:
 analysis_cache = {}
 
 
+def invalidate_analysis_cache() -> None:
+    analysis_cache.clear()
+
+
 def analysis_cache_key(unique_urls: list[str]) -> str:
     db = SessionLocal()
     try:
@@ -722,6 +728,7 @@ def serialize_provider(row) -> dict:
         "last_test_status": row.last_test_status,
         "last_test_message": row.last_test_message,
         "last_tested_at": row.last_tested_at,
+        "last_test_capability": row.last_test_capability,
         "config_version": row.config_version,
     }
 
@@ -751,7 +758,9 @@ def api_create_ai_provider(
     db: Session = Depends(get_db),
 ):
     try:
-        return serialize_provider(create_provider(db, data))
+        created = create_provider(db, data)
+        invalidate_analysis_cache()
+        return serialize_provider(created)
     except IntegrityError as exc:
         raise HTTPException(
             status_code=409,
@@ -784,8 +793,16 @@ def api_update_ai_provider(
     db: Session = Depends(get_db),
 ):
     try:
+        current = db.get(AIProviderConfig, provider_id)
+        previous_version = (
+            current.config_version
+            if current is not None
+            else None
+        )
         updated = update_provider(db, provider_id, data)
-        invalidate_provider_clients(provider_id)
+        if updated.config_version != previous_version:
+            invalidate_provider_clients(provider_id)
+            invalidate_analysis_cache()
         return serialize_provider(updated)
     except IntegrityError as exc:
         raise HTTPException(
@@ -804,6 +821,7 @@ def api_delete_ai_provider(
     try:
         delete_provider(db, provider_id)
         invalidate_provider_clients(provider_id)
+        invalidate_analysis_cache()
     except ValueError as exc:
         _settings_error(exc, missing_is_404=True)
     return {"status": "success"}
@@ -811,8 +829,16 @@ def api_delete_ai_provider(
 
 def _set_ai_provider_enabled(provider_id: int, enabled: bool, db: Session):
     try:
+        current = db.get(AIProviderConfig, provider_id)
+        previous_version = (
+            current.config_version
+            if current is not None
+            else None
+        )
         updated = set_provider_enabled(db, provider_id, enabled)
-        invalidate_provider_clients(provider_id)
+        if updated.config_version != previous_version:
+            invalidate_provider_clients(provider_id)
+            invalidate_analysis_cache()
         return serialize_provider(updated)
     except ValueError as exc:
         _settings_error(exc, missing_is_404=True)
@@ -863,9 +889,20 @@ def api_set_ai_binding(
     db: Session = Depends(get_db),
 ):
     try:
-        return serialize_binding(
-            set_binding(db, capability, data.provider_config_id)
+        current = db.get(AICapabilityBinding, capability)
+        binding_changed = (
+            current is None
+            or current.provider_config_id
+            != data.provider_config_id
         )
+        updated = set_binding(
+            db,
+            capability,
+            data.provider_config_id,
+        )
+        if binding_changed:
+            invalidate_analysis_cache()
+        return serialize_binding(updated)
     except ValueError as exc:
         _settings_error(exc, missing_is_404=True)
 
@@ -873,32 +910,44 @@ def api_set_ai_binding(
 def _connection_test_snapshot(
     data: ProviderConnectionTest,
     db: Session,
-) -> tuple[ProviderSnapshot | None, AIProviderConfig | None, str | None]:
+) -> tuple[
+    ProviderSnapshot | None,
+    tuple[int, int] | None,
+    str | None,
+]:
     row = None
-    persisted_result_row = None
-    if data.provider_id is not None:
-        row = db.get(AIProviderConfig, data.provider_id)
-        if row is None:
-            raise HTTPException(
-                status_code=404,
-                detail="AI 提供商不存在",
-            )
-        if data.draft is not None:
-            source_values = validate_provider_data(
-                data.draft,
-                row,
-            )
+    persisted_result_context = None
+    try:
+        if data.provider_id is not None:
+            row = db.get(AIProviderConfig, data.provider_id)
+            if row is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="AI 提供商不存在",
+                )
+            if data.draft is not None:
+                source_values = validate_provider_data(
+                    data.draft,
+                    row,
+                )
+                snapshot_id = 0
+                config_version = 1
+            else:
+                persisted_result_context = (
+                    row.id,
+                    row.config_version,
+                )
+                source_values = validate_provider_data({}, row)
+                snapshot_id = row.id
+                config_version = row.config_version
+        else:
+            source_values = validate_provider_data(data.draft)
             snapshot_id = 0
             config_version = 1
-        else:
-            source_values = validate_provider_data({}, row)
-            snapshot_id = row.id
-            config_version = row.config_version
-            persisted_result_row = row
-    else:
-        source_values = validate_provider_data(data.draft)
-        snapshot_id = 0
-        config_version = 1
+    except ValueError as exc:
+        if persisted_result_context is not None:
+            return None, persisted_result_context, str(exc)
+        raise
 
     supported = (
         source_values["supports_text"]
@@ -906,7 +955,7 @@ def _connection_test_snapshot(
         else source_values["supports_image"]
     )
     if not supported:
-        return None, persisted_result_row, f"该提供商不支持{'文本' if data.capability == 'text' else '图片'}能力"
+        return None, persisted_result_context, f"该提供商不支持{'文本' if data.capability == 'text' else '图片'}能力"
 
     model = (
         source_values["text_model"]
@@ -914,7 +963,7 @@ def _connection_test_snapshot(
         else source_values["image_model"]
     )
     if not model:
-        return None, persisted_result_row, f"未配置{'文本' if data.capability == 'text' else '图片'}模型"
+        return None, persisted_result_context, f"未配置{'文本' if data.capability == 'text' else '图片'}模型"
 
     snapshot = ProviderSnapshot(
         id=snapshot_id,
@@ -931,25 +980,59 @@ def _connection_test_snapshot(
         max_retries=source_values["max_retries"],
         config_version=config_version,
     )
-    return snapshot, persisted_result_row, None
+    return snapshot, persisted_result_context, None
 
 
 def _save_connection_test_result(
     db: Session,
-    row: AIProviderConfig | None,
+    row_or_provider_id: AIProviderConfig | int | None,
     result_status: str,
     message: str,
-) -> None:
-    if row is None:
-        return
-    row.last_test_status = result_status
-    row.last_test_message = message
-    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    *,
+    expected_config_version: int | None = None,
+    capability: str | None = None,
+) -> bool:
+    if row_or_provider_id is None:
+        return False
+    tested_at = datetime.datetime.now(datetime.UTC)
+    if expected_config_version is None:
+        row_or_provider_id.last_test_status = result_status
+        row_or_provider_id.last_test_message = message
+        row_or_provider_id.last_tested_at = tested_at
+        if capability is not None:
+            row_or_provider_id.last_test_capability = capability
+    else:
+        provider_id = (
+            row_or_provider_id.id
+            if isinstance(row_or_provider_id, AIProviderConfig)
+            else row_or_provider_id
+        )
+        updated = (
+            db.query(AIProviderConfig)
+            .filter(
+                AIProviderConfig.id == provider_id,
+                AIProviderConfig.config_version
+                == expected_config_version,
+            )
+            .update(
+                {
+                    AIProviderConfig.last_test_status: result_status,
+                    AIProviderConfig.last_test_message: message,
+                    AIProviderConfig.last_tested_at: tested_at,
+                    AIProviderConfig.last_test_capability: capability,
+                },
+                synchronize_session=False,
+            )
+        )
+        if updated != 1:
+            db.rollback()
+            return False
     try:
         db.commit()
     except Exception:
         db.rollback()
         raise
+    return True
 
 
 def _connection_payload(capability: str) -> dict:
@@ -1007,30 +1090,57 @@ def _connection_response_supports(
                 or ""
             )
             data = inline_data.get("data")
-            if (
-                isinstance(mime_type, str)
-                and mime_type.lower().startswith("image/")
-                and (
-                    (isinstance(data, str) and bool(data.strip()))
-                    or (isinstance(data, bytes) and bool(data))
-                )
-            ):
+            if _verified_image_matches_mime(data, mime_type):
                 return True
     return False
+
+
+def _verified_image_matches_mime(data, mime_type) -> bool:
+    if not isinstance(mime_type, str):
+        return False
+    declared_mime = mime_type.split(";", 1)[0].strip().lower()
+    declared_mime = {
+        "image/jpg": "image/jpeg",
+        "image/x-png": "image/png",
+    }.get(declared_mime, declared_mime)
+    if not declared_mime.startswith("image/"):
+        return False
+
+    try:
+        if isinstance(data, str):
+            image_bytes = base64.b64decode(
+                data.strip(),
+                validate=True,
+            )
+        elif isinstance(data, bytes):
+            image_bytes = data
+        else:
+            return False
+        if not image_bytes:
+            return False
+        with Image.open(BytesIO(image_bytes)) as image:
+            image_format = image.format
+            image.verify()
+        actual_mime = Image.MIME.get(image_format, "").lower()
+    except Exception:
+        return False
+    return bool(actual_mime) and declared_mime == actual_mime
 
 
 async def _run_ai_provider_connection_test(
     data: ProviderConnectionTest,
     db: Session,
 ):
+    persisted_result_context = None
     try:
-        snapshot, row, validation_message = (
+        snapshot, persisted_result_context, validation_message = (
             _connection_test_snapshot(data, db)
         )
     except ValueError as exc:
         snapshot = None
-        row = None
         validation_message = str(exc)
+    if persisted_result_context is not None:
+        db.rollback()
     started = time.monotonic()
     result_status = "success"
     message = "连接成功"
@@ -1076,12 +1186,21 @@ async def _run_ai_provider_connection_test(
                 message = str(mapped)
 
     duration_ms = round((time.monotonic() - started) * 1000)
-    _save_connection_test_result(
-        db,
-        row,
-        result_status,
-        message,
-    )
+    if persisted_result_context is not None:
+        provider_id, tested_config_version = (
+            persisted_result_context
+        )
+        result_saved = _save_connection_test_result(
+            db,
+            provider_id,
+            result_status,
+            message,
+            expected_config_version=tested_config_version,
+            capability=data.capability,
+        )
+        if not result_saved:
+            result_status = "error"
+            message = "配置已变更，请重新测试"
     app_logs.emit(
         level="success" if result_status == "success" else "error",
         source="system",

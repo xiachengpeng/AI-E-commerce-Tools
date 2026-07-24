@@ -490,6 +490,101 @@ async def test_recursive_structured_sanitization_reaches_recent_and_subscriber()
 
 
 @pytest.mark.asyncio
+async def test_vertex_service_account_and_image_aliases_are_redacted_everywhere():
+    logs = AppLogService()
+    queue = logs.subscribe()
+    structured = {
+        "vertex_project_id": "vertex-project-secret",
+        "vertex_location": "vertex-location-secret",
+        "credentials": {
+            "project_id": "service-account-project-secret",
+            "auth_provider_x509_cert_url": "https://auth-cert-secret",
+        },
+        "images": [
+            {"base64": "base64-image-secret"},
+            {"b64_json": "b64-json-image-secret"},
+        ],
+        "status": "ready",
+        "count": 2,
+        "mime_type": "image/png",
+    }
+
+    returned = logs.emit(
+        level="info",
+        source="image",
+        message=structured,
+    )
+    delivered = await asyncio.wait_for(queue.get(), 0.1)
+    recent = logs.recent()[0]
+
+    for entry in (returned, delivered, recent):
+        serialized = str(entry)
+        for secret in (
+            "vertex-project-secret",
+            "vertex-location-secret",
+            "service-account-project-secret",
+            "https://auth-cert-secret",
+            "base64-image-secret",
+            "b64-json-image-secret",
+        ):
+            assert secret not in serialized
+        assert entry["message"]["status"] == "ready"
+        assert entry["message"]["count"] == 2
+        assert entry["message"]["mime_type"] == "image/png"
+
+
+@pytest.mark.parametrize(
+    ("message", "secret", "safe_metadata"),
+    [
+        (
+            "{vertex_project_id=VERTEX-PROJECT-SECRET, status=ready}",
+            "VERTEX-PROJECT-SECRET",
+            "status=ready",
+        ),
+        (
+            "{vertex-location: VERTEX-LOCATION-SECRET, count=2}",
+            "VERTEX-LOCATION-SECRET",
+            "count=2",
+        ),
+        (
+            "{project_id=SERVICE-PROJECT-SECRET, status=ready}",
+            "SERVICE-PROJECT-SECRET",
+            "status=ready",
+        ),
+        (
+            "{auth_provider_x509_cert_url=https://auth-cert-secret, count=3}",
+            "https://auth-cert-secret",
+            "count=3",
+        ),
+        (
+            "{base64=BASE64-IMAGE-SECRET, mime_type=image/png}",
+            "BASE64-IMAGE-SECRET",
+            "mime_type=image/png",
+        ),
+        (
+            "{b64_json: B64-JSON-IMAGE-SECRET, mimeType: image/jpeg}",
+            "B64-JSON-IMAGE-SECRET",
+            "mimeType: image/jpeg",
+        ),
+    ],
+)
+def test_new_sensitive_labels_cannot_bypass_serialized_string_redaction(
+    message,
+    secret,
+    safe_metadata,
+):
+    entry = AppLogService().emit(
+        level="info",
+        source="image",
+        message=message,
+    )
+
+    assert secret not in entry["message"]
+    assert "[REDACTED]" in entry["message"]
+    assert safe_metadata in entry["message"]
+
+
+@pytest.mark.asyncio
 async def test_returned_history_and_subscriber_entries_are_independent_copies():
     logs = AppLogService()
     first_subscriber = logs.subscribe()

@@ -278,13 +278,13 @@ def test_base_url_validation_requires_clean_http_url():
             assert "Base URL" in str(exc)
 
 
-def test_update_increments_version_and_cannot_disable_bound_provider():
+def test_display_name_update_keeps_version_and_cannot_disable_bound_provider():
     db = make_db()
     row = create_provider(db, provider_data())
     updated = update_provider(db, row.id, {"name": "Relay B"})
 
     assert updated.name == "Relay B"
-    assert updated.config_version == 2
+    assert updated.config_version == 1
 
     set_binding(db, "text", row.id)
     try:
@@ -323,6 +323,8 @@ def test_effective_provider_update_clears_stale_connection_status(update):
     assert updated.last_test_status is None
     assert updated.last_test_message is None
     assert updated.last_tested_at is None
+    assert updated.last_test_capability is None
+    assert updated.config_version == 2
 
 
 def test_vertex_credential_path_update_clears_stale_connection_status(
@@ -382,6 +384,32 @@ def test_noop_or_display_name_update_retains_connection_status():
     ) == ("success", "连接成功")
     assert renamed.last_tested_at is not None
     assert noop.last_test_status == "success"
+    assert noop.config_version == 1
+    assert renamed.config_version == 1
+
+
+def test_provider_enabled_noop_is_stable_and_effective_change_clears_test_state():
+    db = make_db()
+    row = create_provider(db, provider_data())
+    row.last_test_status = "success"
+    row.last_test_message = "连接成功"
+    row.last_tested_at = datetime.datetime.now(datetime.UTC)
+    row.last_test_capability = "image"
+    db.commit()
+
+    unchanged = set_provider_enabled(db, row.id, True)
+
+    assert unchanged.config_version == 1
+    assert unchanged.last_test_status == "success"
+    assert unchanged.last_test_capability == "image"
+
+    disabled = set_provider_enabled(db, row.id, False)
+
+    assert disabled.config_version == 2
+    assert disabled.last_test_status is None
+    assert disabled.last_test_message is None
+    assert disabled.last_tested_at is None
+    assert disabled.last_test_capability is None
 
 
 def test_rejected_update_does_not_leak_mutations_into_later_commit():

@@ -39,6 +39,7 @@ class AIProviderRead(BaseModel):
     last_test_status: str | None
     last_test_message: str | None
     last_tested_at: datetime | None
+    last_test_capability: Literal["text", "image"] | None
     config_version: int
 
 
