@@ -7,7 +7,7 @@ import httpx
 from db import SessionLocal
 from services.ai_adapters import get_adapter
 from services.ai_config_service import get_snapshot
-from services.app_log_service import app_logs
+from services.app_log_service import AppLogService, app_logs
 
 
 _ERROR_MESSAGES = {
@@ -184,6 +184,12 @@ def _bound_diagnostic_value(value, depth: int = 0):
     return _safe_text(value)
 
 
+def _sanitize_diagnostic_value(value):
+    if value is None:
+        return None
+    return AppLogService.sanitize(value)
+
+
 def _safe_response_body(response) -> object | None:
     if response is None:
         return None
@@ -262,7 +268,9 @@ def _classify_provider_error(
 def diagnose_provider_error(exc: Exception) -> ProviderErrorDiagnostic:
     numeric_codes, named_codes = _safe_error_codes(exc)
     response = _safe_attribute(exc, "response")
-    response_body = _safe_response_body(response)
+    response_body = _sanitize_diagnostic_value(
+        _safe_response_body(response)
+    )
     provider_code = _safe_provider_code(exc, response, response_body)
     if provider_code:
         named_codes.add(provider_code.strip().upper().replace("-", "_"))
@@ -270,10 +278,10 @@ def diagnose_provider_error(exc: Exception) -> ProviderErrorDiagnostic:
     return ProviderErrorDiagnostic(
         category=category,
         http_status=_safe_http_status(response, numeric_codes),
-        provider_code=provider_code,
-        request_id=_safe_request_id(response),
+        provider_code=_sanitize_diagnostic_value(provider_code),
+        request_id=_sanitize_diagnostic_value(_safe_request_id(response)),
         exception_type=type(exc).__name__,
-        upstream_message=_safe_text(exc) or "",
+        upstream_message=_sanitize_diagnostic_value(_safe_text(exc)) or "",
         response_body=response_body,
     )
 
@@ -348,7 +356,7 @@ class AIRouter:
                         provider=snapshot.name,
                         model=snapshot.model,
                         duration_ms=duration_ms,
-                        retry=attempt + 1,
+                        retry=attempt,
                     )
                     break
                 app_logs.emit(

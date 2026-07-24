@@ -245,6 +245,11 @@ class AppLogService:
         return cls._redact_string(value)
 
     @classmethod
+    def sanitize(cls, value):
+        """Return a log-safe copy for diagnostics exposed outside emit()."""
+        return cls._redact(value)
+
+    @classmethod
     def _redact_string(cls, value: str) -> str:
         value = re.sub(
             (

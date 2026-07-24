@@ -213,6 +213,89 @@ async def test_exhausted_retry_raises_and_logs_safe_domain_error(
     assert "header-secret" not in error_log["message"]["summary"]
 
 
+@pytest.mark.asyncio
+async def test_raised_provider_diagnostic_is_sanitized_before_attachment(
+    monkeypatch,
+):
+    selected = snapshot(max_retries=0)
+    monkeypatch.setattr(
+        "services.ai_router.get_snapshot", lambda db, cap: selected
+    )
+    request = httpx.Request("POST", "https://provider.invalid/generate")
+    response = httpx.Response(
+        401,
+        json={
+            "api_key": "body-api-key-secret",
+            "access_token": "body-token-secret",
+            "vertex_key_path": "/private/body-key.json",
+            "prompt": "body-prompt-secret",
+            "image_base64": "body-image-secret",
+            "safe_detail": "retry after 10 seconds",
+        },
+        request=request,
+    )
+    error = httpx.HTTPStatusError(
+        (
+            "Authorization: Bearer message-token-secret "
+            "api_key=message-api-key-secret "
+            "vertex_key_path=/private/message-key.json "
+            "prompt: message-prompt-secret "
+            "image_data=message-image-secret status=retryable"
+        ),
+        request=request,
+        response=response,
+    )
+    adapter = AsyncMock()
+    adapter.generate.side_effect = error
+    monkeypatch.setattr(
+        "services.ai_router.get_adapter", lambda protocol: adapter
+    )
+
+    with pytest.raises(AIProviderRequestError) as raised:
+        await AIRouter(base_delay=0).generate("text", {}, db=object())
+
+    diagnostic = raised.value.diagnostic
+    rendered = str(diagnostic)
+    for secret in (
+        "message-token-secret",
+        "message-api-key-secret",
+        "/private/message-key.json",
+        "message-prompt-secret",
+        "message-image-secret",
+        "body-api-key-secret",
+        "body-token-secret",
+        "/private/body-key.json",
+        "body-prompt-secret",
+        "body-image-secret",
+    ):
+        assert secret not in rendered
+    assert "status=retryable" in diagnostic.upstream_message
+    assert diagnostic.response_body["safe_detail"] == "retry after 10 seconds"
+
+
+@pytest.mark.asyncio
+async def test_terminal_log_preserves_zero_based_retry_semantics(monkeypatch):
+    selected = snapshot(max_retries=0)
+    monkeypatch.setattr(
+        "services.ai_router.get_snapshot", lambda db, cap: selected
+    )
+    adapter = AsyncMock()
+    adapter.generate.side_effect = RuntimeError("provider unavailable")
+    monkeypatch.setattr(
+        "services.ai_router.get_adapter", lambda protocol: adapter
+    )
+    emit = MagicMock()
+    monkeypatch.setattr("services.ai_router.app_logs.emit", emit)
+
+    with pytest.raises(AIProviderRequestError):
+        await AIRouter(base_delay=0).generate("text", {}, db=object())
+
+    terminal_log = emit.call_args_list[-1].kwargs
+    assert terminal_log["retry"] == 0
+    assert terminal_log["message"]["attempt"] == 1
+    assert terminal_log["message"]["max_attempts"] == 1
+
+
 class ProviderError(RuntimeError):
     def __init__(self, raw_message, *, status_code=None, code=None):
         super().__init__(raw_message)
@@ -398,8 +481,10 @@ async def test_detailed_retry_and_terminal_logs_include_diagnostics(
         assert "message-secret" not in str(log)
         assert "body-api-secret" not in str(log)
     assert retry_log["message"]["summary"] == "AI 请求重试"
+    assert retry_log["retry"] == 1
     assert retry_log["message"]["attempt"] == 1
     assert retry_log["message"]["max_attempts"] == 2
     assert terminal_log["message"]["summary"] == "AI 提供商请求频率受限"
+    assert terminal_log["retry"] == 1
     assert terminal_log["message"]["attempt"] == 2
     assert terminal_log["message"]["max_attempts"] == 2
