@@ -1582,9 +1582,23 @@ def test_connection_tests_emit_safe_start_and_result_events(monkeypatch):
 
 
 class _ProviderFailure(Exception):
-    def __init__(self, status_code, detail):
+    def __init__(
+        self,
+        status_code,
+        detail,
+        *,
+        provider_code=None,
+        request_id=None,
+    ):
         super().__init__(detail)
         self.status_code = status_code
+        self.response = SimpleNamespace(
+            status_code=status_code,
+            headers={"x-request-id": request_id} if request_id else {},
+            json=lambda: {
+                "error": {"code": provider_code}
+            } if provider_code else {},
+        )
 
 
 def test_connection_test_maps_failures_and_updates_saved_metadata(
@@ -1596,7 +1610,10 @@ def test_connection_test_maps_failures_and_updates_saved_metadata(
         (),
         {
             "generate": AsyncMock(
-                side_effect=_ProviderFailure(401, "sk-secret-1234 rejected")
+                side_effect=_ProviderFailure(
+                    401,
+                    "api_key=sk-secret-1234 rejected",
+                )
             )
         },
     )()
@@ -1629,9 +1646,10 @@ def test_connection_test_maps_failures_and_updates_saved_metadata(
 
     assert response.status_code == 200
     assert response.json()["status"] == "error"
-    assert response.json()["message"] == "AI 提供商认证失败"
+    assert response.json()["message"].startswith("AI 提供商认证失败")
     assert "sk-secret-1234" not in response.text
-    assert saved_metadata[0:2] == ("error", "AI 提供商认证失败")
+    assert saved_metadata[0] == "error"
+    assert saved_metadata[1] == response.json()["message"]
     assert saved_metadata[2] is not None
 
 
@@ -1655,7 +1673,7 @@ def test_connection_test_maps_rate_limit_timeout_and_image_endpoint(
             (
                 _ProviderFailure(404, "upstream detail"),
                 "image",
-                "图片生成接口不可用",
+                "AI 模型不存在或不可用",
             ),
         ):
             adapter = type(
@@ -1690,8 +1708,42 @@ def test_connection_test_maps_rate_limit_timeout_and_image_endpoint(
     for response, expected in responses:
         assert response.status_code == 200
         assert response.json()["status"] == "error"
-        assert response.json()["message"] == expected
-        assert "upstream detail" not in response.text
+        assert response.json()["message"].startswith(expected)
+        assert "upstream=upstream detail" in response.json()["message"]
+
+
+def test_detailed_connection_error_includes_safe_provider_diagnostic(
+    monkeypatch,
+):
+    client, _ = _make_client()
+    failure = _ProviderFailure(
+        429,
+        "provider asked clients to retry",
+        provider_code="RESOURCE_EXHAUSTED",
+        request_id="request-429",
+    )
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(side_effect=failure)},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    try:
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={"draft": _provider_data(), "capability": "text"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    message = response.json()["message"]
+    assert "AI 提供商请求频率受限" in message
+    assert "HTTP 429" in message
+    assert "code=RESOURCE_EXHAUSTED" in message
+    assert "type=_ProviderFailure" in message
+    assert "request_id=request-429" in message
+    assert "upstream=provider asked clients to retry" in message
 
 
 def test_connection_test_missing_provider_is_not_found():

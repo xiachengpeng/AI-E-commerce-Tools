@@ -79,8 +79,11 @@ from services.ai_adapters import (
     get_adapter,
     invalidate_provider_clients,
 )
-from services.ai_router import map_provider_error
-from services.app_log_service import APP_LOG_OVERFLOW, app_logs
+from services.ai_router import (
+    AIProviderRequestError,
+    diagnose_provider_error,
+)
+from services.app_log_service import APP_LOG_OVERFLOW, AppLogService, app_logs
 from services.image_validation import (
     MAX_IMAGE_BYTES,
     MAX_IMAGE_DIMENSION,
@@ -96,6 +99,15 @@ from db import init_db, get_db, SessionLocal, AICapabilityBinding, AIProviderCon
 MAX_CONNECTION_IMAGE_BYTES = MAX_IMAGE_BYTES
 MAX_CONNECTION_IMAGE_DIMENSION = MAX_IMAGE_DIMENSION
 MAX_CONNECTION_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+
+_PROVIDER_ERROR_HTTP_STATUS = {
+    "authentication": 401,
+    "model_not_found": 404,
+    "rate_limit": 429,
+    "timeout": 504,
+    "protocol_incompatible": 502,
+    "upstream_failure": 502,
+}
 
 # 加载配置
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
@@ -740,6 +752,22 @@ async def api_ai_generate(data: dict):
             payload=data.get("payload", {}),
             capability=capability,
         )
+    except AIProviderRequestError as exc:
+        diagnostic = (
+            AppLogService.sanitize(exc.diagnostic.as_log_dict())
+            if exc.diagnostic is not None
+            else {"category": exc.category}
+        )
+        raise HTTPException(
+            status_code=_PROVIDER_ERROR_HTTP_STATUS.get(
+                exc.category,
+                status.HTTP_502_BAD_GATEWAY,
+            ),
+            detail={
+                "category": exc.category,
+                "diagnostic": diagnostic,
+            },
+        ) from None
     except ValueError:
         label = "文本" if capability == "text" else "图片"
         raise HTTPException(
@@ -1122,6 +1150,24 @@ def _connection_payload(capability: str) -> dict:
     return payload
 
 
+def _format_provider_diagnostic(diagnostic) -> str:
+    safe_diagnostic = AppLogService.sanitize(diagnostic.as_log_dict())
+    parts = [
+        str(AIProviderRequestError(diagnostic.category, diagnostic)),
+    ]
+    if safe_diagnostic.get("http_status") is not None:
+        parts.append(f"HTTP {safe_diagnostic['http_status']}")
+    if safe_diagnostic.get("provider_code"):
+        parts.append(f"code={safe_diagnostic['provider_code']}")
+    if safe_diagnostic.get("exception_type"):
+        parts.append(f"type={safe_diagnostic['exception_type']}")
+    if safe_diagnostic.get("request_id"):
+        parts.append(f"request_id={safe_diagnostic['request_id']}")
+    if safe_diagnostic.get("upstream_message"):
+        parts.append(f"upstream={safe_diagnostic['upstream_message']}")
+    return " | ".join(parts)
+
+
 def _connection_response_supports(
     capability: str,
     response: dict,
@@ -1221,16 +1267,9 @@ async def _run_ai_provider_connection_test(
                     else "不支持图片生成"
                 )
         except Exception as exc:
-            mapped = map_provider_error(exc)
+            diagnostic = diagnose_provider_error(exc)
             result_status = "error"
-            if (
-                data.capability == "image"
-                and mapped.category
-                in {"model_not_found", "protocol_incompatible"}
-            ):
-                message = "图片生成接口不可用"
-            else:
-                message = str(mapped)
+            message = _format_provider_diagnostic(diagnostic)
 
     duration_ms = round((time.monotonic() - started) * 1000)
     if persisted_result_context is not None:

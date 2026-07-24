@@ -1,6 +1,7 @@
 """
 集成测试 —— FastAPI /compare 端点 + URL 校验 + CORS
 """
+import asyncio
 import base64
 import json
 import os
@@ -26,6 +27,7 @@ from models.request import (
     ListingImageExtractRequest,
     TranslationRequest,
 )
+from services.ai_router import AIProviderRequestError, diagnose_provider_error
 
 client = TestClient(app)
 
@@ -304,6 +306,80 @@ def test_ai_generate_endpoint_sanitizes_unconfigured_capability(
     serialized = json.dumps(resp.json()).lower()
     assert "secret" not in serialized
     assert "/tmp/provider-key.json" not in serialized
+
+
+class _ProviderHTTPFailure(Exception):
+    def __init__(self, status_code, detail):
+        super().__init__(detail)
+        self.status_code = status_code
+
+
+@pytest.mark.parametrize(
+    ("failure", "category", "expected_status", "expected_upstream"),
+    [
+        (
+            _ProviderHTTPFailure(401, "api_key=browser-secret rejected"),
+            "authentication",
+            401,
+            "api_key=[REDACTED]",
+        ),
+        (
+            _ProviderHTTPFailure(404, "model missing"),
+            "model_not_found",
+            404,
+            "model missing",
+        ),
+        (
+            _ProviderHTTPFailure(429, "rate limit reached"),
+            "rate_limit",
+            429,
+            "rate limit reached",
+        ),
+        (
+            asyncio.TimeoutError("request timed out"),
+            "timeout",
+            504,
+            "request timed out",
+        ),
+        (
+            ValueError("unsupported response schema"),
+            "protocol_incompatible",
+            502,
+            "unsupported response schema",
+        ),
+        (
+            RuntimeError("upstream unavailable"),
+            "upstream_failure",
+            502,
+            "upstream unavailable",
+        ),
+    ],
+)
+def test_provider_http_error_returns_sanitized_diagnostic(
+    failure,
+    category,
+    expected_status,
+    expected_upstream,
+):
+    diagnostic = diagnose_provider_error(failure)
+    provider_error = AIProviderRequestError(category, diagnostic)
+    safe_client = TestClient(app, raise_server_exceptions=False)
+
+    with patch(
+        "services.ai_service.AIService.generate_content",
+        new=AsyncMock(side_effect=provider_error),
+    ):
+        response = safe_client.post(
+            "/api/ai/generate",
+            json={"capability": "text", "payload": {}},
+        )
+
+    assert response.status_code == expected_status
+    detail = response.json()["detail"]
+    assert detail["category"] == category
+    assert detail["diagnostic"]["category"] == category
+    assert detail["diagnostic"]["upstream_message"] == expected_upstream
+    assert "browser-secret" not in response.text
 
 
 @pytest.mark.parametrize("body", [{}, {"capability": "audio", "payload": {}}])
