@@ -1684,6 +1684,11 @@ async function downloadAllModules() {
     showToast('全部下载完毕！', 'success');
 }
 
+// 标准化历史任务，兼容旧记录中缺少文案模式字段的情况。
+function normalizeRestoredDetailTask(task = {}) {
+    return { ...task, includeText: task.includeText !== false };
+}
+
 // 收集当前详情页项目快照，用于历史保存和后续恢复。
 function collectCurrentRenderProject(finalImage = '') {
     if (!globalGenContext) return null;
@@ -1696,6 +1701,7 @@ function collectCurrentRenderProject(finalImage = '') {
         prompt: task.prompt,
         variant: task.variant,
         totalVariants: task.totalVariants,
+        includeText: task.includeText !== false,
         status: task.status || 'pending',
         isFallback: !!task.isFallback,
         error: task.error || '',
@@ -1785,7 +1791,7 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
 
     const ratioStr = (project.config?.aspectRatio || '1:1').replace(':', '/');
     project.modules.forEach(mod => {
-        const task = { ...mod, uniqueId: mod.id, active: true };
+        const task = { ...normalizeRestoredDetailTask(mod), uniqueId: mod.id, active: true };
         restoredTasks[mod.id] = task;
         const imageSrc = mod.imageSrc || fallbackImage || project.finalImage || '';
         container.insertAdjacentHTML('beforeend', `

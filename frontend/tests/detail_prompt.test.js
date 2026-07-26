@@ -379,6 +379,16 @@ assert.strictEqual(
     JSON.stringify(['m1_0', 'm3_0'])
 );
 
+assert.strictEqual(typeof context.normalizeRestoredDetailTask, 'function');
+assert.strictEqual(
+    context.normalizeRestoredDetailTask({ id: 'm1_0' }).includeText,
+    true
+);
+assert.strictEqual(
+    context.normalizeRestoredDetailTask({ id: 'm3_0', includeText: false }).includeText,
+    false
+);
+
 const strategyPreviewPrompt = context.buildStrategyPromptPreview(strategyTasks[0], sellingPoints, factConfig);
 assert.strictEqual(strategyPreviewPrompt.moduleRequest, 'hero');
 assert.match(strategyPreviewPrompt.fullPrompt, /IMAGE TASK/);
