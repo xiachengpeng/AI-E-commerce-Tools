@@ -147,6 +147,46 @@ const legacyEnglish = context.parseSellingPointsResponse(
 assert.strictEqual(legacyEnglish.productName, 'Compact Walking Pad');
 assert.match(legacyEnglish.sellingPoints, /Product type/);
 
+assert.strictEqual(typeof context.resolveSellingPointsFormState, 'function');
+assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.resolveSellingPointsFormState(
+        '',
+        'old selling points',
+        { productName: '折叠式桌下走步机', sellingPoints: '新的核心卖点' }
+    ))),
+    {
+        productName: '折叠式桌下走步机',
+        sellingPoints: '新的核心卖点',
+        didFillProductName: true
+    }
+);
+
+assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.resolveSellingPointsFormState(
+        '用户确认的产品名',
+        'old selling points',
+        { productName: 'AI 返回的名称', sellingPoints: '新的核心卖点' }
+    ))),
+    {
+        productName: '用户确认的产品名',
+        sellingPoints: '新的核心卖点',
+        didFillProductName: false
+    }
+);
+
+assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.resolveSellingPointsFormState(
+        '',
+        '保留原卖点',
+        { productName: 'Walking Pad', sellingPoints: '' }
+    ))),
+    {
+        productName: '',
+        sellingPoints: '保留原卖点',
+        didFillProductName: false
+    }
+);
+
 const firstBenefit = {
     id: 'm2',
     title: '核心卖点图',

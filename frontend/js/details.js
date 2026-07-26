@@ -294,6 +294,26 @@ function parseSellingPointsResponse(rawText = '') {
     }
 }
 
+// 根据点击前的表单状态决定是否回填 AI 识别的产品名称。
+function resolveSellingPointsFormState(currentProductName = '', currentSellingPoints = '', parsedResult = {}) {
+    const existingName = String(currentProductName || '').trim();
+    const nextSellingPoints = String(parsedResult.sellingPoints || '').trim();
+    if (!nextSellingPoints) {
+        return {
+            productName: existingName,
+            sellingPoints: String(currentSellingPoints || ''),
+            didFillProductName: false
+        };
+    }
+
+    const generatedName = compactDetailText(parsedResult.productName || '', 160);
+    return {
+        productName: existingName || generatedName,
+        sellingPoints: nextSellingPoints,
+        didFillProductName: !existingName && Boolean(generatedName)
+    };
+}
+
 // 根据模块 ID 和序号返回当前模块的转化职责，避免不同图片重复讲同一件事。
 function getModuleContentRole(task = {}) {
     const variant = Number(task.variant || 0);
@@ -1149,15 +1169,26 @@ async function generateSellingPoints() {
     remoteLog(logMsg);
     const btn = document.getElementById('aiWriteBtn');
     const textArea = document.getElementById('sellingPointsText');
+    const productNameInput = document.getElementById('productNameInput');
     const origHtml = btn.innerHTML;
     btn.innerHTML = '<span class="loader w-3 h-3 border-2 border-blue-500 border-t-transparent mr-1"></span> 生成中...';
     btn.disabled = true;
 
     const sellingPointImages = [getPrimaryUploadedImage(), ...getAngleUploadedImages().slice(0, 2)].filter(Boolean);
-    const productName = document.getElementById('productNameInput')?.value.trim() || '';
+    const currentProductName = productNameInput?.value.trim() || '';
+    const currentSellingPoints = textArea?.value || '';
+    const outputLanguage = getDetailConfig().language || 'English';
     const productFacts = document.getElementById('productFactsText')?.value.trim() || '';
     const forbiddenClaims = document.getElementById('forbiddenClaimsText')?.value.trim() || '';
-    let parts = [{ text: buildSellingPointsExtractionPrompt(sellingPointImages.length || 1, productFacts, forbiddenClaims, productName) }];
+    let parts = [{
+        text: buildSellingPointsExtractionPrompt(
+            sellingPointImages.length || 1,
+            productFacts,
+            forbiddenClaims,
+            currentProductName,
+            outputLanguage
+        )
+    }];
     if (sellingPointImages.length) {
         if (sellingPointImages.length > 1) {
             parts[0].text += `\n\n我同时提供了 ${sellingPointImages.length} 张商品素材。第一张是主图，后续为角度/细节参考。请综合判断，但不要把不同角度误认为不同产品。`;
@@ -1171,12 +1202,26 @@ async function generateSellingPoints() {
         const payload = { contents: [{ role: "user", parts: parts }] };
         remoteLog(`正在提取产品卖点 (视觉解析模式)...`);
         const res = await callAI("text", payload);
-        const text = res.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-            textArea.value = text;
-            showToast('卖点提取成功', 'success');
-            remoteLog(`卖点提取成功: ${text.substring(0, 50)}...`);
+        const rawText = res.candidates?.[0]?.content?.parts?.[0]?.text;
+        const parsed = parseSellingPointsResponse(rawText);
+        if (!parsed.sellingPoints) {
+            throw new Error('AI 返回内容缺少核心卖点');
         }
+        const nextState = resolveSellingPointsFormState(
+            currentProductName,
+            currentSellingPoints,
+            parsed
+        );
+        if (productNameInput && nextState.didFillProductName) {
+            productNameInput.value = nextState.productName;
+        }
+        textArea.value = nextState.sellingPoints;
+        showToast('卖点提取成功', 'success');
+        remoteLog(
+            nextState.didFillProductName
+                ? `卖点提取成功，已自动识别产品名称: ${nextState.productName}`
+                : '卖点提取成功，已保留现有产品名称'
+        );
     } catch (err) {
         console.error(err); showToast('生成失败', 'error');
         remoteLog(`卖点提取失败: ${err.message}`);
