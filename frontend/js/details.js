@@ -151,11 +151,44 @@ function buildProductLockPrompt(config = {}) {
     const hasFacts = Boolean(compactDetailText(config.productFacts || '', 200));
     return `PRODUCT LOCK
 - Use the uploaded reference product as the source of truth.
+- Treat the uploaded reference product as the only source of truth for every visible product detail.
 - Do not redesign the product or change its category, silhouette, structure, material, color, proportions, or visible details.
-- Do not add any extra product elements, accessories, markings, parts, functions, or attachments unless they are clearly visible in the reference image or confirmed product facts.
-- Keep all product markings, color accents, surface texture, and component placement consistent with the reference image.
+- Do not add any extra product elements, accessories, markings, parts, functions, or attachments.
+- Do not alter or invent the product category, silhouette, structure, parts, accessories, color, material, finish, proportions, logo, controls, buttons, ports, labels, texture, and component placement.
+- Preserve original packaging, markings, color accents, surface finish, and every recognizable product detail exactly as shown in the reference image.
+- Background, lighting, and non-product decoration may change, but they must not obscure, reshape, replace, or redesign the product.
 - If a product detail is unclear, keep it simple or omit it instead of inventing.
-${hasFacts ? '- Respect the confirmed product facts listed in PRODUCT CONTEXT; do not contradict them.' : '- No extra confirmed facts were supplied; rely on the uploaded image, product category, and module goal to infer plausible e-commerce details.'}`;
+${hasFacts ? '- Respect the confirmed product facts listed in PRODUCT CONTEXT; do not contradict them.' : '- No extra confirmed facts were supplied. Use the module goal only for background and composition; never infer or invent missing product details.'}`;
+}
+
+// 根据模块文案模式构建统一的可见文字策略，无文案模式优先覆盖模块原始要求。
+function buildModuleTextPolicy(task = {}, config = {}) {
+    if (task.includeText === false) {
+        return `NO ADDED TEXT
+- No headlines, subheadlines, callouts, captions, specifications, dimensions, labels, badges, watermarks, letters, numbers, or typographic elements may be added.
+- This rule overrides any module request for text, tables, comparison rows, measurement labels, step labels, badges, or written callouts. Communicate the module goal through composition, objects, lighting, and scene only.
+- Original product markings visible in the uploaded reference may remain only when reproduced exactly. Do not rewrite, translate, replace, or redesign them.`;
+    }
+
+    const visibleTextById = {
+        m1: 'Use one short headline, one short support line, and up to three fact-based callouts from confirmed product information.',
+        m2: 'Use one short benefit headline and up to three large fact-based callouts. Each callout must map to one confirmed feature or visible product detail.',
+        m3: 'Use little or no overlay text. If text is needed, use one short scenario phrase.',
+        m4: 'Use short angle labels only when helpful. Avoid long paragraphs.',
+        m5: 'Use one short lifestyle phrase at most.',
+        m6: 'Use short labels for visible details only.',
+        m7: 'Use restrained editorial copy, one headline and one support line at most.',
+        m8: 'Use measurement labels from confirmed facts when available; if missing, infer plausible visual scale details.',
+        m9: 'Use concise comparison row labels and factual feature names.',
+        m10: 'Use specification labels and values from confirmed facts when available; if missing, infer plausible e-commerce specification details.',
+        m11: 'Use trust labels only for supplied support, warranty, shipping, return, maintenance, or package-list facts.',
+        m12: 'Use short step labels with minimal instruction text.'
+    };
+    return `VISIBLE TEXT
+- All visible text must be ${config.language || 'English'}.
+- ${visibleTextById[task.id] || 'Use concise, factual visible copy only. One headline, one support line, and up to three short callouts maximum.'}
+- Prefer Product information and Confirmed product facts. When information is missing, infer plausible e-commerce details from the reference image, product category, and module goal.
+- Text density: max 1 headline, max 1 subheadline, maximum 3 bullets/callouts, no dense fine print, repeated badges, or dense poster text.`;
 }
 
 // 构建单个模块的执行 brief，明确这张图的目标、构图和可见文字。
@@ -176,32 +209,29 @@ function buildModuleExecutionBrief(task = {}, sellingPoints = '', config = {}) {
         m11: 'Use trust cues such as support, maintenance, package list, shipping, returns, or warranty only when supplied.',
         m12: 'Use a simple 3-4 step instructional layout with icons or small visual cues and minimal copy.'
     };
-    const visibleTextById = {
-        m1: 'Use one short English headline, one short support line, and up to three fact-based callouts from confirmed product information.',
-        m2: 'Use one short English benefit headline and up to three large fact-based callouts. Each callout must map to one confirmed feature or visible product detail.',
-        m3: 'Use little or no overlay text. If text is needed, use one short English scenario phrase.',
-        m4: 'Use short English angle labels only when helpful. Avoid long paragraphs.',
-        m5: 'Use one short English lifestyle phrase at most.',
-        m6: 'Use short English labels for visible details only.',
-        m7: 'Use restrained English editorial copy, one headline and one support line at most.',
-        m8: 'Use English measurement labels from confirmed facts when available; if missing, infer plausible visual scale details.',
-        m9: 'Use concise English comparison row labels and factual feature names.',
-        m10: 'Use English specification labels and values from confirmed facts when available; if missing, infer plausible e-commerce specification details.',
-        m11: 'Use English trust labels only for supplied support, warranty, shipping, return, maintenance, or package-list facts.',
-        m12: 'Use short English step labels with minimal instruction text.'
+    const visualOnlyCompositionById = {
+        m1: 'Use a clean studio or premium lifestyle setting. Keep the unchanged source product large, clear, and instantly recognizable.',
+        m2: 'Demonstrate one benefit through product placement, scene, props, and believable use only. Do not use callouts or infographic elements.',
+        m3: 'Show one believable usage context with realistic product scale, natural posture, and credible lighting.',
+        m4: 'Show faithful product angles or a clean angle-view collage with no angle labels.',
+        m5: 'Build a restrained lifestyle mood around the unchanged product. The product remains the anchor.',
+        m6: 'Use close-up framing for visible material, surface, controls, texture, seams, ports, or construction details that already exist in the reference product.',
+        m7: 'Use editorial composition, lighting, and negative space to express positioning without written copy.',
+        m8: 'Show scale or storage footprint through familiar objects and spatial context, without measurement lines, numbers, or labels.',
+        m9: 'Use a simple side-by-side visual comparison communicated only through composition and visible objects, without tables, rows, labels, or symbols.',
+        m10: 'Use an organized visual arrangement of the unchanged product and only its visible supplied parts, without specification cards, values, or labels.',
+        m11: 'Use supplied package contents or a believable support and delivery scene without trust badges, policy text, labels, or symbols.',
+        m12: 'Show a visual sequence of believable use or maintenance scenes without step numbers, labels, icons, arrows, or instruction text.'
     };
+    const composition = task.includeText === false
+        ? visualOnlyCompositionById[task.id]
+        : compositionById[task.id];
     return `SECTION GOAL
 ${role}
 
 COMPOSITION
 - Place the product large and clear as the main subject unless this module is a pure close-up detail section.
-${compositionById[task.id] || `Create one focused visual idea for "${moduleTitle}" with clear hierarchy, large readable elements, and the product as the main subject.`}
-
-VISIBLE TEXT
-- All visible text must be ${config.language || 'English'}.
-- ${visibleTextById[task.id] || 'Use concise, factual visible copy only. One headline, one support line, and up to three short callouts maximum.'}
-	- Prefer Product information and Confirmed product facts. When information is missing, infer plausible e-commerce details from the reference image, product category, and module goal.
-- Do not put long paragraphs, tiny fine print, repeated badges, or dense poster text in the image.`;
+${composition || `Create one focused visual idea for "${moduleTitle}" with clear hierarchy and the unchanged product as the main subject.`}`;
 }
 
 // 构建整套详情页的全局策略 brief，约束模块分工、合规、文案密度和视觉真实性。
@@ -455,15 +485,21 @@ Return strict JSON only:
 // 拼接最终发给图片模型的模块级提示词，融合模块职责、卖点、配置、合规和重绘要求。
 function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdjustment = '') {
     const moduleTitle = getPromptModuleTitle(task);
+    const moduleRequest = task.includeText === false
+        ? `Create a visual-only interpretation of "${moduleTitle}" and follow the NO ADDED TEXT policy.`
+        : task.prompt;
     const productInfo = compactDetailText(sellingPoints, 1800);
     const guardrails = buildProductGuardrails(config);
     const productLock = buildProductLockPrompt(config);
     const executionBrief = buildModuleExecutionBrief(task, sellingPoints, config);
+    const textPolicy = buildModuleTextPolicy(task, config);
     const themeContext = config.marketingTheme && config.marketingTheme !== 'none'
         ? `Marketing theme: ${config.marketingTheme}. Integrate it lightly without overwhelming the product.`
         : 'Marketing theme: none. Keep the layout evergreen and product-led.';
     const variationRule = task.totalVariants > 1
-        ? `Variant rule: this is version ${Number(task.variant || 0) + 1}/${task.totalVariants}. Do NOT repeat the same angle, headline, visual composition, or callout set used by sibling variants.`
+        ? task.includeText === false
+            ? `Variant rule: this is version ${Number(task.variant || 0) + 1}/${task.totalVariants}. Do NOT repeat the same angle, scene, product placement, or visual composition used by sibling variants.`
+            : `Variant rule: this is version ${Number(task.variant || 0) + 1}/${task.totalVariants}. Do NOT repeat the same angle, headline, visual composition, or callout set used by sibling variants.`
         : 'Variant rule: one focused version only.';
     const repaintRule = promptAdjustment
         ? `User repaint instruction: ${promptAdjustment}. Apply it while preserving product identity, section role, compliance, and readability.`
@@ -471,7 +507,7 @@ function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdj
 
     return `IMAGE TASK
 Create one professional e-commerce detail-page image section for "${moduleTitle}".
-Module request: ${task.prompt}
+Module request: ${moduleRequest}
 
 PRODUCT CONTEXT
 Product information: ${productInfo || 'No written product information supplied.'}
@@ -490,12 +526,13 @@ ${productLock}
 
 ${executionBrief}
 
+${textPolicy}
+
 HARD RULES
 - Generate one finished image only, not a wireframe or instruction sheet.
-- Keep one primary visual idea, clear hierarchy, readable mobile text, consistent typography, and no overstuffed collage.
-- Text density: max 1 headline, max 1 subheadline, maximum 3 bullets/callouts, no dense fine print.
+- Keep one primary visual idea, clear hierarchy, and no overstuffed collage.
 - Forbidden claims: no clinical outcomes, no body-shape guarantees, no guaranteed measurable results, and no forbidden wording supplied by the user.
-- If specs, dimensions, capacity, warranty, app functions, or similar commercial details are not supplied, generate plausible e-commerce details from the reference image, product category, and module goal.
+${task.includeText === false ? '- Do not add commercial specifications, dimensions, values, warranty terms, app functions, or other written details.' : '- If specs, dimensions, capacity, warranty, app functions, or similar commercial details are not supplied, generate cautious, plausible e-commerce copy without altering the product itself.'}
 - Avoid medical outcomes, body-transformation promises, fat-loss promises, absolute superlatives, and unverifiable performance claims.
 - Keep shadows, perspective, scale, and human posture realistic.
 ${repaintRule}`.trim();

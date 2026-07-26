@@ -201,6 +201,35 @@ const secondBenefit = { ...firstBenefit, variant: 1 };
 const firstPrompt = context.buildModuleGenerationPrompt(firstBenefit, sellingPoints, factConfig);
 const secondPrompt = context.buildModuleGenerationPrompt(secondBenefit, sellingPoints, factConfig);
 
+assert.strictEqual(typeof context.buildModuleTextPolicy, 'function');
+const withCopyPrompt = context.buildModuleGenerationPrompt(
+    { ...firstBenefit, includeText: true },
+    sellingPoints,
+    factConfig
+);
+assert.match(withCopyPrompt, /VISIBLE TEXT/);
+assert.match(withCopyPrompt, /max 1 headline/i);
+
+const withoutCopyPrompt = context.buildModuleGenerationPrompt(
+    { ...firstBenefit, includeText: false },
+    sellingPoints,
+    factConfig
+);
+assert.match(withoutCopyPrompt, /NO ADDED TEXT/);
+assert.match(withoutCopyPrompt, /no headlines, subheadlines, callouts, captions, specifications, dimensions, labels, badges, watermarks, letters, numbers, or typographic elements/i);
+assert.match(withoutCopyPrompt, /original product markings/i);
+assert.match(withoutCopyPrompt, /do not rewrite, translate, replace, or redesign/i);
+assert.doesNotMatch(withoutCopyPrompt, /Text density: max 1 headline/i);
+assert.doesNotMatch(withoutCopyPrompt, /add up to three large proof callouts/i);
+assert.doesNotMatch(withoutCopyPrompt, /headline, visual composition, or callout set/i);
+assert.doesNotMatch(withoutCopyPrompt, /generate plausible e-commerce details/i);
+
+for (const prompt of [withCopyPrompt, withoutCopyPrompt]) {
+    assert.match(prompt, /uploaded reference product as the only source of truth/i);
+    assert.match(prompt, /logo, controls, buttons, ports, labels, texture, and component placement/i);
+    assert.match(prompt, /do not alter or invent/i);
+}
+
 assert.match(firstPrompt, /SECTION GOAL/);
 assert.match(firstPrompt, /Do NOT repeat the same angle/i);
 assert.match(firstPrompt, /Text density/i);
