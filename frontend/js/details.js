@@ -517,6 +517,7 @@ function buildStrategyTasks(activeModules = [], sellingPoints = '', config = {})
         for (let i = 0; i < (mod.count || 1); i++) {
             const task = {
                 ...mod,
+                includeText: mod.includeText !== false,
                 uniqueId: `${mod.id}_${i}`,
                 displayTitle: mod.count > 1 ? `${mod.title} 0${i + 1}` : mod.title,
                 variant: i,
@@ -941,6 +942,9 @@ function initModules() {
 
         let countControlHTML = '';
         if (mod.active) {
+            const includeText = mod.includeText !== false;
+            const selectedCopyClass = 'bg-blue-500 text-white';
+            const unselectedCopyClass = 'bg-white text-gray-500 hover:text-blue-600';
             countControlHTML = `
                 <div class="mt-2 pt-2 border-t border-blue-100 flex items-center justify-between" onclick="event.stopPropagation()">
                     <span class="text-[10px] text-gray-500">张数</span>
@@ -948,6 +952,13 @@ function initModules() {
                         <button onclick="updateModuleCount('${mod.id}', -1)" class="w-6 h-5 flex items-center justify-center text-gray-400 hover:text-blue-600 disabled:opacity-30" ${mod.count <= 1 ? 'disabled' : ''}><i class="ph ph-minus text-[10px]"></i></button>
                         <span class="text-[10px] font-bold w-4 text-center">${mod.count}</span>
                         <button onclick="updateModuleCount('${mod.id}', 1)" class="w-6 h-5 flex items-center justify-center text-gray-400 hover:text-blue-600 disabled:opacity-30" ${mod.count >= 5 ? 'disabled' : ''}><i class="ph ph-plus text-[10px]"></i></button>
+                    </div>
+                </div>
+                <div class="mt-2 flex items-center justify-between" onclick="event.stopPropagation()">
+                    <span class="text-[10px] text-gray-500">包含文案</span>
+                    <div class="flex rounded border border-gray-200 overflow-hidden bg-white">
+                        <button onclick="updateModuleIncludeText('${mod.id}', true)" class="px-2 h-5 text-[10px] font-bold transition-colors ${includeText ? selectedCopyClass : unselectedCopyClass}">是</button>
+                        <button onclick="updateModuleIncludeText('${mod.id}', false)" class="px-2 h-5 text-[10px] font-bold transition-colors ${includeText ? unselectedCopyClass : selectedCopyClass}">否</button>
                     </div>
                 </div>`;
         }
@@ -1078,6 +1089,19 @@ function updateModuleCount(id, delta) {
         let newCount = mod.count + delta;
         if (newCount >= 1 && newCount <= 5) { mod.count = newCount; initModules(); }
     }
+}
+
+// 只更新目标模块的文案模式，不影响模块启用状态或张数。
+function setModuleIncludeText(moduleList = [], moduleId = '', includeText = true) {
+    const mod = Array.isArray(moduleList) ? moduleList.find(item => item.id === moduleId) : null;
+    if (!mod) return false;
+    mod.includeText = includeText !== false;
+    return true;
+}
+
+// 切换模块生成图是否允许新增可见文案。
+function updateModuleIncludeText(moduleId, includeText) {
+    if (setModuleIncludeText(modules, moduleId, includeText)) initModules();
 }
 
 // 根据比例下拉状态显示或隐藏自定义宽高比输入区。

@@ -266,6 +266,19 @@ const activeDefaults = context.MODULES_CONFIG
     .filter(mod => mod.active)
     .map(mod => mod.id);
 assert.strictEqual(JSON.stringify(activeDefaults), JSON.stringify(['m1', 'm2', 'm3', 'm9', 'm10', 'm11']));
+assert(context.MODULES_CONFIG.every(mod => mod.includeText === true));
+assert.strictEqual(typeof context.setModuleIncludeText, 'function');
+
+const moduleToggleFixture = [
+    { id: 'm1', active: true, count: 2, includeText: true },
+    { id: 'm2', active: true, count: 1, includeText: true }
+];
+assert.strictEqual(context.setModuleIncludeText(moduleToggleFixture, 'm2', false), true);
+assert.strictEqual(moduleToggleFixture[0].includeText, true);
+assert.strictEqual(moduleToggleFixture[0].count, 2);
+assert.strictEqual(moduleToggleFixture[0].active, true);
+assert.strictEqual(moduleToggleFixture[1].includeText, false);
+assert.strictEqual(context.setModuleIncludeText(moduleToggleFixture, 'missing', false), false);
 
 const styleLabels = context.IMAGE_STYLE_OPTIONS.map(opt => opt.label);
 assert(styleLabels.includes('亚马逊信息图风'));
@@ -322,6 +335,13 @@ assert.match(strategyTasks[0].role, /Hero/i);
 assert.match(strategyTasks[0].strategyCn.goal, /立刻看懂/);
 assert.match(strategyTasks[1].strategyCn.avoid, /重复/);
 assert.match(strategyTasks[1].prompt, /benefit/i);
+
+const textModeTasks = context.buildStrategyTasks([
+    { id: 'm1', title: 'Hero', subtitle: 'Hero', prompt: 'hero', count: 1, includeText: true },
+    { id: 'm3', title: 'Scene', subtitle: 'Scene', prompt: 'scene', count: 1, includeText: false }
+], sellingPoints, factConfig);
+assert.strictEqual(textModeTasks[0].includeText, true);
+assert.strictEqual(textModeTasks[1].includeText, false);
 
 const removedLongImageOrder = context.removeLongImageModuleFromOrder(['m1_0', 'm2_0', 'm3_0', 'm2_0'], 'm2_0');
 assert.strictEqual(JSON.stringify(removedLongImageOrder), JSON.stringify(['m1_0', 'm3_0']));
