@@ -95,6 +95,58 @@ assert.match(extractionPrompt, /Confirmed product facts/i);
 assert.match(extractionPrompt, /Speed range: 0.6-3.8 mph/i);
 assert.match(extractionPrompt, /User-forbidden claims/i);
 
+const emptyNamePrompt = context.buildSellingPointsExtractionPrompt(
+    1,
+    productFacts,
+    forbiddenClaims,
+    '',
+    'Chinese'
+);
+assert.match(emptyNamePrompt, /identify the product from the uploaded image/i);
+assert.match(emptyNamePrompt, /product_name/i);
+assert.match(emptyNamePrompt, /selling_points/i);
+assert.match(emptyNamePrompt, /Chinese/);
+
+const suppliedNamePrompt = context.buildSellingPointsExtractionPrompt(
+    1,
+    productFacts,
+    forbiddenClaims,
+    'Compact Under-Desk Walking Pad',
+    'English'
+);
+assert.match(suppliedNamePrompt, /Compact Under-Desk Walking Pad/);
+assert.match(suppliedNamePrompt, /combine the uploaded image evidence/i);
+
+assert.strictEqual(typeof context.parseSellingPointsResponse, 'function');
+assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.parseSellingPointsResponse(
+        '{"product_name":"折叠式桌下走步机","selling_points":"产品类型：桌下走步机\\n核心卖点：便于收纳"}'
+    ))),
+    {
+        productName: '折叠式桌下走步机',
+        sellingPoints: '产品类型：桌下走步机\n核心卖点：便于收纳'
+    }
+);
+
+assert.strictEqual(
+    context.parseSellingPointsResponse(
+        '```json\n{"product_name":"Walking Pad","selling_points":"Core selling points:\\n- Compact"}\n```'
+    ).productName,
+    'Walking Pad'
+);
+
+const legacyChinese = context.parseSellingPointsResponse(
+    '产品名称：折叠式桌下走步机\n产品类型：家用健身设备\n核心卖点：小巧易收纳'
+);
+assert.strictEqual(legacyChinese.productName, '折叠式桌下走步机');
+assert.match(legacyChinese.sellingPoints, /核心卖点：小巧易收纳/);
+
+const legacyEnglish = context.parseSellingPointsResponse(
+    'Product name: Compact Walking Pad\nProduct type: Home fitness equipment'
+);
+assert.strictEqual(legacyEnglish.productName, 'Compact Walking Pad');
+assert.match(legacyEnglish.sellingPoints, /Product type/);
+
 const firstBenefit = {
     id: 'm2',
     title: '核心卖点图',

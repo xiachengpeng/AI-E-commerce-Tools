@@ -229,11 +229,12 @@ Global strategy:
 }
 
 // 构建 AI 帮写卖点时使用的图片理解提示词，要求输出事实、卖点、场景和风险项。
-function buildSellingPointsExtractionPrompt(imageCount = 1, productFacts = '', forbiddenClaims = '', productName = '') {
+function buildSellingPointsExtractionPrompt(imageCount = 1, productFacts = '', forbiddenClaims = '', productName = '', outputLanguage = 'English') {
     const multiImageNote = imageCount > 1
         ? `I provided ${imageCount} product images. The first image is the primary product image and the rest are angle/detail references. Treat them as the same product unless clearly impossible.`
         : 'I provided one primary product image.';
     const normalizedProductName = compactDetailText(productName, 160);
+    const normalizedOutputLanguage = compactDetailText(outputLanguage, 80) || 'English';
     const productNameNote = normalizedProductName
         ? `User-provided product name: ${normalizedProductName}. Use the uploaded image evidence as the visual source of truth, and combine the uploaded image evidence with this product name to correct the product category, naming, and selling-point direction.`
         : 'No user-provided product name. Identify the product from the uploaded image evidence.';
@@ -245,7 +246,13 @@ ${multiImageNote}
 ${productNameNote}
 ${guardrails ? `\n${guardrails}` : ''}
 
-Output these sections in clear plain text:
+Return only one valid JSON object with exactly these string fields:
+{
+  "product_name": "A concise, e-commerce-friendly product name written in ${normalizedOutputLanguage}",
+  "selling_points": "The complete product brief written in ${normalizedOutputLanguage}"
+}
+
+The selling_points string must contain these clearly labeled sections:
 1. Product name: concise and e-commerce friendly.
 2. Product type and core use: explain what it is in one sentence.
 3. Known facts: list visible or supplied facts only, including material, structure, controls, accessories, app/remote support, dimensions, capacity, speed, warranty, certifications, or specifications only when visible or provided.
@@ -260,6 +267,31 @@ Rules:
 - For wellness, fitness, beauty, recovery, or health products, avoid weight-loss, medical, body-transformation, pain-treatment, or guaranteed-result claims.
 - Prefer practical, verifiable benefits over hype words such as ultimate, revolutionary, transform, miracle, best, or guaranteed.
 - Do not use markdown tables.`;
+}
+
+// 解析结构化 AI 返回，并兼容 Markdown JSON 代码块和旧版普通文本。
+function parseSellingPointsResponse(rawText = '') {
+    const raw = String(rawText || '').trim();
+    if (!raw) return { productName: '', sellingPoints: '' };
+
+    const unfenced = raw
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
+
+    try {
+        const parsed = JSON.parse(unfenced);
+        return {
+            productName: compactDetailText(parsed.product_name || parsed.productName || '', 160),
+            sellingPoints: String(parsed.selling_points || parsed.sellingPoints || '').trim()
+        };
+    } catch (_) {
+        const nameMatch = raw.match(/^(?:product\s*name|产品名称)\s*[:：]\s*(.+)$/im);
+        return {
+            productName: compactDetailText(nameMatch?.[1] || '', 160),
+            sellingPoints: raw
+        };
+    }
 }
 
 // 根据模块 ID 和序号返回当前模块的转化职责，避免不同图片重复讲同一件事。
