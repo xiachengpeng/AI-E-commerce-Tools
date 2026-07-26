@@ -57,3 +57,6 @@ backend/static/outputs/*
 # 如果你希望整个 static 目录都不上传
 backend/static/*
 !.gitkeep
+
+# Local API relay experiment (contains local credentials)
+中转站生图.py

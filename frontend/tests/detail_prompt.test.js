@@ -22,6 +22,8 @@ const context = loadFrontendContext();
 
 assert.strictEqual(typeof context.buildDetailPageBrief, 'function');
 assert.strictEqual(typeof context.buildModuleGenerationPrompt, 'function');
+assert.strictEqual(typeof context.buildProductLockPrompt, 'function');
+assert.strictEqual(typeof context.buildModuleExecutionBrief, 'function');
 assert.strictEqual(typeof context.getModuleContentRole, 'function');
 assert.strictEqual(typeof context.getModuleStrategyCn, 'function');
 assert.strictEqual(typeof context.buildSellingPointsExtractionPrompt, 'function');
@@ -33,6 +35,7 @@ assert.strictEqual(typeof context.applyStrategyOverrides, 'function');
 assert.strictEqual(typeof context.assessModuleQuality, 'function');
 assert.strictEqual(typeof context.buildPromptRewriteSuggestion, 'function');
 assert.strictEqual(typeof context.buildExportChecklist, 'function');
+assert.strictEqual(typeof context.removeLongImageModuleFromOrder, 'function');
 
 const config = {
     platform: 'Independent Website',
@@ -64,10 +67,11 @@ const forbiddenClaims = [
     'Do not invent FDA certification'
 ].join('\n');
 
-const factConfig = { ...config, productFacts, forbiddenClaims };
+const productName = 'Compact Under-Desk Walking Pad';
+const factConfig = { ...config, productName, productFacts, forbiddenClaims };
 const brief = context.buildDetailPageBrief(sellingPoints, factConfig);
 assert.match(brief, /one clear conversion job/i);
-assert.match(brief, /Do not invent/i);
+assert.match(brief, /infer plausible e-commerce specifications/i);
 assert.match(brief, /Avoid medical/i);
 assert.match(brief, /maximum 3 bullets/i);
 assert.match(brief, /Confirmed product facts/i);
@@ -79,11 +83,14 @@ assert.match(brief, /US Market/i);
 assert.match(brief, /High-end minimalist/i);
 assert.doesNotMatch(brief, /独立站|美国 \(US\)|高端极简/);
 
-const extractionPrompt = context.buildSellingPointsExtractionPrompt(3, productFacts, forbiddenClaims);
+const extractionPrompt = context.buildSellingPointsExtractionPrompt(3, productFacts, forbiddenClaims, productName);
 assert.match(extractionPrompt, /known facts/i);
 assert.match(extractionPrompt, /Do not invent/i);
 assert.match(extractionPrompt, /avoid weight-loss, medical, body-transformation/i);
 assert.match(extractionPrompt, /specifications/i);
+assert.match(extractionPrompt, /User-provided product name/i);
+assert.match(extractionPrompt, /Compact Under-Desk Walking Pad/i);
+assert.match(extractionPrompt, /combine the uploaded image evidence with this product name/i);
 assert.match(extractionPrompt, /Confirmed product facts/i);
 assert.match(extractionPrompt, /Speed range: 0.6-3.8 mph/i);
 assert.match(extractionPrompt, /User-forbidden claims/i);
@@ -102,7 +109,7 @@ const secondBenefit = { ...firstBenefit, variant: 1 };
 const firstPrompt = context.buildModuleGenerationPrompt(firstBenefit, sellingPoints, factConfig);
 const secondPrompt = context.buildModuleGenerationPrompt(secondBenefit, sellingPoints, factConfig);
 
-assert.match(firstPrompt, /Module role:/);
+assert.match(firstPrompt, /SECTION GOAL/);
 assert.match(firstPrompt, /Do NOT repeat the same angle/i);
 assert.match(firstPrompt, /Text density/i);
 assert.match(firstPrompt, /Forbidden claims/i);
@@ -110,10 +117,32 @@ assert.notStrictEqual(firstPrompt, secondPrompt);
 assert.match(firstPrompt, /under-desk|core daily-use/i);
 assert.match(secondPrompt, /vibration|secondary function/i);
 assert.match(firstPrompt, /Max load: 300 lbs/i);
+assert.match(firstPrompt, /Product name: Compact Under-Desk Walking Pad/i);
 assert.match(firstPrompt, /Do not mention medical recovery/i);
 assert.doesNotMatch(firstPrompt, /独立站|美国 \(US\)|高端极简/);
 assert.match(firstPrompt, /Core Benefit Proof/);
 assert.doesNotMatch(firstPrompt, /核心卖点图|核心功能证明/);
+assert.match(firstPrompt, /IMAGE TASK/);
+assert.match(firstPrompt, /PRODUCT LOCK/);
+assert.match(firstPrompt, /SECTION GOAL/);
+assert.match(firstPrompt, /COMPOSITION/);
+assert.match(firstPrompt, /VISIBLE TEXT/);
+assert.match(firstPrompt, /HARD RULES/);
+assert.match(firstPrompt, /Use the uploaded reference product as the source of truth/i);
+assert.match(firstPrompt, /Do not redesign the product/i);
+assert.match(firstPrompt, /Do not add any extra product elements, accessories, markings, parts, functions, or attachments/i);
+assert.doesNotMatch(firstPrompt, /handrails|console screens|wheels|handles/i);
+assert.match(firstPrompt, /Place the product large and clear/i);
+assert.match(firstPrompt, /All visible text must be English/i);
+assert.strictEqual((firstPrompt.match(/Target platform:/gi) || []).length, 1);
+assert.strictEqual((firstPrompt.match(/Product information:/gi) || []).length, 1);
+assert.strictEqual((firstPrompt.match(/Module role:/gi) || []).length, 0);
+assert.strictEqual((firstPrompt.match(/PRODUCT INFORMATION FOR THIS SECTION/gi) || []).length, 0);
+assert.strictEqual((firstPrompt.match(/2-in-1 Walking Pad with vibration mode/gi) || []).length, 1);
+assert.doesNotMatch(firstPrompt, /Confirmed product facts to preserve: 2-in-1 Walking Pad/i);
+assert.doesNotMatch(firstPrompt, /Do not invent specifications, certifications, warranty terms, app functions, speed, load capacity, dimensions, or awards/i);
+assert.doesNotMatch(firstPrompt, /Use only facts from Product information or Confirmed product facts/i);
+assert.match(firstPrompt, /When information is missing, infer plausible e-commerce details from the reference image, product category, and module goal/i);
 
 const specPrompt = context.buildModuleGenerationPrompt({
     id: 'm10',
@@ -124,7 +153,7 @@ const specPrompt = context.buildModuleGenerationPrompt({
     variant: 0,
     totalVariants: 1
 }, sellingPoints, factConfig);
-assert.match(specPrompt, /Use only facts from the supplied selling points/i);
+assert.match(specPrompt, /infer plausible specification details/i);
 assert.match(specPrompt, /Speed range: 0.6-3.8 mph/i);
 assert.match(specPrompt, /Do not mention burn fat/i);
 
@@ -202,9 +231,17 @@ assert.match(strategyTasks[0].strategyCn.goal, /立刻看懂/);
 assert.match(strategyTasks[1].strategyCn.avoid, /重复/);
 assert.match(strategyTasks[1].prompt, /benefit/i);
 
+const removedLongImageOrder = context.removeLongImageModuleFromOrder(['m1_0', 'm2_0', 'm3_0', 'm2_0'], 'm2_0');
+assert.strictEqual(JSON.stringify(removedLongImageOrder), JSON.stringify(['m1_0', 'm3_0']));
+assert.strictEqual(
+    JSON.stringify(context.removeLongImageModuleFromOrder(['m1_0', 'm3_0'], 'missing')),
+    JSON.stringify(['m1_0', 'm3_0'])
+);
+
 const strategyPreviewPrompt = context.buildStrategyPromptPreview(strategyTasks[0], sellingPoints, factConfig);
 assert.strictEqual(strategyPreviewPrompt.moduleRequest, 'hero');
-assert.match(strategyPreviewPrompt.fullPrompt, /Task: Generate one professional e-commerce detail-page section/i);
+assert.match(strategyPreviewPrompt.fullPrompt, /IMAGE TASK/);
+assert.match(strategyPreviewPrompt.fullPrompt, /Create one professional e-commerce detail-page image section/i);
 assert.match(strategyPreviewPrompt.fullPrompt, /Module request: hero/i);
 assert.match(strategyPreviewPrompt.fullPrompt, /Confirmed product facts/i);
 assert.match(strategyPreviewPrompt.fullPrompt, /Hero Product Understanding/);

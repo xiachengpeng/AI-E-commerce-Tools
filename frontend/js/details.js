@@ -105,6 +105,7 @@ function getDetailConfig() {
         aspectRatio,
         marketingTheme: document.getElementById('marketingThemeSelect')?.value || 'none',
         marketingThemeLabel: getSelectedOptionLabel('marketingThemeSelect'),
+        productName: document.getElementById('productNameInput')?.value.trim() || '',
         productFacts: document.getElementById('productFactsText')?.value.trim() || '',
         forbiddenClaims: document.getElementById('forbiddenClaimsText')?.value.trim() || ''
     };
@@ -112,17 +113,25 @@ function getDetailConfig() {
 
 // 压缩长文本中的空白并截断到指定长度，避免提示词过长。
 function compactDetailText(value, maxLength = 900) {
-    return String(value || '')
+    const normalized = String(value || '')
         .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, maxLength);
+        .trim();
+    if (normalized.length <= maxLength) return normalized;
+    const clipped = normalized.slice(0, maxLength);
+    const lastSpace = clipped.lastIndexOf(' ');
+    const safeCut = lastSpace > maxLength * 0.75 ? clipped.slice(0, lastSpace) : clipped;
+    return safeCut.replace(/[,:;.-]*$/, '').trim();
 }
 
 // 按需生成产品事实和禁用词上下文，供各类提示词复用。
 function buildProductGuardrails(config = {}) {
+    const productName = compactDetailText(config.productName || '', 160);
     const facts = compactDetailText(config.productFacts || '', 900);
     const forbidden = compactDetailText(config.forbiddenClaims || '', 700);
     const sections = [];
+    if (productName) {
+        sections.push(`Product name: ${productName}`);
+    }
     if (facts) {
         sections.push(`Confirmed product facts:\n${facts}`);
     }
@@ -137,9 +146,67 @@ function getPromptModuleTitle(task = {}) {
     return compactDetailText(task.promptTitle || task.promptName || task.id || 'Detail Page Section', 120);
 }
 
+// 构建产品锁定规则，强约束模型不要改造参考图中的产品结构。
+function buildProductLockPrompt(config = {}) {
+    const hasFacts = Boolean(compactDetailText(config.productFacts || '', 200));
+    return `PRODUCT LOCK
+- Use the uploaded reference product as the source of truth.
+- Do not redesign the product or change its category, silhouette, structure, material, color, proportions, or visible details.
+- Do not add any extra product elements, accessories, markings, parts, functions, or attachments unless they are clearly visible in the reference image or confirmed product facts.
+- Keep all product markings, color accents, surface texture, and component placement consistent with the reference image.
+- If a product detail is unclear, keep it simple or omit it instead of inventing.
+${hasFacts ? '- Respect the confirmed product facts listed in PRODUCT CONTEXT; do not contradict them.' : '- No extra confirmed facts were supplied; rely on the uploaded image, product category, and module goal to infer plausible e-commerce details.'}`;
+}
+
+// 构建单个模块的执行 brief，明确这张图的目标、构图和可见文字。
+function buildModuleExecutionBrief(task = {}, sellingPoints = '', config = {}) {
+    const moduleTitle = getPromptModuleTitle(task);
+    const role = getModuleContentRole(task);
+    const compositionById = {
+        m1: 'Use a clean studio or premium lifestyle setting with clear empty space for text. The product must be instantly recognizable.',
+        m2: 'Use one focused benefit layout. Keep the product prominent, then add up to three large proof callouts around it. Do not repeat the hero layout.',
+        m3: 'Show one believable usage context with realistic product scale, natural posture, and credible lighting. Keep text minimal.',
+        m4: 'Show faithful product angles or a clean angle-view collage. Keep each view consistent with the same source product.',
+        m5: 'Build a restrained lifestyle mood around the product. The product remains the anchor, not a small decorative prop.',
+        m6: 'Use close-up framing for visible material, surface, control, belt, texture, seam, port, or construction details from the reference product.',
+        m7: 'Use editorial spacing and restrained copy. Focus on positioning and product fit, not invented brand history.',
+        m8: 'Use measurement lines, scale references, or storage layout. Prefer confirmed dimensions, and when missing infer plausible scale cues from the reference image.',
+        m9: 'Use a simple objective comparison layout with few rows. Compare practical features, not exaggerated superiority.',
+        m10: 'Use a clean specification card or chart. Prefer confirmed facts, and when missing infer plausible specification details from the reference image and product category.',
+        m11: 'Use trust cues such as support, maintenance, package list, shipping, returns, or warranty only when supplied.',
+        m12: 'Use a simple 3-4 step instructional layout with icons or small visual cues and minimal copy.'
+    };
+    const visibleTextById = {
+        m1: 'Use one short English headline, one short support line, and up to three fact-based callouts from confirmed product information.',
+        m2: 'Use one short English benefit headline and up to three large fact-based callouts. Each callout must map to one confirmed feature or visible product detail.',
+        m3: 'Use little or no overlay text. If text is needed, use one short English scenario phrase.',
+        m4: 'Use short English angle labels only when helpful. Avoid long paragraphs.',
+        m5: 'Use one short English lifestyle phrase at most.',
+        m6: 'Use short English labels for visible details only.',
+        m7: 'Use restrained English editorial copy, one headline and one support line at most.',
+        m8: 'Use English measurement labels from confirmed facts when available; if missing, infer plausible visual scale details.',
+        m9: 'Use concise English comparison row labels and factual feature names.',
+        m10: 'Use English specification labels and values from confirmed facts when available; if missing, infer plausible e-commerce specification details.',
+        m11: 'Use English trust labels only for supplied support, warranty, shipping, return, maintenance, or package-list facts.',
+        m12: 'Use short English step labels with minimal instruction text.'
+    };
+    return `SECTION GOAL
+${role}
+
+COMPOSITION
+- Place the product large and clear as the main subject unless this module is a pure close-up detail section.
+${compositionById[task.id] || `Create one focused visual idea for "${moduleTitle}" with clear hierarchy, large readable elements, and the product as the main subject.`}
+
+VISIBLE TEXT
+- All visible text must be ${config.language || 'English'}.
+- ${visibleTextById[task.id] || 'Use concise, factual visible copy only. One headline, one support line, and up to three short callouts maximum.'}
+	- Prefer Product information and Confirmed product facts. When information is missing, infer plausible e-commerce details from the reference image, product category, and module goal.
+- Do not put long paragraphs, tiny fine print, repeated badges, or dense poster text in the image.`;
+}
+
 // 构建整套详情页的全局策略 brief，约束模块分工、合规、文案密度和视觉真实性。
 function buildDetailPageBrief(sellingPoints, config = {}) {
-    const productInfo = compactDetailText(sellingPoints, 900);
+    const productInfo = compactDetailText(sellingPoints, 1600);
     const platform = config.platform || 'cross-border e-commerce';
     const market = config.region || 'Global Market';
     const style = config.imageStyle || 'clean e-commerce';
@@ -155,22 +222,27 @@ Global strategy:
 - Each section has one clear conversion job. Do not make every image repeat the full product story.
 - Build a compact page flow: hero, focused benefits, believable usage, objective comparison, factual specs, and trust.
 - Text density rule: one short headline, one short supporting line, maximum 3 bullets or callouts, large readable type, no tiny paragraph blocks.
-- Evidence rule: Do not invent specifications, certifications, warranty terms, app functions, speed, load capacity, dimensions, or awards.
+- Evidence rule: prioritize supplied facts; when information is missing, infer plausible e-commerce specifications and commercial details from the reference image, product category, and module goal.
 - Compliance rule: Avoid medical outcomes, body-transformation promises, fat-loss promises, guaranteed results, absolute superlatives, and unverifiable performance claims.
 - Visual realism rule: keep source product identity, proportions, material, color, and scale stable. Avoid fake perspective, unrealistic human posture, and mismatched shadows.
 - Mobile readability rule: avoid crowded layouts, long tables with tiny text, repeated badges, and dense poster-style stacking.`;
 }
 
 // 构建 AI 帮写卖点时使用的图片理解提示词，要求输出事实、卖点、场景和风险项。
-function buildSellingPointsExtractionPrompt(imageCount = 1, productFacts = '', forbiddenClaims = '') {
+function buildSellingPointsExtractionPrompt(imageCount = 1, productFacts = '', forbiddenClaims = '', productName = '') {
     const multiImageNote = imageCount > 1
         ? `I provided ${imageCount} product images. The first image is the primary product image and the rest are angle/detail references. Treat them as the same product unless clearly impossible.`
         : 'I provided one primary product image.';
-    const guardrails = buildProductGuardrails({ productFacts, forbiddenClaims });
+    const normalizedProductName = compactDetailText(productName, 160);
+    const productNameNote = normalizedProductName
+        ? `User-provided product name: ${normalizedProductName}. Use the uploaded image evidence as the visual source of truth, and combine the uploaded image evidence with this product name to correct the product category, naming, and selling-point direction.`
+        : 'No user-provided product name. Identify the product from the uploaded image evidence.';
+    const guardrails = buildProductGuardrails({ productName: normalizedProductName, productFacts, forbiddenClaims });
     return `You are a senior cross-border e-commerce product strategist and visual merchandising copywriter.
 
 Analyze the supplied product image(s) and extract a factual, conversion-ready product brief for detail-page generation.
 ${multiImageNote}
+${productNameNote}
 ${guardrails ? `\n${guardrails}` : ''}
 
 Output these sections in clear plain text:
@@ -200,9 +272,9 @@ function getModuleContentRole(task = {}) {
         m5: 'Lifestyle mood: communicate fit with the user environment using quiet visual cues and very little text.',
         m6: 'Detail close-up: highlight material, texture, controls, belt, surface, seams, ports, or build details visible in the reference.',
         m7: 'Brand story: express product positioning with restrained editorial copy and no unsupported origin or mission claims.',
-        m8: 'Size and dimensions: show scale, measurements, or storage footprint only if present in supplied information or visible reference cues.',
+        m8: 'Size and dimensions: show scale, measurements, or storage footprint. Prefer supplied values, and infer plausible scale cues when missing.',
         m9: 'Comparison: use an objective feature table. Compare functions and convenience, not inflated superiority claims.',
-        m10: 'Specifications: Use only facts from the supplied selling points or visible reference image. If a value is unknown, omit that row.',
+        m10: 'Specifications: Prefer supplied facts or visible reference cues. If values are missing, infer plausible specification details for the product category.',
         m11: 'Trust: show after-sales, support, maintenance, shipping, returns, or package-list reassurance only if supported by supplied information.',
         m12: 'Usage guide: show a clear step-by-step use or maintenance flow with simple icons and minimal text.'
     };
@@ -330,8 +402,11 @@ Return strict JSON only:
 
 // 拼接最终发给图片模型的模块级提示词，融合模块职责、卖点、配置、合规和重绘要求。
 function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdjustment = '') {
-    const brief = buildDetailPageBrief(sellingPoints, config);
     const moduleTitle = getPromptModuleTitle(task);
+    const productInfo = compactDetailText(sellingPoints, 1800);
+    const guardrails = buildProductGuardrails(config);
+    const productLock = buildProductLockPrompt(config);
+    const executionBrief = buildModuleExecutionBrief(task, sellingPoints, config);
     const themeContext = config.marketingTheme && config.marketingTheme !== 'none'
         ? `Marketing theme: ${config.marketingTheme}. Integrate it lightly without overwhelming the product.`
         : 'Marketing theme: none. Keep the layout evergreen and product-led.';
@@ -342,25 +417,35 @@ function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdj
         ? `User repaint instruction: ${promptAdjustment}. Apply it while preserving product identity, section role, compliance, and readability.`
         : '';
 
-    return `Task: Generate one professional e-commerce detail-page section for "${moduleTitle}".
+    return `IMAGE TASK
+Create one professional e-commerce detail-page image section for "${moduleTitle}".
 Module request: ${task.prompt}
-Module role: ${getModuleContentRole(task)}
 
-${brief}
+PRODUCT CONTEXT
+Product information: ${productInfo || 'No written product information supplied.'}
+${guardrails ? `\n${guardrails}` : ''}
 
-Section constraints:
-- Target Platform: ${config.platform || 'cross-border e-commerce'}
-- Target Market: ${config.region || 'Global Market'}
+MARKET AND STYLE
+- Target platform: ${config.platform || 'cross-border e-commerce'}
+- Target market: ${config.region || 'Global Market'}
 - Local tone: ${config.marketTone || 'clear, practical, trust-building'}
-- Language: ALL visible text MUST be ${config.language || 'English'}.
-- Aspect Ratio: ${config.aspectRatio || '1:1'}.
-- Aesthetic Style: ${config.imageStyle || 'clean premium e-commerce'}.
+- Aspect ratio: ${config.aspectRatio || '1:1'}
+- Aesthetic style: ${config.imageStyle || 'clean premium e-commerce'}
 - ${themeContext}
 - ${variationRule}
+
+${productLock}
+
+${executionBrief}
+
+HARD RULES
+- Generate one finished image only, not a wireframe or instruction sheet.
+- Keep one primary visual idea, clear hierarchy, readable mobile text, consistent typography, and no overstuffed collage.
 - Text density: max 1 headline, max 1 subheadline, maximum 3 bullets/callouts, no dense fine print.
-- Forbidden claims: no clinical outcomes, no body-shape guarantees, no guaranteed measurable results, no fake certifications, no invented parameters.
-- Layout: one primary visual idea, clear hierarchy, readable mobile text, consistent typography, no overstuffed poster collage.
-- Product fidelity: preserve the exact source product shape, material, color, proportions, and visible details.
+- Forbidden claims: no clinical outcomes, no body-shape guarantees, no guaranteed measurable results, and no forbidden wording supplied by the user.
+- If specs, dimensions, capacity, warranty, app functions, or similar commercial details are not supplied, generate plausible e-commerce details from the reference image, product category, and module goal.
+- Avoid medical outcomes, body-transformation promises, fat-loss promises, absolute superlatives, and unverifiable performance claims.
+- Keep shadows, perspective, scale, and human posture realistic.
 ${repaintRule}`.trim();
 }
 
@@ -1037,9 +1122,10 @@ async function generateSellingPoints() {
     btn.disabled = true;
 
     const sellingPointImages = [getPrimaryUploadedImage(), ...getAngleUploadedImages().slice(0, 2)].filter(Boolean);
+    const productName = document.getElementById('productNameInput')?.value.trim() || '';
     const productFacts = document.getElementById('productFactsText')?.value.trim() || '';
     const forbiddenClaims = document.getElementById('forbiddenClaimsText')?.value.trim() || '';
-    let parts = [{ text: buildSellingPointsExtractionPrompt(sellingPointImages.length || 1, productFacts, forbiddenClaims) }];
+    let parts = [{ text: buildSellingPointsExtractionPrompt(sellingPointImages.length || 1, productFacts, forbiddenClaims, productName) }];
     if (sellingPointImages.length) {
         if (sellingPointImages.length > 1) {
             parts[0].text += `\n\n我同时提供了 ${sellingPointImages.length} 张商品素材。第一张是主图，后续为角度/细节参考。请综合判断，但不要把不同角度误认为不同产品。`;
@@ -1492,6 +1578,7 @@ function collectCurrentRenderProject(finalImage = '') {
             role: img.role || ''
         })),
         sellingPoints: globalGenContext.sellingPoints || '',
+        productName: globalGenContext.config?.productName || '',
         productFacts: globalGenContext.config?.productFacts || '',
         forbiddenClaims: globalGenContext.config?.forbiddenClaims || '',
         config: globalGenContext.config || {},
@@ -1541,6 +1628,8 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
 
     const sellingInput = document.getElementById('sellingPointsText');
     if (sellingInput) sellingInput.value = project.sellingPoints || '';
+    const productNameInput = document.getElementById('productNameInput');
+    if (productNameInput) productNameInput.value = project.productName || project.config?.productName || '';
     const factsInput = document.getElementById('productFactsText');
     if (factsInput) factsInput.value = project.productFacts || project.config?.productFacts || '';
     const forbiddenInput = document.getElementById('forbiddenClaimsText');
@@ -1624,6 +1713,26 @@ function closeLongImageBuilder() {
     document.getElementById('longImageBuilderModal').classList.add('hidden');
 }
 
+// 从长图排序中移除指定模块 ID，用于把不想要的图片排除出长图。
+function removeLongImageModuleFromOrder(order = [], moduleId = '') {
+    return Array.isArray(order)
+        ? order.filter(id => id && id !== moduleId)
+        : [];
+}
+
+// 删除长图排版台中的模块，只影响长图合成顺序，不删除结果区单张图片。
+function removeLongImageModule(moduleId = '') {
+    if (!globalGenContext || !moduleId) return;
+    const beforeCount = (globalGenContext.longImageOrder || []).length;
+    globalGenContext.longImageOrder = removeLongImageModuleFromOrder(globalGenContext.longImageOrder || [], moduleId);
+    const afterCount = globalGenContext.longImageOrder.length;
+    if (afterCount === beforeCount) return;
+    renderSortableList();
+    const panel = document.getElementById('exportChecklistPanel');
+    if (panel && !panel.classList.contains('hidden')) renderExportChecklist();
+    showToast('已从长图中移除，单张模块图仍保留', 'success');
+}
+
 // 渲染可拖拽模块列表和长图预览画布。
 function renderSortableList() {
     const list = document.getElementById('sortableList');
@@ -1631,6 +1740,18 @@ function renderSortableList() {
     if (!list || !canvas) return;
     list.innerHTML = '';
     canvas.innerHTML = '';
+
+    if (!globalGenContext.longImageOrder.length) {
+        list.innerHTML = `
+            <div class="text-xs text-slate-400 bg-white border border-dashed border-slate-200 rounded-lg p-4 text-center leading-relaxed">
+                当前没有加入长图的图片
+            </div>`;
+        canvas.innerHTML = `
+            <div class="min-h-[360px] flex items-center justify-center text-xs text-slate-400 bg-slate-50">
+                当前没有加入长图的图片
+            </div>`;
+        return;
+    }
 
     globalGenContext.longImageOrder.forEach((id) => {
         const task = globalGenContext.tasks[id];
@@ -1646,6 +1767,12 @@ function renderSortableList() {
                 <div class="text-xs font-bold text-gray-700 truncate">${detailEscapeHtml(task.displayTitle)}</div>
                 <div class="text-[10px] text-gray-400 truncate">${detailEscapeHtml(task.subtitle)}</div>
             </div>
+            <button type="button"
+                onclick="event.stopPropagation(); removeLongImageModule('${detailEscapeHtml(id)}')"
+                class="flex items-center justify-center w-7 h-7 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100 transition-colors cursor-pointer"
+                title="不加入长图">
+                <i class="ph ph-trash text-sm"></i>
+            </button>
         `;
 
         li.addEventListener('dragstart', (e) => {
@@ -1805,6 +1932,10 @@ async function executeLongImageDownload() {
     const format = document.getElementById('exportQualitySelect').value;
     const btn = document.getElementById('btnDownloadLong');
     const origHTML = btn.innerHTML;
+    if (!globalGenContext?.longImageOrder?.length) {
+        showToast('长图中没有可导出的图片', 'error');
+        return;
+    }
 
     btn.disabled = true;
     btn.innerHTML = '<i class="ph ph-spinner animate-spin text-lg"></i> 渲染中...';

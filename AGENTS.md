@@ -1,3 +1,5 @@
+These AGENTS.md instructions replace all previously provided AGENTS.md instructions.
+
 # Project Notes
 
 ## Overview
@@ -61,4 +63,3 @@ Do not commit or upload:
 - Competitor analysis scoring is deterministic in backend code; frontend display should stay consistent with backend scores.
 - For URL analysis refreshes, do not clear existing rendered data until the new response succeeds.
 - Preserve existing user changes in the working tree. Avoid reverting unrelated files.
-
