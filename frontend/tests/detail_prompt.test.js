@@ -294,7 +294,8 @@ assert.doesNotMatch(englishSeoPrompt, /核心功能证明/);
 const activeDefaults = context.MODULES_CONFIG
     .filter(mod => mod.active)
     .map(mod => mod.id);
-assert.strictEqual(JSON.stringify(activeDefaults), JSON.stringify(['m1', 'm2', 'm3', 'm9', 'm10', 'm11']));
+assert.strictEqual(JSON.stringify(activeDefaults), JSON.stringify([]));
+assert(context.MODULES_CONFIG.every(mod => mod.count === 1));
 assert(context.MODULES_CONFIG.every(mod => mod.includeText === true));
 assert.strictEqual(typeof context.setModuleIncludeText, 'function');
 
