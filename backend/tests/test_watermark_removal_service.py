@@ -61,6 +61,12 @@ def make_png_bytes(width=10, height=10):
     return buffer.getvalue()
 
 
+def make_image_bytes(image_format, width=10, height=10):
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "white").save(buffer, format=image_format)
+    return buffer.getvalue()
+
+
 def inline_image_response(data, mime_type="image/png"):
     return {
         "candidates": [{
@@ -142,6 +148,13 @@ def test_decode_data_url_rejects_source_formats_outside_jpg_png_webp():
         decode_data_url(make_format_data_url("GIF"))
 
 
+def test_output_extension_rejects_unknown_mime_type():
+    from services.watermark_removal_service import _extension_for_mime_type
+
+    with pytest.raises(ValueError, match="不支持的输出图片格式"):
+        _extension_for_mime_type("image/gif")
+
+
 def test_validate_mask_rejects_sparse_pixels_inside_selected_region():
     source = decode_data_url(make_data_url(20, 20))
     mask = decode_data_url(make_sparse_mask_url(20, 20), require_png=True)
@@ -209,6 +222,36 @@ async def test_remove_watermark_rejects_changed_dimensions(tmp_path, monkeypatch
     ):
         with pytest.raises(ValueError, match="尺寸与原图不一致"):
             await remove_watermark(valid_request())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("image_format", "mime_type"),
+    [("GIF", "image/gif"), ("TIFF", "image/tiff")],
+)
+async def test_remove_watermark_rejects_model_images_outside_jpg_png_webp(
+    tmp_path,
+    monkeypatch,
+    image_format,
+    mime_type,
+):
+    import services.watermark_removal_service as watermark_service
+
+    static_root = tmp_path / "static"
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
+    ai_mock = AsyncMock(return_value=inline_image_response(
+        make_image_bytes(image_format),
+        mime_type,
+    ))
+
+    with patch(
+        "services.watermark_removal_service.AIService.generate_content",
+        new=ai_mock,
+    ):
+        with pytest.raises(ValueError, match="仅支持 JPG、PNG 或 WebP 格式"):
+            await remove_watermark(valid_request())
+
+    assert not static_root.exists()
 
 
 @pytest.mark.asyncio

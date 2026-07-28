@@ -18,6 +18,7 @@ DATA_URL_PATTERN = re.compile(
     r"^data:(image/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/]*={0,2})$"
 )
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+SUPPORTED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
 WATERMARK_REMOVAL_PROMPT = """Remove only the watermark in the supplied original image.
 
 The original image is the first input and the mask is the second input. White areas in the mask are editable; black areas must remain unchanged exactly.
@@ -33,7 +34,7 @@ def decode_data_url(data_url: str, *, require_png: bool = False) -> ValidatedIma
         raise ValueError("请上传有效的图片 data URL")
 
     image = validate_image_payload(match.group(2), match.group(1))
-    if image.image_format not in {"JPEG", "PNG", "WEBP"}:
+    if image.image_format not in SUPPORTED_IMAGE_FORMATS:
         raise ValueError("仅支持 JPG、PNG 或 WebP 格式")
     if require_png and image.image_format != "PNG":
         raise ValueError("遮罩图片必须为 PNG 格式")
@@ -119,11 +120,15 @@ def _safe_stem(filename: str) -> str:
 
 
 def _extension_for_mime_type(mime_type: str) -> str:
-    return {
+    extensions = {
         "image/jpeg": "jpg",
         "image/png": "png",
         "image/webp": "webp",
-    }.get(mime_type, "png")
+    }
+    try:
+        return extensions[mime_type]
+    except KeyError as exc:
+        raise ValueError("不支持的输出图片格式") from exc
 
 
 def _static_url(path: Path) -> str:
@@ -148,10 +153,13 @@ def _model_image(response: dict) -> ValidatedImage:
     )
     if not isinstance(inline_data, dict):
         raise ValueError("模型未返回图片")
-    return validate_image_payload(
+    image = validate_image_payload(
         inline_data.get("data"),
         inline_data.get("mimeType") or inline_data.get("mime_type") or "",
     )
+    if image.image_format not in SUPPORTED_IMAGE_FORMATS:
+        raise ValueError("仅支持 JPG、PNG 或 WebP 格式")
+    return image
 
 
 async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
