@@ -224,8 +224,10 @@ async def test_remove_watermark_sends_source_and_mask_to_image_model(tmp_path, m
         await remove_watermark(valid_request())
 
     assert ai_mock.await_args.kwargs["capability"] == "image"
-    parts = ai_mock.await_args.kwargs["payload"]["contents"][0]["parts"]
+    payload = ai_mock.await_args.kwargs["payload"]
+    parts = payload["contents"][0]["parts"]
     assert len([part for part in parts if "inlineData" in part]) == 2
+    assert payload["generationConfig"]["imageConfig"]["aspectRatio"] == "1:1"
     prompt = parts[0]["text"]
     assert "context only" in prompt
     assert "must remain unchanged exactly" not in prompt
@@ -275,18 +277,29 @@ async def test_remove_watermark_explains_image_recitation_rejection(
 
 
 @pytest.mark.asyncio
-async def test_remove_watermark_rejects_changed_dimensions(tmp_path, monkeypatch):
+async def test_remove_watermark_normalizes_changed_dimensions(tmp_path, monkeypatch):
     import services.watermark_removal_service as watermark_service
 
-    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(tmp_path / "static"))
-    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes(12, 10)))
+    static_root = tmp_path / "static"
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
+    model_image = Image.new("RGB", (12, 10), (12, 34, 56))
+    model_buffer = io.BytesIO()
+    model_image.save(model_buffer, format="PNG")
+    ai_mock = AsyncMock(return_value=inline_image_response(model_buffer.getvalue()))
 
     with patch(
         "services.watermark_removal_service.AIService.generate_content",
         new=ai_mock,
     ):
-        with pytest.raises(ValueError, match="尺寸与原图不一致"):
-            await remove_watermark(valid_request())
+        result = await remove_watermark(valid_request())
+
+    result_path = url_to_test_path(static_root, result["result_url"])
+    with Image.open(result_path) as saved:
+        assert saved.size == (10, 10)
+        assert saved.convert("RGB").getpixel((1, 1)) == (12, 34, 56)
+        assert saved.convert("RGB").getpixel((0, 0)) == (255, 255, 255)
+    assert result["width"] == 10
+    assert result["height"] == 10
 
 
 @pytest.mark.asyncio

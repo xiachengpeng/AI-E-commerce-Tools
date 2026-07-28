@@ -19,11 +19,31 @@ DATA_URL_PATTERN = re.compile(
 )
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 SUPPORTED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
+SUPPORTED_GENERATION_ASPECT_RATIOS = (
+    ("1:1", 1 / 1),
+    ("2:3", 2 / 3),
+    ("3:2", 3 / 2),
+    ("3:4", 3 / 4),
+    ("4:3", 4 / 3),
+    ("4:5", 4 / 5),
+    ("5:4", 5 / 4),
+    ("9:16", 9 / 16),
+    ("16:9", 16 / 9),
+    ("21:9", 21 / 9),
+)
 WATERMARK_REMOVAL_PROMPT = """Create one new edited image using the first image as visual context.
 
 The second image is a guide: reconstruct the area shown in white with a plausible continuation of nearby colors, lighting, and texture.
 Avoid text, logos, symbols, or watermarks. You may freely regenerate the rest of the canvas because it is context only.
 Return one image only."""
+
+
+def _closest_generation_aspect_ratio(width: int, height: int) -> str:
+    ratio = width / height
+    return min(
+        SUPPORTED_GENERATION_ASPECT_RATIOS,
+        key=lambda item: abs(math.log(ratio / item[1])),
+    )[0]
 
 
 def decode_data_url(data_url: str, *, require_png: bool = False) -> ValidatedImage:
@@ -199,20 +219,32 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
     response = await AIService.generate_content(
         payload={
             "contents": [{"role": "user", "parts": parts}],
-            "generationConfig": {"responseModalities": ["IMAGE"]},
+            "generationConfig": {
+                "responseModalities": ["IMAGE"],
+                "imageConfig": {
+                    "aspectRatio": _closest_generation_aspect_ratio(
+                        source.width,
+                        source.height,
+                    )
+                },
+            },
         },
         capability="image",
     )
     result = _model_image(response)
-    if (result.width, result.height) != (source.width, source.height):
-        raise ValueError("模型返回图片尺寸与原图不一致")
 
     with (
         Image.open(BytesIO(source.data)) as source_image,
         Image.open(BytesIO(result.data)) as result_image,
     ):
+        normalized_result = result_image.convert("RGBA")
+        if normalized_result.size != source_image.size:
+            normalized_result = normalized_result.resize(
+                source_image.size,
+                Image.Resampling.LANCZOS,
+            )
         composited = Image.composite(
-            result_image.convert("RGBA"),
+            normalized_result,
             source_image.convert("RGBA"),
             canonical_mask,
         )
@@ -241,8 +273,8 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
         "mask_url": _static_url(mask_path),
         "result_url": _static_url(result_path),
         "result_mime_type": "image/png",
-        "width": result.width,
-        "height": result.height,
+        "width": source.width,
+        "height": source.height,
         "regions": [region.model_dump() for region in regions],
         "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
