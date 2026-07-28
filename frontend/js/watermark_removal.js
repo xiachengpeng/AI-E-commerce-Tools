@@ -151,15 +151,28 @@
     function hitResizeHandle(pointer) {
         if (state.selectedIndex < 0 || !state.regions[state.selectedIndex]) return "";
         const rect = canvasDisplayRect();
-        const radiusX = 11 / rect.width;
-        const radiusY = 11 / rect.height;
         const points = handlePoints(state.regions[state.selectedIndex]);
 
-        return HANDLE_NAMES.find(name => {
+        const candidates = HANDLE_NAMES.map((name, order) => {
             const point = points[name];
-            return Math.abs(pointer.x - point[0]) <= radiusX
-                && Math.abs(pointer.y - point[1]) <= radiusY;
-        }) || "";
+            const deltaX = (pointer.x - point[0]) * rect.width;
+            const deltaY = (pointer.y - point[1]) * rect.height;
+            return {
+                name,
+                order,
+                deltaX,
+                deltaY,
+                distance: Math.hypot(deltaX, deltaY)
+            };
+        }).filter(candidate => (
+            Math.abs(candidate.deltaX) <= 11
+            && Math.abs(candidate.deltaY) <= 11
+        ));
+
+        candidates.sort((left, right) => (
+            left.distance - right.distance || left.order - right.order
+        ));
+        return candidates[0]?.name || "";
     }
 
     function hitRegion(pointer) {
@@ -555,18 +568,21 @@
 
     async function downloadWatermarkRemovalResult() {
         if (!state.result?.result_url) return;
+        const resultUrl = state.result.result_url;
+        const resultMimeType = state.result.result_mime_type;
+        const filename = state.filename;
         const button = state.elements.download;
         button.disabled = true;
 
         try {
-            const response = await fetch(assetUrl(state.result.result_url));
+            const response = await fetch(assetUrl(resultUrl));
             if (!response.ok) throw new Error(`下载失败（HTTP ${response.status}）`);
             const blob = await response.blob();
             const objectUrl = URL.createObjectURL(blob);
             const anchor = document.createElement("a");
-            const extension = extensionForMimeType(state.result.result_mime_type);
+            const extension = extensionForMimeType(resultMimeType);
             anchor.href = objectUrl;
-            anchor.download = `${safeDownloadStem(state.filename)}-removed.${extension}`;
+            anchor.download = `${safeDownloadStem(filename)}-removed.${extension}`;
             document.body.appendChild(anchor);
             anchor.click();
             anchor.remove();
@@ -580,6 +596,7 @@
     }
 
     async function restoreWatermarkRemovalHistory(result) {
+        if (state.busy) return;
         if (!result || !result.result_url || !result.source_url) {
             setWatermarkRemovalError("该历史记录缺少可恢复的图片");
             return;

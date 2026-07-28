@@ -1,3 +1,14 @@
+.watermark-removal-sidebar {
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.watermark-removal-sidebar > * {
+    flex-shrink: 0;
+}
+
 .watermark-removal-page {
     --wm-accent: #4f46e5;
     --wm-accent-soft: #eef2ff;
