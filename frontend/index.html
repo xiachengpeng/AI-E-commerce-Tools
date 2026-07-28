@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="css/square_redraw.css?v=20260625-square-redraw-size-delete">
     <link rel="stylesheet" href="css/analysis.css">
     <link rel="stylesheet" href="css/settings.css">
+    <link rel="stylesheet" href="css/watermark_removal.css">
 
     <!-- 基础配置与工具 (必须优先加载) -->
     <script src="js/config.js"></script>
@@ -63,6 +64,11 @@
 
         <button id="tab-square-redraw" onclick="switchMainTab('square-redraw')" class="side-tab" title="方图重绘">
             <i class="ph ph-crop"></i><span>方图重绘</span>
+        </button>
+
+        <button id="tab-watermark-removal" onclick="switchMainTab('watermark-removal')" class="side-tab"
+            title="AI 消除">
+            <i class="ph ph-eraser"></i><span>AI 消除</span>
         </button>
 
         <button id="tab-text-translate" onclick="switchMainTab('text-translate')" class="side-tab" title="文本翻译">
@@ -1203,6 +1209,136 @@
         </div>
 
         <!-- ============================================== -->
+        <!-- 视图：AI 水印消除 (VIEW: WATERMARK REMOVAL) -->
+        <!-- ============================================== -->
+        <div id="view-watermark-removal" class="hidden flex-1 overflow-hidden">
+            <main class="watermark-removal-page">
+                <header class="watermark-removal-header">
+                    <div>
+                        <span class="watermark-removal-eyebrow">AI Object Cleanup</span>
+                        <h1>AI 水印消除</h1>
+                        <p>上传商品图，框选一个或多个水印区域，AI 将智能补全背景。</p>
+                    </div>
+                    <span class="watermark-removal-privacy">
+                        <i class="ph ph-shield-check"></i> 图片仅用于本次处理
+                    </span>
+                </header>
+
+                <div class="watermark-removal-layout">
+                    <section class="watermark-removal-card watermark-removal-editor-card"
+                        aria-labelledby="watermarkRemovalEditorTitle">
+                        <div class="watermark-removal-card-header">
+                            <div>
+                                <span class="watermark-removal-step">01</span>
+                                <div>
+                                    <h2 id="watermarkRemovalEditorTitle">上传并框选水印</h2>
+                                    <p>拖拽创建选区，选中后可移动或从八个方向缩放。</p>
+                                </div>
+                            </div>
+                            <span id="watermarkRemovalRegionCount" class="watermark-removal-count">0 个区域</span>
+                        </div>
+
+                        <label id="watermarkRemovalUpload" class="watermark-removal-upload"
+                            for="watermarkRemovalFileInput">
+                            <span class="watermark-removal-upload-icon"><i class="ph ph-image-square"></i></span>
+                            <strong>点击选择商品图片</strong>
+                            <span>支持 JPG、PNG、WebP</span>
+                            <input id="watermarkRemovalFileInput" type="file" accept="image/jpeg,image/png,image/webp"
+                                onchange="handleWatermarkUpload(event)">
+                        </label>
+
+                        <div id="watermarkRemovalWorkspace" class="watermark-removal-workspace" hidden>
+                            <div class="watermark-removal-toolbar">
+                                <div class="watermark-removal-file">
+                                    <i class="ph ph-image"></i>
+                                    <span id="watermarkRemovalFilename">尚未选择图片</span>
+                                </div>
+                                <div class="watermark-removal-toolbar-actions">
+                                    <button id="watermarkRemovalDelete" type="button" class="watermark-removal-button ghost"
+                                        title="删除选中区域">
+                                        <i class="ph ph-trash"></i> 删除选区
+                                    </button>
+                                    <button id="watermarkRemovalClear" type="button" class="watermark-removal-button ghost">
+                                        <i class="ph ph-broom"></i> 清空全部
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="watermarkRemovalCanvasStage" class="watermark-removal-canvas-stage">
+                                <canvas id="watermarkRemovalCanvas" tabindex="0"
+                                    aria-label="水印区域框选编辑器"></canvas>
+                            </div>
+                            <p class="watermark-removal-editor-hint">
+                                <i class="ph ph-cursor-click"></i>
+                                空白处拖拽新增；拖动选区移动；拖动控制点缩放；Delete / Backspace 删除。
+                            </p>
+                        </div>
+                    </section>
+
+                    <aside class="watermark-removal-card watermark-removal-action-card">
+                        <div class="watermark-removal-card-header compact">
+                            <div>
+                                <span class="watermark-removal-step">02</span>
+                                <div>
+                                    <h2>提交 AI 处理</h2>
+                                    <p>请尽量完整覆盖水印，并保留少量边缘。</p>
+                                </div>
+                            </div>
+                        </div>
+                        <ol class="watermark-removal-tips">
+                            <li><span>1</span>可框选多个互不相连的区域</li>
+                            <li><span>2</span>小范围精准选择更利于背景补全</li>
+                            <li><span>3</span>处理失败时原图与选区不会丢失</li>
+                        </ol>
+                        <div id="watermarkRemovalError" class="watermark-removal-error" role="alert" hidden></div>
+                        <button id="watermarkRemovalSubmit" type="button" class="watermark-removal-submit"
+                            onclick="submitWatermarkRemoval()" disabled>
+                            <span class="watermark-removal-submit-idle">
+                                <i class="ph-fill ph-sparkle"></i> 开始消除
+                            </span>
+                            <span class="watermark-removal-submit-busy">
+                                <i class="ph ph-spinner-gap"></i> AI 正在处理
+                            </span>
+                        </button>
+                        <p id="watermarkRemovalStatus" class="watermark-removal-status" aria-live="polite">
+                            上传图片并框选区域后即可提交
+                        </p>
+                    </aside>
+                </div>
+
+                <section id="watermarkRemovalComparison" class="watermark-removal-card watermark-removal-result" hidden
+                    aria-labelledby="watermarkRemovalResultTitle">
+                    <div class="watermark-removal-result-header">
+                        <div>
+                            <span class="watermark-removal-step complete"><i class="ph ph-check"></i></span>
+                            <div>
+                                <h2 id="watermarkRemovalResultTitle">处理完成</h2>
+                                <p id="watermarkRemovalResultMeta">对比原图与消除结果</p>
+                            </div>
+                        </div>
+                        <button id="watermarkRemovalDownload" type="button" class="watermark-removal-download"
+                            onclick="downloadWatermarkRemovalResult()" disabled>
+                            <i class="ph ph-download-simple"></i> 下载消除结果
+                        </button>
+                    </div>
+                    <div class="watermark-removal-comparison-grid">
+                        <figure>
+                            <figcaption>原图</figcaption>
+                            <div class="watermark-removal-result-image">
+                                <img id="watermarkRemovalOriginal" alt="待处理原图">
+                            </div>
+                        </figure>
+                        <figure>
+                            <figcaption>AI 消除结果</figcaption>
+                            <div class="watermark-removal-result-image">
+                                <img id="watermarkRemovalResult" alt="AI 水印消除结果">
+                            </div>
+                        </figure>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- ============================================== -->
         <!-- 视图：系统设置 (VIEW: SETTINGS) -->
         <!-- ============================================== -->
         <div id="view-settings" class="hidden flex-1 overflow-hidden bg-slate-50">
@@ -1583,6 +1719,8 @@
     <script src="js/translate.js"></script>
     <script src="js/text_translate.js"></script>
     <script src="js/history_manager.js?v=20260629-square-redraw-history"></script>
+    <script src="js/watermark_removal_core.js"></script>
+    <script src="js/watermark_removal.js"></script>
     <script src="js/analysis.js"></script>
 </body>
 

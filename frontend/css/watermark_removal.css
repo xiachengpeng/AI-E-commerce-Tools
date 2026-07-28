@@ -1,0 +1,499 @@
+.watermark-removal-page {
+    --wm-accent: #4f46e5;
+    --wm-accent-soft: #eef2ff;
+    --wm-border: #e2e8f0;
+    --wm-ink: #172033;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    padding: 28px clamp(20px, 3vw, 44px) 48px;
+    background:
+        radial-gradient(circle at 5% 0%, rgba(99, 102, 241, 0.1), transparent 28rem),
+        #f8fafc;
+}
+
+.watermark-removal-header,
+.watermark-removal-result-header,
+.watermark-removal-toolbar,
+.watermark-removal-card-header > div,
+.watermark-removal-result-header > div {
+    display: flex;
+    align-items: center;
+}
+
+.watermark-removal-header {
+    justify-content: space-between;
+    gap: 24px;
+    max-width: 1380px;
+    margin: 0 auto 24px;
+}
+
+.watermark-removal-eyebrow {
+    color: var(--wm-accent);
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.watermark-removal-header h1 {
+    margin: 5px 0 6px;
+    color: var(--wm-ink);
+    font-size: clamp(25px, 3vw, 36px);
+    font-weight: 900;
+    letter-spacing: -0.04em;
+}
+
+.watermark-removal-header p,
+.watermark-removal-card-header p,
+.watermark-removal-result-header p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.watermark-removal-privacy {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    padding: 9px 13px;
+    border: 1px solid #dbeafe;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.8);
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.watermark-removal-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 20px;
+    max-width: 1380px;
+    margin: 0 auto;
+    align-items: start;
+}
+
+.watermark-removal-card {
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.06);
+}
+
+.watermark-removal-editor-card,
+.watermark-removal-action-card {
+    padding: 20px;
+}
+
+.watermark-removal-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.watermark-removal-card-header > div,
+.watermark-removal-result-header > div {
+    gap: 12px;
+}
+
+.watermark-removal-card-header h2,
+.watermark-removal-result-header h2 {
+    margin: 0 0 3px;
+    color: var(--wm-ink);
+    font-size: 16px;
+    font-weight: 900;
+}
+
+.watermark-removal-step {
+    display: inline-grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: 11px;
+    background: var(--wm-accent-soft);
+    color: var(--wm-accent);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.watermark-removal-step.complete {
+    background: #dcfce7;
+    color: #16a34a;
+    font-size: 18px;
+}
+
+.watermark-removal-count {
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.watermark-removal-upload {
+    display: flex;
+    min-height: 330px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    border: 2px dashed #cbd5e1;
+    border-radius: 18px;
+    background: linear-gradient(145deg, #fafbff, #f8fafc);
+    color: #64748b;
+    cursor: pointer;
+    transition: 160ms ease;
+}
+
+.watermark-removal-upload:hover {
+    border-color: #818cf8;
+    background: #f5f7ff;
+    transform: translateY(-1px);
+}
+
+.watermark-removal-upload strong {
+    color: #334155;
+    font-size: 15px;
+}
+
+.watermark-removal-upload span:last-of-type {
+    font-size: 12px;
+}
+
+.watermark-removal-upload-icon {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 4px;
+    border-radius: 20px;
+    background: var(--wm-accent-soft);
+    color: var(--wm-accent);
+    font-size: 31px;
+}
+
+.watermark-removal-upload input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+}
+
+.watermark-removal-workspace[hidden],
+.watermark-removal-upload[hidden],
+.watermark-removal-result[hidden],
+.watermark-removal-error[hidden] {
+    display: none;
+}
+
+.watermark-removal-toolbar {
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.watermark-removal-file,
+.watermark-removal-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.watermark-removal-file {
+    min-width: 0;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.watermark-removal-file span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.watermark-removal-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--wm-border);
+    border-radius: 9px;
+    background: #fff;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 800;
+    transition: 150ms ease;
+}
+
+.watermark-removal-button:hover:not(:disabled) {
+    border-color: #a5b4fc;
+    color: var(--wm-accent);
+}
+
+.watermark-removal-button:disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+}
+
+.watermark-removal-canvas-stage {
+    display: grid;
+    min-height: 330px;
+    max-height: 62vh;
+    place-items: center;
+    overflow: auto;
+    padding: 14px;
+    border-radius: 16px;
+    background:
+        linear-gradient(45deg, #e7eaf0 25%, transparent 25%),
+        linear-gradient(-45deg, #e7eaf0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e7eaf0 75%),
+        linear-gradient(-45deg, transparent 75%, #e7eaf0 75%),
+        #f3f4f6;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+    background-size: 20px 20px;
+}
+
+#watermarkRemovalCanvas {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: calc(62vh - 28px);
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.15);
+    cursor: crosshair;
+    touch-action: none;
+    outline: none;
+}
+
+#watermarkRemovalCanvas.is-busy {
+    cursor: wait;
+    opacity: 0.76;
+}
+
+#watermarkRemovalCanvas:focus-visible {
+    box-shadow: 0 0 0 3px #c7d2fe, 0 10px 28px rgba(15, 23, 42, 0.15);
+}
+
+.watermark-removal-editor-hint {
+    margin: 11px 2px 0;
+    color: #64748b;
+    font-size: 11px;
+}
+
+.watermark-removal-action-card {
+    position: sticky;
+    top: 0;
+}
+
+.watermark-removal-card-header.compact {
+    align-items: flex-start;
+}
+
+.watermark-removal-tips {
+    display: grid;
+    gap: 12px;
+    margin: 20px 0;
+    padding: 0;
+    list-style: none;
+}
+
+.watermark-removal-tips li {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.watermark-removal-tips span {
+    display: grid;
+    place-items: center;
+    width: 21px;
+    height: 21px;
+    flex: 0 0 auto;
+    border-radius: 7px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.watermark-removal-error {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid #fecaca;
+    border-radius: 10px;
+    background: #fef2f2;
+    color: #b91c1c;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.watermark-removal-submit,
+.watermark-removal-download {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 0;
+    color: #fff;
+    font-weight: 900;
+    transition: 150ms ease;
+}
+
+.watermark-removal-submit {
+    width: 100%;
+    min-height: 48px;
+    border-radius: 13px;
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    box-shadow: 0 12px 25px rgba(79, 70, 229, 0.22);
+    font-size: 13px;
+}
+
+.watermark-removal-submit:hover:not(:disabled),
+.watermark-removal-download:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.04);
+}
+
+.watermark-removal-submit:disabled {
+    background: #cbd5e1;
+    box-shadow: none;
+    cursor: not-allowed;
+}
+
+.watermark-removal-submit-busy {
+    display: none;
+}
+
+.watermark-removal-submit.is-busy .watermark-removal-submit-idle {
+    display: none;
+}
+
+.watermark-removal-submit.is-busy .watermark-removal-submit-busy {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.watermark-removal-submit.is-busy .ph-spinner-gap {
+    animation: watermark-removal-spin 0.8s linear infinite;
+}
+
+.watermark-removal-status {
+    margin: 10px 0 0;
+    color: #94a3b8;
+    font-size: 10px;
+    text-align: center;
+}
+
+.watermark-removal-result {
+    max-width: 1380px;
+    margin: 20px auto 0;
+    padding: 20px;
+}
+
+.watermark-removal-result-header {
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.watermark-removal-download {
+    min-height: 40px;
+    padding: 0 15px;
+    border-radius: 11px;
+    background: #0f172a;
+    font-size: 12px;
+}
+
+.watermark-removal-download:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.watermark-removal-comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.watermark-removal-comparison-grid figure {
+    min-width: 0;
+    margin: 0;
+}
+
+.watermark-removal-comparison-grid figcaption {
+    margin: 0 0 8px 2px;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.watermark-removal-result-image {
+    display: grid;
+    min-height: 220px;
+    max-height: 560px;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--wm-border);
+    border-radius: 15px;
+    background: #f1f5f9;
+}
+
+.watermark-removal-result-image img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-height: 560px;
+    object-fit: contain;
+}
+
+@keyframes watermark-removal-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (max-width: 960px) {
+    .watermark-removal-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .watermark-removal-action-card {
+        position: static;
+    }
+}
+
+@media (max-width: 640px) {
+    .watermark-removal-page {
+        padding: 20px 12px 36px;
+    }
+
+    .watermark-removal-header,
+    .watermark-removal-result-header,
+    .watermark-removal-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .watermark-removal-privacy {
+        display: none;
+    }
+
+    .watermark-removal-comparison-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .watermark-removal-download {
+        width: 100%;
+    }
+}

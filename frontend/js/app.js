@@ -167,6 +167,9 @@ function switchMainTab(tabId) {
     if (tabId === "settings" && typeof connectSettingsLogs === "function") {
         connectSettingsLogs();
     }
+    if (tabId === "watermark-removal" && typeof initWatermarkRemoval === "function") {
+        initWatermarkRemoval();
+    }
 }
 
 /**
@@ -205,6 +208,7 @@ window.onload = async () => {
     if (typeof initListingControls === 'function') initListingControls();
     if (typeof initAdsControls === 'function') initAdsControls();
     if (typeof initSquareRedrawControls === 'function') initSquareRedrawControls();
+    if (typeof initWatermarkRemoval === 'function') initWatermarkRemoval();
     if (typeof loadHistoryToList === 'function') loadHistoryToList();
     
     console.log("[System] Switching to initial tab...");
