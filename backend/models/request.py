@@ -1,6 +1,6 @@
-from math import gcd
+from math import gcd, isfinite
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from typing import List, Union, Any, Optional
 
 # ============================
@@ -303,3 +303,47 @@ class SquareRedrawBatchRequest(BaseModel):
             supported = ", ".join(sorted(SQUARE_REDRAW_SUPPORTED_ASPECT_RATIOS))
             raise ValueError(f"暂不支持该目标比例，支持: {supported}")
         return normalized
+
+
+class WatermarkRegion(BaseModel):
+    x: float
+    y: float
+    width: float
+    height: float
+
+    @model_validator(mode="after")
+    def validate_bounds(self):
+        values = (self.x, self.y, self.width, self.height)
+        if not all(isfinite(value) for value in values):
+            raise ValueError("水印区域坐标必须是有限数字")
+        if self.x < 0 or self.y < 0:
+            raise ValueError("水印区域坐标不能小于 0")
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("水印区域宽高必须大于 0")
+        if self.x + self.width > 1 or self.y + self.height > 1:
+            raise ValueError("水印区域不能超出图片边界")
+        return self
+
+
+class WatermarkRemovalRequest(BaseModel):
+    filename: str
+    image_data: str
+    mask_data: str
+    regions: List[WatermarkRegion]
+
+    @field_validator("filename", "image_data", "mask_data")
+    @classmethod
+    def strip_required_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("该字段不能为空")
+        return value
+
+    @field_validator("regions")
+    @classmethod
+    def validate_regions(cls, regions: List[WatermarkRegion]) -> List[WatermarkRegion]:
+        if not regions:
+            raise ValueError("至少框选一个水印区域")
+        if len(regions) > 100:
+            raise ValueError("最多框选 100 个水印区域")
+        return regions
