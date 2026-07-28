@@ -1,16 +1,28 @@
+import base64
+import datetime
 import math
+import os
 import re
+import uuid
 from io import BytesIO
+from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
-from models.request import WatermarkRegion
+from models.request import WatermarkRegion, WatermarkRemovalRequest
+from services.ai_service import AIService
 from services.image_validation import ValidatedImage, validate_image_payload
 
 
 DATA_URL_PATTERN = re.compile(
     r"^data:(image/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/]*={0,2})$"
 )
+STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+WATERMARK_REMOVAL_PROMPT = """Remove only the watermark in the supplied original image.
+
+The original image is the first input and the mask is the second input. White areas in the mask are editable; black areas must remain unchanged exactly.
+Do not add text, logos, watermarks, or any new objects. Do not alter the composition, products, people, background, colors, or any unmasked pixels.
+Return only the edited image at the exact same width and height as the original image."""
 
 
 def decode_data_url(data_url: str, *, require_png: bool = False) -> ValidatedImage:
@@ -98,3 +110,107 @@ def validate_mask(
         or _has_pixels(ImageChops.subtract(required_interior, actual))
     ):
         raise ValueError("遮罩与框选区域不一致")
+
+
+def _safe_stem(filename: str) -> str:
+    stem = Path(filename or "image").stem
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "-", stem).strip("-").lower()
+    return stem or "image"
+
+
+def _extension_for_mime_type(mime_type: str) -> str:
+    return {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+    }.get(mime_type, "png")
+
+
+def _static_url(path: Path) -> str:
+    relative_path = path.relative_to(Path(STATIC_DIR)).as_posix()
+    return f"/static/{relative_path}"
+
+
+def _model_image(response: dict) -> ValidatedImage:
+    candidates = response.get("candidates", []) if isinstance(response, dict) else []
+    parts = (
+        candidates[0].get("content", {}).get("parts", [])
+        if candidates and isinstance(candidates[0], dict)
+        else []
+    )
+    inline_data = next(
+        (
+            part.get("inlineData")
+            for part in parts
+            if isinstance(part, dict) and part.get("inlineData")
+        ),
+        None,
+    )
+    if not isinstance(inline_data, dict):
+        raise ValueError("模型未返回图片")
+    return validate_image_payload(
+        inline_data.get("data"),
+        inline_data.get("mimeType") or inline_data.get("mime_type") or "",
+    )
+
+
+async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
+    source = decode_data_url(request.image_data)
+    mask = decode_data_url(request.mask_data, require_png=True)
+    regions = validate_regions(request.regions)
+    validate_mask(source, mask, regions)
+
+    parts = [
+        {"text": WATERMARK_REMOVAL_PROMPT},
+        {
+            "inlineData": {
+                "mimeType": source.mime_type,
+                "data": base64.b64encode(source.data).decode("ascii"),
+            }
+        },
+        {
+            "inlineData": {
+                "mimeType": mask.mime_type,
+                "data": base64.b64encode(mask.data).decode("ascii"),
+            }
+        },
+    ]
+    response = await AIService.generate_content(
+        payload={
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {"responseModalities": ["IMAGE"]},
+        },
+        capability="image",
+    )
+    result = _model_image(response)
+    if (result.width, result.height) != (source.width, source.height):
+        raise ValueError("模型返回图片尺寸与原图不一致")
+
+    processing_id = uuid.uuid4().hex
+    output_dir = (
+        Path(STATIC_DIR)
+        / "outputs"
+        / "watermark-removal"
+        / processing_id
+    )
+    output_dir.mkdir(parents=True, exist_ok=False)
+    stem = _safe_stem(request.filename)
+    source_path = output_dir / f"{stem}-source.{_extension_for_mime_type(source.mime_type)}"
+    mask_path = output_dir / f"{stem}-mask.png"
+    result_path = output_dir / f"{stem}-result.{_extension_for_mime_type(result.mime_type)}"
+    source_path.write_bytes(source.data)
+    mask_path.write_bytes(mask.data)
+    result_path.write_bytes(result.data)
+
+    return {
+        "processing_id": processing_id,
+        "filename": request.filename,
+        "source_url": _static_url(source_path),
+        "mask_url": _static_url(mask_path),
+        "result_url": _static_url(result_path),
+        "result_mime_type": result.mime_type,
+        "width": result.width,
+        "height": result.height,
+        "regions": [region.model_dump() for region in regions],
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }

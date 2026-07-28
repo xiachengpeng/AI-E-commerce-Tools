@@ -1,6 +1,7 @@
 import base64
 import io
 import time
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from PIL import Image, ImageDraw
@@ -9,6 +10,7 @@ from pydantic import ValidationError
 from models.request import WatermarkRegion, WatermarkRemovalRequest
 from services.watermark_removal_service import (
     decode_data_url,
+    remove_watermark,
     validate_mask,
 )
 
@@ -51,6 +53,41 @@ def make_sparse_mask_url(width, height):
     mask.save(buffer, format="PNG")
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
+
+
+def make_png_bytes(width=10, height=10):
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def inline_image_response(data, mime_type="image/png"):
+    return {
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "inlineData": {
+                        "mimeType": mime_type,
+                        "data": base64.b64encode(data).decode("ascii"),
+                    }
+                }]
+            }
+        }]
+    }
+
+
+def valid_request():
+    region = WatermarkRegion(x=.1, y=.1, width=.3, height=.3)
+    return WatermarkRemovalRequest(
+        filename="product image.png",
+        image_data=make_data_url(),
+        mask_data=make_mask_url([(1, 1, 3, 3)]),
+        regions=[region],
+    )
+
+
+def url_to_test_path(static_root, static_url):
+    return static_root / static_url.removeprefix("/static/")
 
 
 def test_request_rejects_empty_regions():
@@ -123,3 +160,78 @@ def test_validate_mask_handles_100_overlapping_large_regions_efficiently():
     validate_mask(source, mask, regions)
 
     assert time.perf_counter() - started_at < 2
+
+
+@pytest.mark.asyncio
+async def test_remove_watermark_sends_source_and_mask_to_image_model(tmp_path, monkeypatch):
+    import services.watermark_removal_service as watermark_service
+
+    static_root = tmp_path / "static"
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
+    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes()))
+
+    with patch(
+        "services.watermark_removal_service.AIService.generate_content",
+        new=ai_mock,
+    ):
+        await remove_watermark(valid_request())
+
+    assert ai_mock.await_args.kwargs["capability"] == "image"
+    parts = ai_mock.await_args.kwargs["payload"]["contents"][0]["parts"]
+    assert len([part for part in parts if "inlineData" in part]) == 2
+
+
+@pytest.mark.asyncio
+async def test_remove_watermark_rejects_response_without_image(tmp_path, monkeypatch):
+    import services.watermark_removal_service as watermark_service
+
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(tmp_path / "static"))
+    ai_mock = AsyncMock(return_value={"candidates": [{"content": {"parts": [{"text": "no image"}]}}]})
+
+    with patch(
+        "services.watermark_removal_service.AIService.generate_content",
+        new=ai_mock,
+    ):
+        with pytest.raises(ValueError, match="未返回图片"):
+            await remove_watermark(valid_request())
+
+
+@pytest.mark.asyncio
+async def test_remove_watermark_rejects_changed_dimensions(tmp_path, monkeypatch):
+    import services.watermark_removal_service as watermark_service
+
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(tmp_path / "static"))
+    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes(12, 10)))
+
+    with patch(
+        "services.watermark_removal_service.AIService.generate_content",
+        new=ai_mock,
+    ):
+        with pytest.raises(ValueError, match="尺寸与原图不一致"):
+            await remove_watermark(valid_request())
+
+
+@pytest.mark.asyncio
+async def test_remove_watermark_saves_source_mask_and_result(tmp_path, monkeypatch):
+    import services.watermark_removal_service as watermark_service
+
+    static_root = tmp_path / "static"
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
+    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes()))
+
+    with patch(
+        "services.watermark_removal_service.AIService.generate_content",
+        new=ai_mock,
+    ):
+        result = await remove_watermark(valid_request())
+
+    assert result["width"] == 10
+    assert result["height"] == 10
+    assert result["result_url"].startswith("/static/outputs/watermark-removal/")
+    assert url_to_test_path(static_root, result["source_url"]).is_file()
+    assert url_to_test_path(static_root, result["mask_url"]).is_file()
+    assert url_to_test_path(static_root, result["result_url"]).is_file()
+    assert result["filename"] == "product image.png"
+    assert result["result_mime_type"] == "image/png"
+    assert result["regions"] == [{"x": .1, "y": .1, "width": .3, "height": .3}]
+    assert result["created_at"]
