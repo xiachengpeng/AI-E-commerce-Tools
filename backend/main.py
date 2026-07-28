@@ -26,6 +26,7 @@ from models.request import (
     ListingGenerateRequest, ListingImageExtractRequest, ListingComplianceRequest,
     AdCopyGenerateRequest,
     SquareRedrawBatchRequest,
+    WatermarkRemovalRequest,
 )
 from models.settings import (
     AIProviderList,
@@ -52,6 +53,7 @@ from services.listing_service import (
     check_listing_compliance,
 )
 from services.ads_service import generate_ad_copy
+from services.watermark_removal_service import remove_watermark
 from services.square_redraw_service import (
     build_square_redraw_zip,
     create_square_redraw_batch,
@@ -94,7 +96,7 @@ from config import (
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
-from db import init_db, get_db, SessionLocal, AICapabilityBinding, AIProviderConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory
+from db import init_db, get_db, SessionLocal, AICapabilityBinding, AIProviderConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory, WatermarkRemovalHistory
 
 MAX_CONNECTION_IMAGE_BYTES = MAX_IMAGE_BYTES
 MAX_CONNECTION_IMAGE_DIMENSION = MAX_IMAGE_DIMENSION
@@ -741,6 +743,17 @@ async def api_ads_generate(request: AdCopyGenerateRequest):
     except Exception as e:
         logger.error(f"❌ [广告文案] 生成失败: {e}")
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/watermark-removal")
+async def api_watermark_removal(request: WatermarkRemovalRequest):
+    try:
+        data = await remove_watermark(request)
+        return {"status": "success", "data": data}
+    except Exception as e:
+        logger.error(f"❌ [水印消除] 失败: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 @app.post("/api/ai/generate")
 async def api_ai_generate(data: dict):
@@ -1640,6 +1653,11 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
                 target_aspect_ratio=data.get("target_aspect_ratio") or result.get("target_aspect_ratio") or "1:1",
                 result=result,
             )
+        elif module == "watermark-removal":
+            hist = WatermarkRemovalHistory(
+                filename=data.get("filename"),
+                result=data.get("result"),
+            )
         else:
             app_logs.emit(
                 level="error",
@@ -1668,14 +1686,14 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
 
 @app.get("/api/history/{module}")
 async def get_history(module: str, db: Session = Depends(get_db)):
-    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory, "square-redraw": SquareRedrawHistory}
+    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory, "square-redraw": SquareRedrawHistory, "watermark-removal": WatermarkRemovalHistory}
     model = mapping.get(module)
     if not model: return []
     return db.query(model).order_by(model.timestamp.desc()).all()
 
 @app.delete("/api/history/{module}/{id}")
 async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
-    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory, "square-redraw": SquareRedrawHistory}
+    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory, "square-redraw": SquareRedrawHistory, "watermark-removal": WatermarkRemovalHistory}
     model = mapping.get(module)
     if not model:
         app_logs.emit(

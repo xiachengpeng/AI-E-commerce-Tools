@@ -94,6 +94,15 @@ class SquareRedrawHistory(Base):
     target_aspect_ratio = Column(String(20), default="1:1")
     result = Column(JSON)
 
+
+class WatermarkRemovalHistory(Base):
+    __tablename__ = "watermark_removal_history"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.datetime.now)
+    filename = Column(String(255))
+    result = Column(JSON)
+
+
 class SquareRedrawBatch(Base):
     __tablename__ = "square_redraw_batches"
     id = Column(Integer, primary_key=True, index=True)
