@@ -14,6 +14,29 @@ function formatImgSrc(src) {
     return src;
 }
 
+function escapeHistoryHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[char]);
+}
+
+function formatHistoryImgSrc(src) {
+    const formatted = formatImgSrc(src);
+    if (typeof formatted !== 'string') return '';
+    const trimmed = formatted.trim();
+    if (
+        /^https?:\/\//i.test(trimmed) ||
+        /^data:image\/(?:gif|jpe?g|png|webp);base64,/i.test(trimmed)
+    ) {
+        return trimmed;
+    }
+    return '';
+}
+
 function toggleGlobalHistory() {
     const panel = document.getElementById('globalHistoryPanel');
     if (!panel) return;
@@ -37,7 +60,7 @@ async function loadGlobalHistory(module) {
     // 更新 UI 状态
     document.querySelectorAll('.history-tab-btn').forEach(btn => {
         const modId = btn.id.replace('hist-tab-', '');
-        const map = { 'analysis': 'analysis', 'listing': 'listing', 'translation': 'translation', 'text-translation': 'text-translation', 'ads': 'ads', 'square-redraw': 'square-redraw', 'render': 'render' };
+        const map = { 'analysis': 'analysis', 'listing': 'listing', 'translation': 'translation', 'text-translation': 'text-translation', 'ads': 'ads', 'square-redraw': 'square-redraw', 'watermark-removal': 'watermark-removal', 'render': 'render' };
         btn.classList.toggle('active', map[modId] === module);
     });
 
@@ -57,6 +80,7 @@ async function loadGlobalHistory(module) {
                 item.product_name ||
                 item.task_name ||
                 (module === 'square-redraw' && item.batch_id ? `尺寸重绘批次 #${item.batch_id}` : '') ||
+                (module === 'watermark-removal' ? item.filename : '') ||
                 item.source_text ||
                 item.name ||
                 item.text ||
@@ -77,25 +101,37 @@ async function loadGlobalHistory(module) {
                 const result = item.result || {};
                 const summary = result.summary || {};
                 subInfo = `目标 ${item.target_aspect_ratio || result.target_aspect_ratio || '1:1'} | 成功 ${summary.done || 0} | 跳过 ${summary.skipped || 0} | 失败 ${summary.failed || 0}`;
+            } else if (module === 'watermark-removal') {
+                const result = item.result || {};
+                const size = result.width && result.height ? `${result.width} × ${result.height}` : '';
+                const regionCount = Array.isArray(result.regions) ? `${result.regions.length} 个区域` : '';
+                subInfo = [size, regionCount].filter(Boolean).join(' | ') || '已完成消除';
             }
 
             // 提取缩略图 (针对翻译和渲染模块)
             let thumb = '';
             if (module === 'square-redraw') {
                 const firstImage = (item.result?.items || []).find(img => img.output_url || img.source_url);
-                const imgSrc = formatImgSrc(firstImage?.output_url || firstImage?.source_url);
+                const imgSrc = formatHistoryImgSrc(firstImage?.output_url || firstImage?.source_url);
                 if (imgSrc) {
                     thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
-                                <img src="${imgSrc}" class="w-full h-full object-cover">
+                                <img src="${escapeHistoryHtml(imgSrc)}" class="w-full h-full object-cover">
+                             </div>`;
+                }
+            } else if (module === 'watermark-removal') {
+                const imgSrc = formatHistoryImgSrc(item.result?.result_url);
+                if (imgSrc) {
+                    thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
+                                <img src="${escapeHistoryHtml(imgSrc)}" class="w-full h-full object-cover" alt="">
                              </div>`;
                 }
             } else if (module === 'render' || module === 'translation' || module === 'ads') {
                 const imgData = item.image_url || item.image_base64 || item.result || item.data || item.metadata_info?.finalImage;
-                let imgSrc = formatImgSrc(typeof imgData === 'string' ? imgData : (imgData && imgData.image));
+                let imgSrc = formatHistoryImgSrc(typeof imgData === 'string' ? imgData : (imgData && imgData.image));
                 
                 if (imgSrc) {
                     thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
-                                <img src="${imgSrc}" class="w-full h-full object-cover">
+                                <img src="${escapeHistoryHtml(imgSrc)}" class="w-full h-full object-cover">
                              </div>`;
                 }
             } else if (module === 'text-translation') {
@@ -110,10 +146,10 @@ async function loadGlobalHistory(module) {
                     <div class="flex-1 min-w-0">
                         <div class="flex justify-between mb-1">
                             <span class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${module}</span>
-                            <span class="text-[9px] text-gray-400">${time}</span>
+                            <span class="text-[9px] text-gray-400">${escapeHistoryHtml(time)}</span>
                         </div>
-                        <div class="text-xs font-bold text-gray-800 truncate">${name}</div>
-                        ${subInfo ? `<div class="text-[9px] text-gray-400 mt-1">${subInfo}</div>` : ''}
+                        <div class="text-xs font-bold text-gray-800 truncate">${escapeHistoryHtml(name)}</div>
+                        ${subInfo ? `<div class="text-[9px] text-gray-400 mt-1">${escapeHistoryHtml(subInfo)}</div>` : ''}
                     </div>
                     <!-- 删除按钮：放在末尾 -->
                     <button onclick="event.stopPropagation(); deleteHistoryItem('${module}', ${item.id})" 
@@ -309,6 +345,16 @@ async function restoreHistoryItemByIndex(module, index) {
                 showToast('已还原尺寸重绘历史', 'success');
             }
         }, 150);
+    } else if (module === 'watermark-removal') {
+        switchMainTab('watermark-removal');
+        if (!responseObj || typeof responseObj !== 'object') {
+            showToast('该 AI 消除历史记录数据格式已失效', 'error');
+            return;
+        }
+        if (typeof restoreWatermarkRemovalHistory === 'function') {
+            await restoreWatermarkRemovalHistory(responseObj);
+            showToast('已还原 AI 消除历史', 'success');
+        }
     }
 
     toggleGlobalHistory();
