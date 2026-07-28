@@ -113,8 +113,8 @@ function historyResult(filename, overrides = {}) {
     const stem = filename.replace(/\.[^.]+$/, "");
     return {
         filename,
-        source_url: `/source/${stem}.png`,
-        result_url: `/result/${stem}.png`,
+        source_url: `/static/source/${stem}.png`,
+        result_url: `/static/result/${stem}.png`,
         result_mime_type: "image/png",
         width: 100,
         height: 100,
@@ -123,9 +123,10 @@ function historyResult(filename, overrides = {}) {
     };
 }
 
-function createRuntimeHarness(fetchImpl) {
+function createRuntimeHarness(fetchImpl, { failedImageSources = [] } = {}) {
     const harnessState = {
         downloadNames: [],
+        failedImageSources,
         fetchCalls: [],
         historySaves: [],
         requestBodies: []
@@ -162,7 +163,11 @@ function createRuntimeHarness(fetchImpl) {
 
         set src(value) {
             this.currentSource = value;
-            this.onload?.();
+            if (harnessState.failedImageSources.some(source => value.includes(source))) {
+                this.onerror?.();
+            } else {
+                this.onload?.();
+            }
         }
     }
 
@@ -251,7 +256,7 @@ function assertRegionClose(actual, expected, message) {
 }
 
 function standardFetch(url, options) {
-    if (url.includes("/source/")) {
+    if (url.includes("/static/source/")) {
         return response({ blob: { dataUrl: "data:image/png;base64,c291cmNl" } });
     }
     if (url.endsWith("/api/watermark-removal") && options.method === "POST") {
@@ -342,7 +347,10 @@ test("small regions resize from each of the eight visible handles", async () => 
 
     for (const [handle, [x, y], expected] of cases) {
         const harness = createRuntimeHarness(standardFetch);
-        await harness.window.restoreWatermarkRemovalHistory(historyResult(`${handle}.png`));
+        assert.equal(
+            await harness.window.restoreWatermarkRemovalHistory(historyResult(`${handle}.png`)),
+            true
+        );
         const canvas = harness.elements.watermarkRemovalCanvas;
 
         canvas.emit("pointerdown", pointerEvent(x, y));
@@ -362,10 +370,10 @@ test("history restore is ignored while a submit operation is busy", async () => 
     const pendingSubmit = deferred();
     let newSourceFetches = 0;
     const harness = createRuntimeHarness((url, options) => {
-        if (url.endsWith("/source/old.png")) {
+        if (url.endsWith("/static/source/old.png")) {
             return response({ blob: { dataUrl: "data:image/png;base64,b2xk" } });
         }
-        if (url.endsWith("/source/new.png")) {
+        if (url.endsWith("/static/source/new.png")) {
             newSourceFetches += 1;
             return response({ blob: { dataUrl: "data:image/png;base64,bmV3" } });
         }
@@ -374,10 +382,16 @@ test("history restore is ignored while a submit operation is busy", async () => 
         }
         throw new Error(`Unexpected fetch: ${url}`);
     });
-    await harness.window.restoreWatermarkRemovalHistory(historyResult("old.png"));
+    assert.equal(
+        await harness.window.restoreWatermarkRemovalHistory(historyResult("old.png")),
+        true
+    );
 
     const submitPromise = harness.window.submitWatermarkRemoval();
-    await harness.window.restoreWatermarkRemovalHistory(historyResult("new.png"));
+    assert.equal(
+        await harness.window.restoreWatermarkRemovalHistory(historyResult("new.png")),
+        false
+    );
     pendingSubmit.resolve(response({
         json: {
             status: "success",
@@ -394,10 +408,10 @@ test("history restore is ignored while a submit operation is busy", async () => 
 test("download keeps the original result metadata when state changes during fetch", async () => {
     const pendingDownload = deferred();
     const harness = createRuntimeHarness((url) => {
-        if (url.includes("/source/")) {
+        if (url.includes("/static/source/")) {
             return response({ blob: { dataUrl: "data:image/png;base64,c291cmNl" } });
         }
-        if (url.endsWith("/result/alpha.png")) {
+        if (url.endsWith("/static/result/alpha.png")) {
             return pendingDownload.promise;
         }
         throw new Error(`Unexpected fetch: ${url}`);
@@ -407,13 +421,98 @@ test("download keeps the original result metadata when state changes during fetc
     const downloadPromise = harness.window.downloadWatermarkRemovalResult();
     await harness.window.restoreWatermarkRemovalHistory(historyResult("beta.webp", {
         result_mime_type: "image/webp",
-        source_url: "/source/beta.webp",
-        result_url: "/result/beta.webp"
+        source_url: "/static/source/beta.webp",
+        result_url: "/static/result/beta.webp"
     }));
     pendingDownload.resolve(response({ blob: { bytes: "alpha result" } }));
     await downloadPromise;
 
     assert.deepEqual(harness.state.downloadNames, ["alpha-removed.png"]);
+});
+
+test("history restore rejects malformed URLs, dimensions, filenames, and regions", async () => {
+    const invalidCases = [
+        ["unsafe source URL", { source_url: "javascript:alert(1)" }],
+        ["unsafe result URL", { result_url: "/private/result.png" }],
+        ["quote-breaking URL", {
+            result_url: 'https://cdn.example/result.png" onerror="alert(1)'
+        }],
+        ["empty filename", { filename: "   " }],
+        ["non-integer width", { width: 100.5 }],
+        ["unbounded height", { height: 1000000 }],
+        ["missing regions", { regions: null }],
+        ["non-finite region", {
+            regions: [{ x: Number.NaN, y: 0, width: 0.1, height: 0.1 }]
+        }],
+        ["negative region", {
+            regions: [{ x: -0.1, y: 0, width: 0.1, height: 0.1 }]
+        }],
+        ["zero-area region", {
+            regions: [{ x: 0.1, y: 0.1, width: 0, height: 0.1 }]
+        }],
+        ["overflowing region", {
+            regions: [{ x: 0.9, y: 0.1, width: 0.2, height: 0.1 }]
+        }]
+    ];
+
+    for (const [label, overrides] of invalidCases) {
+        const harness = createRuntimeHarness(() => {
+            throw new Error(`${label} must be rejected before fetch`);
+        });
+
+        assert.equal(
+            await harness.window.restoreWatermarkRemovalHistory(
+                historyResult("invalid.png", overrides)
+            ),
+            false,
+            label
+        );
+        assert.equal(harness.state.fetchCalls.length, 0, label);
+    }
+});
+
+test("failed result preload leaves the current image, result, and regions unchanged", async () => {
+    const harness = createRuntimeHarness(standardFetch, {
+        failedImageSources: ["/static/result/new.png"]
+    });
+    const original = historyResult("old.png", {
+        regions: [{ x: 0.2, y: 0.25, width: 0.3, height: 0.2 }]
+    });
+
+    assert.equal(
+        await harness.window.restoreWatermarkRemovalHistory(original),
+        true
+    );
+    const before = {
+        filename: harness.elements.watermarkRemovalFilename.textContent,
+        originalSrc: harness.elements.watermarkRemovalOriginal.src,
+        resultSrc: harness.elements.watermarkRemovalResult.src,
+        regionCount: harness.elements.watermarkRemovalRegionCount.textContent
+    };
+
+    assert.equal(
+        await harness.window.restoreWatermarkRemovalHistory(
+            historyResult("new.png", {
+                regions: [{ x: 0.7, y: 0.7, width: 0.1, height: 0.1 }]
+            })
+        ),
+        false
+    );
+
+    assert.deepEqual({
+        filename: harness.elements.watermarkRemovalFilename.textContent,
+        originalSrc: harness.elements.watermarkRemovalOriginal.src,
+        resultSrc: harness.elements.watermarkRemovalResult.src,
+        regionCount: harness.elements.watermarkRemovalRegionCount.textContent
+    }, before);
+
+    await harness.window.submitWatermarkRemoval();
+    assert.equal(harness.state.requestBodies.at(-1).filename, "old.png");
+    assertRegionClose(
+        harness.state.requestBodies.at(-1).regions[0],
+        original.regions[0],
+        "failed restore replaced the current regions"
+    );
 });
 
 test("sidebar remains vertically reachable on short viewports", () => {

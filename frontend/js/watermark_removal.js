@@ -5,6 +5,8 @@
     const HANDLE_NAMES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
     const MIN_REGION_SIZE = 0.004;
     const MIN_CREATE_PIXELS = 5;
+    const MAX_HISTORY_IMAGE_DIMENSION = 32768;
+    const MAX_HISTORY_REGION_COUNT = 100;
 
     const state = {
         initialized: false,
@@ -54,6 +56,68 @@
     function assetUrl(url) {
         if (!url || /^(?:data:|blob:|https?:\/\/)/i.test(url)) return url || "";
         return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+    }
+
+    function isAllowedHistoryAssetUrl(value) {
+        if (typeof value !== "string" || value !== value.trim()) return false;
+        if (/[\u0000-\u0020\u007f"'<>\\]/.test(value)) return false;
+        return value.startsWith("/static/")
+            || /^https?:\/\/[^/?#]+(?:[/?#].*)?$/i.test(value);
+    }
+
+    function historyResultValidationError(result) {
+        if (!result || typeof result !== "object" || Array.isArray(result)) {
+            return "该历史记录数据格式已失效";
+        }
+        if (
+            typeof result.filename !== "string"
+            || !result.filename.trim()
+            || result.filename.length > 255
+            || /[\u0000-\u001f\u007f]/.test(result.filename)
+        ) {
+            return "该历史记录文件名无效";
+        }
+        if (
+            !isAllowedHistoryAssetUrl(result.source_url)
+            || !isAllowedHistoryAssetUrl(result.result_url)
+        ) {
+            return "该历史记录包含无效图片地址";
+        }
+        if (
+            !Number.isSafeInteger(result.width)
+            || !Number.isSafeInteger(result.height)
+            || result.width <= 0
+            || result.height <= 0
+            || result.width > MAX_HISTORY_IMAGE_DIMENSION
+            || result.height > MAX_HISTORY_IMAGE_DIMENSION
+        ) {
+            return "该历史记录图片尺寸无效";
+        }
+        if (
+            !Array.isArray(result.regions)
+            || result.regions.length === 0
+            || result.regions.length > MAX_HISTORY_REGION_COUNT
+        ) {
+            return "该历史记录选区无效";
+        }
+        const validRegions = result.regions.every(region => {
+            if (!region || typeof region !== "object" || Array.isArray(region)) {
+                return false;
+            }
+            const { x, y, width, height } = region;
+            return [x, y, width, height].every(Number.isFinite)
+                && x >= 0
+                && y >= 0
+                && width > 0
+                && height > 0
+                && x <= 1
+                && y <= 1
+                && width <= 1
+                && height <= 1
+                && x + width <= 1
+                && y + height <= 1;
+        });
+        return validRegions ? "" : "该历史记录选区无效";
     }
 
     function setWatermarkRemovalError(message) {
@@ -596,34 +660,63 @@
     }
 
     async function restoreWatermarkRemovalHistory(result) {
-        if (state.busy) return;
-        if (!result || !result.result_url || !result.source_url) {
-            setWatermarkRemovalError("该历史记录缺少可恢复的图片");
-            return;
+        if (state.busy) return false;
+        const validationError = historyResultValidationError(result);
+        if (validationError) {
+            setWatermarkRemovalError(validationError);
+            return false;
         }
 
         try {
             setWatermarkRemovalBusy(true);
-            const sourceResponse = await fetch(assetUrl(result.source_url));
+            const sourceUrl = assetUrl(result.source_url);
+            const resultUrl = assetUrl(result.result_url);
+            const sourceResponse = await fetch(sourceUrl);
             if (!sourceResponse.ok) throw new Error("历史原图读取失败");
             const sourceBlob = await sourceResponse.blob();
             const sourceData = await readBlobAsDataUrl(sourceBlob);
-            await applySourceImage({
-                filename: result.filename || "image.png",
-                imageData: sourceData,
-                sourceUrl: assetUrl(result.source_url)
-            });
-            state.regions = Array.isArray(result.regions)
-                ? result.regions.map(region => ({ ...region }))
-                : [];
+            const [sourceImage, resultImage] = await Promise.all([
+                loadImageSource(sourceData),
+                loadImageSource(resultUrl)
+            ]);
+            if (
+                sourceImage.naturalWidth !== result.width
+                || sourceImage.naturalHeight !== result.height
+                || resultImage.naturalWidth !== result.width
+                || resultImage.naturalHeight !== result.height
+            ) {
+                throw new Error("历史图片尺寸与记录不一致");
+            }
+
+            const restoredRegions = result.regions.map(region => ({ ...region }));
+            const restoredResult = {
+                ...result,
+                regions: restoredRegions
+            };
+            if (state.sourceObjectUrl) {
+                URL.revokeObjectURL(state.sourceObjectUrl);
+            }
+            state.filename = result.filename;
+            state.imageData = sourceData;
+            state.sourceUrl = sourceUrl;
+            state.sourceObjectUrl = "";
+            state.image = sourceImage;
+            state.regions = restoredRegions;
             state.selectedIndex = state.regions.length ? 0 : -1;
-            renderWatermarkRemovalResult(result, result.source_url);
+            state.interaction = null;
+            state.elements.upload.hidden = true;
+            state.elements.workspace.hidden = false;
+            state.elements.filename.textContent = result.filename;
+            setWatermarkRemovalError("");
+            renderWatermarkRemovalResult(restoredResult, sourceUrl);
             updateWatermarkRemovalControls();
             requestEditorRedraw();
             setWatermarkRemovalBusy(false);
+            return true;
         } catch (error) {
             setWatermarkRemovalError(error.message || "历史记录恢复失败");
             setWatermarkRemovalBusy(false);
+            return false;
         }
     }
 

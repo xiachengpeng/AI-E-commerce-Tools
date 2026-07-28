@@ -351,10 +351,20 @@ async function restoreHistoryItemByIndex(module, index) {
             showToast('该 AI 消除历史记录数据格式已失效', 'error');
             return;
         }
-        if (typeof restoreWatermarkRemovalHistory === 'function') {
-            await restoreWatermarkRemovalHistory(responseObj);
+        try {
+            const restored = typeof restoreWatermarkRemovalHistory === 'function'
+                && await restoreWatermarkRemovalHistory(responseObj);
+            if (!restored) {
+                showToast('AI 消除历史恢复失败', 'error');
+                return;
+            }
             showToast('已还原 AI 消除历史', 'success');
+            toggleGlobalHistory();
+        } catch (error) {
+            console.error('Watermark removal history restore failed:', error);
+            showToast('AI 消除历史恢复失败', 'error');
         }
+        return;
     }
 
     toggleGlobalHistory();

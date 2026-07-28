@@ -46,8 +46,9 @@ function historyResult(overrides = {}) {
     };
 }
 
-function createHistoryHarness(records) {
+function createHistoryHarness(records, { restoreResult = true } = {}) {
     const list = { innerHTML: "" };
+    const panel = { classList: new FakeClassList("open") };
     const tabs = [
         "analysis",
         "listing",
@@ -60,7 +61,8 @@ function createHistoryHarness(records) {
     const state = {
         fetchUrls: [],
         restored: [],
-        switched: []
+        switched: [],
+        toasts: []
     };
     const context = {
         API_BASE: "http://localhost:8000",
@@ -68,7 +70,9 @@ function createHistoryHarness(records) {
         console: { error() {}, log() {} },
         document: {
             getElementById(id) {
-                return id === "globalHistoryList" ? list : null;
+                if (id === "globalHistoryList") return list;
+                if (id === "globalHistoryPanel") return panel;
+                return null;
             },
             querySelectorAll(selector) {
                 return selector === ".history-tab-btn" ? tabs : [];
@@ -82,19 +86,22 @@ function createHistoryHarness(records) {
         },
         restoreWatermarkRemovalHistory(result) {
             state.restored.push(result);
+            return restoreResult;
         },
         setTimeout(callback) {
             callback();
             return 1;
         },
-        showToast() {},
+        showToast(message, type) {
+            state.toasts.push({ message, type });
+        },
         switchMainTab(module) {
             state.switched.push(module);
         }
     };
     vm.createContext(context);
     vm.runInContext(historyScript, context);
-    return { context, list, state, tabs };
+    return { context, list, panel, state, tabs };
 }
 
 test("global history exposes an AI removal tab", () => {
@@ -143,6 +150,29 @@ test("AI removal history restores the saved result without an AI request", async
     assert.deepEqual(harness.state.switched, ["watermark-removal"]);
     assert.deepEqual(harness.state.restored, [result]);
     assert.equal(harness.state.fetchUrls.length, fetchCountBeforeRestore);
+    assert.equal(harness.panel.classList.contains("open"), false);
+    assert.deepEqual(harness.state.toasts, [{
+        message: "已还原 AI 消除历史",
+        type: "success"
+    }]);
+});
+
+test("failed AI removal restore keeps history open and reports an error", async () => {
+    const result = historyResult();
+    const harness = createHistoryHarness([{
+        id: 10,
+        filename: result.filename,
+        result
+    }], { restoreResult: false });
+
+    await harness.context.loadGlobalHistory("watermark-removal");
+    await harness.context.restoreHistoryItemByIndex("watermark-removal", 0);
+
+    assert.equal(harness.panel.classList.contains("open"), true);
+    assert.deepEqual(harness.state.toasts, [{
+        message: "AI 消除历史恢复失败",
+        type: "error"
+    }]);
 });
 
 test("AI removal history escapes a malicious filename", async () => {
