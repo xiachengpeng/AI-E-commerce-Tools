@@ -108,14 +108,23 @@ def google_response_to_dict(response) -> dict:
                         }
                     }
                 )
-        result["candidates"].append(
-            {
-                "content": {
-                    "role": getattr(candidate.content, "role", "model"),
-                    "parts": parts,
-                }
+        normalized_candidate = {
+            "content": {
+                "role": getattr(candidate.content, "role", "model"),
+                "parts": parts,
             }
-        )
+        }
+        finish_reason = getattr(candidate, "finish_reason", None)
+        if finish_reason is not None:
+            normalized_candidate["finishReason"] = str(
+                getattr(finish_reason, "value", None)
+                or getattr(finish_reason, "name", None)
+                or finish_reason
+            )
+        finish_message = getattr(candidate, "finish_message", None)
+        if finish_message:
+            normalized_candidate["finishMessage"] = str(finish_message)
+        result["candidates"].append(normalized_candidate)
     return result
 
 

@@ -19,11 +19,11 @@ DATA_URL_PATTERN = re.compile(
 )
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 SUPPORTED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
-WATERMARK_REMOVAL_PROMPT = """Remove only the watermark in the supplied original image.
+WATERMARK_REMOVAL_PROMPT = """Create one new edited image using the first image as visual context.
 
-The original image is the first input and the mask is the second input. White areas in the mask are editable; black areas must remain unchanged exactly.
-Do not add text, logos, watermarks, or any new objects. Do not alter the composition, products, people, background, colors, or any unmasked pixels.
-Return only the edited image at the exact same width and height as the original image."""
+The second image is a guide: reconstruct the area shown in white with a plausible continuation of nearby colors, lighting, and texture.
+Avoid text, logos, symbols, or watermarks. You may freely regenerate the rest of the canvas because it is context only.
+Return one image only."""
 
 
 def decode_data_url(data_url: str, *, require_png: bool = False) -> ValidatedImage:
@@ -158,6 +158,11 @@ def _model_image(response: dict) -> ValidatedImage:
         None,
     )
     if not isinstance(inline_data, dict):
+        finish_reason = candidates[0].get("finishReason") if candidates else None
+        if finish_reason == "IMAGE_RECITATION":
+            raise ValueError(
+                "模型因图片复刻限制未返回图片，请缩小框选范围或稍后重试"
+            )
         raise ValueError("模型未返回图片")
     image = validate_image_payload(
         inline_data.get("data"),

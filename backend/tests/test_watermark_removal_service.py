@@ -226,6 +226,10 @@ async def test_remove_watermark_sends_source_and_mask_to_image_model(tmp_path, m
     assert ai_mock.await_args.kwargs["capability"] == "image"
     parts = ai_mock.await_args.kwargs["payload"]["contents"][0]["parts"]
     assert len([part for part in parts if "inlineData" in part]) == 2
+    prompt = parts[0]["text"]
+    assert "context only" in prompt
+    assert "must remain unchanged exactly" not in prompt
+    assert "unmasked pixels" not in prompt
 
 
 @pytest.mark.asyncio
@@ -240,6 +244,33 @@ async def test_remove_watermark_rejects_response_without_image(tmp_path, monkeyp
         new=ai_mock,
     ):
         with pytest.raises(ValueError, match="未返回图片"):
+            await remove_watermark(valid_request())
+
+
+@pytest.mark.asyncio
+async def test_remove_watermark_explains_image_recitation_rejection(
+    tmp_path, monkeypatch
+):
+    import services.watermark_removal_service as watermark_service
+
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(tmp_path / "static"))
+    ai_mock = AsyncMock(
+        return_value={
+            "candidates": [
+                {
+                    "content": {"parts": []},
+                    "finishReason": "IMAGE_RECITATION",
+                    "finishMessage": "The model could not generate the image.",
+                }
+            ]
+        }
+    )
+
+    with patch(
+        "services.watermark_removal_service.AIService.generate_content",
+        new=ai_mock,
+    ):
+        with pytest.raises(ValueError, match="图片复刻限制"):
             await remove_watermark(valid_request())
 
 

@@ -1,5 +1,7 @@
 from dataclasses import replace
 import asyncio
+from enum import Enum
+from types import SimpleNamespace
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,6 +12,7 @@ from services.ai_adapters import (
     OpenAICompatibleAdapter,
     VertexAdapter,
     convert_openai_messages,
+    google_response_to_dict,
     get_adapter,
     close_adapters,
 )
@@ -35,6 +38,28 @@ def make_snapshot(capability="text", **overrides):
     }
     values.update(overrides)
     return ProviderSnapshot(**values)
+
+
+def test_google_response_preserves_image_recitation_finish_metadata():
+    class FinishReason(Enum):
+        IMAGE_RECITATION = "IMAGE_RECITATION"
+
+    response = SimpleNamespace(
+        candidates=[
+            SimpleNamespace(
+                content=SimpleNamespace(role="model", parts=[]),
+                finish_reason=FinishReason.IMAGE_RECITATION,
+                finish_message="The model could not generate the image.",
+            )
+        ]
+    )
+
+    result = google_response_to_dict(response)
+
+    assert result["candidates"][0]["finishReason"] == "IMAGE_RECITATION"
+    assert result["candidates"][0]["finishMessage"] == (
+        "The model could not generate the image."
+    )
 
 
 @pytest.mark.asyncio
