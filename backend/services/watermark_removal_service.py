@@ -2,7 +2,7 @@ import math
 import re
 from io import BytesIO
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from models.request import WatermarkRegion
 from services.image_validation import ValidatedImage, validate_image_payload
@@ -21,6 +21,8 @@ def decode_data_url(data_url: str, *, require_png: bool = False) -> ValidatedIma
         raise ValueError("请上传有效的图片 data URL")
 
     image = validate_image_payload(match.group(2), match.group(1))
+    if image.image_format not in {"JPEG", "PNG", "WEBP"}:
+        raise ValueError("仅支持 JPG、PNG 或 WebP 格式")
     if require_png and image.image_format != "PNG":
         raise ValueError("遮罩图片必须为 PNG 格式")
     return image
@@ -37,41 +39,42 @@ def validate_regions(regions: list[WatermarkRegion]) -> list[WatermarkRegion]:
 def _binary_mask(image: ValidatedImage) -> Image.Image:
     with Image.open(BytesIO(image.data)) as decoded:
         grayscale = decoded.convert("L")
-        return grayscale.point(lambda value: 255 if value == 255 else 0, "1")
+        return grayscale.point(lambda value: 255 if value == 255 else 0)
 
 
 def _expected_mask(width: int, height: int, regions: list[WatermarkRegion]) -> Image.Image:
-    expected = Image.new("1", (width, height), 0)
-    for region in regions:
-        left = math.floor(region.x * width)
-        top = math.floor(region.y * height)
-        right = math.ceil((region.x + region.width) * width)
-        bottom = math.ceil((region.y + region.height) * height)
-        for y in range(top, bottom):
-            for x in range(left, right):
-                expected.putpixel((x, y), 1)
+    rectangles = [
+        (
+            math.floor(region.x * width),
+            math.floor(region.y * height),
+            math.ceil((region.x + region.width) * width),
+            math.ceil((region.y + region.height) * height),
+        )
+        for region in regions
+    ]
+    expected = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(expected)
+    for y in range(height):
+        intervals = sorted(
+            (left, right)
+            for left, top, right, bottom in rectangles
+            if top <= y < bottom
+        )
+        if not intervals:
+            continue
+        start, end = intervals[0]
+        for left, right in intervals[1:]:
+            if left <= end:
+                end = max(end, right)
+                continue
+            draw.line((start, y, end - 1, y), fill=255)
+            start, end = left, right
+        draw.line((start, y, end - 1, y), fill=255)
     return expected
 
 
-def _dilate_one_pixel(mask: Image.Image) -> Image.Image:
-    width, height = mask.size
-    dilated = Image.new("1", mask.size, 0)
-    for y in range(height):
-        for x in range(width):
-            if not mask.getpixel((x, y)):
-                continue
-            for neighbor_y in range(max(0, y - 1), min(height, y + 2)):
-                for neighbor_x in range(max(0, x - 1), min(width, x + 2)):
-                    dilated.putpixel((neighbor_x, neighbor_y), 1)
-    return dilated
-
-
-def _is_subset(mask: Image.Image, allowed: Image.Image) -> bool:
-    return all(
-        not mask.getpixel((x, y)) or allowed.getpixel((x, y))
-        for y in range(mask.height)
-        for x in range(mask.width)
-    )
+def _has_pixels(mask: Image.Image) -> bool:
+    return mask.getbbox() is not None
 
 
 def validate_mask(
@@ -84,12 +87,14 @@ def validate_mask(
 
     normalized_regions = validate_regions(regions)
     actual = _binary_mask(mask)
-    if not any(actual.get_flattened_data()):
+    if not _has_pixels(actual):
         raise ValueError("遮罩至少需要包含一个白色像素")
 
     expected = _expected_mask(source.width, source.height, normalized_regions)
-    if not (
-        _is_subset(actual, _dilate_one_pixel(expected))
-        and _is_subset(expected, _dilate_one_pixel(actual))
+    outer_tolerance = expected.filter(ImageFilter.MaxFilter(3))
+    required_interior = expected.filter(ImageFilter.MinFilter(3))
+    if (
+        _has_pixels(ImageChops.subtract(actual, outer_tolerance))
+        or _has_pixels(ImageChops.subtract(required_interior, actual))
     ):
         raise ValueError("遮罩与框选区域不一致")

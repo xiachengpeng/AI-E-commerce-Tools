@@ -1,5 +1,6 @@
 import base64
 import io
+import time
 
 import pytest
 from PIL import Image, ImageDraw
@@ -19,6 +20,13 @@ def make_data_url(width=10, height=10):
     return f"data:image/png;base64,{encoded}"
 
 
+def make_format_data_url(image_format, width=10, height=10):
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), "white").save(buffer, format=image_format)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/{image_format.lower()};base64,{encoded}"
+
+
 def make_mask_url(regions, width=10, height=10):
     buffer = io.BytesIO()
     mask = Image.new("L", (width, height), 0)
@@ -28,6 +36,18 @@ def make_mask_url(regions, width=10, height=10):
             (x, y, x + region_width - 1, y + region_height - 1),
             fill=255,
         )
+    mask.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def make_sparse_mask_url(width, height):
+    buffer = io.BytesIO()
+    mask = Image.new("L", (width, height), 0)
+    for y in range(height):
+        for x in range(width):
+            if (x + y) % 2 == 0:
+                mask.putpixel((x, y), 255)
     mask.save(buffer, format="PNG")
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
@@ -78,3 +98,28 @@ def test_validate_mask_accepts_multiple_matching_regions():
         require_png=True,
     )
     validate_mask(source, mask, regions)
+
+
+def test_decode_data_url_rejects_source_formats_outside_jpg_png_webp():
+    with pytest.raises(ValueError, match="仅支持 JPG、PNG 或 WebP"):
+        decode_data_url(make_format_data_url("GIF"))
+
+
+def test_validate_mask_rejects_sparse_pixels_inside_selected_region():
+    source = decode_data_url(make_data_url(20, 20))
+    mask = decode_data_url(make_sparse_mask_url(20, 20), require_png=True)
+    region = WatermarkRegion(x=0, y=0, width=1, height=1)
+
+    with pytest.raises(ValueError, match="遮罩与框选区域不一致"):
+        validate_mask(source, mask, [region])
+
+
+def test_validate_mask_handles_100_overlapping_large_regions_efficiently():
+    source = decode_data_url(make_data_url(512, 512))
+    mask = decode_data_url(make_mask_url([(0, 0, 512, 512)], 512, 512), require_png=True)
+    regions = [WatermarkRegion(x=0, y=0, width=1, height=1) for _ in range(100)]
+
+    started_at = time.perf_counter()
+    validate_mask(source, mask, regions)
+
+    assert time.perf_counter() - started_at < 2
