@@ -1219,9 +1219,10 @@
                         <h1>AI 水印消除</h1>
                         <p>上传商品图，框选一个或多个水印区域，AI 将智能补全背景。</p>
                     </div>
-                    <span class="watermark-removal-privacy">
-                        <i class="ph ph-shield-check"></i> 图片仅用于本次处理
-                    </span>
+                    <div class="watermark-removal-disclosure" role="note">
+                        <i class="ph ph-shield-check" aria-hidden="true"></i>
+                        <span>仅处理您拥有或获准编辑的图片；图片会发送给已配置的 AI 提供商，并在本地静态文件与历史中保存。</span>
+                    </div>
                 </header>
 
                 <div class="watermark-removal-layout">
@@ -1238,13 +1239,13 @@
                             <span id="watermarkRemovalRegionCount" class="watermark-removal-count">0 个区域</span>
                         </div>
 
+                        <input id="watermarkRemovalFileInput" class="watermark-removal-file-input" type="file"
+                            accept="image/jpeg,image/png,image/webp" onchange="handleWatermarkUpload(event)">
                         <label id="watermarkRemovalUpload" class="watermark-removal-upload"
                             for="watermarkRemovalFileInput">
                             <span class="watermark-removal-upload-icon"><i class="ph ph-image-square"></i></span>
                             <strong>点击选择商品图片</strong>
                             <span>支持 JPG、PNG、WebP</span>
-                            <input id="watermarkRemovalFileInput" type="file" accept="image/jpeg,image/png,image/webp"
-                                onchange="handleWatermarkUpload(event)">
                         </label>
 
                         <div id="watermarkRemovalWorkspace" class="watermark-removal-workspace" hidden>
@@ -1254,6 +1255,10 @@
                                     <span id="watermarkRemovalFilename">尚未选择图片</span>
                                 </div>
                                 <div class="watermark-removal-toolbar-actions">
+                                    <button id="watermarkRemovalReplace" type="button"
+                                        class="watermark-removal-button ghost">
+                                        <i class="ph ph-arrow-clockwise"></i> 更换图片
+                                    </button>
                                     <button id="watermarkRemovalDelete" type="button" class="watermark-removal-button ghost"
                                         title="删除选中区域">
                                         <i class="ph ph-trash"></i> 删除选区

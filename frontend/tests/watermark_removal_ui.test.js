@@ -59,6 +59,7 @@ function fakeElement(id, harnessState) {
         },
         appendChild() {},
         click() {
+            harnessState.clickCounts[id] = (harnessState.clickCounts[id] || 0) + 1;
             if (id === "temporary-anchor") {
                 harnessState.downloadNames.push(this.download);
             }
@@ -123,13 +124,21 @@ function historyResult(filename, overrides = {}) {
     };
 }
 
-function createRuntimeHarness(fetchImpl, { failedImageSources = [] } = {}) {
+function createRuntimeHarness(
+    fetchImpl,
+    {
+        failedImageSources = [],
+        imageDimensionsBySource = {}
+    } = {}
+) {
     const harnessState = {
+        clickCounts: {},
         downloadNames: [],
         failedImageSources,
         fetchCalls: [],
         historySaves: [],
-        requestBodies: []
+        requestBodies: [],
+        revokedObjectUrls: []
     };
     const ids = [
         "watermarkRemovalUpload",
@@ -138,6 +147,7 @@ function createRuntimeHarness(fetchImpl, { failedImageSources = [] } = {}) {
         "watermarkRemovalFilename",
         "watermarkRemovalCanvas",
         "watermarkRemovalCanvasStage",
+        "watermarkRemovalReplace",
         "watermarkRemovalDelete",
         "watermarkRemovalClear",
         "watermarkRemovalRegionCount",
@@ -163,6 +173,11 @@ function createRuntimeHarness(fetchImpl, { failedImageSources = [] } = {}) {
 
         set src(value) {
             this.currentSource = value;
+            const dimensions = Object.entries(imageDimensionsBySource)
+                .find(([source]) => value.includes(source))?.[1];
+            if (dimensions) {
+                [this.naturalWidth, this.naturalHeight] = dimensions;
+            }
             if (harnessState.failedImageSources.some(source => value.includes(source))) {
                 this.onerror?.();
             } else {
@@ -213,7 +228,9 @@ function createRuntimeHarness(fetchImpl, { failedImageSources = [] } = {}) {
                 objectUrlSequence += 1;
                 return `blob:generated-${objectUrlSequence}`;
             },
-            revokeObjectURL() {}
+            revokeObjectURL(value) {
+                harnessState.revokedObjectUrls.push(value);
+            }
         },
         console: { error() {} },
         document,
@@ -287,6 +304,24 @@ test("page exposes upload, editing, comparison, and error states", () => {
     assert.match(indexHtml, /id="watermarkRemovalOriginal"/);
     assert.match(indexHtml, /id="watermarkRemovalResult"/);
     assert.equal(fs.existsSync(stylePath), true);
+});
+
+test("workspace exposes an always-visible replace-image control", () => {
+    assert.match(
+        indexHtml,
+        /<button[^>]*id="watermarkRemovalReplace"[^>]*>[\s\S]*?更换图片[\s\S]*?<\/button>/
+    );
+});
+
+test("ownership, AI-provider transfer, and local persistence disclosure is always visible", () => {
+    assert.match(indexHtml, /仅处理您拥有或获准编辑的图片/);
+    assert.match(indexHtml, /图片会发送给已配置的 AI 提供商/);
+    assert.match(indexHtml, /在本地静态文件与历史中保存/);
+    assert.doesNotMatch(indexHtml, /仅用于本次处理/);
+    assert.doesNotMatch(
+        style,
+        /\.watermark-removal-(?:privacy|disclosure)\s*\{\s*display:\s*none/
+    );
 });
 
 test("watermark scripts load in dependency order and initialize with the app", () => {
@@ -403,6 +438,127 @@ test("history restore is ignored while a submit operation is busy", async () => 
     assert.equal(newSourceFetches, 0);
     assert.equal(harness.state.historySaves.length, 1);
     assert.equal(harness.state.historySaves[0].data.filename, "old.png");
+});
+
+test("replace-image control is disabled while AI submission is busy", async () => {
+    const pendingSubmit = deferred();
+    const harness = createRuntimeHarness((url, options) => {
+        if (url.endsWith("/static/source/old.png")) {
+            return response({ blob: { dataUrl: "data:image/png;base64,b2xk" } });
+        }
+        if (url.endsWith("/api/watermark-removal") && options.method === "POST") {
+            return pendingSubmit.promise;
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+    });
+    await harness.window.restoreWatermarkRemovalHistory(historyResult("old.png"));
+
+    const submitPromise = harness.window.submitWatermarkRemoval();
+
+    assert.equal(harness.elements.watermarkRemovalFileInput.disabled, true);
+    assert.equal(harness.elements.watermarkRemovalReplace.disabled, true);
+
+    pendingSubmit.resolve(response({
+        json: {
+            status: "success",
+            data: historyResult("old-result.png")
+        }
+    }));
+    await submitPromise;
+
+    assert.equal(harness.elements.watermarkRemovalReplace.disabled, false);
+});
+
+test("replace-image entry atomically installs a fully loaded image and clears old work", async () => {
+    const harness = createRuntimeHarness(standardFetch, {
+        imageDimensionsBySource: {
+            "blob:generated-1": [240, 160]
+        }
+    });
+    await harness.window.restoreWatermarkRemovalHistory(historyResult("old.png", {
+        regions: [{ x: 0.2, y: 0.25, width: 0.3, height: 0.2 }]
+    }));
+    const replaceButton = harness.elements.watermarkRemovalReplace;
+    const fileInput = harness.elements.watermarkRemovalFileInput;
+
+    replaceButton.emit("click", {});
+    assert.equal(harness.state.clickCounts.watermarkRemovalFileInput, 1);
+
+    const replacementData = "data:image/webp;base64,bmV3LXNvdXJjZQ==";
+    await harness.window.handleWatermarkUpload({
+        target: {
+            files: [{
+                name: "replacement.webp",
+                type: "image/webp",
+                dataUrl: replacementData
+            }],
+            value: "selected"
+        }
+    });
+
+    assert.equal(harness.elements.watermarkRemovalFilename.textContent, "replacement.webp");
+    assert.equal(harness.elements.watermarkRemovalRegionCount.textContent, "0 个区域");
+    assert.equal(harness.elements.watermarkRemovalComparison.hidden, true);
+    assert.equal(harness.elements.watermarkRemovalOriginal.src, "");
+    assert.equal(harness.elements.watermarkRemovalResult.src, "");
+    assert.equal(harness.elements.watermarkRemovalCanvas.width, 240);
+    assert.equal(harness.elements.watermarkRemovalCanvas.height, 160);
+
+    const canvas = harness.elements.watermarkRemovalCanvas;
+    canvas.emit("pointerdown", pointerEvent(10, 10));
+    canvas.emit("pointermove", pointerEvent(30, 30));
+    canvas.emit("pointerup", pointerEvent(30, 30));
+    await harness.window.submitWatermarkRemoval();
+
+    assert.equal(harness.state.requestBodies.at(-1).filename, "replacement.webp");
+    assert.equal(harness.state.requestBodies.at(-1).image_data, replacementData);
+});
+
+test("failed replacement keeps the previous source, regions, dimensions, and result", async () => {
+    const harness = createRuntimeHarness(standardFetch, {
+        failedImageSources: ["blob:generated-1"]
+    });
+    const original = historyResult("old.png", {
+        regions: [{ x: 0.2, y: 0.25, width: 0.3, height: 0.2 }]
+    });
+    await harness.window.restoreWatermarkRemovalHistory(original);
+    const before = {
+        filename: harness.elements.watermarkRemovalFilename.textContent,
+        regionCount: harness.elements.watermarkRemovalRegionCount.textContent,
+        originalSrc: harness.elements.watermarkRemovalOriginal.src,
+        resultSrc: harness.elements.watermarkRemovalResult.src,
+        canvasWidth: harness.elements.watermarkRemovalCanvas.width,
+        canvasHeight: harness.elements.watermarkRemovalCanvas.height
+    };
+
+    await harness.window.handleWatermarkUpload({
+        target: {
+            files: [{
+                name: "broken.png",
+                type: "image/png",
+                dataUrl: "data:image/png;base64,YnJva2Vu"
+            }],
+            value: "selected"
+        }
+    });
+
+    assert.deepEqual({
+        filename: harness.elements.watermarkRemovalFilename.textContent,
+        regionCount: harness.elements.watermarkRemovalRegionCount.textContent,
+        originalSrc: harness.elements.watermarkRemovalOriginal.src,
+        resultSrc: harness.elements.watermarkRemovalResult.src,
+        canvasWidth: harness.elements.watermarkRemovalCanvas.width,
+        canvasHeight: harness.elements.watermarkRemovalCanvas.height
+    }, before);
+    assert.deepEqual(harness.state.revokedObjectUrls, ["blob:generated-1"]);
+
+    await harness.window.submitWatermarkRemoval();
+    assert.equal(harness.state.requestBodies.at(-1).filename, "old.png");
+    assertRegionClose(
+        harness.state.requestBodies.at(-1).regions[0],
+        original.regions[0],
+        "failed replacement replaced the previous regions"
+    );
 });
 
 test("download keeps the original result metadata when state changes during fetch", async () => {

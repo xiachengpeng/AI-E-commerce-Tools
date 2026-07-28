@@ -67,6 +67,40 @@ def make_image_bytes(image_format, width=10, height=10):
     return buffer.getvalue()
 
 
+def make_pattern_png_bytes(width=10, height=10):
+    image = Image.new("RGBA", (width, height))
+    for y in range(height):
+        for x in range(width):
+            image.putpixel(
+                (x, y),
+                (
+                    (x * 23 + y * 7) % 256,
+                    (x * 11 + y * 29) % 256,
+                    (x * 31 + y * 13) % 256,
+                    80 + ((x * 17 + y * 19) % 176),
+                ),
+            )
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def make_gray_transparent_mask_url(width=10, height=10):
+    mask = Image.new("RGBA", (width, height), (128, 128, 128, 0))
+    ImageDraw.Draw(mask).rectangle(
+        (1, 1, 3, 3),
+        fill=(255, 255, 255, 64),
+    )
+    buffer = io.BytesIO()
+    mask.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def png_data_url(data):
+    return f"data:image/png;base64,{base64.b64encode(data).decode('ascii')}"
+
+
 def inline_image_response(data, mime_type="image/png"):
     return {
         "candidates": [{
@@ -278,3 +312,91 @@ async def test_remove_watermark_saves_source_mask_and_result(tmp_path, monkeypat
     assert result["result_mime_type"] == "image/png"
     assert result["regions"] == [{"x": .1, "y": .1, "width": .3, "height": .3}]
     assert result["created_at"]
+
+
+@pytest.mark.asyncio
+async def test_remove_watermark_preserves_every_pixel_outside_canonical_mask(
+    tmp_path,
+    monkeypatch,
+):
+    import services.watermark_removal_service as watermark_service
+
+    static_root = tmp_path / "static"
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
+    source_data = make_pattern_png_bytes()
+    model_image = Image.new("RGBA", (10, 10), (250, 3, 199, 17))
+    model_buffer = io.BytesIO()
+    model_image.save(model_buffer, format="PNG")
+    request = WatermarkRemovalRequest(
+        filename="pattern.png",
+        image_data=png_data_url(source_data),
+        mask_data=make_mask_url([(2, 2, 3, 3)]),
+        regions=[WatermarkRegion(x=.2, y=.2, width=.3, height=.3)],
+    )
+    ai_mock = AsyncMock(return_value=inline_image_response(model_buffer.getvalue()))
+
+    with patch(
+        "services.watermark_removal_service.AIService.generate_content",
+        new=ai_mock,
+    ):
+        result = await remove_watermark(request)
+
+    result_path = url_to_test_path(static_root, result["result_url"])
+    with Image.open(io.BytesIO(source_data)) as source_image, Image.open(result_path) as saved:
+        source_pixels = source_image.convert("RGBA")
+        saved_pixels = saved.convert("RGBA")
+        for y in range(10):
+            for x in range(10):
+                expected = (
+                    model_image.getpixel((x, y))
+                    if 2 <= x < 5 and 2 <= y < 5
+                    else source_pixels.getpixel((x, y))
+                )
+                assert saved_pixels.getpixel((x, y)) == expected, (x, y)
+
+    assert result["result_mime_type"] == "image/png"
+    assert result["result_url"].endswith("-result.png")
+
+
+@pytest.mark.asyncio
+async def test_remove_watermark_sends_and_saves_regions_as_opaque_binary_mask(
+    tmp_path,
+    monkeypatch,
+):
+    import services.watermark_removal_service as watermark_service
+
+    static_root = tmp_path / "static"
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
+    request = WatermarkRemovalRequest(
+        filename="gray-alpha.png",
+        image_data=make_data_url(),
+        mask_data=make_gray_transparent_mask_url(),
+        regions=[WatermarkRegion(x=.1, y=.1, width=.3, height=.3)],
+    )
+    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes()))
+
+    with patch(
+        "services.watermark_removal_service.AIService.generate_content",
+        new=ai_mock,
+    ):
+        result = await remove_watermark(request)
+
+    parts = ai_mock.await_args.kwargs["payload"]["contents"][0]["parts"]
+    sent_mask_part = [part["inlineData"] for part in parts if "inlineData" in part][1]
+    sent_mask_data = base64.b64decode(sent_mask_part["data"])
+    saved_mask_data = url_to_test_path(static_root, result["mask_url"]).read_bytes()
+
+    assert sent_mask_part["mimeType"] == "image/png"
+    assert saved_mask_data == sent_mask_data
+    with Image.open(io.BytesIO(sent_mask_data)) as canonical_mask:
+        assert canonical_mask.mode == "L"
+        assert canonical_mask.info.get("transparency") is None
+        assert {
+            canonical_mask.getpixel((x, y))
+            for y in range(10)
+            for x in range(10)
+        } == {0, 255}
+        for y in range(10):
+            for x in range(10):
+                expected = 255 if 1 <= x < 4 and 1 <= y < 4 else 0
+                assert canonical_mask.getpixel((x, y)) == expected, (x, y)

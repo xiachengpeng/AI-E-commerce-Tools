@@ -63,18 +63,20 @@
     font-size: 13px;
 }
 
-.watermark-removal-privacy {
+.watermark-removal-disclosure {
     display: inline-flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     flex: 0 0 auto;
+    max-width: 510px;
     padding: 9px 13px;
     border: 1px solid #dbeafe;
-    border-radius: 999px;
+    border-radius: 14px;
     background: rgba(255, 255, 255, 0.8);
     color: #2563eb;
     font-size: 12px;
     font-weight: 800;
+    line-height: 1.5;
 }
 
 .watermark-removal-layout {
@@ -189,7 +191,7 @@
     font-size: 31px;
 }
 
-.watermark-removal-upload input {
+.watermark-removal-file-input {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -496,8 +498,9 @@
         flex-direction: column;
     }
 
-    .watermark-removal-privacy {
-        display: none;
+    .watermark-removal-disclosure {
+        width: 100%;
+        max-width: none;
     }
 
     .watermark-removal-comparison-grid {

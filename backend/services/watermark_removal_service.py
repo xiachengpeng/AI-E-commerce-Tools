@@ -86,6 +86,12 @@ def _expected_mask(width: int, height: int, regions: list[WatermarkRegion]) -> I
     return expected
 
 
+def _png_bytes(image: Image.Image) -> bytes:
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def _has_pixels(mask: Image.Image) -> bool:
     return mask.getbbox() is not None
 
@@ -167,6 +173,8 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
     mask = decode_data_url(request.mask_data, require_png=True)
     regions = validate_regions(request.regions)
     validate_mask(source, mask, regions)
+    canonical_mask = _expected_mask(source.width, source.height, regions)
+    canonical_mask_data = _png_bytes(canonical_mask)
 
     parts = [
         {"text": WATERMARK_REMOVAL_PROMPT},
@@ -178,8 +186,8 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
         },
         {
             "inlineData": {
-                "mimeType": mask.mime_type,
-                "data": base64.b64encode(mask.data).decode("ascii"),
+                "mimeType": "image/png",
+                "data": base64.b64encode(canonical_mask_data).decode("ascii"),
             }
         },
     ]
@@ -194,6 +202,17 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
     if (result.width, result.height) != (source.width, source.height):
         raise ValueError("模型返回图片尺寸与原图不一致")
 
+    with (
+        Image.open(BytesIO(source.data)) as source_image,
+        Image.open(BytesIO(result.data)) as result_image,
+    ):
+        composited = Image.composite(
+            result_image.convert("RGBA"),
+            source_image.convert("RGBA"),
+            canonical_mask,
+        )
+        result_data = _png_bytes(composited)
+
     processing_id = uuid.uuid4().hex
     output_dir = (
         Path(STATIC_DIR)
@@ -205,10 +224,10 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
     stem = _safe_stem(request.filename)
     source_path = output_dir / f"{stem}-source.{_extension_for_mime_type(source.mime_type)}"
     mask_path = output_dir / f"{stem}-mask.png"
-    result_path = output_dir / f"{stem}-result.{_extension_for_mime_type(result.mime_type)}"
+    result_path = output_dir / f"{stem}-result.png"
     source_path.write_bytes(source.data)
-    mask_path.write_bytes(mask.data)
-    result_path.write_bytes(result.data)
+    mask_path.write_bytes(canonical_mask_data)
+    result_path.write_bytes(result_data)
 
     return {
         "processing_id": processing_id,
@@ -216,7 +235,7 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
         "source_url": _static_url(source_path),
         "mask_url": _static_url(mask_path),
         "result_url": _static_url(result_path),
-        "result_mime_type": result.mime_type,
+        "result_mime_type": "image/png",
         "width": result.width,
         "height": result.height,
         "regions": [region.model_dump() for region in regions],

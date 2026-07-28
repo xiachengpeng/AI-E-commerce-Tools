@@ -35,6 +35,7 @@
             filename: byId("watermarkRemovalFilename"),
             canvas: byId("watermarkRemovalCanvas"),
             stage: byId("watermarkRemovalCanvasStage"),
+            replaceButton: byId("watermarkRemovalReplace"),
             deleteButton: byId("watermarkRemovalDelete"),
             clearButton: byId("watermarkRemovalClear"),
             count: byId("watermarkRemovalRegionCount"),
@@ -128,7 +129,16 @@
     }
 
     function updateWatermarkRemovalControls() {
-        const { canvas, clearButton, deleteButton, fileInput, submit, status, count } = state.elements;
+        const {
+            canvas,
+            clearButton,
+            deleteButton,
+            fileInput,
+            replaceButton,
+            submit,
+            status,
+            count
+        } = state.elements;
         const hasImage = Boolean(state.image);
         const canSubmit = core.canSubmitRemoval({
             hasImage,
@@ -138,6 +148,7 @@
 
         if (count) count.textContent = `${state.regions.length} 个区域`;
         if (fileInput) fileInput.disabled = state.busy;
+        if (replaceButton) replaceButton.disabled = state.busy;
         if (clearButton) clearButton.disabled = state.busy || state.regions.length === 0;
         if (deleteButton) {
             deleteButton.disabled = state.busy
@@ -739,6 +750,9 @@
         state.elements.canvas.addEventListener("pointerup", onEditorPointerUp);
         state.elements.canvas.addEventListener("pointercancel", onEditorPointerUp);
         state.elements.canvas.addEventListener("keydown", onEditorKeyDown);
+        state.elements.replaceButton.addEventListener("click", () => {
+            if (!state.busy) state.elements.fileInput.click();
+        });
         state.elements.deleteButton.addEventListener("click", deleteSelectedRegion);
         state.elements.clearButton.addEventListener("click", clearWatermarkRegions);
         root.addEventListener("resize", requestEditorRedraw);
