@@ -57,8 +57,8 @@
             const bounds = normalizedBounds(region);
             const left = Math.floor(bounds.x * imageWidth);
             const top = Math.floor(bounds.y * imageHeight);
-            const right = Math.ceil(stableNumber(bounds.right * imageWidth));
-            const bottom = Math.ceil(stableNumber(bounds.bottom * imageHeight));
+            const right = Math.ceil(bounds.right * imageWidth);
+            const bottom = Math.ceil(bounds.bottom * imageHeight);
             ctx.fillRect(left, top, right - left, bottom - top);
         });
     }

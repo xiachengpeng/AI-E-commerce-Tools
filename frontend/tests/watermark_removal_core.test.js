@@ -65,12 +65,23 @@ test("renders every region as a white rectangle", () => {
 
     assert.deepEqual(calls.filter(call => call[0] === "fillRect"), [
         ["fillRect", 0, 0, 100, 50],
-        ["fillRect", 10, 10, 30, 20],
-        ["fillRect", 70, 5, 20, 10],
+        ["fillRect", 10, 10, 30, 21],
+        ["fillRect", 70, 5, 20, 11],
     ]);
     assert.deepEqual(calls.filter(call => call[0] === "fillStyle"), [
         ["fillStyle", "black"],
         ["fillStyle", "white"],
+    ]);
+});
+
+test("mask preserves the backend ceil result for floating-point region ends", () => {
+    const calls = [];
+    core.renderMask(fakeMaskContext(calls), 100, 100, [
+        { x: 0.1, y: 0, width: 0.2, height: 0.1 },
+    ]);
+
+    assert.deepEqual(calls.filter(call => call[0] === "fillRect").at(-1), [
+        "fillRect", 10, 0, 21, 10
     ]);
 });
 
