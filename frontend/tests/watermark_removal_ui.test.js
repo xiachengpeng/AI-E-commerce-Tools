@@ -22,6 +22,18 @@ class FakeClassList {
         if (force) this.values.add(name);
         else this.values.delete(name);
     }
+
+    add(name) {
+        this.values.add(name);
+    }
+
+    remove(name) {
+        this.values.delete(name);
+    }
+
+    contains(name) {
+        return this.values.has(name);
+    }
 }
 
 function fakeContext2d() {
@@ -67,7 +79,9 @@ function fakeElement(id, harnessState) {
         emit(type, event) {
             listeners[type]?.(event);
         },
-        focus() {},
+        focus() {
+            harnessState.focusedId = id;
+        },
         getBoundingClientRect() {
             return { left: 0, top: 0, width: 100, height: 100 };
         },
@@ -158,11 +172,16 @@ function createRuntimeHarness(
         "watermarkRemovalOriginal",
         "watermarkRemovalResult",
         "watermarkRemovalResultMeta",
-        "watermarkRemovalDownload"
+        "watermarkRemovalDownload",
+        "watermarkRemovalZoomButton",
+        "watermarkRemovalPreview",
+        "watermarkRemovalPreviewImage",
+        "watermarkRemovalPreviewClose"
     ];
     const elements = Object.fromEntries(
         ids.map(id => [id, fakeElement(id, harnessState)])
     );
+    elements.watermarkRemovalPreview.hidden = true;
     let objectUrlSequence = 0;
 
     class FakeImage {
@@ -196,7 +215,8 @@ function createRuntimeHarness(
     const document = {
         body: {
             appendChild() {},
-            removeChild() {}
+            removeChild() {},
+            classList: new FakeClassList()
         },
         createElement(tagName) {
             const element = fakeElement(
@@ -209,9 +229,15 @@ function createRuntimeHarness(
             return elements[id] || null;
         }
     };
+    const windowListeners = {};
     const window = {
         WatermarkRemovalCore: core,
-        addEventListener() {},
+        addEventListener(type, listener) {
+            windowListeners[type] = listener;
+        },
+        emit(type, event) {
+            windowListeners[type]?.(event);
+        },
         requestAnimationFrame(callback) {
             callback();
         }
@@ -473,6 +499,103 @@ test("replace-image control is disabled while AI submission is busy", async () =
     await submitPromise;
 
     assert.equal(harness.elements.watermarkRemovalReplace.disabled, false);
+});
+
+test("result preview opens from the result image and returns focus when closed", async () => {
+    const harness = createRuntimeHarness(standardFetch);
+    assert.equal(
+        await harness.window.restoreWatermarkRemovalHistory(historyResult("sample.png")),
+        true
+    );
+
+    harness.elements.watermarkRemovalResult.emit("click", {});
+
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, false);
+    assert.equal(
+        harness.elements.watermarkRemovalPreviewImage.src,
+        "http://localhost:8000/static/result/sample.png"
+    );
+    assert.equal(harness.state.focusedId, "watermarkRemovalPreviewClose");
+
+    harness.elements.watermarkRemovalPreviewClose.emit("click", {});
+
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, true);
+    assert.equal(harness.elements.watermarkRemovalPreviewImage.src, "");
+    assert.equal(harness.state.focusedId, "watermarkRemovalResult");
+});
+
+test("result preview supports its alternate opening and closing controls", async () => {
+    const harness = createRuntimeHarness(standardFetch);
+    await harness.window.restoreWatermarkRemovalHistory(historyResult("sample.png"));
+    const preview = harness.elements.watermarkRemovalPreview;
+
+    harness.elements.watermarkRemovalZoomButton.emit("click", {});
+    assert.equal(preview.hidden, false);
+    assert.equal(harness.state.focusedId, "watermarkRemovalPreviewClose");
+
+    preview.emit("click", { target: harness.elements.watermarkRemovalPreviewImage });
+    assert.equal(preview.hidden, false, "clicking the enlarged image must not close the preview");
+
+    preview.emit("click", { target: preview });
+    assert.equal(preview.hidden, true, "clicking the backdrop must close the preview");
+    assert.equal(harness.state.focusedId, "watermarkRemovalZoomButton");
+
+    harness.elements.watermarkRemovalResult.emit("keydown", { key: "Enter" });
+    assert.equal(preview.hidden, false);
+    harness.window.emit("keydown", { key: "Escape" });
+    assert.equal(preview.hidden, true);
+    assert.equal(harness.state.focusedId, "watermarkRemovalResult");
+
+    harness.elements.watermarkRemovalResult.emit("keydown", { key: " " });
+    assert.equal(preview.hidden, false);
+    harness.elements.watermarkRemovalPreviewClose.emit("click", {});
+});
+
+test("result preview remains closed when no result exists or its result is replaced", async () => {
+    const emptyHarness = createRuntimeHarness(standardFetch);
+    emptyHarness.elements.watermarkRemovalResult.emit("click", {});
+    assert.equal(emptyHarness.elements.watermarkRemovalPreview.hidden, true);
+
+    const harness = createRuntimeHarness(standardFetch, {
+        imageDimensionsBySource: { "blob:generated-1": [100, 100] }
+    });
+    await harness.window.restoreWatermarkRemovalHistory(historyResult("sample.png"));
+    harness.elements.watermarkRemovalResult.emit("click", {});
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, false);
+
+    await harness.window.handleWatermarkUpload({
+        target: {
+            files: [{
+                name: "replacement.png",
+                type: "image/png",
+                dataUrl: "data:image/png;base64,cmVwbGFjZW1lbnQ="
+            }],
+            value: "selected"
+        }
+    });
+
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, true);
+    assert.equal(harness.elements.watermarkRemovalPreviewImage.src, "");
+    assert.equal(harness.state.focusedId, "watermarkRemovalResult");
+});
+
+test("history restoration closes an open preview before replacing its result", async () => {
+    const harness = createRuntimeHarness(standardFetch);
+    await harness.window.restoreWatermarkRemovalHistory(historyResult("first.png"));
+    harness.elements.watermarkRemovalResult.emit("click", {});
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, false);
+
+    assert.equal(
+        await harness.window.restoreWatermarkRemovalHistory(historyResult("second.png")),
+        true
+    );
+
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, true);
+    assert.equal(harness.elements.watermarkRemovalPreviewImage.src, "");
+    assert.equal(
+        harness.elements.watermarkRemovalResult.src,
+        "http://localhost:8000/static/result/second.png"
+    );
 });
 
 test("replace-image entry atomically installs a fully loaded image and clears old work", async () => {

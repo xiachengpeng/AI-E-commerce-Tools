@@ -20,6 +20,7 @@
         selectedIndex: -1,
         interaction: null,
         result: null,
+        previewTrigger: null,
         elements: {}
     };
 
@@ -46,7 +47,11 @@
             original: byId("watermarkRemovalOriginal"),
             resultImage: byId("watermarkRemovalResult"),
             resultMeta: byId("watermarkRemovalResultMeta"),
-            download: byId("watermarkRemovalDownload")
+            download: byId("watermarkRemovalDownload"),
+            zoomButton: byId("watermarkRemovalZoomButton"),
+            preview: byId("watermarkRemovalPreview"),
+            previewImage: byId("watermarkRemovalPreviewImage"),
+            previewClose: byId("watermarkRemovalPreviewClose")
         };
     }
 
@@ -494,7 +499,27 @@
         });
     }
 
+    function openResultPreview(trigger) {
+        if (!state.result?.result_url || !state.elements.resultImage?.src) return;
+        state.previewTrigger = trigger || state.elements.resultImage;
+        state.elements.previewImage.src = state.elements.resultImage.src;
+        state.elements.preview.hidden = false;
+        document.body.classList.add("watermark-removal-preview-open");
+        state.elements.previewClose.focus();
+    }
+
+    function closeResultPreview() {
+        if (state.elements.preview.hidden) return;
+        state.elements.preview.hidden = true;
+        state.elements.previewImage.removeAttribute("src");
+        document.body.classList.remove("watermark-removal-preview-open");
+        const trigger = state.previewTrigger;
+        state.previewTrigger = null;
+        trigger?.focus();
+    }
+
     function resetResult() {
+        closeResultPreview();
         state.result = null;
         if (state.elements.comparison) state.elements.comparison.hidden = true;
         if (state.elements.download) state.elements.download.disabled = true;
@@ -707,6 +732,7 @@
             if (state.sourceObjectUrl) {
                 URL.revokeObjectURL(state.sourceObjectUrl);
             }
+            closeResultPreview();
             state.filename = result.filename;
             state.imageData = sourceData;
             state.sourceUrl = sourceUrl;
@@ -755,7 +781,28 @@
         });
         state.elements.deleteButton.addEventListener("click", deleteSelectedRegion);
         state.elements.clearButton.addEventListener("click", clearWatermarkRegions);
+        state.elements.resultImage.addEventListener("click", () => {
+            openResultPreview(state.elements.resultImage);
+        });
+        state.elements.resultImage.addEventListener("keydown", event => {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault?.();
+                openResultPreview(state.elements.resultImage);
+            }
+        });
+        state.elements.zoomButton.addEventListener("click", () => {
+            openResultPreview(state.elements.zoomButton);
+        });
+        state.elements.previewClose.addEventListener("click", closeResultPreview);
+        state.elements.preview.addEventListener("click", event => {
+            if (event.target === state.elements.preview) closeResultPreview();
+        });
         root.addEventListener("resize", requestEditorRedraw);
+        root.addEventListener("keydown", event => {
+            if (!state.elements.preview.hidden && event.key === "Escape") {
+                closeResultPreview();
+            }
+        });
 
         if (typeof ResizeObserver === "function") {
             const observer = new ResizeObserver(requestEditorRedraw);
