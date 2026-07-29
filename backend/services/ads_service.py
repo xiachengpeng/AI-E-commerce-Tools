@@ -250,6 +250,10 @@ Pinterest PIN rules:
             "- Pinterest title and description: use 1–2 semantically relevant Emoji per individual field.\n"
             "- Pinterest tags and altText must not contain Emoji."
         )
+    emoji_rules.append(
+        "- For every Emoji-enabled bilingual field, both the target string and the zh string "
+        "must each independently contain 1–2 natural, semantically aligned Emoji."
+    )
     emoji_rules.append("- Do not stack repeated or unrelated Emoji; keep every field readable.")
     emoji_instructions = "\n".join(emoji_rules)
 

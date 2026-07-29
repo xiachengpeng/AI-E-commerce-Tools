@@ -344,7 +344,11 @@ test('renderAdsData renders Pinterest descriptions with inline same-language tag
     assert.match(card.innerHTML, /值得收藏的静谧角落/);
     assert.match(card.innerHTML, /Style a calmer home one detail at a time#HomeDecor/);
     assert.match(card.innerHTML, /从一个细节开始，打造更宁静的家#家居装饰/);
-    assert.doesNotMatch(card.innerHTML, />Tags/);
+    assert.equal(
+        findElement(card, element => element.textContent === 'Tags'),
+        null,
+        'Pinterest must not render a standalone Tags card'
+    );
     assert.match(card.innerHTML, /#HomeDecor/);
     assert.match(card.innerHTML, /#家居装饰/);
     assert.match(card.innerHTML, /Walnut chair beside a sunlit window/);
