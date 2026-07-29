@@ -1,10 +1,11 @@
 import base64
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from models.request import AdCopyGenerateRequest
-from services.ads_service import generate_ad_copy, normalize_ad_copy_result
+from services.ads_service import _ads_prompt, generate_ad_copy, normalize_ad_copy_result
 
 
 def test_normalize_ad_copy_result_fills_all_styles_and_selected_platforms():
@@ -110,6 +111,41 @@ def test_normalize_ad_copy_result_accepts_string_tags_and_fills_missing_fields()
 def test_normalize_ad_copy_result_omits_unselected_pinterest():
     result = normalize_ad_copy_result({}, ["facebook"])
     assert all("pinterest" not in style for style in result["styles"])
+
+
+def test_ads_prompt_defines_pinterest_schema_and_rules():
+    request = SimpleNamespace(
+        platforms=["pinterest"],
+        region="US",
+        target_language="English",
+        marketing_theme="Launch",
+        marketing_theme_label="Product launch",
+    )
+
+    prompt = _ads_prompt(request)
+
+    assert '"pinterest"' in prompt
+    assert '"title": {"target": "...", "zh": "..."}' in prompt
+    assert '"description": {"target": "...", "zh": "..."}' in prompt
+    assert '"tags": [{"target": "#...", "zh": "#..."}]' in prompt
+    assert '"altText": {"target": "...", "zh": "..."}' in prompt
+    assert "5–8" in prompt
+    assert "exactly one leading #" in prompt
+    assert "visible" in prompt
+    assert "unverifiable" in prompt
+
+
+def test_ads_prompt_does_not_request_unselected_pinterest():
+    request = SimpleNamespace(
+        platforms=["facebook"],
+        region="US",
+        target_language="English",
+        marketing_theme="Launch",
+        marketing_theme_label="Product launch",
+    )
+    prompt = _ads_prompt(request)
+    assert '"pinterest"' not in prompt
+    assert "Pinterest PIN rules:" not in prompt
 
 
 @pytest.mark.asyncio

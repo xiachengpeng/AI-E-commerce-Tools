@@ -181,6 +181,45 @@ def _ads_prompt(request) -> str:
         {"id": style_id, "target_name": target, "zh_name": zh, "logic_zh": logic}
         for style_id, target, zh, logic in AD_STYLE_DEFINITIONS
     ]
+    platform_schema = []
+    if "facebook" in request.platforms:
+        platform_schema.append(
+            '"facebook": {'
+            '"primaryText": {"target": "Primary text", "zh": "中文对照"}, '
+            '"headline": {"target": "Headline", "zh": "中文对照"}, '
+            '"description": {"target": "Description", "zh": "中文对照"}, '
+            '"cta": {"target": "CTA", "zh": "中文对照"}, '
+            '"creativeDirection": {"target": "Creative direction", "zh": "中文对照"}'
+            "}"
+        )
+    if "google" in request.platforms:
+        platform_schema.append(
+            '"google": {'
+            '"headlines": [{"target": "Headline", "zh": "中文对照"}], '
+            '"descriptions": [{"target": "Description", "zh": "中文对照"}], '
+            '"keywords": [{"target": "Keyword", "zh": "中文对照"}], '
+            '"sitelinks": [{"target": "Sitelink", "zh": "中文对照"}]'
+            "}"
+        )
+    if "pinterest" in request.platforms:
+        platform_schema.append(
+            '"pinterest": {'
+            '"title": {"target": "...", "zh": "..."}, '
+            '"description": {"target": "...", "zh": "..."}, '
+            '"tags": [{"target": "#...", "zh": "#..."}], '
+            '"altText": {"target": "...", "zh": "..."}'
+            "}"
+        )
+    selected_platform_schema = ",\n      ".join(platform_schema)
+    pinterest_rules = ""
+    if "pinterest" in request.platforms:
+        pinterest_rules = """
+Pinterest PIN rules:
+- Return a title, description, 5–8 relevant tags, and alt text for every creative style.
+- Every target and Chinese tag must have exactly one leading #; never return empty or duplicate tags.
+- Alt text must objectively describe visible image, product, and scene content.
+- Alt text must not contain hashtags, keyword stuffing, or unverifiable attributes.
+"""
 
     return f"""You are a senior cross-border performance marketing strategist.
 
@@ -202,6 +241,7 @@ Rules:
 5. Keep claims specific and defensible. Avoid medical claims, safety guarantees, unverifiable superlatives, and false urgency.
 6. Facebook copy should fit feed/social ads and include primary text, headline, description, CTA, and creative direction.
 7. Google copy should fit search ads and include 5 concise headlines, 3 descriptions, 8 keywords, and 4 sitelink ideas.
+{pinterest_rules}
 
 JSON schema:
 {{
@@ -213,20 +253,8 @@ JSON schema:
     {{
       "id": "problem_solution",
       "name": {{"target": "Problem/Solution", "zh": "痛点解决型"}},
-      "logic": {{"target": "Creative logic", "zh": "中文创意逻辑"}},
-      "facebook": {{
-        "primaryText": {{"target": "Primary text", "zh": "中文对照"}},
-        "headline": {{"target": "Headline", "zh": "中文对照"}},
-        "description": {{"target": "Description", "zh": "中文对照"}},
-        "cta": {{"target": "CTA", "zh": "中文对照"}},
-        "creativeDirection": {{"target": "Creative direction", "zh": "中文对照"}}
-      }},
-      "google": {{
-        "headlines": [{{"target": "Headline", "zh": "中文对照"}}],
-        "descriptions": [{{"target": "Description", "zh": "中文对照"}}],
-        "keywords": [{{"target": "Keyword", "zh": "中文对照"}}],
-        "sitelinks": [{{"target": "Sitelink", "zh": "中文对照"}}]
-      }}
+      "logic": {{"target": "Creative logic", "zh": "中文创意逻辑"}}{"," if selected_platform_schema else ""}
+      {selected_platform_schema}
     }}
   ]
 }}
