@@ -57,6 +57,61 @@ def test_normalize_ad_copy_result_supports_google_lists():
     assert style["google"]["sitelinks"][0] == {"target": "Shop Now", "zh": "立即购买"}
 
 
+def test_normalize_ad_copy_result_adds_stable_pinterest_block():
+    result = normalize_ad_copy_result(
+        {
+            "styles": [{
+                "id": "problem_solution",
+                "pinterest": {
+                    "title": {"target": "A calm home", "zh": "宁静之家"},
+                    "description": {"target": "Make room to breathe.", "zh": "为呼吸留出空间。"},
+                    "tags": [
+                        {"target": "HomeDecor", "zh": "#家居装饰"},
+                        {"target": "##CalmHome", "zh": "宁静之家"},
+                        {"target": "#HomeDecor", "zh": "#家居装饰"},
+                        {"target": "", "zh": ""},
+                    ],
+                    "altText": {"target": "Neutral chair beside a window", "zh": "窗边的中性色座椅"},
+                },
+            }]
+        },
+        ["pinterest"],
+    )
+
+    pinterest = result["styles"][0]["pinterest"]
+    assert pinterest["title"] == {"target": "A calm home", "zh": "宁静之家"}
+    assert pinterest["tags"] == [
+        {"target": "#HomeDecor", "zh": "#家居装饰"},
+        {"target": "#CalmHome", "zh": "#宁静之家"},
+    ]
+    assert pinterest["altText"]["target"] == "Neutral chair beside a window"
+
+
+def test_normalize_ad_copy_result_accepts_string_tags_and_fills_missing_fields():
+    result = normalize_ad_copy_result(
+        {"styles": [{"id": "feature_benefit", "pinterest": {"tags": "#Sale, New Arrival  #Gift"}}]},
+        ["pinterest"],
+    )
+
+    pinterest = result["styles"][1]["pinterest"]
+    assert pinterest == {
+        "title": {"target": "", "zh": ""},
+        "description": {"target": "", "zh": ""},
+        "tags": [
+            {"target": "#Sale", "zh": ""},
+            {"target": "#New", "zh": ""},
+            {"target": "#Arrival", "zh": ""},
+            {"target": "#Gift", "zh": ""},
+        ],
+        "altText": {"target": "", "zh": ""},
+    }
+
+
+def test_normalize_ad_copy_result_omits_unselected_pinterest():
+    result = normalize_ad_copy_result({}, ["facebook"])
+    assert all("pinterest" not in style for style in result["styles"])
+
+
 @pytest.mark.asyncio
 async def test_generate_ad_copy_routes_image_analysis_to_text_capability():
     request = AdCopyGenerateRequest(

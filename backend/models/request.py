@@ -206,7 +206,7 @@ class AdCopyGenerateRequest(BaseModel):
     @field_validator("platforms")
     @classmethod
     def validate_platforms(cls, v: List[str]) -> List[str]:
-        allowed = {"facebook", "google"}
+        allowed = {"facebook", "google", "pinterest"}
         normalized = []
         for item in v:
             platform = str(item).strip().lower()

@@ -79,6 +79,47 @@ def _google_block(value: Any) -> dict:
     }
 
 
+def _normalize_hashtag(value: Any) -> str:
+    text = str(value or "").strip()
+    text = text.lstrip("#").strip()
+    return f"#{text}" if text else ""
+
+
+def _normalize_pinterest_tags(value: Any) -> list[dict[str, str]]:
+    if isinstance(value, str):
+        value = value.replace(",", " ").split()
+    if not isinstance(value, list):
+        return []
+
+    result = []
+    seen = set()
+    for item in value:
+        if isinstance(item, dict):
+            target = _normalize_hashtag(item.get("target"))
+            zh = _normalize_hashtag(item.get("zh"))
+        else:
+            target = _normalize_hashtag(item)
+            zh = ""
+        key = (target.casefold(), zh.casefold())
+        if (not target and not zh) or key in seen:
+            continue
+        seen.add(key)
+        result.append({"target": target, "zh": zh})
+        if len(result) == 8:
+            break
+    return result
+
+
+def _pinterest_block(value: Any) -> dict:
+    source = value if isinstance(value, dict) else {}
+    return {
+        "title": _text_pair(source.get("title")),
+        "description": _text_pair(source.get("description")),
+        "tags": _normalize_pinterest_tags(source.get("tags")),
+        "altText": _text_pair(source.get("altText")),
+    }
+
+
 def normalize_ad_copy_result(data: Any, platforms: list[str]) -> dict:
     data = data if isinstance(data, dict) else {}
     platform_set = set(platforms)
@@ -100,6 +141,8 @@ def normalize_ad_copy_result(data: Any, platforms: list[str]) -> dict:
             style["facebook"] = _facebook_block(raw.get("facebook"))
         if "google" in platform_set:
             style["google"] = _google_block(raw.get("google"))
+        if "pinterest" in platform_set:
+            style["pinterest"] = _pinterest_block(raw.get("pinterest"))
         styles.append(style)
 
     product = data.get("product") if isinstance(data.get("product"), dict) else {}

@@ -590,6 +590,33 @@ def test_ads_generate_rejects_missing_platforms():
     assert resp.status_code == 422
 
 
+def test_ads_generate_accepts_pinterest_platform():
+    image = "data:image/png;base64," + base64.b64encode(b"fake").decode()
+    result = {"product": {"name": {"target": "Lamp", "zh": "灯"}}, "styles": []}
+
+    with patch("main.generate_ad_copy", new=AsyncMock(return_value=result)), \
+         patch("main.persist_ads_history"):
+        response = client.post("/api/ads/generate", json={
+            "image_data": image,
+            "platforms": ["pinterest"],
+            "region": "US Market",
+            "target_language": "English",
+        })
+
+    assert response.status_code == 200
+
+
+def test_ads_generate_rejects_unknown_platform():
+    image = "data:image/png;base64," + base64.b64encode(b"fake").decode()
+    response = client.post("/api/ads/generate", json={
+        "image_data": image,
+        "platforms": ["pinterest", "unknown"],
+        "region": "US Market",
+        "target_language": "English",
+    })
+    assert response.status_code == 422
+
+
 def test_ads_generate_endpoint():
     image = "data:image/png;base64," + base64.b64encode(b"fake").decode()
     result = {"product": {"name": {"target": "Lamp", "zh": "灯"}}, "styles": []}
