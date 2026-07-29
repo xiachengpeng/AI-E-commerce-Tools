@@ -125,10 +125,10 @@ test('renderAdsData includes the four Pinterest fields', () => {
             styleId: 'emotional',
             name: { target: 'Emotional', zh: '情感共鸣' },
             pinterest: {
-                title: { target: 'Title', zh: '标题' },
-                description: { target: 'Description', zh: '描述' },
+                title: { target: 'A quiet corner worth saving', zh: '值得收藏的静谧角落' },
+                description: { target: 'Style a calmer home one detail at a time', zh: '从一个细节开始，打造更宁静的家' },
                 tags: [{ target: '#HomeDecor', zh: '#家居装饰' }],
-                altText: { target: 'Chair by window', zh: '窗边座椅' },
+                altText: { target: 'Walnut chair beside a sunlit window', zh: '阳光窗边的胡桃木座椅' },
             },
         }],
     });
@@ -139,4 +139,12 @@ test('renderAdsData includes the four Pinterest fields', () => {
     assert.match(children[1].innerHTML, /Description/);
     assert.match(children[1].innerHTML, /Tags/);
     assert.match(children[1].innerHTML, /Alt Text/);
+    assert.match(children[1].innerHTML, /A quiet corner worth saving/);
+    assert.match(children[1].innerHTML, /值得收藏的静谧角落/);
+    assert.match(children[1].innerHTML, /Style a calmer home one detail at a time/);
+    assert.match(children[1].innerHTML, /从一个细节开始，打造更宁静的家/);
+    assert.match(children[1].innerHTML, /#HomeDecor/);
+    assert.match(children[1].innerHTML, /#家居装饰/);
+    assert.match(children[1].innerHTML, /Walnut chair beside a sunlit window/);
+    assert.match(children[1].innerHTML, /阳光窗边的胡桃木座椅/);
 });
