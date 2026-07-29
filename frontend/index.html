@@ -1334,12 +1334,29 @@
                         </figure>
                         <figure>
                             <figcaption>AI 消除结果</figcaption>
-                            <div class="watermark-removal-result-image">
-                                <img id="watermarkRemovalResult" alt="AI 水印消除结果">
+                            <div class="watermark-removal-result-image watermark-removal-result-image-zoomable">
+                                <img id="watermarkRemovalResult" alt="AI 水印消除结果" tabindex="0"
+                                    role="button" aria-label="放大查看 AI 消除结果">
+                                <button id="watermarkRemovalZoomButton" type="button"
+                                    class="watermark-removal-zoom-button" aria-label="放大查看 AI 消除结果">
+                                    <i class="ph ph-magnifying-glass-plus"></i>
+                                </button>
                             </div>
                         </figure>
                     </div>
                 </section>
+
+                <div id="watermarkRemovalPreview" class="watermark-removal-preview" hidden
+                    role="dialog" aria-modal="true" aria-labelledby="watermarkRemovalPreviewTitle">
+                    <div class="watermark-removal-preview-panel">
+                        <h2 id="watermarkRemovalPreviewTitle" class="sr-only">AI 消除结果放大预览</h2>
+                        <button id="watermarkRemovalPreviewClose" type="button"
+                            class="watermark-removal-preview-close" aria-label="关闭放大预览">
+                            <i class="ph ph-x"></i>
+                        </button>
+                        <img id="watermarkRemovalPreviewImage" alt="放大的 AI 水印消除结果">
+                    </div>
+                </div>
             </main>
         </div>
 

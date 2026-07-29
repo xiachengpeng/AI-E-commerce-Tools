@@ -291,6 +291,12 @@ test("page exposes the AI removal tab and controls", () => {
     assert.match(indexHtml, /id="tab-watermark-removal"/);
     assert.match(indexHtml, /id="view-watermark-removal"/);
     assert.match(indexHtml, /id="watermarkRemovalCanvas"/);
+    assert.match(indexHtml, /id="watermarkRemovalZoomButton"/);
+    assert.match(indexHtml, /id="watermarkRemovalPreview"/);
+    assert.match(indexHtml, /role="dialog"/);
+    assert.match(indexHtml, /aria-modal="true"/);
+    assert.match(indexHtml, /id="watermarkRemovalPreviewImage"/);
+    assert.match(indexHtml, /id="watermarkRemovalPreviewClose"/);
     assert.match(indexHtml, /id="watermarkRemovalSubmit"/);
     assert.match(indexHtml, /id="watermarkRemovalDownload"/);
 });

@@ -472,6 +472,82 @@
     object-fit: contain;
 }
 
+.watermark-removal-result-image-zoomable {
+    position: relative;
+    cursor: zoom-in;
+}
+
+.watermark-removal-zoom-button,
+.watermark-removal-preview-close {
+    display: inline-grid;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 999px;
+    background: var(--wm-accent);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
+    color: #fff;
+    font-size: 19px;
+    transition: 150ms ease;
+}
+
+.watermark-removal-zoom-button {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+}
+
+.watermark-removal-zoom-button:hover,
+.watermark-removal-preview-close:hover {
+    background: #4338ca;
+    transform: translateY(-1px);
+}
+
+.watermark-removal-zoom-button:focus-visible,
+.watermark-removal-preview-close:focus-visible,
+.watermark-removal-result-image-zoomable img:focus-visible {
+    outline: 3px solid #c7d2fe;
+    outline-offset: 3px;
+}
+
+.watermark-removal-preview {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.88);
+}
+
+.watermark-removal-preview[hidden] {
+    display: none;
+}
+
+.watermark-removal-preview-panel {
+    position: relative;
+    max-width: 96vw;
+    max-height: 92vh;
+}
+
+.watermark-removal-preview img {
+    display: block;
+    max-width: 96vw;
+    max-height: 92vh;
+    object-fit: contain;
+}
+
+.watermark-removal-preview-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+}
+
+body.watermark-removal-preview-open {
+    overflow: hidden;
+}
+
 @keyframes watermark-removal-spin {
     to { transform: rotate(360deg); }
 }
