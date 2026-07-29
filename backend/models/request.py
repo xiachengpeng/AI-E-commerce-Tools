@@ -192,16 +192,33 @@ class AdCopyGenerateRequest(BaseModel):
     target_language: str | None = None
     marketing_theme: str | None = None
     marketing_theme_label: str | None = None
+    product_name: str | None = None
 
     @field_validator("image_data", "region")
     @classmethod
     def strip_required_text(cls, v: str) -> str:
         return v.strip()
 
-    @field_validator("target_language", "marketing_theme", "marketing_theme_label", mode="before")
+    @field_validator(
+        "target_language",
+        "marketing_theme",
+        "marketing_theme_label",
+        "product_name",
+        mode="before",
+    )
     @classmethod
     def strip_optional_text(cls, v: Any) -> Any:
-        return v.strip() if isinstance(v, str) else v
+        if not isinstance(v, str):
+            return v
+        value = v.strip()
+        return value or None
+
+    @field_validator("product_name")
+    @classmethod
+    def validate_product_name_length(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 200:
+            raise ValueError("产品名称不能超过 200 个字符")
+        return v
 
     @field_validator("platforms")
     @classmethod

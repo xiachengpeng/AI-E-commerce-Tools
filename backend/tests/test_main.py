@@ -9,6 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 from google.genai.errors import ClientError
+from pydantic import ValidationError
 
 from main import app
 from main import (
@@ -588,6 +589,39 @@ def test_ads_generate_rejects_missing_platforms():
     })
 
     assert resp.status_code == 422
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_ad_copy_product_name_normalizes_empty_values(value):
+    request = AdCopyGenerateRequest(
+        image_data="data:image/png;base64,YQ==",
+        platforms=["facebook"],
+        region="US Market",
+        product_name=value,
+    )
+
+    assert request.product_name is None
+
+
+def test_ad_copy_product_name_trims_valid_value():
+    request = AdCopyGenerateRequest(
+        image_data="data:image/png;base64,YQ==",
+        platforms=["pinterest"],
+        region="US Market",
+        product_name="  Padel racket  ",
+    )
+
+    assert request.product_name == "Padel racket"
+
+
+def test_ad_copy_product_name_rejects_more_than_200_characters():
+    with pytest.raises(ValidationError):
+        AdCopyGenerateRequest(
+            image_data="data:image/png;base64,YQ==",
+            platforms=["google"],
+            region="US Market",
+            product_name="x" * 201,
+        )
 
 
 def test_ads_generate_accepts_pinterest_platform():
