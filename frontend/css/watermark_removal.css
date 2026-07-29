@@ -544,7 +544,7 @@
     right: 12px;
 }
 
-body.watermark-removal-preview-open {
+.watermark-removal-page.watermark-removal-preview-open {
     overflow: hidden;
 }
 

@@ -61,7 +61,9 @@ function fakeElement(id, harnessState) {
         disabled: false,
         files: [],
         hidden: false,
+        inert: false,
         src: "",
+        style: { overflow: "", overflowY: "" },
         textContent: "",
         value: "",
         width: 0,
@@ -155,6 +157,7 @@ function createRuntimeHarness(
         revokedObjectUrls: []
     };
     const ids = [
+        "watermarkRemovalPage",
         "watermarkRemovalUpload",
         "watermarkRemovalFileInput",
         "watermarkRemovalWorkspace",
@@ -318,9 +321,10 @@ test("page exposes the AI removal tab and controls", () => {
     assert.match(indexHtml, /id="view-watermark-removal"/);
     assert.match(indexHtml, /id="watermarkRemovalCanvas"/);
     assert.match(indexHtml, /id="watermarkRemovalZoomButton"/);
-    assert.match(indexHtml, /id="watermarkRemovalPreview"/);
-    assert.match(indexHtml, /role="dialog"/);
-    assert.match(indexHtml, /aria-modal="true"/);
+    assert.match(
+        indexHtml,
+        /<div\s+id="watermarkRemovalPreview"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*>/
+    );
     assert.match(indexHtml, /id="watermarkRemovalPreviewImage"/);
     assert.match(indexHtml, /id="watermarkRemovalPreviewClose"/);
     assert.match(indexHtml, /id="watermarkRemovalSubmit"/);
@@ -524,6 +528,40 @@ test("result preview opens from the result image and returns focus when closed",
     assert.equal(harness.state.focusedId, "watermarkRemovalResult");
 });
 
+test("result preview locks and inerts the nested page while trapping Tab focus", async () => {
+    const harness = createRuntimeHarness(standardFetch);
+    await harness.window.restoreWatermarkRemovalHistory(historyResult("sample.png"));
+    const page = harness.elements.watermarkRemovalPage;
+    page.style.overflow = "scroll";
+    page.style.overflowY = "auto";
+    page.inert = false;
+    page.classList.add("watermark-removal-preview-open");
+
+    harness.elements.watermarkRemovalResult.emit("click", {});
+
+    assert.equal(page.style.overflow, "hidden");
+    assert.equal(page.style.overflowY, "hidden");
+    assert.equal(page.inert, true);
+    assert.equal(page.classList.contains("watermark-removal-preview-open"), true);
+
+    const tabEvent = {
+        key: "Tab",
+        shiftKey: true,
+        preventDefault() {
+            this.defaultPrevented = true;
+        }
+    };
+    harness.window.emit("keydown", tabEvent);
+    assert.equal(tabEvent.defaultPrevented, true);
+    assert.equal(harness.state.focusedId, "watermarkRemovalPreviewClose");
+
+    harness.elements.watermarkRemovalPreviewClose.emit("click", {});
+    assert.equal(page.style.overflow, "scroll");
+    assert.equal(page.style.overflowY, "auto");
+    assert.equal(page.inert, false);
+    assert.equal(page.classList.contains("watermark-removal-preview-open"), true);
+});
+
 test("result preview supports its alternate opening and closing controls", async () => {
     const harness = createRuntimeHarness(standardFetch);
     await harness.window.restoreWatermarkRemovalHistory(historyResult("sample.png"));
@@ -576,7 +614,7 @@ test("result preview remains closed when no result exists or its result is repla
 
     assert.equal(harness.elements.watermarkRemovalPreview.hidden, true);
     assert.equal(harness.elements.watermarkRemovalPreviewImage.src, "");
-    assert.equal(harness.state.focusedId, "watermarkRemovalResult");
+    assert.equal(harness.state.focusedId, "watermarkRemovalPage");
 });
 
 test("history restoration closes an open preview before replacing its result", async () => {
@@ -596,6 +634,38 @@ test("history restoration closes an open preview before replacing its result", a
         harness.elements.watermarkRemovalResult.src,
         "http://localhost:8000/static/result/second.png"
     );
+});
+
+test("a new successful result closes the old preview without focusing hidden result controls", async () => {
+    const harness = createRuntimeHarness(standardFetch);
+    await harness.window.restoreWatermarkRemovalHistory(historyResult("first.png"));
+    harness.elements.watermarkRemovalResult.emit("click", {});
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, false);
+
+    await harness.window.submitWatermarkRemoval();
+
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, true);
+    assert.equal(harness.elements.watermarkRemovalPreviewImage.src, "");
+    assert.equal(harness.state.focusedId, "watermarkRemovalPage");
+    assert.equal(
+        harness.elements.watermarkRemovalResult.src,
+        "http://localhost:8000/static/result/processed.png"
+    );
+});
+
+test("result and preview image load failures cannot leave an open empty modal", async () => {
+    const harness = createRuntimeHarness(standardFetch);
+    await harness.window.restoreWatermarkRemovalHistory(historyResult("sample.png"));
+
+    harness.elements.watermarkRemovalResult.emit("click", {});
+    harness.elements.watermarkRemovalPreviewImage.emit("error", {});
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, true);
+    assert.equal(harness.elements.watermarkRemovalPreviewImage.src, "");
+    assert.equal(harness.elements.watermarkRemovalComparison.hidden, true);
+    assert.equal(harness.elements.watermarkRemovalResult.src, "");
+    assert.equal(harness.state.focusedId, "watermarkRemovalPage");
+    harness.elements.watermarkRemovalResult.emit("click", {});
+    assert.equal(harness.elements.watermarkRemovalPreview.hidden, true);
 });
 
 test("replace-image entry atomically installs a fully loaded image and clears old work", async () => {

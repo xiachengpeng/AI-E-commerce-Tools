@@ -1212,7 +1212,7 @@
         <!-- 视图：AI 水印消除 (VIEW: WATERMARK REMOVAL) -->
         <!-- ============================================== -->
         <div id="view-watermark-removal" class="hidden flex-1 overflow-hidden">
-            <main class="watermark-removal-page">
+            <main id="watermarkRemovalPage" class="watermark-removal-page" tabindex="-1">
                 <header class="watermark-removal-header">
                     <div>
                         <span class="watermark-removal-eyebrow">AI Object Cleanup</span>
@@ -1346,18 +1346,18 @@
                     </div>
                 </section>
 
-                <div id="watermarkRemovalPreview" class="watermark-removal-preview" hidden
-                    role="dialog" aria-modal="true" aria-labelledby="watermarkRemovalPreviewTitle">
-                    <div class="watermark-removal-preview-panel">
-                        <h2 id="watermarkRemovalPreviewTitle" class="sr-only">AI 消除结果放大预览</h2>
-                        <button id="watermarkRemovalPreviewClose" type="button"
-                            class="watermark-removal-preview-close" aria-label="关闭放大预览">
-                            <i class="ph ph-x"></i>
-                        </button>
-                        <img id="watermarkRemovalPreviewImage" alt="放大的 AI 水印消除结果">
-                    </div>
-                </div>
             </main>
+            <div id="watermarkRemovalPreview" class="watermark-removal-preview" hidden
+                role="dialog" aria-modal="true" aria-labelledby="watermarkRemovalPreviewTitle">
+                <div class="watermark-removal-preview-panel">
+                    <h2 id="watermarkRemovalPreviewTitle" class="sr-only">AI 消除结果放大预览</h2>
+                    <button id="watermarkRemovalPreviewClose" type="button"
+                        class="watermark-removal-preview-close" aria-label="关闭放大预览">
+                        <i class="ph ph-x"></i>
+                    </button>
+                    <img id="watermarkRemovalPreviewImage" alt="放大的 AI 水印消除结果">
+                </div>
+            </div>
         </div>
 
         <!-- ============================================== -->

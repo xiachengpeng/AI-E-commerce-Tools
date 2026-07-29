@@ -216,4 +216,3 @@ Expected: 两条命令均退出码 0。
 git add frontend/js/watermark_removal.js frontend/tests/watermark_removal_ui.test.js
 git commit -m "feat: add watermark result zoom behavior"
 ```
-

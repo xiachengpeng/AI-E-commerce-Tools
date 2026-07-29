@@ -21,6 +21,7 @@
         interaction: null,
         result: null,
         previewTrigger: null,
+        previewPageState: null,
         elements: {}
     };
 
@@ -30,6 +31,7 @@
 
     function cacheElements() {
         state.elements = {
+            page: byId("watermarkRemovalPage"),
             upload: byId("watermarkRemovalUpload"),
             fileInput: byId("watermarkRemovalFileInput"),
             workspace: byId("watermarkRemovalWorkspace"),
@@ -499,27 +501,54 @@
         });
     }
 
+    function lockPreviewBackground() {
+        const page = state.elements.page;
+        if (!page || state.previewPageState) return;
+        state.previewPageState = {
+            inert: page.inert,
+            overflow: page.style.overflow,
+            overflowY: page.style.overflowY,
+            wasLocked: page.classList.contains("watermark-removal-preview-open")
+        };
+        page.inert = true;
+        page.style.overflow = "hidden";
+        page.style.overflowY = "hidden";
+        page.classList.add("watermark-removal-preview-open");
+    }
+
+    function unlockPreviewBackground() {
+        const page = state.elements.page;
+        const previous = state.previewPageState;
+        if (!page || !previous) return;
+        page.inert = previous.inert;
+        page.style.overflow = previous.overflow;
+        page.style.overflowY = previous.overflowY;
+        page.classList.toggle("watermark-removal-preview-open", previous.wasLocked);
+        state.previewPageState = null;
+    }
+
     function openResultPreview(trigger) {
         if (!state.result?.result_url || !state.elements.resultImage?.src) return;
         state.previewTrigger = trigger || state.elements.resultImage;
+        lockPreviewBackground();
         state.elements.previewImage.src = state.elements.resultImage.src;
         state.elements.preview.hidden = false;
-        document.body.classList.add("watermark-removal-preview-open");
         state.elements.previewClose.focus();
     }
 
-    function closeResultPreview() {
+    function closeResultPreview({ restoreFocus = true } = {}) {
         if (state.elements.preview.hidden) return;
         state.elements.preview.hidden = true;
         state.elements.previewImage.removeAttribute("src");
-        document.body.classList.remove("watermark-removal-preview-open");
+        unlockPreviewBackground();
         const trigger = state.previewTrigger;
         state.previewTrigger = null;
-        trigger?.focus();
+        if (restoreFocus) trigger?.focus();
+        else state.elements.page?.focus({ preventScroll: true });
     }
 
     function resetResult() {
-        closeResultPreview();
+        closeResultPreview({ restoreFocus: false });
         state.result = null;
         if (state.elements.comparison) state.elements.comparison.hidden = true;
         if (state.elements.download) state.elements.download.disabled = true;
@@ -579,6 +608,7 @@
     }
 
     function renderWatermarkRemovalResult(result, originalUrl) {
+        closeResultPreview({ restoreFocus: false });
         state.result = result;
         state.elements.original.src = assetUrl(originalUrl);
         state.elements.resultImage.src = assetUrl(result.result_url);
@@ -732,7 +762,7 @@
             if (state.sourceObjectUrl) {
                 URL.revokeObjectURL(state.sourceObjectUrl);
             }
-            closeResultPreview();
+            closeResultPreview({ restoreFocus: false });
             state.filename = result.filename;
             state.imageData = sourceData;
             state.sourceUrl = sourceUrl;
@@ -793,13 +823,27 @@
         state.elements.zoomButton.addEventListener("click", () => {
             openResultPreview(state.elements.zoomButton);
         });
+        state.elements.resultImage.addEventListener("error", () => {
+            if (!state.result?.result_url) return;
+            resetResult();
+            setWatermarkRemovalError("结果图片加载失败，请重新处理");
+        });
+        state.elements.previewImage.addEventListener("error", () => {
+            if (state.elements.preview.hidden) return;
+            resetResult();
+            setWatermarkRemovalError("预览图片加载失败，请重新处理");
+        });
         state.elements.previewClose.addEventListener("click", closeResultPreview);
         state.elements.preview.addEventListener("click", event => {
             if (event.target === state.elements.preview) closeResultPreview();
         });
         root.addEventListener("resize", requestEditorRedraw);
         root.addEventListener("keydown", event => {
-            if (!state.elements.preview.hidden && event.key === "Escape") {
+            if (state.elements.preview.hidden) return;
+            if (event.key === "Tab") {
+                event.preventDefault?.();
+                state.elements.previewClose.focus();
+            } else if (event.key === "Escape") {
                 closeResultPreview();
             }
         });
