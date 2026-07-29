@@ -214,8 +214,6 @@ function renderAdsData(data) {
 
         if (style.pinterest) {
             const pinterest = style.pinterest;
-            const pinterestTagsTarget = (pinterest.tags || []).map(item => item.target).filter(Boolean).join(' ');
-            const pinterestTagsZh = (pinterest.tags || []).map(item => item.zh).filter(Boolean).join(' ');
             const heading = document.createElement('h5');
             heading.className = 'text-sm font-black text-red-700 mt-5 mb-3';
             heading.textContent = 'Pinterest PIN';
@@ -224,7 +222,7 @@ function renderAdsData(data) {
             grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-3';
             appendAdsPair(grid, 'Title', pinterest.title);
             appendAdsPair(grid, 'Description', pinterest.description);
-            appendAdsPair(grid, 'Tags', { target: pinterestTagsTarget, zh: pinterestTagsZh });
+            appendAdsPairList(grid, 'Tags', pinterest.tags);
             appendAdsPair(grid, 'Alt Text', pinterest.altText);
             card.appendChild(grid);
         }
