@@ -333,6 +333,10 @@ test("page exposes the AI removal tab and controls", () => {
 
 test("page exposes upload, editing, comparison, and error states", () => {
     assert.match(indexHtml, /id="watermarkRemovalFileInput"/);
+    assert.match(
+        indexHtml,
+        /<button[^>]*id="watermarkRemovalUpload"[^>]*type="button"[^>]*>/
+    );
     assert.match(indexHtml, /id="watermarkRemovalDelete"/);
     assert.match(indexHtml, /id="watermarkRemovalClear"/);
     assert.match(indexHtml, /id="watermarkRemovalError"/);
@@ -666,6 +670,20 @@ test("result and preview image load failures cannot leave an open empty modal", 
     assert.equal(harness.state.focusedId, "watermarkRemovalPage");
     harness.elements.watermarkRemovalResult.emit("click", {});
     assert.equal(harness.elements.watermarkRemovalPreview.hidden, true);
+});
+
+test("initial upload entry explicitly opens the file chooser", () => {
+    const harness = createRuntimeHarness(standardFetch);
+    let defaultPrevented = false;
+
+    harness.elements.watermarkRemovalUpload.emit("click", {
+        preventDefault() {
+            defaultPrevented = true;
+        }
+    });
+
+    assert.equal(defaultPrevented, true);
+    assert.equal(harness.state.clickCounts.watermarkRemovalFileInput, 1);
 });
 
 test("replace-image entry atomically installs a fully loaded image and clears old work", async () => {

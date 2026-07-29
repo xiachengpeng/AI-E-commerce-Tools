@@ -806,6 +806,10 @@
         state.elements.canvas.addEventListener("pointerup", onEditorPointerUp);
         state.elements.canvas.addEventListener("pointercancel", onEditorPointerUp);
         state.elements.canvas.addEventListener("keydown", onEditorKeyDown);
+        state.elements.upload.addEventListener("click", event => {
+            event.preventDefault();
+            if (!state.busy) state.elements.fileInput.click();
+        });
         state.elements.replaceButton.addEventListener("click", () => {
             if (!state.busy) state.elements.fileInput.click();
         });
