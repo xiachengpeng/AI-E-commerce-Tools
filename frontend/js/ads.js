@@ -136,6 +136,20 @@ function copyAdsStyleText(style) {
             (style.google[key] || []).forEach((item, index) => pushPair(`${key} ${index + 1}`, item));
         });
     }
+    if (style.pinterest) {
+        const pin = style.pinterest;
+        const targetTags = (pin.tags || []).map(item => item.target).filter(Boolean).join(' ');
+        const zhTags = (pin.tags || []).map(item => item.zh).filter(Boolean).join(' ');
+        lines.push('\n[Pinterest PIN]');
+        lines.push(`Title: ${pin.title?.target || ''}`);
+        lines.push(`标题: ${pin.title?.zh || ''}`);
+        lines.push(`Description: ${pin.description?.target || ''}`);
+        lines.push(`描述: ${pin.description?.zh || ''}`);
+        lines.push(`Tags: ${targetTags}`);
+        lines.push(`标签: ${zhTags}`);
+        lines.push(`Alt Text: ${pin.altText?.target || ''}`);
+        lines.push(`替代文本: ${pin.altText?.zh || ''}`);
+    }
     navigator.clipboard.writeText(lines.join('\n')).then(
         () => showToast('已复制该风格文案', 'success'),
         () => showToast('复制失败', 'error')
@@ -195,6 +209,23 @@ function renderAdsData(data) {
             appendAdsPairList(grid, 'Descriptions', style.google.descriptions);
             appendAdsPairList(grid, 'Keywords', style.google.keywords);
             appendAdsPairList(grid, 'Sitelinks', style.google.sitelinks);
+            card.appendChild(grid);
+        }
+
+        if (style.pinterest) {
+            const pinterest = style.pinterest;
+            const pinterestTagsTarget = (pinterest.tags || []).map(item => item.target).filter(Boolean).join(' ');
+            const pinterestTagsZh = (pinterest.tags || []).map(item => item.zh).filter(Boolean).join(' ');
+            const heading = document.createElement('h5');
+            heading.className = 'text-sm font-black text-red-700 mt-5 mb-3';
+            heading.textContent = 'Pinterest PIN';
+            card.appendChild(heading);
+            const grid = document.createElement('div');
+            grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-3';
+            appendAdsPair(grid, 'Title', pinterest.title);
+            appendAdsPair(grid, 'Description', pinterest.description);
+            appendAdsPair(grid, 'Tags', { target: pinterestTagsTarget, zh: pinterestTagsZh });
+            appendAdsPair(grid, 'Alt Text', pinterest.altText);
             card.appendChild(grid);
         }
 
