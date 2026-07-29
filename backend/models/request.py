@@ -203,11 +203,15 @@ class AdCopyGenerateRequest(BaseModel):
         "target_language",
         "marketing_theme",
         "marketing_theme_label",
-        "product_name",
         mode="before",
     )
     @classmethod
     def strip_optional_text(cls, v: Any) -> Any:
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("product_name", mode="before")
+    @classmethod
+    def normalize_product_name(cls, v: Any) -> Any:
         if not isinstance(v, str):
             return v
         value = v.strip()

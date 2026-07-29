@@ -603,6 +603,23 @@ def test_ad_copy_product_name_normalizes_empty_values(value):
     assert request.product_name is None
 
 
+def test_ad_copy_existing_optional_fields_retain_empty_strings_after_trimming():
+    request = AdCopyGenerateRequest(
+        image_data="data:image/png;base64,YQ==",
+        platforms=["facebook"],
+        region="US Market",
+        target_language="   ",
+        marketing_theme="\t",
+        marketing_theme_label="\n",
+        product_name="   ",
+    )
+
+    assert request.target_language == ""
+    assert request.marketing_theme == ""
+    assert request.marketing_theme_label == ""
+    assert request.product_name is None
+
+
 def test_ad_copy_product_name_trims_valid_value():
     request = AdCopyGenerateRequest(
         image_data="data:image/png;base64,YQ==",
