@@ -18,6 +18,13 @@ test('Pinterest PIN is a checked peer ad type', () => {
     assert.match(html, /Pinterest PIN/);
 });
 
+test('ads form exposes an optional bounded product name hint', () => {
+    assert.match(html, /id="adsProductNameInput"/);
+    assert.match(html, /maxlength="200"/);
+    assert.match(html, /产品名称/);
+    assert.match(html, /选填，填写后将结合图片识别/);
+});
+
 function loadAds(overrides = {}) {
     const clipboardWrites = [];
     const context = {
@@ -177,6 +184,7 @@ test('generateAdsCopy includes Pinterest in the generated request payload', asyn
             value: 'evergreen',
             options: [{ text: 'Evergreen' }],
         },
+        adsProductNameInput: { value: '  Padel racket  ' },
         btnGenerateAds: {
             innerHTML: 'Generate',
             disabled: false,
@@ -219,6 +227,76 @@ test('generateAdsCopy includes Pinterest in the generated request payload', asyn
     const payload = JSON.parse(requests[0].options.body);
     assert.deepEqual(payload.platforms, ['facebook', 'google', 'pinterest']);
     assert.equal(payload.image_data, 'data:image/png;base64,cGludGVyZXN0');
+    assert.equal(payload.product_name, 'Padel racket');
+});
+
+test('generateAdsCopy omits blank product name hints from the request payload', async () => {
+    const requests = [];
+    const controls = {
+        adsEmpty: { classList: { add() {} } },
+        adsResults: fakeElement(),
+        adsRegionSelect: { selectedIndex: 0, options: [{ value: 'US Market' }] },
+        adsLanguageSelect: { selectedIndex: 0, options: [{ value: 'English' }] },
+        adsMarketingThemeSelect: {
+            selectedIndex: 0,
+            value: 'evergreen',
+            options: [{ text: 'Evergreen' }],
+        },
+        adsProductNameInput: { value: '   ' },
+        btnGenerateAds: { innerHTML: 'Generate', disabled: false },
+    };
+    const { context } = loadAds({
+        API_BASE: 'http://localhost:8000',
+        fetch: async (url, options) => {
+            requests.push({ url, options });
+            return { json: async () => ({ status: 'success', data: { product: {}, styles: [] } }) };
+        },
+        document: {
+            querySelectorAll: () => [{ value: 'pinterest' }],
+            getElementById: id => controls[id] || null,
+            createElement: fakeElement,
+            body: { appendChild() {}, removeChild() {} },
+        },
+    });
+    vm.runInContext("currentAdsUploadedBase64 = 'data:image/png;base64,cGludGVyZXN0'", context);
+
+    await context.generateAdsCopy();
+
+    const payload = JSON.parse(requests[0].options.body);
+    assert.equal(Object.hasOwn(payload, 'product_name'), false);
+});
+
+test('Pinterest descriptions append same-language tags without spaces', () => {
+    const { context } = loadAds();
+    assert.deepEqual(
+        { ...context.pinterestDescriptionWithTags({
+            description: { target: 'Play with control.', zh: '精准控球。' },
+            tags: [
+                { target: '#PadelRacket', zh: '#板式网球拍' },
+                { target: '#PadelLife', zh: '#板式网球生活' },
+                { target: '', zh: '#运动装备' },
+            ],
+        }) },
+        {
+            target: 'Play with control.#PadelRacket#PadelLife',
+            zh: '精准控球。#板式网球拍#板式网球生活#运动装备',
+        }
+    );
+});
+
+test('Pinterest description composition tolerates missing and partial tags', () => {
+    const { context } = loadAds();
+    const result = { ...context.pinterestDescriptionWithTags({
+        description: null,
+        tags: [
+            { target: '#OnlyTarget', zh: '' },
+            { target: '', zh: '#仅中文' },
+        ],
+    }) };
+    assert.deepEqual(result, {
+        target: '#OnlyTarget',
+        zh: '#仅中文',
+    });
 });
 
 test('copyAdsStyleText copies Pinterest fields in the required order', async () => {
@@ -243,16 +321,14 @@ test('copyAdsStyleText copies Pinterest fields in the required order', async () 
         '[Pinterest PIN]',
         'Title: Title',
         '标题: 标题',
-        'Description: Description',
-        '描述: 描述',
-        'Tags: #HomeDecor #CalmHome',
-        '标签: #家居装饰 #宁静之家',
+        'Description: Description#HomeDecor#CalmHome',
+        '描述: 描述#家居装饰#宁静之家',
         'Alt Text: Chair by window',
         '替代文本: 窗边座椅',
     ].join('\n'));
 });
 
-test('renderAdsData includes the four Pinterest fields', () => {
+test('renderAdsData renders Pinterest descriptions with inline same-language tags', () => {
     const card = renderPinterest({
         title: { target: 'A quiet corner worth saving', zh: '值得收藏的静谧角落' },
         description: { target: 'Style a calmer home one detail at a time', zh: '从一个细节开始，打造更宁静的家' },
@@ -263,44 +339,16 @@ test('renderAdsData includes the four Pinterest fields', () => {
     assert.match(card.innerHTML, /Pinterest PIN/);
     assert.match(card.innerHTML, /Title/);
     assert.match(card.innerHTML, /Description/);
-    assert.match(card.innerHTML, /Tags/);
     assert.match(card.innerHTML, /Alt Text/);
     assert.match(card.innerHTML, /A quiet corner worth saving/);
     assert.match(card.innerHTML, /值得收藏的静谧角落/);
-    assert.match(card.innerHTML, /Style a calmer home one detail at a time/);
-    assert.match(card.innerHTML, /从一个细节开始，打造更宁静的家/);
+    assert.match(card.innerHTML, /Style a calmer home one detail at a time#HomeDecor/);
+    assert.match(card.innerHTML, /从一个细节开始，打造更宁静的家#家居装饰/);
+    assert.doesNotMatch(card.innerHTML, />Tags/);
     assert.match(card.innerHTML, /#HomeDecor/);
     assert.match(card.innerHTML, /#家居装饰/);
     assert.match(card.innerHTML, /Walnut chair beside a sunlit window/);
     assert.match(card.innerHTML, /阳光窗边的胡桃木座椅/);
-});
-
-test('renderAdsData keeps each Pinterest target and Chinese tag together', () => {
-    const card = renderPinterest({
-        title: { target: 'Title', zh: '标题' },
-        description: { target: 'Description', zh: '描述' },
-        tags: [
-            { target: '#HomeDecor', zh: '#家居装饰' },
-            { target: '#CalmHome', zh: '#宁静之家' },
-        ],
-        altText: { target: 'Chair by window', zh: '窗边座椅' },
-    });
-    const tagsBlock = findElement(
-        card,
-        element => element.children?.[0]?.textContent === 'Tags'
-    );
-
-    assert.ok(tagsBlock, 'Pinterest Tags block should be rendered');
-    assert.equal(tagsBlock.children.length, 2);
-    const tagItems = tagsBlock.children[1].children;
-    assert.equal(tagItems.length, 2);
-    assert.deepEqual(
-        tagItems.map(item => item.children.map(line => line.textContent)),
-        [
-            ['#HomeDecor', '#家居装饰'],
-            ['#CalmHome', '#宁静之家'],
-        ]
-    );
 });
 
 test('renderAdsData inserts hostile Pinterest model text only as inert text', () => {
@@ -327,7 +375,7 @@ test('renderAdsData inserts hostile Pinterest model text only as inert text', ()
 
     for (const value of hostileValues) {
         assert.ok(
-            tracker.textContentAssignments.includes(value),
+            tracker.textContentAssignments.some(text => text.includes(value)),
             `expected textContent insertion for ${value}`
         );
         assert.ok(

@@ -20,6 +20,17 @@ function adsTextPair(value) {
     };
 }
 
+function pinterestDescriptionWithTags(pinterest) {
+    const description = adsTextPair(pinterest?.description);
+    const tags = Array.isArray(pinterest?.tags) ? pinterest.tags : [];
+    const targetTags = tags.map(item => adsTextPair(item).target).filter(Boolean).join('');
+    const zhTags = tags.map(item => adsTextPair(item).zh).filter(Boolean).join('');
+    return {
+        target: `${description.target}${targetTags}`,
+        zh: `${description.zh}${zhTags}`,
+    };
+}
+
 function initAdsControls() {
     const regionSelect = document.getElementById('adsRegionSelect');
     const languageSelect = document.getElementById('adsLanguageSelect');
@@ -138,15 +149,12 @@ function copyAdsStyleText(style) {
     }
     if (style.pinterest) {
         const pin = style.pinterest;
-        const targetTags = (pin.tags || []).map(item => item.target).filter(Boolean).join(' ');
-        const zhTags = (pin.tags || []).map(item => item.zh).filter(Boolean).join(' ');
+        const description = pinterestDescriptionWithTags(pin);
         lines.push('\n[Pinterest PIN]');
         lines.push(`Title: ${pin.title?.target || ''}`);
         lines.push(`标题: ${pin.title?.zh || ''}`);
-        lines.push(`Description: ${pin.description?.target || ''}`);
-        lines.push(`描述: ${pin.description?.zh || ''}`);
-        lines.push(`Tags: ${targetTags}`);
-        lines.push(`标签: ${zhTags}`);
+        lines.push(`Description: ${description.target}`);
+        lines.push(`描述: ${description.zh}`);
         lines.push(`Alt Text: ${pin.altText?.target || ''}`);
         lines.push(`替代文本: ${pin.altText?.zh || ''}`);
     }
@@ -221,8 +229,7 @@ function renderAdsData(data) {
             const grid = document.createElement('div');
             grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-3';
             appendAdsPair(grid, 'Title', pinterest.title);
-            appendAdsPair(grid, 'Description', pinterest.description);
-            appendAdsPairList(grid, 'Tags', pinterest.tags);
+            appendAdsPair(grid, 'Description', pinterestDescriptionWithTags(pinterest));
             appendAdsPair(grid, 'Alt Text', pinterest.altText);
             card.appendChild(grid);
         }
@@ -245,20 +252,23 @@ async function generateAdsCopy() {
     const regionOpt = document.getElementById('adsRegionSelect');
     const languageOpt = document.getElementById('adsLanguageSelect');
     const themeOpt = document.getElementById('adsMarketingThemeSelect');
+    const productName = document.getElementById('adsProductNameInput')?.value.trim() || '';
     const btn = document.getElementById('btnGenerateAds');
     const origHtml = btn.innerHTML;
     btn.innerHTML = '<span class="loader w-4 h-4 mr-2 border-2 border-white border-t-transparent"></span> 生成中...';
     btn.disabled = true;
 
     try {
-        const data = await postAdsApi({
+        const payload = {
             image_data: currentAdsUploadedBase64,
             platforms,
             region: regionOpt.options[regionOpt.selectedIndex].value,
             target_language: languageOpt.options[languageOpt.selectedIndex].value,
             marketing_theme: themeOpt.value,
             marketing_theme_label: themeOpt.options[themeOpt.selectedIndex].text
-        });
+        };
+        if (productName) payload.product_name = productName;
+        const data = await postAdsApi(payload);
         renderAdsData(data);
         showToast('广告文案已生成', 'success');
     } catch (err) {
