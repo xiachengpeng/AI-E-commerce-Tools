@@ -99,7 +99,7 @@ function escapeTestHtml(value) {
         .replaceAll("'", '&#39;');
 }
 
-function fakeElement(tracker = null) {
+function fakeElement(tracker = null, focusState = null) {
     const children = [];
     const attributes = new Map();
     const listeners = new Map();
@@ -113,6 +113,9 @@ function fakeElement(tracker = null) {
         addEventListener(type, callback) {
             listeners.set(type, callback);
         },
+        focus() {
+            if (focusState) focusState.activeElement = this;
+        },
         click() {
             listeners.get('click')?.({ target: this });
         },
@@ -123,12 +126,19 @@ function fakeElement(tracker = null) {
             return attributes.get(name) || null;
         },
         replaceChildren(...nodes) {
+            if (focusState?.activeElement?.parentNode === this) {
+                focusState.activeElement = null;
+            }
+            children.forEach(node => {
+                node.parentNode = null;
+            });
             children.length = 0;
             html = '';
             text = '';
             nodes.forEach(node => this.appendChild(node));
         },
         appendChild(node) {
+            node.parentNode = this;
             children.push(node);
             return node;
         },
@@ -158,34 +168,39 @@ function loadAdsFilterHarness() {
         innerHTMLAssignments: [],
         textContentAssignments: [],
     };
+    const focusState = { activeElement: null };
     const filterControls = {
-        adsFilters: fakeElement(tracker),
-        adsPlatformFilters: fakeElement(tracker),
+        adsFilters: fakeElement(tracker, focusState),
+        adsPlatformFilters: fakeElement(tracker, focusState),
         adsStyleFilter: {
-            ...fakeElement(tracker),
+            ...fakeElement(tracker, focusState),
             value: 'all',
             options: [],
             addEventListener() {},
         },
         adsResultsScroll: { scrollTop: 240 },
     };
-    const adsResults = fakeElement(tracker);
+    const adsResults = fakeElement(tracker, focusState);
     const fetchCalls = [];
+    const fakeDocument = {
+        querySelectorAll: () => [],
+        getElementById: id => ({
+            ...filterControls,
+            adsEmpty: { classList: { add() {} } },
+            adsResults,
+        })[id] || null,
+        createElement: () => fakeElement(tracker, focusState),
+        body: { appendChild() {}, removeChild() {} },
+        get activeElement() {
+            return focusState.activeElement;
+        },
+    };
     const { context, clipboardWrites } = loadAds({
         fetch: (...args) => {
             fetchCalls.push(args);
             return Promise.reject(new Error('filtering must not fetch'));
         },
-        document: {
-            querySelectorAll: () => [],
-            getElementById: id => ({
-                ...filterControls,
-                adsEmpty: { classList: { add() {} } },
-                adsResults,
-            })[id] || null,
-            createElement: () => fakeElement(tracker),
-            body: { appendChild() {}, removeChild() {} },
-        },
+        document: fakeDocument,
     });
     const sampleData = {
         product: {
@@ -214,6 +229,12 @@ function loadAdsFilterHarness() {
         tracker,
         sampleData,
         scrollPane: filterControls.adsResultsScroll,
+        activeElement: () => focusState.activeElement,
+        focusOutsideFilters: () => {
+            const outside = fakeElement(tracker, focusState);
+            outside.focus();
+            return outside;
+        },
         filters: () => ({
             platform: vm.runInContext('currentAdsPlatformFilter', context),
             style: vm.runInContext('currentAdsStyleFilter', context),
@@ -273,15 +294,71 @@ test('new ads data builds only available platforms and defaults to the first', (
             .getAttribute('aria-pressed'),
         'true'
     );
-    assert.match(
-        harness.platformButtons().find(button => button.textContent === 'Google')
-            .className,
-        /bg-emerald-600/
-    );
     assert.deepEqual(
         harness.styleOptions().map(option => option.textContent),
         ['全部创意角度', '痛点解决型']
     );
+});
+
+test('platform buttons use mutually exclusive active and inactive color classes', () => {
+    const harness = loadAdsFilterHarness();
+    const activeClasses = {
+        all: ['bg-orange-600', 'border-orange-600', 'text-white'],
+        facebook: ['bg-blue-600', 'border-blue-600', 'text-white'],
+        google: ['bg-emerald-600', 'border-emerald-600', 'text-white'],
+        pinterest: ['bg-red-600', 'border-red-600', 'text-white'],
+    };
+    const neutralClasses = ['border-gray-200', 'bg-white', 'text-gray-600', 'hover:border-gray-300'];
+    const allBrandClasses = new Set(Object.values(activeClasses).flat());
+    harness.context.renderAdsData(harness.sampleData);
+
+    for (const platform of Object.keys(activeClasses)) {
+        harness.context.setAdsPlatformFilter(platform);
+        const buttons = harness.platformButtons();
+        const activeButton = buttons.find(button => button.getAttribute('aria-pressed') === 'true');
+        const activeTokens = new Set(activeButton.className.split(/\s+/));
+
+        assert.equal(activeButton.textContent, {
+            all: '全部平台',
+            facebook: 'Facebook',
+            google: 'Google',
+            pinterest: 'Pinterest PIN',
+        }[platform]);
+        activeClasses[platform].forEach(token => assert.ok(activeTokens.has(token)));
+        neutralClasses.forEach(token => assert.ok(!activeTokens.has(token)));
+
+        buttons
+            .filter(button => button !== activeButton)
+            .forEach(button => {
+                const inactiveTokens = new Set(button.className.split(/\s+/));
+                neutralClasses.forEach(token => assert.ok(inactiveTokens.has(token)));
+                allBrandClasses.forEach(token => assert.ok(!inactiveTokens.has(token)));
+            });
+    }
+});
+
+test('platform activation restores focus only for the user-repainted filter', () => {
+    const harness = loadAdsFilterHarness();
+    const outside = harness.focusOutsideFilters();
+    harness.context.renderAdsData(harness.sampleData);
+    assert.equal(harness.activeElement(), outside);
+
+    const oldPinterest = harness.platformButtons()
+        .find(button => button.textContent === 'Pinterest PIN');
+    oldPinterest.focus();
+    oldPinterest.click();
+
+    const activePinterest = harness.platformButtons()
+        .find(button => button.textContent === 'Pinterest PIN');
+    assert.notEqual(activePinterest, oldPinterest);
+    assert.equal(activePinterest.getAttribute('aria-pressed'), 'true');
+    assert.equal(harness.activeElement(), activePinterest);
+
+    harness.context.renderAdsData({
+        product: {},
+        styles: [{ id: 'new', google: {} }],
+    });
+    assert.equal(harness.activeElement(), null);
 });
 
 test('ads style filter binds its change listener once', () => {

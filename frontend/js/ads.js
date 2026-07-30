@@ -206,7 +206,7 @@ function resetAdsResultFilters() {
     renderFilteredAdsResults();
 }
 
-function renderAdsFilterControls() {
+function renderAdsFilterControls({ restorePlatformFocus = false } = {}) {
     const filters = document.getElementById('adsFilters');
     const platformFilters = document.getElementById('adsPlatformFilters');
     const styleFilter = document.getElementById('adsStyleFilter');
@@ -215,6 +215,8 @@ function renderAdsFilterControls() {
     filters?.classList.remove('hidden');
 
     if (platformFilters) {
+        const shouldRestorePlatformFocus = restorePlatformFocus
+            && Array.from(platformFilters.children).includes(document.activeElement);
         platformFilters.replaceChildren();
         const platformButtons = [
             { value: 'all', label: '全部平台' },
@@ -226,17 +228,23 @@ function renderAdsFilterControls() {
             google: 'bg-emerald-600 border-emerald-600 text-white',
             pinterest: 'bg-red-600 border-red-600 text-white',
         };
-        const baseClasses = 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300 px-3 py-1.5 rounded-full text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2';
+        const baseClasses = 'border px-3 py-1.5 rounded-full text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2';
+        const inactiveClasses = 'border-gray-200 bg-white text-gray-600 hover:border-gray-300';
+        let activeButton = null;
         platformButtons.forEach(platform => {
             const button = document.createElement('button');
             const isActive = currentAdsPlatformFilter === platform.value;
             button.type = 'button';
             button.textContent = platform.label;
             button.setAttribute('aria-pressed', String(isActive));
-            button.className = `${baseClasses} ${isActive ? activeClasses[platform.value] : ''}`.trim();
-            button.addEventListener('click', () => setAdsPlatformFilter(platform.value));
+            button.className = `${baseClasses} ${isActive ? activeClasses[platform.value] : inactiveClasses}`;
+            button.addEventListener('click', () => {
+                setAdsPlatformFilter(platform.value, { restoreFocus: true });
+            });
+            if (isActive) activeButton = button;
             platformFilters.appendChild(button);
         });
+        if (shouldRestorePlatformFocus) activeButton?.focus();
     }
 
     if (styleFilter) {
@@ -257,10 +265,10 @@ function renderAdsFilterControls() {
     }
 }
 
-function setAdsPlatformFilter(value) {
+function setAdsPlatformFilter(value, { restoreFocus = false } = {}) {
     const allowed = new Set(['all', ...availableAdsPlatforms(currentAdsData)]);
     currentAdsPlatformFilter = allowed.has(value) ? value : 'all';
-    renderAdsFilterControls();
+    renderAdsFilterControls({ restorePlatformFocus: restoreFocus });
     renderFilteredAdsResults();
 }
 
