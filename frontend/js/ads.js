@@ -53,9 +53,15 @@ function pinterestDescriptionWithTags(pinterest) {
 function initAdsControls() {
     const regionSelect = document.getElementById('adsRegionSelect');
     const languageSelect = document.getElementById('adsLanguageSelect');
-    if (!regionSelect || !languageSelect) return;
-    regionSelect.addEventListener('change', syncAdsLanguageToRegion);
-    syncAdsLanguageToRegion();
+    const styleFilter = document.getElementById('adsStyleFilter');
+    if (styleFilter && !styleFilter.dataset.adsFilterListenerBound) {
+        styleFilter.addEventListener('change', event => setAdsStyleFilter(event.target.value));
+        styleFilter.dataset.adsFilterListenerBound = 'true';
+    }
+    if (regionSelect && languageSelect) {
+        regionSelect.addEventListener('change', syncAdsLanguageToRegion);
+        syncAdsLanguageToRegion();
+    }
 }
 
 function syncAdsLanguageToRegion() {
@@ -183,15 +189,97 @@ function copyAdsStyleText(style) {
     );
 }
 
+function resetAdsFilters(data) {
+    const available = availableAdsPlatforms(data);
+    currentAdsPlatformFilter = available[0] || 'all';
+    currentAdsStyleFilter = 'all';
+}
+
+function renderAdsFilterControls() {
+    const filters = document.getElementById('adsFilters');
+    const platformFilters = document.getElementById('adsPlatformFilters');
+    const styleFilter = document.getElementById('adsStyleFilter');
+    const styles = Array.isArray(currentAdsData?.styles) ? currentAdsData.styles : [];
+
+    filters?.classList.remove('hidden');
+
+    if (platformFilters) {
+        platformFilters.replaceChildren();
+        const platformButtons = [
+            { value: 'all', label: '全部平台' },
+            ...ADS_PLATFORM_FILTERS.filter(platform => availableAdsPlatforms(currentAdsData).includes(platform.value)),
+        ];
+        const activeClasses = {
+            all: 'bg-orange-600 border-orange-600 text-white',
+            facebook: 'bg-blue-600 border-blue-600 text-white',
+            google: 'bg-emerald-600 border-emerald-600 text-white',
+            pinterest: 'bg-red-600 border-red-600 text-white',
+        };
+        const baseClasses = 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300 px-3 py-1.5 rounded-full text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2';
+        platformButtons.forEach(platform => {
+            const button = document.createElement('button');
+            const isActive = currentAdsPlatformFilter === platform.value;
+            button.type = 'button';
+            button.textContent = platform.label;
+            button.setAttribute('aria-pressed', String(isActive));
+            button.className = `${baseClasses} ${isActive ? activeClasses[platform.value] : ''}`.trim();
+            button.addEventListener('click', () => setAdsPlatformFilter(platform.value));
+            platformFilters.appendChild(button);
+        });
+    }
+
+    if (styleFilter) {
+        styleFilter.replaceChildren();
+        const allOption = document.createElement('option');
+        allOption.value = 'all';
+        allOption.textContent = '全部创意角度';
+        styleFilter.appendChild(allOption);
+        styles.forEach((style, index) => {
+            const option = document.createElement('option');
+            const key = adsStyleKey(style, index);
+            const name = adsTextPair(style?.name);
+            option.value = key;
+            option.textContent = name.zh || name.target || key;
+            styleFilter.appendChild(option);
+        });
+        styleFilter.value = currentAdsStyleFilter;
+    }
+}
+
+function setAdsPlatformFilter(value) {
+    const allowed = new Set(['all', ...availableAdsPlatforms(currentAdsData)]);
+    currentAdsPlatformFilter = allowed.has(value) ? value : 'all';
+    renderAdsFilterControls();
+    renderFilteredAdsResults();
+}
+
+function setAdsStyleFilter(value) {
+    const styles = Array.isArray(currentAdsData?.styles) ? currentAdsData.styles : [];
+    const allowed = new Set(['all', ...styles.map((style, index) => adsStyleKey(style, index))]);
+    currentAdsStyleFilter = allowed.has(value) ? value : 'all';
+    renderAdsFilterControls();
+    renderFilteredAdsResults();
+}
+
 function renderAdsData(data) {
     currentAdsData = data || null;
+    resetAdsFilters(currentAdsData);
+    renderAdsFilterControls();
+    renderFilteredAdsResults();
+}
+
+function renderFilteredAdsResults() {
+    const scrollPane = document.getElementById('adsResultsScroll');
+    const previousScrollTop = scrollPane?.scrollTop || 0;
+    const data = currentAdsData || {};
+    const styles = Array.isArray(data.styles) ? data.styles : [];
     document.getElementById('adsEmpty').classList.add('hidden');
     const container = document.getElementById('adsResults');
     container.textContent = '';
     container.classList.remove('hidden');
     container.classList.add('flex');
 
-    const product = data?.product || {};
+    const product = data.product || {};
     const productBlock = document.createElement('div');
     productBlock.className = 'bg-white rounded-2xl shadow-sm border border-gray-200 p-5';
     appendAdsText(productBlock, 'text-xs font-black text-orange-600 uppercase mb-2', 'Product');
@@ -199,7 +287,15 @@ function renderAdsData(data) {
     appendAdsPair(productBlock, 'Summary', product.summary);
     container.appendChild(productBlock);
 
-    (data?.styles || []).forEach(style => {
+    const filteredStyles = styles.filter((style, index) => {
+        const styleMatches = currentAdsStyleFilter === 'all'
+            || adsStyleKey(style, index) === currentAdsStyleFilter;
+        const platformMatches = currentAdsPlatformFilter === 'all'
+            || Boolean(style?.[currentAdsPlatformFilter]);
+        return styleMatches && platformMatches;
+    });
+
+    filteredStyles.forEach(style => {
         const card = document.createElement('div');
         card.className = 'bg-white rounded-2xl shadow-sm border border-gray-200 p-5';
         const header = document.createElement('div');
@@ -216,7 +312,11 @@ function renderAdsData(data) {
         header.append(titleWrap, copyBtn);
         card.appendChild(header);
 
-        if (style.facebook) {
+        const showFacebook = style.facebook && ['all', 'facebook'].includes(currentAdsPlatformFilter);
+        const showGoogle = style.google && ['all', 'google'].includes(currentAdsPlatformFilter);
+        const showPinterest = style.pinterest && ['all', 'pinterest'].includes(currentAdsPlatformFilter);
+
+        if (showFacebook) {
             appendAdsText(card, 'text-sm font-black text-blue-700 mt-2 mb-3', 'Facebook Ads');
             const grid = document.createElement('div');
             grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-3';
@@ -228,7 +328,7 @@ function renderAdsData(data) {
             card.appendChild(grid);
         }
 
-        if (style.google) {
+        if (showGoogle) {
             appendAdsText(card, 'text-sm font-black text-emerald-700 mt-5 mb-3', 'Google Ads');
             const grid = document.createElement('div');
             grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-3';
@@ -239,7 +339,7 @@ function renderAdsData(data) {
             card.appendChild(grid);
         }
 
-        if (style.pinterest) {
+        if (showPinterest) {
             const pinterest = style.pinterest;
             const heading = document.createElement('h5');
             heading.className = 'text-sm font-black text-red-700 mt-5 mb-3';
@@ -255,6 +355,8 @@ function renderAdsData(data) {
 
         container.appendChild(card);
     });
+
+    if (scrollPane) scrollPane.scrollTop = previousScrollTop;
 }
 
 async function generateAdsCopy() {

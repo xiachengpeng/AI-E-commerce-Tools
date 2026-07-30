@@ -101,13 +101,33 @@ function escapeTestHtml(value) {
 
 function fakeElement(tracker = null) {
     const children = [];
+    const attributes = new Map();
+    const listeners = new Map();
     let html = '';
     let text = '';
     return {
         className: '',
         children,
+        dataset: {},
         classList: { add() {}, remove() {} },
-        addEventListener() {},
+        addEventListener(type, callback) {
+            listeners.set(type, callback);
+        },
+        click() {
+            listeners.get('click')?.({ target: this });
+        },
+        setAttribute(name, value) {
+            attributes.set(name, String(value));
+        },
+        getAttribute(name) {
+            return attributes.get(name) || null;
+        },
+        replaceChildren(...nodes) {
+            children.length = 0;
+            html = '';
+            text = '';
+            nodes.forEach(node => this.appendChild(node));
+        },
         appendChild(node) {
             children.push(node);
             return node;
@@ -124,11 +144,144 @@ function fakeElement(tracker = null) {
         },
         set textContent(value) {
             text = String(value ?? '');
+            children.length = 0;
+            html = '';
             tracker?.textContentAssignments.push(text);
         },
         get textContent() { return text; },
     };
 }
+
+function loadAdsFilterHarness() {
+    const filterControls = {
+        adsFilters: fakeElement(),
+        adsPlatformFilters: fakeElement(),
+        adsStyleFilter: {
+            ...fakeElement(),
+            value: 'all',
+            options: [],
+            addEventListener() {},
+        },
+        adsResultsScroll: { scrollTop: 240 },
+    };
+    const adsResults = fakeElement();
+    const fetchCalls = [];
+    const { context } = loadAds({
+        fetch: (...args) => {
+            fetchCalls.push(args);
+            return Promise.reject(new Error('filtering must not fetch'));
+        },
+        document: {
+            querySelectorAll: () => [],
+            getElementById: id => ({
+                ...filterControls,
+                adsEmpty: { classList: { add() {} } },
+                adsResults,
+            })[id] || null,
+            createElement: () => fakeElement(),
+            body: { appendChild() {}, removeChild() {} },
+        },
+    });
+    const sampleData = {
+        product: {
+            name: { target: 'Desk lamp', zh: '台灯' },
+            summary: { target: 'Warm reading light', zh: '温暖阅读光' },
+        },
+        styles: [
+            {
+                id: 'problem_solution',
+                name: { target: 'Problem Solution', zh: '痛点解决' },
+                facebook: { headline: { target: 'Less glare' } },
+                pinterest: { title: { target: 'Save this glow' } },
+            },
+            {
+                id: 'feature_benefit',
+                name: { target: 'Feature Benefit', zh: '功能利益' },
+                google: { headlines: [{ target: 'Soft light' }] },
+            },
+        ],
+    };
+    return {
+        context,
+        fetchCalls,
+        sampleData,
+        scrollPane: filterControls.adsResultsScroll,
+        filters: () => ({
+            platform: vm.runInContext('currentAdsPlatformFilter', context),
+            style: vm.runInContext('currentAdsStyleFilter', context),
+        }),
+        platformButtons: () => filterControls.adsPlatformFilters.children,
+        styleCards: () => adsResults.children.slice(1),
+    };
+}
+
+test('new ads data builds only available platforms and defaults to the first', () => {
+    const harness = loadAdsFilterHarness();
+    harness.context.renderAdsData({
+        product: {},
+        styles: [{
+            id: 'problem_solution',
+            name: { target: 'Problem/Solution', zh: '痛点解决型' },
+            google: {},
+            pinterest: {},
+        }],
+    });
+
+    assert.deepEqual(harness.filters(), { platform: 'google', style: 'all' });
+    assert.deepEqual(
+        harness.platformButtons().map(button => button.textContent),
+        ['全部平台', 'Google', 'Pinterest PIN']
+    );
+    assert.equal(
+        harness.platformButtons().find(button => button.textContent === 'Google')
+            .getAttribute('aria-pressed'),
+        'true'
+    );
+});
+
+test('platform and style filters combine without issuing fetch', () => {
+    const harness = loadAdsFilterHarness();
+    harness.context.renderAdsData(harness.sampleData);
+    harness.context.setAdsPlatformFilter('google');
+    harness.context.setAdsStyleFilter('feature_benefit');
+
+    const cards = harness.styleCards();
+    assert.equal(cards.length, 1);
+    assert.match(cards[0].innerHTML, /Feature Benefit/);
+    assert.match(cards[0].innerHTML, /Google Ads/);
+    assert.doesNotMatch(cards[0].innerHTML, /Facebook Ads/);
+    assert.doesNotMatch(cards[0].innerHTML, /Pinterest PIN/);
+    assert.equal(harness.fetchCalls.length, 0);
+});
+
+test('all platform filter restores all present platform sections', () => {
+    const harness = loadAdsFilterHarness();
+    harness.context.renderAdsData(harness.sampleData);
+    harness.context.setAdsPlatformFilter('all');
+
+    const html = harness.styleCards().map(card => card.innerHTML).join('');
+    assert.match(html, /Facebook Ads/);
+    assert.match(html, /Google Ads/);
+    assert.match(html, /Pinterest PIN/);
+});
+
+test('filter repaint preserves scroll and new data resets stale filters', () => {
+    const harness = loadAdsFilterHarness();
+    harness.context.renderAdsData(harness.sampleData);
+    harness.scrollPane.scrollTop = 240;
+    harness.context.setAdsStyleFilter('feature_benefit');
+    assert.equal(harness.scrollPane.scrollTop, 240);
+
+    harness.context.renderAdsData({
+        product: {},
+        styles: [{
+            id: 'new_style',
+            name: { target: 'New Style', zh: '新角度' },
+            pinterest: {},
+        }],
+    });
+    assert.deepEqual(harness.filters(), { platform: 'pinterest', style: 'all' });
+});
 
 function renderPinterest(pinterest, tracker = null) {
     const children = [];
