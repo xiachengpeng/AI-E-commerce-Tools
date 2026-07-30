@@ -25,6 +25,16 @@ test('ads form exposes an optional bounded product name hint', () => {
     assert.match(html, /选填，填写后将结合图片识别/);
 });
 
+test('ads results expose an accessible sticky filter shell', () => {
+    assert.match(html, /id="adsResultsScroll"/);
+    assert.match(html, /id="adsFilters"/);
+    assert.match(html, /id="adsPlatformFilters"/);
+    assert.match(html, /id="adsStyleFilter"/);
+    assert.match(html, /aria-label="创意角度筛选"/);
+    assert.match(html, /广告平台/);
+    assert.match(html, /创意角度/);
+});
+
 function loadAds(overrides = {}) {
     const clipboardWrites = [];
     const context = {
@@ -57,6 +67,28 @@ function loadAds(overrides = {}) {
     vm.runInContext(source, context);
     return { context, clipboardWrites };
 }
+
+test('availableAdsPlatforms returns only present platforms in canonical order', () => {
+    const { context } = loadAds();
+    const result = Array.from(context.availableAdsPlatforms({
+        styles: [
+            { id: 'first', pinterest: {}, google: {} },
+            { id: 'second', facebook: {} },
+        ],
+    }));
+    assert.deepEqual(result, ['facebook', 'google', 'pinterest']);
+    assert.deepEqual(
+        Array.from(context.availableAdsPlatforms({ styles: [] })),
+        []
+    );
+});
+
+test('adsStyleKey uses id, styleId, then stable index fallback', () => {
+    const { context } = loadAds();
+    assert.equal(context.adsStyleKey({ id: 'problem_solution' }, 0), 'problem_solution');
+    assert.equal(context.adsStyleKey({ styleId: 'emotional' }, 1), 'emotional');
+    assert.equal(context.adsStyleKey({}, 2), 'style-index-2');
+});
 
 function escapeTestHtml(value) {
     return String(value)

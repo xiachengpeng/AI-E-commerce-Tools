@@ -11,6 +11,25 @@ const ADS_REGION_LANGUAGE_MAP = {
 
 let currentAdsUploadedBase64 = null;
 let currentAdsData = null;
+let currentAdsPlatformFilter = 'all';
+let currentAdsStyleFilter = 'all';
+
+const ADS_PLATFORM_FILTERS = [
+    { value: 'facebook', label: 'Facebook' },
+    { value: 'google', label: 'Google' },
+    { value: 'pinterest', label: 'Pinterest PIN' },
+];
+
+function adsStyleKey(style, index) {
+    return String(style?.id || style?.styleId || `style-index-${index}`);
+}
+
+function availableAdsPlatforms(data) {
+    const styles = Array.isArray(data?.styles) ? data.styles : [];
+    return ADS_PLATFORM_FILTERS
+        .map(item => item.value)
+        .filter(platform => styles.some(style => Boolean(style?.[platform])));
+}
 
 function adsTextPair(value) {
     if (typeof value === 'string') return { target: value, zh: '' };
