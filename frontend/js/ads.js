@@ -20,12 +20,17 @@ const ADS_PLATFORM_FILTERS = [
     { value: 'pinterest', label: 'Pinterest PIN' },
 ];
 
+function adsStyles(data) {
+    const styles = Array.isArray(data?.styles) ? data.styles : [];
+    return styles.filter(style => style && typeof style === 'object' && !Array.isArray(style));
+}
+
 function adsStyleKey(style, index) {
     return String(style?.id || style?.styleId || `style-index-${index}`);
 }
 
 function availableAdsPlatforms(data) {
-    const styles = Array.isArray(data?.styles) ? data.styles : [];
+    const styles = adsStyles(data);
     return ADS_PLATFORM_FILTERS
         .map(item => item.value)
         .filter(platform => styles.some(style => Boolean(style?.[platform])));
@@ -205,7 +210,7 @@ function renderAdsFilterControls() {
     const filters = document.getElementById('adsFilters');
     const platformFilters = document.getElementById('adsPlatformFilters');
     const styleFilter = document.getElementById('adsStyleFilter');
-    const styles = Array.isArray(currentAdsData?.styles) ? currentAdsData.styles : [];
+    const styles = adsStyles(currentAdsData);
 
     filters?.classList.remove('hidden');
 
@@ -260,7 +265,7 @@ function setAdsPlatformFilter(value) {
 }
 
 function setAdsStyleFilter(value) {
-    const styles = Array.isArray(currentAdsData?.styles) ? currentAdsData.styles : [];
+    const styles = adsStyles(currentAdsData);
     const allowed = new Set(['all', ...styles.map((style, index) => adsStyleKey(style, index))]);
     currentAdsStyleFilter = allowed.has(value) ? value : 'all';
     renderAdsFilterControls();
@@ -278,7 +283,7 @@ function renderFilteredAdsResults() {
     const scrollPane = document.getElementById('adsResultsScroll');
     const previousScrollTop = scrollPane?.scrollTop || 0;
     const data = currentAdsData || {};
-    const styles = Array.isArray(data.styles) ? data.styles : [];
+    const styles = adsStyles(data);
     document.getElementById('adsEmpty').classList.add('hidden');
     const container = document.getElementById('adsResults');
     container.textContent = '';

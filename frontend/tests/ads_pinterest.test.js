@@ -378,16 +378,18 @@ test('empty filtered combinations show a reset action without fetch', () => {
 test('rendered copy button captures the platform used for that repaint', async () => {
     const harness = loadAdsFilterHarness();
     harness.context.renderAdsData(harness.sampleData);
-    harness.context.setAdsPlatformFilter('pinterest');
-    const copyButton = findElement(
+    harness.context.setAdsPlatformFilter('facebook');
+    const oldCopyButton = findElement(
         harness.styleCards()[0],
         element => element.textContent === '复制'
     );
-    assert.ok(copyButton);
-    copyButton.click();
+    assert.ok(oldCopyButton);
+
+    harness.context.setAdsPlatformFilter('pinterest');
+    oldCopyButton.click();
     await Promise.resolve();
-    assert.match(harness.clipboardWrites[0], /\[Pinterest PIN\]/);
-    assert.doesNotMatch(harness.clipboardWrites[0], /\[Facebook\]|\[Google\]/);
+    assert.match(harness.clipboardWrites[0], /\[Facebook\]/);
+    assert.doesNotMatch(harness.clipboardWrites[0], /\[Pinterest PIN\]|\[Google\]/);
 });
 
 test('filter rendering tolerates missing styles and missing platform blocks', () => {
@@ -399,6 +401,22 @@ test('filter rendering tolerates missing styles and missing platform blocks', ()
         styles: [{ name: { target: '<img onerror=alert(1)>', zh: '安全文本' } }],
     }));
     assert.ok(harness.tracker.textContentAssignments.includes('<img onerror=alert(1)>'));
+});
+
+test('null style entries leave the product and empty-result state rendered', () => {
+    const harness = loadAdsFilterHarness();
+
+    assert.doesNotThrow(() => harness.context.renderAdsData({
+        product: {
+            name: { target: 'Fallback lamp', zh: '备用台灯' },
+            summary: { target: 'Still visible', zh: '仍然可见' },
+        },
+        styles: [null],
+    }));
+
+    assert.equal(harness.styleCards().length, 0);
+    assert.match(harness.results.innerHTML, /Fallback lamp/);
+    assert.match(harness.results.innerHTML, /当前筛选条件下没有结果/);
 });
 
 test('filter repaint preserves scroll and new data resets stale filters', () => {
