@@ -149,7 +149,7 @@ function appendAdsPairList(parent, label, values) {
     parent.appendChild(block);
 }
 
-function copyAdsStyleText(style) {
+function copyAdsStyleText(style, platformFilter = 'all') {
     const lines = [];
     const pushPair = (label, value) => {
         const pair = adsTextPair(value);
@@ -158,7 +158,7 @@ function copyAdsStyleText(style) {
     const name = adsTextPair(style.name);
     lines.push(`${name.target}${name.zh ? ` / ${name.zh}` : ''}`);
     pushPair('Logic', style.logic);
-    if (style.facebook) {
+    if (style.facebook && ['all', 'facebook'].includes(platformFilter)) {
         lines.push('\n[Facebook]');
         pushPair('Primary Text', style.facebook.primaryText);
         pushPair('Headline', style.facebook.headline);
@@ -166,13 +166,13 @@ function copyAdsStyleText(style) {
         pushPair('CTA', style.facebook.cta);
         pushPair('Creative Direction', style.facebook.creativeDirection);
     }
-    if (style.google) {
+    if (style.google && ['all', 'google'].includes(platformFilter)) {
         lines.push('\n[Google]');
         ['headlines', 'descriptions', 'keywords', 'sitelinks'].forEach(key => {
             (style.google[key] || []).forEach((item, index) => pushPair(`${key} ${index + 1}`, item));
         });
     }
-    if (style.pinterest) {
+    if (style.pinterest && ['all', 'pinterest'].includes(platformFilter)) {
         const pin = style.pinterest;
         const description = pinterestDescriptionWithTags(pin);
         lines.push('\n[Pinterest PIN]');
@@ -193,6 +193,12 @@ function resetAdsFilters(data) {
     const available = availableAdsPlatforms(data);
     currentAdsPlatformFilter = available[0] || 'all';
     currentAdsStyleFilter = 'all';
+}
+
+function resetAdsResultFilters() {
+    resetAdsFilters(currentAdsData);
+    renderAdsFilterControls();
+    renderFilteredAdsResults();
 }
 
 function renderAdsFilterControls() {
@@ -302,13 +308,32 @@ function renderFilteredAdsResults() {
         header.className = 'flex items-start justify-between gap-3 mb-4';
         const titleWrap = document.createElement('div');
         const name = adsTextPair(style.name);
-        appendAdsText(titleWrap, 'text-base font-black text-gray-900', `${name.zh || ''} ${name.target ? `(${name.target})` : ''}`.trim());
+        const title = document.createElement('div');
+        title.className = 'text-base font-black text-gray-900';
+        if (name.zh) {
+            const zhName = document.createElement('span');
+            zhName.textContent = name.zh;
+            title.appendChild(zhName);
+            if (name.target) {
+                const opening = document.createElement('span');
+                opening.textContent = ' (';
+                const targetName = document.createElement('span');
+                targetName.textContent = name.target;
+                const closing = document.createElement('span');
+                closing.textContent = ')';
+                title.append(opening, targetName, closing);
+            }
+        } else {
+            title.textContent = name.target;
+        }
+        titleWrap.appendChild(title);
         const logic = adsTextPair(style.logic);
         appendAdsText(titleWrap, 'text-xs text-gray-500 mt-1', logic.zh || logic.target);
         const copyBtn = document.createElement('button');
         copyBtn.className = 'text-xs bg-gray-100 hover:bg-orange-100 text-gray-500 hover:text-orange-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1';
-        copyBtn.innerHTML = '<i class="ph ph-copy"></i> 复制';
-        copyBtn.addEventListener('click', () => copyAdsStyleText(style));
+        copyBtn.textContent = '复制';
+        const platformForCopy = currentAdsPlatformFilter;
+        copyBtn.addEventListener('click', () => copyAdsStyleText(style, platformForCopy));
         header.append(titleWrap, copyBtn);
         card.appendChild(header);
 
@@ -355,6 +380,19 @@ function renderFilteredAdsResults() {
 
         container.appendChild(card);
     });
+
+    if (filteredStyles.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center';
+        appendAdsText(empty, 'text-sm font-bold text-gray-500', '当前筛选条件下没有结果');
+        const resetButton = document.createElement('button');
+        resetButton.type = 'button';
+        resetButton.className = 'mt-4 px-4 py-2 rounded-lg bg-orange-50 text-orange-600 text-xs font-bold hover:bg-orange-100 focus-visible:ring-2 focus-visible:ring-orange-400';
+        resetButton.textContent = '重置筛选';
+        resetButton.addEventListener('click', resetAdsResultFilters);
+        empty.appendChild(resetButton);
+        container.appendChild(empty);
+    }
 
     if (scrollPane) scrollPane.scrollTop = previousScrollTop;
 }

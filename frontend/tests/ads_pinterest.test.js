@@ -137,6 +137,7 @@ function fakeElement(tracker = null) {
         },
         set innerHTML(value) {
             html = String(value ?? '');
+            text = html.replace(/<[^>]*>/g, '');
             tracker?.innerHTMLAssignments.push(html);
         },
         get innerHTML() {
@@ -153,20 +154,24 @@ function fakeElement(tracker = null) {
 }
 
 function loadAdsFilterHarness() {
+    const tracker = {
+        innerHTMLAssignments: [],
+        textContentAssignments: [],
+    };
     const filterControls = {
-        adsFilters: fakeElement(),
-        adsPlatformFilters: fakeElement(),
+        adsFilters: fakeElement(tracker),
+        adsPlatformFilters: fakeElement(tracker),
         adsStyleFilter: {
-            ...fakeElement(),
+            ...fakeElement(tracker),
             value: 'all',
             options: [],
             addEventListener() {},
         },
         adsResultsScroll: { scrollTop: 240 },
     };
-    const adsResults = fakeElement();
+    const adsResults = fakeElement(tracker);
     const fetchCalls = [];
-    const { context } = loadAds({
+    const { context, clipboardWrites } = loadAds({
         fetch: (...args) => {
             fetchCalls.push(args);
             return Promise.reject(new Error('filtering must not fetch'));
@@ -178,7 +183,7 @@ function loadAdsFilterHarness() {
                 adsEmpty: { classList: { add() {} } },
                 adsResults,
             })[id] || null,
-            createElement: () => fakeElement(),
+            createElement: () => fakeElement(tracker),
             body: { appendChild() {}, removeChild() {} },
         },
     });
@@ -203,7 +208,10 @@ function loadAdsFilterHarness() {
     };
     return {
         context,
+        clipboardWrites,
         fetchCalls,
+        results: adsResults,
+        tracker,
         sampleData,
         scrollPane: filterControls.adsResultsScroll,
         filters: () => ({
@@ -211,7 +219,35 @@ function loadAdsFilterHarness() {
             style: vm.runInContext('currentAdsStyleFilter', context),
         }),
         platformButtons: () => filterControls.adsPlatformFilters.children,
-        styleCards: () => adsResults.children.slice(1),
+        styleOptions: () => filterControls.adsStyleFilter.children,
+        styleCards: () => adsResults.children.slice(1)
+            .filter(card => card.className.includes('shadow-sm')),
+    };
+}
+
+function sampleAllPlatformStyle() {
+    return {
+        name: { target: 'Problem/Solution', zh: '痛点解决' },
+        logic: { target: 'Solve morning clutter', zh: '解决晨间杂乱' },
+        facebook: {
+            primaryText: { target: 'Facebook primary' },
+            headline: { target: 'Facebook headline' },
+            description: { target: 'Facebook description' },
+            cta: { target: 'Shop now' },
+            creativeDirection: { target: 'Clean desk photo' },
+        },
+        google: {
+            headlines: [{ target: 'Google headline' }],
+            descriptions: [{ target: 'Google description' }],
+            keywords: [{ target: 'Google keyword' }],
+            sitelinks: [{ target: 'Google sitelink' }],
+        },
+        pinterest: {
+            title: { target: 'Pinterest title', zh: '灵感标题' },
+            description: { target: 'Pinterest description', zh: '灵感描述' },
+            tags: [{ target: '#Tag1' }, { target: '#Tag2' }],
+            altText: { target: 'Pinterest alt text', zh: '灵感替代文本' },
+        },
     };
 }
 
@@ -237,6 +273,39 @@ test('new ads data builds only available platforms and defaults to the first', (
             .getAttribute('aria-pressed'),
         'true'
     );
+    assert.match(
+        harness.platformButtons().find(button => button.textContent === 'Google')
+            .className,
+        /bg-emerald-600/
+    );
+    assert.deepEqual(
+        harness.styleOptions().map(option => option.textContent),
+        ['全部创意角度', '痛点解决型']
+    );
+});
+
+test('ads style filter binds its change listener once', () => {
+    const listeners = [];
+    const styleFilter = {
+        dataset: {},
+        addEventListener(type, callback) {
+            listeners.push({ type, callback });
+        },
+    };
+    const { context } = loadAds({
+        document: {
+            querySelectorAll: () => [],
+            getElementById: id => id === 'adsStyleFilter' ? styleFilter : null,
+            createElement: fakeElement,
+            body: { appendChild() {}, removeChild() {} },
+        },
+    });
+
+    context.initAdsControls();
+    context.initAdsControls();
+
+    assert.equal(listeners.length, 1);
+    assert.equal(listeners[0].type, 'change');
 });
 
 test('platform and style filters combine without issuing fetch', () => {
@@ -263,6 +332,73 @@ test('all platform filter restores all present platform sections', () => {
     assert.match(html, /Facebook Ads/);
     assert.match(html, /Google Ads/);
     assert.match(html, /Pinterest PIN/);
+});
+
+test('copy includes only the selected visible platform', async () => {
+    const { context, clipboardWrites } = loadAds();
+    await context.copyAdsStyleText(sampleAllPlatformStyle(), 'google');
+
+    const copied = clipboardWrites[0];
+    assert.match(copied, /\[Google\]/);
+    assert.doesNotMatch(copied, /\[Facebook\]/);
+    assert.doesNotMatch(copied, /\[Pinterest PIN\]/);
+    assert.match(copied, /Problem\/Solution/);
+    assert.match(copied, /Logic:/);
+});
+
+test('copy all includes every present platform', async () => {
+    const { context, clipboardWrites } = loadAds();
+    await context.copyAdsStyleText(sampleAllPlatformStyle(), 'all');
+
+    const copied = clipboardWrites[0];
+    assert.match(copied, /\[Facebook\]/);
+    assert.match(copied, /\[Google\]/);
+    assert.match(copied, /\[Pinterest PIN\]/);
+    assert.match(copied, /Description: Pinterest description#Tag1#Tag2/);
+});
+
+test('empty filtered combinations show a reset action without fetch', () => {
+    const harness = loadAdsFilterHarness();
+    harness.context.renderAdsData(harness.sampleData);
+    harness.context.setAdsPlatformFilter('facebook');
+    harness.context.setAdsStyleFilter('feature_benefit');
+
+    assert.equal(harness.styleCards().length, 0);
+    assert.match(harness.results.innerHTML, /当前筛选条件下没有结果/);
+    const reset = findElement(
+        harness.results,
+        element => element.textContent === '重置筛选'
+    );
+    assert.ok(reset);
+    reset.click();
+    assert.deepEqual(harness.filters(), { platform: 'facebook', style: 'all' });
+    assert.equal(harness.fetchCalls.length, 0);
+});
+
+test('rendered copy button captures the platform used for that repaint', async () => {
+    const harness = loadAdsFilterHarness();
+    harness.context.renderAdsData(harness.sampleData);
+    harness.context.setAdsPlatformFilter('pinterest');
+    const copyButton = findElement(
+        harness.styleCards()[0],
+        element => element.textContent === '复制'
+    );
+    assert.ok(copyButton);
+    copyButton.click();
+    await Promise.resolve();
+    assert.match(harness.clipboardWrites[0], /\[Pinterest PIN\]/);
+    assert.doesNotMatch(harness.clipboardWrites[0], /\[Facebook\]|\[Google\]/);
+});
+
+test('filter rendering tolerates missing styles and missing platform blocks', () => {
+    const harness = loadAdsFilterHarness();
+    assert.doesNotThrow(() => harness.context.renderAdsData({ product: {}, styles: null }));
+    assert.equal(harness.filters().platform, 'all');
+    assert.doesNotThrow(() => harness.context.renderAdsData({
+        product: {},
+        styles: [{ name: { target: '<img onerror=alert(1)>', zh: '安全文本' } }],
+    }));
+    assert.ok(harness.tracker.textContentAssignments.includes('<img onerror=alert(1)>'));
 });
 
 test('filter repaint preserves scroll and new data resets stale filters', () => {
