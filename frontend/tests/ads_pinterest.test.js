@@ -68,6 +68,40 @@ function loadAds(overrides = {}) {
     return { context, clipboardWrites };
 }
 
+test('ad result bilingual label map is complete and exact', () => {
+    const { context } = loadAds();
+    const labels = {
+        ...vm.runInContext(
+            'Object.fromEntries(Object.entries(ADS_RESULT_LABELS))',
+            context
+        ),
+    };
+    assert.deepEqual(labels, {
+        product: '产品 / Product',
+        productName: '产品名称 / Name',
+        productSummary: '产品概述 / Summary',
+        facebook: 'Facebook 广告 / Facebook Ads',
+        facebookPrimaryText: '主文案 / Primary Text',
+        facebookHeadline: '标题 / Headline',
+        facebookDescription: '描述 / Description',
+        facebookCta: '行动按钮 / CTA',
+        facebookCreativeDirection: '创意方向 / Creative Direction',
+        google: 'Google 广告 / Google Ads',
+        googleHeadlines: '标题 / Headlines',
+        googleDescriptions: '描述 / Descriptions',
+        googleKeywords: '关键词 / Keywords',
+        googleSitelinks: '附加链接 / Sitelinks',
+        pinterest: 'Pinterest PIN',
+        pinterestTitle: '标题 / Title',
+        pinterestDescription: '描述 / Description',
+        pinterestAltText: '替代文本 / Alt Text',
+    });
+    assert.equal(
+        vm.runInContext('Object.isFrozen(ADS_RESULT_LABELS)', context),
+        true
+    );
+});
+
 test('availableAdsPlatforms returns only present platforms in canonical order', () => {
     const { context } = loadAds();
     const result = Array.from(context.availableAdsPlatforms({
@@ -272,6 +306,103 @@ function sampleAllPlatformStyle() {
     };
 }
 
+test('all-platform result renders every fixed bilingual heading and field label', () => {
+    const harness = loadAdsFilterHarness();
+    harness.context.renderAdsData({
+        product: {
+            name: { target: 'Padel racket', zh: '板式网球拍' },
+            summary: { target: 'Balanced sports gear', zh: '均衡运动装备' },
+        },
+        styles: [sampleAllPlatformStyle()],
+    });
+    harness.context.setAdsPlatformFilter('all');
+
+    const renderedText = harness.results.innerHTML;
+    const expectedLabels = {
+        product: '产品 / Product',
+        productName: '产品名称 / Name',
+        productSummary: '产品概述 / Summary',
+        facebook: 'Facebook 广告 / Facebook Ads',
+        facebookPrimaryText: '主文案 / Primary Text',
+        facebookHeadline: '标题 / Headline',
+        facebookDescription: '描述 / Description',
+        facebookCta: '行动按钮 / CTA',
+        facebookCreativeDirection: '创意方向 / Creative Direction',
+        google: 'Google 广告 / Google Ads',
+        googleHeadlines: '标题 / Headlines',
+        googleDescriptions: '描述 / Descriptions',
+        googleKeywords: '关键词 / Keywords',
+        googleSitelinks: '附加链接 / Sitelinks',
+        pinterest: 'Pinterest PIN',
+        pinterestTitle: '标题 / Title',
+        pinterestDescription: '描述 / Description',
+        pinterestAltText: '替代文本 / Alt Text',
+    };
+
+    for (const label of new Set(Object.values(expectedLabels))) {
+        assert.match(renderedText, new RegExp(label.replace('/', '\\/')));
+        assert.ok(harness.tracker.textContentAssignments.includes(label));
+        assert.ok(
+            harness.tracker.innerHTMLAssignments.every(value => !value.includes(label))
+        );
+    }
+
+    const card = harness.styleCards()[0];
+    const facebookHeading = findElement(
+        card,
+        element => element.textContent === expectedLabels.facebook
+    );
+    const pinterestHeading = findElement(
+        card,
+        element => element.textContent === expectedLabels.pinterest
+    );
+    assert.ok(findElement(facebookHeading.parentNode, element => element.textContent === expectedLabels.facebookDescription));
+    assert.ok(findElement(pinterestHeading.parentNode, element => element.textContent === expectedLabels.pinterestDescription));
+});
+
+test('platform filtering preserves the platform bilingual labels', () => {
+    const harness = loadAdsFilterHarness();
+    harness.context.renderAdsData({
+        product: {},
+        styles: [sampleAllPlatformStyle()],
+    });
+
+    harness.context.setAdsPlatformFilter('google');
+    let html = harness.styleCards()[0].innerHTML;
+    assert.match(html, /Google 广告 \/ Google Ads/);
+    assert.match(html, /标题 \/ Headlines/);
+    assert.match(html, /描述 \/ Descriptions/);
+    assert.doesNotMatch(html, /Facebook 广告|Pinterest PIN/);
+
+    harness.context.setAdsPlatformFilter('pinterest');
+    html = harness.styleCards()[0].innerHTML;
+    assert.match(html, /Pinterest PIN/);
+    assert.match(html, /标题 \/ Title/);
+    assert.match(html, /描述 \/ Description/);
+    assert.match(html, /替代文本 \/ Alt Text/);
+    assert.doesNotMatch(html, /Facebook 广告|Google 广告/);
+});
+
+test('bilingual UI labels do not change clipboard labels', async () => {
+    const { context, clipboardWrites } = loadAds();
+    await context.copyAdsStyleText(sampleAllPlatformStyle(), 'all');
+    const copied = clipboardWrites[0];
+
+    assert.match(copied, /\[Facebook\]/);
+    assert.match(copied, /Primary Text:/);
+    assert.match(copied, /Headline:/);
+    assert.match(copied, /\[Google\]/);
+    assert.match(copied, /headlines 1:/);
+    assert.match(copied, /\[Pinterest PIN\]/);
+    assert.match(copied, /Title:/);
+    assert.match(copied, /Description:/);
+    assert.match(copied, /Alt Text:/);
+    assert.doesNotMatch(
+        copied,
+        /主文案 \/ Primary Text|产品名称 \/ Name|替代文本 \/ Alt Text/
+    );
+});
+
 test('new ads data builds only available platforms and defaults to the first', () => {
     const harness = loadAdsFilterHarness();
     harness.context.renderAdsData({
@@ -394,8 +525,8 @@ test('platform and style filters combine without issuing fetch', () => {
     const cards = harness.styleCards();
     assert.equal(cards.length, 1);
     assert.match(cards[0].innerHTML, /Feature Benefit/);
-    assert.match(cards[0].innerHTML, /Google Ads/);
-    assert.doesNotMatch(cards[0].innerHTML, /Facebook Ads/);
+    assert.match(cards[0].innerHTML, /Google 广告 \/ Google Ads/);
+    assert.doesNotMatch(cards[0].innerHTML, /Facebook 广告/);
     assert.doesNotMatch(cards[0].innerHTML, /Pinterest PIN/);
     assert.equal(harness.fetchCalls.length, 0);
 });
@@ -406,8 +537,8 @@ test('all platform filter restores all present platform sections', () => {
     harness.context.setAdsPlatformFilter('all');
 
     const html = harness.styleCards().map(card => card.innerHTML).join('');
-    assert.match(html, /Facebook Ads/);
-    assert.match(html, /Google Ads/);
+    assert.match(html, /Facebook 广告 \/ Facebook Ads/);
+    assert.match(html, /Google 广告 \/ Google Ads/);
     assert.match(html, /Pinterest PIN/);
 });
 
@@ -753,9 +884,9 @@ test('renderAdsData renders Pinterest descriptions with inline same-language tag
     });
 
     assert.match(card.innerHTML, /Pinterest PIN/);
-    assert.match(card.innerHTML, /Title/);
-    assert.match(card.innerHTML, /Description/);
-    assert.match(card.innerHTML, /Alt Text/);
+    assert.match(card.innerHTML, /标题 \/ Title/);
+    assert.match(card.innerHTML, /描述 \/ Description/);
+    assert.match(card.innerHTML, /替代文本 \/ Alt Text/);
     assert.match(card.innerHTML, /A quiet corner worth saving/);
     assert.match(card.innerHTML, /值得收藏的静谧角落/);
     assert.match(card.innerHTML, /Style a calmer home one detail at a time#HomeDecor/);

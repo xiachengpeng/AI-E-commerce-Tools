@@ -20,6 +20,27 @@ const ADS_PLATFORM_FILTERS = [
     { value: 'pinterest', label: 'Pinterest PIN' },
 ];
 
+const ADS_RESULT_LABELS = Object.freeze({
+    product: '产品 / Product',
+    productName: '产品名称 / Name',
+    productSummary: '产品概述 / Summary',
+    facebook: 'Facebook 广告 / Facebook Ads',
+    facebookPrimaryText: '主文案 / Primary Text',
+    facebookHeadline: '标题 / Headline',
+    facebookDescription: '描述 / Description',
+    facebookCta: '行动按钮 / CTA',
+    facebookCreativeDirection: '创意方向 / Creative Direction',
+    google: 'Google 广告 / Google Ads',
+    googleHeadlines: '标题 / Headlines',
+    googleDescriptions: '描述 / Descriptions',
+    googleKeywords: '关键词 / Keywords',
+    googleSitelinks: '附加链接 / Sitelinks',
+    pinterest: 'Pinterest PIN',
+    pinterestTitle: '标题 / Title',
+    pinterestDescription: '描述 / Description',
+    pinterestAltText: '替代文本 / Alt Text',
+});
+
 function adsStyles(data) {
     const styles = Array.isArray(data?.styles) ? data.styles : [];
     return styles.filter(style => style && typeof style === 'object' && !Array.isArray(style));
@@ -301,9 +322,9 @@ function renderFilteredAdsResults() {
     const product = data.product || {};
     const productBlock = document.createElement('div');
     productBlock.className = 'bg-white rounded-2xl shadow-sm border border-gray-200 p-5';
-    appendAdsText(productBlock, 'text-xs font-black text-orange-600 uppercase mb-2', 'Product');
-    appendAdsPair(productBlock, 'Name', product.name);
-    appendAdsPair(productBlock, 'Summary', product.summary);
+    appendAdsText(productBlock, 'text-xs font-black text-orange-600 uppercase mb-2', ADS_RESULT_LABELS.product);
+    appendAdsPair(productBlock, ADS_RESULT_LABELS.productName, product.name);
+    appendAdsPair(productBlock, ADS_RESULT_LABELS.productSummary, product.summary);
     container.appendChild(productBlock);
 
     const filteredStyles = styles.filter((style, index) => {
@@ -355,25 +376,25 @@ function renderFilteredAdsResults() {
         const showPinterest = style.pinterest && ['all', 'pinterest'].includes(currentAdsPlatformFilter);
 
         if (showFacebook) {
-            appendAdsText(card, 'text-sm font-black text-blue-700 mt-2 mb-3', 'Facebook Ads');
+            appendAdsText(card, 'text-sm font-black text-blue-700 mt-2 mb-3', ADS_RESULT_LABELS.facebook);
             const grid = document.createElement('div');
             grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-3';
-            appendAdsPair(grid, 'Primary Text', style.facebook.primaryText);
-            appendAdsPair(grid, 'Headline', style.facebook.headline);
-            appendAdsPair(grid, 'Description', style.facebook.description);
-            appendAdsPair(grid, 'CTA', style.facebook.cta);
-            appendAdsPair(grid, 'Creative Direction', style.facebook.creativeDirection);
+            appendAdsPair(grid, ADS_RESULT_LABELS.facebookPrimaryText, style.facebook.primaryText);
+            appendAdsPair(grid, ADS_RESULT_LABELS.facebookHeadline, style.facebook.headline);
+            appendAdsPair(grid, ADS_RESULT_LABELS.facebookDescription, style.facebook.description);
+            appendAdsPair(grid, ADS_RESULT_LABELS.facebookCta, style.facebook.cta);
+            appendAdsPair(grid, ADS_RESULT_LABELS.facebookCreativeDirection, style.facebook.creativeDirection);
             card.appendChild(grid);
         }
 
         if (showGoogle) {
-            appendAdsText(card, 'text-sm font-black text-emerald-700 mt-5 mb-3', 'Google Ads');
+            appendAdsText(card, 'text-sm font-black text-emerald-700 mt-5 mb-3', ADS_RESULT_LABELS.google);
             const grid = document.createElement('div');
             grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-3';
-            appendAdsPairList(grid, 'Headlines', style.google.headlines);
-            appendAdsPairList(grid, 'Descriptions', style.google.descriptions);
-            appendAdsPairList(grid, 'Keywords', style.google.keywords);
-            appendAdsPairList(grid, 'Sitelinks', style.google.sitelinks);
+            appendAdsPairList(grid, ADS_RESULT_LABELS.googleHeadlines, style.google.headlines);
+            appendAdsPairList(grid, ADS_RESULT_LABELS.googleDescriptions, style.google.descriptions);
+            appendAdsPairList(grid, ADS_RESULT_LABELS.googleKeywords, style.google.keywords);
+            appendAdsPairList(grid, ADS_RESULT_LABELS.googleSitelinks, style.google.sitelinks);
             card.appendChild(grid);
         }
 
@@ -381,13 +402,13 @@ function renderFilteredAdsResults() {
             const pinterest = style.pinterest;
             const heading = document.createElement('h5');
             heading.className = 'text-sm font-black text-red-700 mt-5 mb-3';
-            heading.textContent = 'Pinterest PIN';
+            heading.textContent = ADS_RESULT_LABELS.pinterest;
             card.appendChild(heading);
             const grid = document.createElement('div');
             grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-3';
-            appendAdsPair(grid, 'Title', pinterest.title);
-            appendAdsPair(grid, 'Description', pinterestDescriptionWithTags(pinterest));
-            appendAdsPair(grid, 'Alt Text', pinterest.altText);
+            appendAdsPair(grid, ADS_RESULT_LABELS.pinterestTitle, pinterest.title);
+            appendAdsPair(grid, ADS_RESULT_LABELS.pinterestDescription, pinterestDescriptionWithTags(pinterest));
+            appendAdsPair(grid, ADS_RESULT_LABELS.pinterestAltText, pinterest.altText);
             card.appendChild(grid);
         }
 
