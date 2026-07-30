@@ -356,8 +356,17 @@ test('all-platform result renders every fixed bilingual heading and field label'
         card,
         element => element.textContent === expectedLabels.pinterest
     );
-    assert.ok(findElement(facebookHeading.parentNode, element => element.textContent === expectedLabels.facebookDescription));
-    assert.ok(findElement(pinterestHeading.parentNode, element => element.textContent === expectedLabels.pinterestDescription));
+    const facebookGrid = immediateSibling(facebookHeading);
+    const pinterestGrid = immediateSibling(pinterestHeading);
+
+    assert.ok(
+        directGridLabel(facebookGrid, expectedLabels.facebookDescription),
+        'Facebook description label must be rendered in the grid immediately after its heading'
+    );
+    assert.ok(
+        directGridLabel(pinterestGrid, expectedLabels.pinterestDescription),
+        'Pinterest description label must be rendered in the grid immediately after its heading'
+    );
 });
 
 test('platform filtering preserves the platform bilingual labels', () => {
@@ -383,24 +392,36 @@ test('platform filtering preserves the platform bilingual labels', () => {
     assert.doesNotMatch(html, /Facebook 广告|Google 广告/);
 });
 
-test('bilingual UI labels do not change clipboard labels', async () => {
+test('all-platform clipboard output remains byte-for-byte compatible', async () => {
     const { context, clipboardWrites } = loadAds();
     await context.copyAdsStyleText(sampleAllPlatformStyle(), 'all');
-    const copied = clipboardWrites[0];
 
-    assert.match(copied, /\[Facebook\]/);
-    assert.match(copied, /Primary Text:/);
-    assert.match(copied, /Headline:/);
-    assert.match(copied, /\[Google\]/);
-    assert.match(copied, /headlines 1:/);
-    assert.match(copied, /\[Pinterest PIN\]/);
-    assert.match(copied, /Title:/);
-    assert.match(copied, /Description:/);
-    assert.match(copied, /Alt Text:/);
-    assert.doesNotMatch(
-        copied,
-        /主文案 \/ Primary Text|产品名称 \/ Name|替代文本 \/ Alt Text/
-    );
+    assert.equal(clipboardWrites[0], [
+        'Problem/Solution / 痛点解决',
+        'Logic: Solve morning clutter',
+        '中文: 解决晨间杂乱',
+        '',
+        '[Facebook]',
+        'Primary Text: Facebook primary',
+        'Headline: Facebook headline',
+        'Description: Facebook description',
+        'CTA: Shop now',
+        'Creative Direction: Clean desk photo',
+        '',
+        '[Google]',
+        'headlines 1: Google headline',
+        'descriptions 1: Google description',
+        'keywords 1: Google keyword',
+        'sitelinks 1: Google sitelink',
+        '',
+        '[Pinterest PIN]',
+        'Title: Pinterest title',
+        '标题: 灵感标题',
+        'Description: Pinterest description#Tag1#Tag2',
+        '描述: 灵感描述',
+        'Alt Text: Pinterest alt text',
+        '替代文本: 灵感替代文本',
+    ].join('\n'));
 });
 
 test('new ads data builds only available platforms and defaults to the first', () => {
@@ -684,6 +705,16 @@ function findElement(root, predicate) {
         if (match) return match;
     }
     return null;
+}
+
+function immediateSibling(element) {
+    const siblings = element?.parentNode?.children || [];
+    const index = siblings.indexOf(element);
+    return index === -1 ? null : siblings[index + 1] || null;
+}
+
+function directGridLabel(grid, label) {
+    return Boolean(grid?.children?.some(block => block.children?.[0]?.textContent === label));
 }
 
 test('selectedAdsPlatforms includes the checked Pinterest value', () => {
