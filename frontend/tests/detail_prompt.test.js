@@ -95,6 +95,98 @@ assert.match(extractionPrompt, /Confirmed product facts/i);
 assert.match(extractionPrompt, /Speed range: 0.6-3.8 mph/i);
 assert.match(extractionPrompt, /User-forbidden claims/i);
 
+const emptyNamePrompt = context.buildSellingPointsExtractionPrompt(
+    1,
+    productFacts,
+    forbiddenClaims,
+    '',
+    'Chinese'
+);
+assert.match(emptyNamePrompt, /identify the product from the uploaded image/i);
+assert.match(emptyNamePrompt, /product_name/i);
+assert.match(emptyNamePrompt, /selling_points/i);
+assert.match(emptyNamePrompt, /Chinese/);
+
+const suppliedNamePrompt = context.buildSellingPointsExtractionPrompt(
+    1,
+    productFacts,
+    forbiddenClaims,
+    'Compact Under-Desk Walking Pad',
+    'English'
+);
+assert.match(suppliedNamePrompt, /Compact Under-Desk Walking Pad/);
+assert.match(suppliedNamePrompt, /combine the uploaded image evidence/i);
+
+assert.strictEqual(typeof context.parseSellingPointsResponse, 'function');
+assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.parseSellingPointsResponse(
+        '{"product_name":"折叠式桌下走步机","selling_points":"产品类型：桌下走步机\\n核心卖点：便于收纳"}'
+    ))),
+    {
+        productName: '折叠式桌下走步机',
+        sellingPoints: '产品类型：桌下走步机\n核心卖点：便于收纳'
+    }
+);
+
+assert.strictEqual(
+    context.parseSellingPointsResponse(
+        '```json\n{"product_name":"Walking Pad","selling_points":"Core selling points:\\n- Compact"}\n```'
+    ).productName,
+    'Walking Pad'
+);
+
+const legacyChinese = context.parseSellingPointsResponse(
+    '产品名称：折叠式桌下走步机\n产品类型：家用健身设备\n核心卖点：小巧易收纳'
+);
+assert.strictEqual(legacyChinese.productName, '折叠式桌下走步机');
+assert.match(legacyChinese.sellingPoints, /核心卖点：小巧易收纳/);
+
+const legacyEnglish = context.parseSellingPointsResponse(
+    'Product name: Compact Walking Pad\nProduct type: Home fitness equipment'
+);
+assert.strictEqual(legacyEnglish.productName, 'Compact Walking Pad');
+assert.match(legacyEnglish.sellingPoints, /Product type/);
+
+assert.strictEqual(typeof context.resolveSellingPointsFormState, 'function');
+assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.resolveSellingPointsFormState(
+        '',
+        'old selling points',
+        { productName: '折叠式桌下走步机', sellingPoints: '新的核心卖点' }
+    ))),
+    {
+        productName: '折叠式桌下走步机',
+        sellingPoints: '新的核心卖点',
+        didFillProductName: true
+    }
+);
+
+assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.resolveSellingPointsFormState(
+        '用户确认的产品名',
+        'old selling points',
+        { productName: 'AI 返回的名称', sellingPoints: '新的核心卖点' }
+    ))),
+    {
+        productName: '用户确认的产品名',
+        sellingPoints: '新的核心卖点',
+        didFillProductName: false
+    }
+);
+
+assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.resolveSellingPointsFormState(
+        '',
+        '保留原卖点',
+        { productName: 'Walking Pad', sellingPoints: '' }
+    ))),
+    {
+        productName: '',
+        sellingPoints: '保留原卖点',
+        didFillProductName: false
+    }
+);
+
 const firstBenefit = {
     id: 'm2',
     title: '核心卖点图',
@@ -108,6 +200,35 @@ const secondBenefit = { ...firstBenefit, variant: 1 };
 
 const firstPrompt = context.buildModuleGenerationPrompt(firstBenefit, sellingPoints, factConfig);
 const secondPrompt = context.buildModuleGenerationPrompt(secondBenefit, sellingPoints, factConfig);
+
+assert.strictEqual(typeof context.buildModuleTextPolicy, 'function');
+const withCopyPrompt = context.buildModuleGenerationPrompt(
+    { ...firstBenefit, includeText: true },
+    sellingPoints,
+    factConfig
+);
+assert.match(withCopyPrompt, /VISIBLE TEXT/);
+assert.match(withCopyPrompt, /max 1 headline/i);
+
+const withoutCopyPrompt = context.buildModuleGenerationPrompt(
+    { ...firstBenefit, includeText: false },
+    sellingPoints,
+    factConfig
+);
+assert.match(withoutCopyPrompt, /NO ADDED TEXT/);
+assert.match(withoutCopyPrompt, /no headlines, subheadlines, callouts, captions, specifications, dimensions, labels, badges, watermarks, letters, numbers, or typographic elements/i);
+assert.match(withoutCopyPrompt, /original product markings/i);
+assert.match(withoutCopyPrompt, /do not rewrite, translate, replace, or redesign/i);
+assert.doesNotMatch(withoutCopyPrompt, /Text density: max 1 headline/i);
+assert.doesNotMatch(withoutCopyPrompt, /add up to three large proof callouts/i);
+assert.doesNotMatch(withoutCopyPrompt, /headline, visual composition, or callout set/i);
+assert.doesNotMatch(withoutCopyPrompt, /generate plausible e-commerce details/i);
+
+for (const prompt of [withCopyPrompt, withoutCopyPrompt]) {
+    assert.match(prompt, /uploaded reference product as the only source of truth/i);
+    assert.match(prompt, /logo, controls, buttons, ports, labels, texture, and component placement/i);
+    assert.match(prompt, /do not alter or invent/i);
+}
 
 assert.match(firstPrompt, /SECTION GOAL/);
 assert.match(firstPrompt, /Do NOT repeat the same angle/i);
@@ -173,7 +294,21 @@ assert.doesNotMatch(englishSeoPrompt, /核心功能证明/);
 const activeDefaults = context.MODULES_CONFIG
     .filter(mod => mod.active)
     .map(mod => mod.id);
-assert.strictEqual(JSON.stringify(activeDefaults), JSON.stringify(['m1', 'm2', 'm3', 'm9', 'm10', 'm11']));
+assert.strictEqual(JSON.stringify(activeDefaults), JSON.stringify([]));
+assert(context.MODULES_CONFIG.every(mod => mod.count === 1));
+assert(context.MODULES_CONFIG.every(mod => mod.includeText === true));
+assert.strictEqual(typeof context.setModuleIncludeText, 'function');
+
+const moduleToggleFixture = [
+    { id: 'm1', active: true, count: 2, includeText: true },
+    { id: 'm2', active: true, count: 1, includeText: true }
+];
+assert.strictEqual(context.setModuleIncludeText(moduleToggleFixture, 'm2', false), true);
+assert.strictEqual(moduleToggleFixture[0].includeText, true);
+assert.strictEqual(moduleToggleFixture[0].count, 2);
+assert.strictEqual(moduleToggleFixture[0].active, true);
+assert.strictEqual(moduleToggleFixture[1].includeText, false);
+assert.strictEqual(context.setModuleIncludeText(moduleToggleFixture, 'missing', false), false);
 
 const styleLabels = context.IMAGE_STYLE_OPTIONS.map(opt => opt.label);
 assert(styleLabels.includes('亚马逊信息图风'));
@@ -231,11 +366,28 @@ assert.match(strategyTasks[0].strategyCn.goal, /立刻看懂/);
 assert.match(strategyTasks[1].strategyCn.avoid, /重复/);
 assert.match(strategyTasks[1].prompt, /benefit/i);
 
+const textModeTasks = context.buildStrategyTasks([
+    { id: 'm1', title: 'Hero', subtitle: 'Hero', prompt: 'hero', count: 1, includeText: true },
+    { id: 'm3', title: 'Scene', subtitle: 'Scene', prompt: 'scene', count: 1, includeText: false }
+], sellingPoints, factConfig);
+assert.strictEqual(textModeTasks[0].includeText, true);
+assert.strictEqual(textModeTasks[1].includeText, false);
+
 const removedLongImageOrder = context.removeLongImageModuleFromOrder(['m1_0', 'm2_0', 'm3_0', 'm2_0'], 'm2_0');
 assert.strictEqual(JSON.stringify(removedLongImageOrder), JSON.stringify(['m1_0', 'm3_0']));
 assert.strictEqual(
     JSON.stringify(context.removeLongImageModuleFromOrder(['m1_0', 'm3_0'], 'missing')),
     JSON.stringify(['m1_0', 'm3_0'])
+);
+
+assert.strictEqual(typeof context.normalizeRestoredDetailTask, 'function');
+assert.strictEqual(
+    context.normalizeRestoredDetailTask({ id: 'm1_0' }).includeText,
+    true
+);
+assert.strictEqual(
+    context.normalizeRestoredDetailTask({ id: 'm3_0', includeText: false }).includeText,
+    false
 );
 
 const strategyPreviewPrompt = context.buildStrategyPromptPreview(strategyTasks[0], sellingPoints, factConfig);
