@@ -447,6 +447,14 @@ class AIRouter:
                 current_db.close()
 
         adapter = get_adapter(snapshot.protocol)
+        image_generation_mode = None
+        image_endpoint = None
+        if capability == "image" and snapshot.protocol == "openai_compatible":
+            image_generation_mode = snapshot.image_generation_mode
+            image_endpoint = {
+                "text_to_image": "images.generations",
+                "image_to_image": "images.edits",
+            }.get(image_generation_mode)
         started = time.monotonic()
         app_logs.emit(
             level="info",
@@ -456,6 +464,8 @@ class AIRouter:
             provider=snapshot.name,
             model=snapshot.model,
             retry=0,
+            image_generation_mode=image_generation_mode,
+            image_endpoint=image_endpoint,
         )
         terminal_error = None
         for attempt in range(snapshot.max_retries + 1):
@@ -472,6 +482,8 @@ class AIRouter:
                         (time.monotonic() - started) * 1000
                     ),
                     retry=attempt,
+                    image_generation_mode=image_generation_mode,
+                    image_endpoint=image_endpoint,
                 )
                 return result
             except Exception as exc:
@@ -504,6 +516,8 @@ class AIRouter:
                         model=snapshot.model,
                         duration_ms=duration_ms,
                         retry=attempt,
+                        image_generation_mode=image_generation_mode,
+                        image_endpoint=image_endpoint,
                     )
                     break
                 app_logs.emit(
@@ -520,6 +534,8 @@ class AIRouter:
                     model=snapshot.model,
                     duration_ms=duration_ms,
                     retry=attempt + 1,
+                    image_generation_mode=image_generation_mode,
+                    image_endpoint=image_endpoint,
                 )
                 await asyncio.sleep(self.base_delay * (2**attempt))
 

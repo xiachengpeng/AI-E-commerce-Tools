@@ -774,6 +774,21 @@ def test_duration_and_retry_are_coerced_to_integers_or_none():
     assert "duration-secret" not in str(invalid)
 
 
+def test_image_mode_and_endpoint_are_preserved_as_safe_metadata():
+    logs = AppLogService(session_id="image-mode")
+
+    entry = logs.emit(
+        level="info",
+        source="ai",
+        message="AI 请求开始",
+        image_generation_mode="image_to_image",
+        image_endpoint="images.edits",
+    )
+
+    assert entry["image_generation_mode"] == "image_to_image"
+    assert entry["image_endpoint"] == "images.edits"
+
+
 def test_structured_provider_diagnostic_redacts_embedded_credentials():
     entry = AppLogService().emit(
         level="error",

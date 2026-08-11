@@ -18,11 +18,18 @@ from services.ai_router import (
 )
 
 
-def snapshot(*, id=1, max_retries=0, protocol="gemini"):
+def snapshot(
+    *,
+    id=1,
+    max_retries=0,
+    protocol="gemini",
+    capability="text",
+    image_generation_mode="image_to_image",
+):
     return ProviderSnapshot(
         id=id,
         incarnation_id=f"provider-incarnation-{id}",
-        capability="text",
+        capability=capability,
         name=f"Provider {id}",
         protocol=protocol,
         base_url=None,
@@ -34,6 +41,7 @@ def snapshot(*, id=1, max_retries=0, protocol="gemini"):
         timeout_seconds=30,
         max_retries=max_retries,
         config_version=1,
+        image_generation_mode=image_generation_mode,
     )
 
 
@@ -87,6 +95,43 @@ async def test_ai_request_emits_start_before_success(monkeypatch):
         and call.kwargs["model"] == "model-3"
         for call in emit.call_args_list
     )
+
+
+@pytest.mark.asyncio
+async def test_openai_image_request_logs_selected_mode_and_endpoint(
+    monkeypatch,
+):
+    selected = snapshot(
+        id=4,
+        protocol="openai_compatible",
+        capability="image",
+        image_generation_mode="image_to_image",
+    )
+    monkeypatch.setattr(
+        "services.ai_router.get_snapshot",
+        lambda db, capability: selected,
+    )
+    adapter = AsyncMock(return_value={"candidates": []})
+    provider_adapter = MagicMock()
+    provider_adapter.generate = adapter
+    monkeypatch.setattr(
+        "services.ai_router.get_adapter",
+        lambda protocol: provider_adapter,
+    )
+    logs = AppLogService(session_id="image-mode")
+    monkeypatch.setattr("services.ai_router.app_logs", logs)
+
+    await AIRouter().generate("image", {}, db=object())
+
+    entries = logs.recent()
+    assert [entry["image_generation_mode"] for entry in entries] == [
+        "image_to_image",
+        "image_to_image",
+    ]
+    assert [entry["image_endpoint"] for entry in entries] == [
+        "images.edits",
+        "images.edits",
+    ]
 
 
 @pytest.mark.asyncio
