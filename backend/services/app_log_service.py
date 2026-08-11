@@ -759,11 +759,13 @@ class AppLogService:
                 "model": self._redact_optional(model),
                 "duration_ms": self._coerce_int(duration_ms),
                 "retry": self._coerce_int(retry),
-                "image_generation_mode": self._redact_optional(
-                    image_generation_mode
-                ),
-                "image_endpoint": self._redact_optional(image_endpoint),
             }
+            if image_generation_mode is not None:
+                entry["image_generation_mode"] = self._redact_optional(
+                    image_generation_mode
+                )
+            if image_endpoint is not None:
+                entry["image_endpoint"] = self._redact_optional(image_endpoint)
             self._entries.append(copy.deepcopy(entry))
             for queue, subscriber in tuple(self._subscribers.items()):
                 try:

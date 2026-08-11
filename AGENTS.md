@@ -79,6 +79,10 @@ The browser must not call AI providers directly.
 - AI is routed by capability: `text` and `image`.
 - Each capability is bound to one enabled provider that supports the capability and has a configured model.
 - Supported protocols are Gemini, Vertex AI, and OpenAI Compatible.
+- OpenAI Compatible providers persist an image generation mode. `image_to_image`
+  calls `/v1/images/edits` with multipart reference images; `text_to_image` calls
+  `/v1/images/generations` without reference images. Existing providers default
+  to `image_to_image`.
 - Provider and binding changes are persisted to SQLite and apply to the next request without restarting the app.
 - Environment configuration is imported only to establish defaults when settings storage is empty.
 - Provider settings returned to the browser must mask secrets; blank secret fields during edits must preserve the saved value.
@@ -184,6 +188,10 @@ When testing in an isolated worktree, copy local state only when necessary, keep
 ### Settings and provider routing
 
 - Provider selection is per capability, immediate, and persisted.
+- OpenAI image mode changes are provider-specific, immediate, and persisted. An
+  image-to-image request without a valid source image must fail before any
+  provider request so the existing local fallback can handle it; never silently
+  downgrade that request to text-to-image.
 - Disabling or deleting a provider that is currently bound must remain blocked until bindings are moved.
 - Changes to adapters or routing require focused tests for provider validation, binding selection, retries, normalization, error mapping, and secret scrubbing.
 
