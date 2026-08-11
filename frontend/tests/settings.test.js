@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const {
     providerSupportsCapability,
+    shouldShowImageGenerationMode,
     buildProviderPayload,
     buildProviderTestRequestBody,
     maskedKeyPlaceholder,
@@ -49,10 +50,27 @@ assert.deepEqual(buildProviderPayload({
     api_key: null,
     supports_text: true,
     supports_image: false,
+    image_generation_mode: "image_to_image",
     timeout_seconds: 30,
     max_retries: 2,
     enabled: true
 });
+
+assert.equal(shouldShowImageGenerationMode(
+    "openai_compatible", true
+), true);
+assert.equal(shouldShowImageGenerationMode(
+    "openai_compatible", false
+), false);
+assert.equal(shouldShowImageGenerationMode("gemini", true), false);
+assert.equal(buildProviderPayload({
+    protocol: "openai_compatible",
+    image_generation_mode: "text_to_image"
+}).image_generation_mode, "text_to_image");
+assert.equal(buildProviderPayload({
+    protocol: "openai_compatible",
+    image_generation_mode: "unsupported"
+}).image_generation_mode, "image_to_image");
 
 const editedDraft = {
     name: "Edited",
@@ -206,8 +224,10 @@ assert.equal(formatSettingsLogLine({
     provider: "Relay",
     model: "vision-v1",
     duration_ms: 125,
-    retry: 2
-}), "timestamp=2026-07-23T10:00:00Z level=error source=ai message=<script>alert(1)</script> capability=image provider=Relay model=vision-v1 duration_ms=125 retry=2");
+    retry: 2,
+    image_generation_mode: "image_to_image",
+    image_endpoint: "images.edits"
+}), "timestamp=2026-07-23T10:00:00Z level=error source=ai message=<script>alert(1)</script> capability=image provider=Relay model=vision-v1 duration_ms=125 retry=2 image_generation_mode=image_to_image image_endpoint=images.edits");
 
 const structuredDiagnosticLog = {
     message: {

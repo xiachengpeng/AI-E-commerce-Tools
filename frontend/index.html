@@ -1678,6 +1678,17 @@
                                         placeholder="例如：gemini-2.5-flash-image" disabled>
                                 </label>
                             </div>
+                            <div id="settingsImageGenerationModeFields"
+                                class="settings-image-mode-field hidden">
+                                <label class="settings-field">
+                                    <span>OpenAI 图片生成方式</span>
+                                    <select id="settingsImageGenerationMode" disabled>
+                                        <option value="image_to_image">图生图</option>
+                                        <option value="text_to_image">文生图</option>
+                                    </select>
+                                    <small>图生图调用 /v1/images/edits 并上传产品参考图；文生图调用 /v1/images/generations，不发送参考图。</small>
+                                </label>
+                            </div>
                         </div>
 
                         <div class="settings-form-section">

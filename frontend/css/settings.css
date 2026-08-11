@@ -477,6 +477,11 @@
     background: #e2e8f0;
 }
 
+.settings-badge-image-mode {
+    color: #0369a1;
+    background: #e0f2fe;
+}
+
 .settings-test-status {
     display: inline-flex;
     align-items: center;
@@ -925,6 +930,18 @@
 }
 
 .settings-form-section.hidden {
+    display: none;
+}
+
+.settings-image-mode-field {
+    margin-top: 14px;
+    padding: 12px;
+    border: 1px solid #bae6fd;
+    border-radius: 10px;
+    background: #f0f9ff;
+}
+
+.settings-image-mode-field.hidden {
     display: none;
 }
 

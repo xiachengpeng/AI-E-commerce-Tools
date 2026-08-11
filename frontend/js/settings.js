@@ -6,6 +6,10 @@ function providerSupportsCapability(provider, capability) {
     return provider.enabled && provider[`supports_${capability}`] === true;
 }
 
+function shouldShowImageGenerationMode(protocol, supportsImage) {
+    return protocol === "openai_compatible" && supportsImage === true;
+}
+
 function providerTestCapabilities(provider) {
     return ["text", "image"].filter(
         capability => provider?.[`supports_${capability}`] === true
@@ -20,6 +24,9 @@ function maskedKeyPlaceholder(provider) {
 }
 
 function buildProviderPayload(values) {
+    const imageGenerationMode = ["text_to_image", "image_to_image"].includes(
+        values.image_generation_mode
+    ) ? values.image_generation_mode : "image_to_image";
     const payload = {
         name: String(values.name || "").trim(),
         protocol: values.protocol,
@@ -27,6 +34,7 @@ function buildProviderPayload(values) {
         api_key: String(values.api_key || "").trim() || null,
         supports_text: values.supports_text === true,
         supports_image: values.supports_image === true,
+        image_generation_mode: imageGenerationMode,
         timeout_seconds: Number.parseInt(values.timeout_seconds, 10),
         max_retries: Number.parseInt(values.max_retries, 10),
         enabled: values.enabled === true
@@ -103,7 +111,9 @@ const SETTINGS_LOG_FIELDS = [
     "provider",
     "model",
     "duration_ms",
-    "retry"
+    "retry",
+    "image_generation_mode",
+    "image_endpoint"
 ];
 
 function settingsLogId(entry) {
@@ -963,6 +973,22 @@ function providerTestActionsMarkup(provider) {
     }).join("");
 }
 
+function providerImageModeBadgeMarkup(provider) {
+    if (!shouldShowImageGenerationMode(
+        provider?.protocol,
+        provider?.supports_image === true
+    )) {
+        return "";
+    }
+    const isTextToImage = provider.image_generation_mode === "text_to_image";
+    return `
+        <span class="settings-badge settings-badge-image-mode">
+            <i class="ph ${isTextToImage ? "ph-text-t" : "ph-image-square"}"></i>
+            ${isTextToImage ? "文生图" : "图生图"}
+        </span>
+    `;
+}
+
 function renderProviderList() {
     const list = settingsElement("settingsProviderList");
     if (!list) return;
@@ -987,6 +1013,7 @@ function renderProviderList() {
             provider.supports_image
                 ? '<span class="settings-badge settings-badge-capability"><i class="ph ph-image"></i> 图片</span>'
                 : "",
+            providerImageModeBadgeMarkup(provider),
             ...boundCapabilities.map(capability => `
                 <span class="settings-badge settings-badge-bound">
                     <i class="ph ph-link-simple"></i>
@@ -1088,6 +1115,8 @@ function openProviderEditor(id) {
 
     settingsElement("settingsTextModel").value = provider?.text_model || "";
     settingsElement("settingsImageModel").value = provider?.image_model || "";
+    settingsElement("settingsImageGenerationMode").value =
+        provider?.image_generation_mode || "image_to_image";
     settingsElement("settingsSupportsText").checked = provider?.supports_text ?? true;
     settingsElement("settingsSupportsImage").checked = provider?.supports_image ?? false;
     settingsElement("settingsTimeoutSeconds").value = provider?.timeout_seconds ?? 60;
@@ -1119,6 +1148,19 @@ function updateProviderProtocolFields() {
 
     const baseUrl = settingsElement("settingsProviderBaseUrl");
     if (baseUrl) baseUrl.required = isOpenAI;
+    updateProviderImageGenerationModeField();
+}
+
+function updateProviderImageGenerationModeField() {
+    const protocol = settingsElement("settingsProviderProtocol")?.value || "gemini";
+    const supportsImage = settingsElement("settingsSupportsImage")?.checked === true;
+    const visible = shouldShowImageGenerationMode(protocol, supportsImage);
+    settingsElement("settingsImageGenerationModeFields")?.classList.toggle(
+        "hidden",
+        !visible
+    );
+    const select = settingsElement("settingsImageGenerationMode");
+    if (select) select.disabled = !visible;
 }
 
 function updateProviderCapabilityFields() {
@@ -1148,6 +1190,7 @@ function updateProviderCapabilityFields() {
         }
     }
     if (testButton) testButton.disabled = !supportsText && !supportsImage;
+    updateProviderImageGenerationModeField();
 }
 
 function providerFormValues() {
@@ -1161,6 +1204,7 @@ function providerFormValues() {
         vertex_key_path: settingsElement("settingsVertexKeyPath").value,
         text_model: settingsElement("settingsTextModel").value,
         image_model: settingsElement("settingsImageModel").value,
+        image_generation_mode: settingsElement("settingsImageGenerationMode").value,
         supports_text: settingsElement("settingsSupportsText").checked,
         supports_image: settingsElement("settingsSupportsImage").checked,
         timeout_seconds: settingsElement("settingsTimeoutSeconds").value,
@@ -1427,9 +1471,11 @@ async function deleteProvider(providerId, button) {
 if (typeof module !== "undefined") {
     module.exports = {
         providerSupportsCapability,
+        shouldShowImageGenerationMode,
         providerTestCapabilities,
         providerTestActionsMarkup,
         providerTestStatusMarkup,
+        providerImageModeBadgeMarkup,
         buildProviderPayload,
         buildProviderTestRequestBody,
         maskedKeyPlaceholder,

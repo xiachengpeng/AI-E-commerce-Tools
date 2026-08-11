@@ -4,7 +4,8 @@ const test = require("node:test");
 const {
     providerTestCapabilities,
     providerTestActionsMarkup,
-    providerTestStatusMarkup
+    providerTestStatusMarkup,
+    providerImageModeBadgeMarkup
 } = require("../js/settings.js");
 
 test("dual-capability providers expose separate saved text and image tests", () => {
@@ -30,6 +31,22 @@ test("dual-capability providers expose separate saved text and image tests", () 
         markup,
         /testSavedProvider\(7, 'image', this\)/
     );
+});
+
+test("OpenAI image providers show their configured endpoint mode", () => {
+    assert.match(providerImageModeBadgeMarkup?.({
+        protocol: "openai_compatible",
+        supports_image: true,
+        image_generation_mode: "text_to_image"
+    }) ?? "", /文生图/);
+    assert.match(providerImageModeBadgeMarkup?.({
+        protocol: "openai_compatible",
+        supports_image: true
+    }) ?? "", /图生图/);
+    assert.equal(providerImageModeBadgeMarkup?.({
+        protocol: "gemini",
+        supports_image: true
+    }) ?? "", "");
 });
 
 test("single-capability providers expose only their appropriate saved test", () => {
