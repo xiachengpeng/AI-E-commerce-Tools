@@ -101,6 +101,10 @@ from db import init_db, get_db, SessionLocal, AICapabilityBinding, AIProviderCon
 MAX_CONNECTION_IMAGE_BYTES = MAX_IMAGE_BYTES
 MAX_CONNECTION_IMAGE_DIMENSION = MAX_IMAGE_DIMENSION
 MAX_CONNECTION_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+CONNECTION_TEST_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+    "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+)
 
 _PROVIDER_ERROR_HTTP_STATUS = {
     "authentication": 401,
@@ -842,6 +846,9 @@ def serialize_provider(row) -> dict:
         ),
         "text_model": row.text_model,
         "image_model": row.image_model,
+        "image_generation_mode": (
+            row.image_generation_mode or "image_to_image"
+        ),
         "supports_text": bool(row.supports_text),
         "supports_image": bool(row.supports_image),
         "timeout_seconds": row.timeout_seconds,
@@ -1103,6 +1110,7 @@ def _connection_test_snapshot(
         vertex_location=source_values["vertex_location"],
         vertex_key_path=source_values["vertex_key_path"],
         model=model,
+        image_generation_mode=source_values["image_generation_mode"],
         timeout_seconds=source_values["timeout_seconds"],
         max_retries=source_values["max_retries"],
         config_version=config_version,
@@ -1165,17 +1173,33 @@ def _save_connection_test_result(
     return True
 
 
-def _connection_payload(capability: str) -> dict:
+def _connection_payload(
+    capability: str,
+    image_generation_mode: str = "text_to_image",
+) -> dict:
     prompt = (
         "Reply with OK"
         if capability == "text"
         else "Generate a 1×1 image"
     )
+    parts = [{"text": prompt}]
+    if (
+        capability == "image"
+        and image_generation_mode == "image_to_image"
+    ):
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": "image/png",
+                    "data": CONNECTION_TEST_PNG_BASE64,
+                }
+            }
+        )
     payload = {
         "contents": [
             {
                 "role": "user",
-                "parts": [{"text": prompt}],
+                "parts": parts,
             }
         ]
     }
@@ -1294,7 +1318,10 @@ async def _run_ai_provider_connection_test(
             adapter = get_adapter(snapshot.protocol)
             provider_response = await adapter.generate(
                 snapshot,
-                _connection_payload(data.capability),
+                _connection_payload(
+                    data.capability,
+                    snapshot.image_generation_mode,
+                ),
             )
             if not _connection_response_supports(
                 data.capability,

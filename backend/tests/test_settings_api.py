@@ -113,6 +113,40 @@ def test_provider_read_never_returns_secret():
     assert item["api_key_masked"] == "sk-****1234"
 
 
+def test_provider_api_round_trips_image_generation_mode():
+    client, _ = _make_client()
+    try:
+        created = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(
+                supports_image=True,
+                image_model="image",
+                image_generation_mode="text_to_image",
+            ),
+        )
+        listed = client.get("/api/settings/ai/providers")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert created.status_code == 201
+    assert created.json()["image_generation_mode"] == "text_to_image"
+    assert listed.json()["items"][0]["image_generation_mode"] == "text_to_image"
+
+
+def test_provider_api_defaults_image_generation_mode_to_image_to_image():
+    client, _ = _make_client()
+    try:
+        created = client.post(
+            "/api/settings/ai/providers",
+            json=_provider_data(),
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert created.status_code == 201
+    assert created.json()["image_generation_mode"] == "image_to_image"
+
+
 @pytest.mark.parametrize("length", range(1, 9))
 def test_provider_read_fully_masks_short_api_keys(length):
     client, _ = _make_client()
@@ -1401,6 +1435,56 @@ def test_image_connection_accepts_verified_image_bytes(
     }
 
     assert main._connection_response_supports("image", response) is True
+
+
+@pytest.mark.parametrize(
+    ("mode", "expects_image"),
+    [
+        ("image_to_image", True),
+        ("text_to_image", False),
+    ],
+)
+def test_image_connection_payload_matches_generation_mode(
+    monkeypatch,
+    mode,
+    expects_image,
+):
+    adapter = type(
+        "Adapter",
+        (),
+        {"generate": AsyncMock(return_value=VALID_IMAGE_RESPONSE)},
+    )()
+    monkeypatch.setattr("main.get_adapter", lambda protocol: adapter)
+    client, _ = _make_client()
+    try:
+        response = client.post(
+            "/api/settings/ai/providers/test",
+            json={
+                "draft": _provider_data(
+                    supports_image=True,
+                    image_model="image",
+                    image_generation_mode=mode,
+                ),
+                "capability": "image",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    snapshot, payload = adapter.generate.await_args.args
+    assert snapshot.image_generation_mode == mode
+    inline_parts = [
+        part
+        for part in payload["contents"][0]["parts"]
+        if "inlineData" in part
+    ]
+    assert bool(inline_parts) is expects_image
+    if expects_image:
+        assert inline_parts[0]["inlineData"] == {
+            "mimeType": "image/png",
+            "data": TINY_PNG_BASE64,
+        }
 
 
 @pytest.mark.parametrize(
