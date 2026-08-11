@@ -1,5 +1,6 @@
 from dataclasses import replace
 import asyncio
+import base64
 from enum import Enum
 from types import SimpleNamespace
 import threading
@@ -17,6 +18,14 @@ from services.ai_adapters import (
     close_adapters,
 )
 from services.ai_config_service import ProviderSnapshot
+from services.image_validation import ValidatedImage
+
+
+TINY_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+    "AAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+)
+TINY_PNG_BYTES = base64.b64decode(TINY_PNG_BASE64)
 
 
 def make_snapshot(capability="text", **overrides):
@@ -147,14 +156,33 @@ async def test_openai_text_json_mime_type_requests_json_object_response():
 async def test_openai_image_path_and_normalized_response():
     response = MagicMock()
     response.status_code = 200
-    response.json.return_value = {"data": [{"b64_json": "AAAA"}]}
+    response.json.return_value = {
+        "data": [{"b64_json": TINY_PNG_BASE64}]
+    }
     transport = MagicMock()
     transport.post = AsyncMock(return_value=response)
     adapter = OpenAICompatibleAdapter(client=transport)
 
     result = await adapter.generate(
-        snapshot=make_snapshot(capability="image"),
-        payload={"contents": [{"parts": [{"text": "Draw a mug"}]}]},
+        snapshot=make_snapshot(
+            capability="image",
+            image_generation_mode="text_to_image",
+        ),
+        payload={
+            "contents": [
+                {
+                    "parts": [
+                        {"text": "Draw a mug"},
+                        {
+                            "inlineData": {
+                                "mimeType": "image/png",
+                                "data": TINY_PNG_BASE64,
+                            }
+                        },
+                    ]
+                }
+            ]
+        },
     )
 
     request = transport.post.await_args
@@ -165,23 +193,29 @@ async def test_openai_image_path_and_normalized_response():
         "response_format": "b64_json",
     }
     assert request.kwargs["timeout"] == 30
+    assert "files" not in request.kwargs
     response.raise_for_status.assert_called_once_with()
     assert (
         result["candidates"][0]["content"]["parts"][0]["inlineData"]["data"]
-        == "AAAA"
+        == TINY_PNG_BASE64
     )
 
 
 @pytest.mark.asyncio
 async def test_openai_image_forwards_inline_images_and_image_extensions():
     response = MagicMock()
-    response.json.return_value = {"data": [{"b64_json": "RESULT"}]}
+    response.json.return_value = {
+        "data": [{"b64_json": TINY_PNG_BASE64}]
+    }
     transport = MagicMock()
     transport.post = AsyncMock(return_value=response)
     adapter = OpenAICompatibleAdapter(client=transport)
 
     await adapter.generate(
-        make_snapshot(capability="image"),
+        make_snapshot(
+            capability="image",
+            image_generation_mode="image_to_image",
+        ),
         {
             "contents": [
                 {
@@ -190,7 +224,13 @@ async def test_openai_image_forwards_inline_images_and_image_extensions():
                         {
                             "inlineData": {
                                 "mimeType": "image/png",
-                                "data": "SOURCE",
+                                "data": TINY_PNG_BASE64,
+                            }
+                        },
+                        {
+                            "inlineData": {
+                                "mimeType": "image/png",
+                                "data": TINY_PNG_BASE64,
                             }
                         },
                     ]
@@ -199,18 +239,91 @@ async def test_openai_image_forwards_inline_images_and_image_extensions():
             "generationConfig": {
                 "imageConfig": {
                     "aspectRatio": "1:1",
-                    "imageSize": "2K",
                 }
             },
         },
     )
 
-    body = transport.post.await_args.kwargs["json"]
-    assert body["input_images"] == [
-        {"url": "data:image/png;base64,SOURCE"}
+    request = transport.post.await_args
+    assert request.args[0] == "https://api.example.com/v1/images/edits"
+    assert request.kwargs["data"] == {
+        "model": "test-model",
+        "prompt": "Redraw",
+        "response_format": "b64_json",
+        "size": "1024x1024",
+    }
+    assert request.kwargs["files"] == [
+        (
+            "image[]",
+            ("reference-1.png", TINY_PNG_BYTES, "image/png"),
+        ),
+        (
+            "image[]",
+            ("reference-2.png", TINY_PNG_BYTES, "image/png"),
+        ),
     ]
-    assert body["aspect_ratio"] == "1:1"
-    assert body["image_size"] == "2K"
+
+
+@pytest.mark.asyncio
+async def test_openai_image_to_image_missing_reference_makes_no_request():
+    transport = MagicMock()
+    transport.post = AsyncMock()
+    adapter = OpenAICompatibleAdapter(client=transport)
+
+    with pytest.raises(ValueError, match="缺少参考图"):
+        await adapter.generate(
+            make_snapshot(
+                capability="image",
+                image_generation_mode="image_to_image",
+            ),
+            {"contents": [{"parts": [{"text": "Redraw"}]}]},
+        )
+
+    transport.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_openai_image_normalizes_safe_url_response(monkeypatch):
+    response = MagicMock()
+    response.json.return_value = {
+        "data": [{"url": "https://cdn.example.com/result.png"}]
+    }
+    transport = MagicMock()
+    transport.post = AsyncMock(return_value=response)
+    fetched = AsyncMock(
+        return_value=ValidatedImage(
+            data=TINY_PNG_BYTES,
+            mime_type="image/png",
+            image_format="PNG",
+            width=1,
+            height=1,
+        )
+    )
+    monkeypatch.setattr(
+        "services.ai_adapters.fetch_public_image",
+        fetched,
+    )
+    adapter = OpenAICompatibleAdapter(client=transport)
+
+    result = await adapter.generate(
+        make_snapshot(
+            capability="image",
+            image_generation_mode="text_to_image",
+        ),
+        {"contents": [{"parts": [{"text": "Draw"}]}]},
+    )
+
+    assert result["candidates"][0]["content"]["parts"][0][
+        "inlineData"
+    ] == {
+        "mimeType": "image/png",
+        "data": TINY_PNG_BASE64,
+    }
+    fetched.assert_awaited_once_with(
+        "https://cdn.example.com/result.png",
+        transport,
+        timeout_seconds=30,
+    )
 
 
 @pytest.mark.asyncio
