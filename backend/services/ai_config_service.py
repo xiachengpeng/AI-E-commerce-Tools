@@ -7,6 +7,7 @@ from db import AICapabilityBinding, AIProviderConfig
 
 CAPABILITIES = {"text", "image"}
 PROTOCOLS = {"gemini", "vertex", "openai_compatible"}
+IMAGE_GENERATION_MODES = {"text_to_image", "image_to_image"}
 DEFAULT_TEXT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image-preview"
 PROVIDER_FIELDS = (
@@ -19,6 +20,7 @@ PROVIDER_FIELDS = (
     "vertex_key_path",
     "text_model",
     "image_model",
+    "image_generation_mode",
     "supports_text",
     "supports_image",
     "timeout_seconds",
@@ -35,6 +37,7 @@ STRING_FIELDS = {
     "vertex_key_path",
     "text_model",
     "image_model",
+    "image_generation_mode",
 }
 BLANK_INHERITS_ON_UPDATE = {
     "api_key",
@@ -50,6 +53,7 @@ PROVIDER_DEFAULTS = {
     "vertex_key_path": None,
     "text_model": None,
     "image_model": None,
+    "image_generation_mode": "image_to_image",
     "supports_text": True,
     "supports_image": False,
     "timeout_seconds": 60,
@@ -65,6 +69,7 @@ CONNECTION_TEST_RELEVANT_FIELDS = (
     "vertex_key_path",
     "text_model",
     "image_model",
+    "image_generation_mode",
     "supports_text",
     "supports_image",
     "timeout_seconds",
@@ -92,6 +97,7 @@ class ProviderSnapshot:
     timeout_seconds: int
     max_retries: int
     config_version: int
+    image_generation_mode: str = "image_to_image"
 
 
 def mask_secret(value: str | None) -> str | None:
@@ -179,6 +185,10 @@ def _validate_provider_values(values):
         raise ValueError("启用文本能力时必须配置文本模型")
     if supports_image and not values.get("image_model"):
         raise ValueError("启用图片能力时必须配置图片模型")
+    mode = values.get("image_generation_mode") or "image_to_image"
+    if mode not in IMAGE_GENERATION_MODES:
+        raise ValueError("图片生成方式无效")
+    values["image_generation_mode"] = mode
 
     if protocol == "gemini":
         if not values.get("api_key"):
@@ -357,6 +367,7 @@ def get_snapshot(db, capability):
         protocol=provider.protocol, base_url=provider.base_url, api_key=provider.api_key,
         vertex_project_id=provider.vertex_project_id, vertex_location=provider.vertex_location,
         vertex_key_path=provider.vertex_key_path, model=model,
+        image_generation_mode=provider.image_generation_mode,
         timeout_seconds=provider.timeout_seconds, max_retries=provider.max_retries,
         config_version=provider.config_version,
     )

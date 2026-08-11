@@ -103,6 +103,53 @@ def test_ai_settings_migration_adds_last_test_capability_to_legacy_table(
     assert "last_test_capability" in columns
 
 
+def test_ai_settings_migration_adds_image_generation_mode_idempotently(
+    monkeypatch,
+    tmp_path,
+):
+    import db as db_module
+    from sqlalchemy import create_engine, inspect, text
+
+    legacy_engine = create_engine(
+        f"sqlite:///{tmp_path / 'legacy-image-mode.db'}"
+    )
+    with legacy_engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE ai_provider_configs ("
+                "id INTEGER PRIMARY KEY, "
+                "name VARCHAR(120) NOT NULL UNIQUE"
+                ")"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO ai_provider_configs (id, name) "
+                "VALUES (1, 'legacy relay')"
+            )
+        )
+    monkeypatch.setattr(db_module, "engine", legacy_engine)
+
+    db_module.migrate_ai_settings_tables()
+    db_module.migrate_ai_settings_tables()
+
+    columns = {
+        column["name"]
+        for column in inspect(legacy_engine).get_columns(
+            "ai_provider_configs"
+        )
+    }
+    assert "image_generation_mode" in columns
+    with legacy_engine.connect() as connection:
+        mode = connection.execute(
+            text(
+                "SELECT image_generation_mode "
+                "FROM ai_provider_configs WHERE id = 1"
+            )
+        ).scalar_one()
+    assert mode == "image_to_image"
+
+
 def test_ai_settings_migration_backfills_unique_provider_incarnations(
     monkeypatch,
     tmp_path,

@@ -54,6 +54,59 @@ def test_snapshot_is_immutable_and_secret_is_masked():
     assert mask_secret(snapshot.api_key) == "sk-****1234"
 
 
+def test_image_generation_mode_defaults_and_reaches_snapshot():
+    db = make_db()
+    default_row = create_provider(db, provider_data(name="Default mode"))
+    explicit_row = create_provider(
+        db,
+        provider_data(
+            name="Text mode",
+            image_generation_mode="text_to_image",
+        ),
+    )
+
+    assert default_row.image_generation_mode == "image_to_image"
+    assert explicit_row.image_generation_mode == "text_to_image"
+
+    set_binding(db, "image", explicit_row.id)
+    assert get_snapshot(db, "image").image_generation_mode == "text_to_image"
+
+
+def test_invalid_image_generation_mode_is_rejected():
+    db = make_db()
+
+    with pytest.raises(ValueError, match="图片生成方式"):
+        create_provider(
+            db,
+            provider_data(image_generation_mode="automatic"),
+        )
+
+    assert db.query(AIProviderConfig).count() == 0
+
+
+def test_image_generation_mode_change_invalidates_connection_status():
+    db = make_db()
+    row = create_provider(db, provider_data())
+    row.last_test_status = "success"
+    row.last_test_message = "连接成功"
+    row.last_tested_at = datetime.datetime.now(datetime.timezone.utc)
+    row.last_test_capability = "image"
+    db.commit()
+
+    updated = update_provider(
+        db,
+        row.id,
+        {"image_generation_mode": "text_to_image"},
+    )
+
+    assert updated.image_generation_mode == "text_to_image"
+    assert updated.config_version == 2
+    assert updated.last_test_status is None
+    assert updated.last_test_message is None
+    assert updated.last_tested_at is None
+    assert updated.last_test_capability is None
+
+
 def test_bound_provider_cannot_be_disabled_or_deleted():
     db = make_db()
     row = create_provider(db, provider_data())

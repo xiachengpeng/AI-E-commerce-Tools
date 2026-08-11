@@ -155,6 +155,9 @@ class AIProviderConfig(Base):
     vertex_key_path = Column(Text, nullable=True)
     text_model = Column(Text, nullable=True)
     image_model = Column(Text, nullable=True)
+    image_generation_mode = Column(
+        String(32), nullable=False, default="image_to_image"
+    )
     supports_text = Column(Integer, nullable=False, default=1)
     supports_image = Column(Integer, nullable=False, default=0)
     timeout_seconds = Column(Integer, nullable=False, default=60)
@@ -226,6 +229,15 @@ def migrate_ai_settings_tables():
                 text(
                     "ALTER TABLE ai_provider_configs "
                     "ADD COLUMN incarnation_id VARCHAR(36)"
+                )
+            )
+    if "image_generation_mode" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN image_generation_mode VARCHAR(32) "
+                    "NOT NULL DEFAULT 'image_to_image'"
                 )
             )
 

@@ -14,6 +14,9 @@ class AIProviderWrite(BaseModel):
     vertex_key_path: str | None = None
     text_model: str | None = None
     image_model: str | None = None
+    image_generation_mode: Literal[
+        "text_to_image", "image_to_image"
+    ] = "image_to_image"
     supports_text: bool = True
     supports_image: bool = False
     timeout_seconds: int = Field(default=60, ge=1, le=600)
@@ -31,6 +34,9 @@ class AIProviderRead(BaseModel):
     has_vertex_credentials: bool
     text_model: str | None
     image_model: str | None
+    image_generation_mode: Literal[
+        "text_to_image", "image_to_image"
+    ]
     supports_text: bool
     supports_image: bool
     timeout_seconds: int
