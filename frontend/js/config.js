@@ -67,7 +67,8 @@ const LANGUAGE_OPTIONS = [
     { value: "Portuguese", label: "葡语 (Portuguese)" },
     { value: "Russian",    label: "俄语 (Russian)" },
     { value: "Arabic",     label: "阿拉伯语 (Arabic)" },
-    { value: "Korean",     label: "韩语 (Korean)" }
+    { value: "Korean",     label: "韩语 (Korean)" },
+    { value: "Thai",       label: "泰语 (Thai)" }
 ];
 
 const ASPECT_RATIO_OPTIONS = [

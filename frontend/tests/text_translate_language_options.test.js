@@ -14,3 +14,9 @@ assert.strictEqual(
     'text translation language list must contain one Chinese target'
 );
 assert.match(languageList, /value="Chinese"[\s\S]*?中文 \(ZH\)/);
+assert.strictEqual(
+    (languageList.match(/value="Thai"/g) || []).length,
+    1,
+    'text translation language list must contain one Thai target'
+);
+assert.match(languageList, /value="Thai"[\s\S]*?ไทย \(TH\)/);

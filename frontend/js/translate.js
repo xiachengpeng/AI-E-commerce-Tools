@@ -17,6 +17,7 @@ const TRANS_LANG_OPTIONS = [
     { value: 'Portuguese', label: '葡语', short: 'PT' },
     { value: 'Russian', label: '俄语', short: 'RU' },
     { value: 'Italian', label: '意语 (IT)', short: 'IT' },
+    { value: 'Thai', label: '泰语', short: 'TH' },
 ];
 
 // 点击外部关闭下拉菜单

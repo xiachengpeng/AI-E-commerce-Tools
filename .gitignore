@@ -60,3 +60,4 @@ backend/static/*
 
 # Local API relay experiment (contains local credentials)
 中转站生图.py
+json.txt

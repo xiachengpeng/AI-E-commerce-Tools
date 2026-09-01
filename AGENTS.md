@@ -12,8 +12,8 @@ Current product areas:
 - AI detail-page image planning, generation, regeneration, SEO metadata, long-image composition, and project history.
 - Listing extraction, generation, and compliance checks.
 - Multi-platform advertising copy generation.
-- Image translation, cleanup, localization, and rendering.
-- Batch text localization to multiple target languages, including Chinese.
+- Image translation, cleanup, localization, and rendering, including Thai.
+- Batch text localization to multiple target languages, including Chinese and Thai.
 - Batch square/redraw processing with retry, deletion, preview, and ZIP download.
 - AI provider settings, per-capability routing, connection tests, and live application logs.
 - SQLite-backed history for supported business modules.
@@ -173,6 +173,7 @@ When testing in an isolated worktree, copy local state only when necessary, keep
 - Background, lighting, and non-product decoration may change only when they do not obscure or redesign the product.
 - Detail-page modules are unselected by default; the user chooses which modules to generate.
 - Every module defaults to including copy once selected, and each module can independently disable added copy.
+- Detail-page copy language options include Thai.
 - No-copy mode must not add headlines, labels, specifications, dimensions, badges, watermarks, letters, numbers, icons, arrows, or other typographic elements.
 - Original product markings may remain only when faithfully reproduced; they must not be rewritten, translated, replaced, or redesigned.
 - AI selling-point extraction fills an inferred localized product name only when the product-name input was empty. Never overwrite a user-entered product name.
@@ -204,8 +205,8 @@ When testing in an isolated worktree, copy local state only when necessary, keep
 ### Text and image translation
 
 - Batch text translation sends one request containing all selected target languages.
-- Chinese is a supported text-translation target.
-- Image translation must preserve the source image composition while replacing localized text according to the selected workflow.
+- Chinese and Thai are supported text-translation targets.
+- Image translation supports Thai and must preserve the source image composition while replacing localized text according to the selected workflow.
 
 ### History and compatibility
 
