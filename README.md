@@ -1,6 +1,6 @@
 # 🚀 AI 电商全能工具箱 (AI E-commerce All-in-One Tools)
 
-一款专为跨境电商（Amazon, TikTok Shop, Shopify 等）打造的 AI 驱动效率工具集。集成竞品深度分析、Listing 智能撰写、图片语境翻译及批量文本本地化等核心功能，助力卖家实现数据驱动的决策与高效率运营。
+一款专为跨境电商（Amazon、TikTok Shop、Shopify 等）打造的本地 AI 效率工具集。集成竞品分析、详情页视觉生成、Listing 撰写、广告文案、图片翻译、文本本地化、批量方图重绘和水印消除等工作流。
 
 ---
 
@@ -17,14 +17,26 @@
 *   **营销驱动**：支持选择不同的营销场景（如“清仓促销”、“新品上线”）和语言风格。
 *   **可视化排版**：内置移动端效果模拟预览，支持一键导出高清长图。
 
-### 3. 🖼️ AI 图片语境翻译 (Image Translation)
-*   **抹除与重绘**：利用 AI 自动识别并擦除原图文字，保持背景自然。
-*   **本地化重写**：结合电商语境，将文字翻译并重新排版，支持多语种覆盖。
+### 3. 🖼️ AI 详情页生成 (AI Detail Page)
+*   **产品一致性**：上传产品图后生成首屏、卖点、场景、材质、规格等详情页模块，产品外观以原图为唯一视觉来源。
+*   **按需生成**：模块默认不选中，用户可以独立选择模块张数和是否包含文案。
+*   **产品信息提取**：产品名称为空时，AI 可根据上传图片推断并回填产品名称；已有名称不会被覆盖。
+*   **降级保护**：图片接口失败时使用本地 HTML/CSS 方案，不自动发起第二次图片 AI 请求。
 
-### 4. 🔤 批量文本本地化 (Batch Text Translation)
-*   **单次请求多语言**：采用高度优化的 AI Batch 模式，一次请求即可获得 6+ 种语言的本地化译文。
+### 4. 🖼️ AI 图片语境翻译 (Image Translation)
+*   **抹除与重绘**：利用 AI 自动识别并擦除原图文字，保持背景自然。
+*   **本地化重写**：结合电商语境，将文字翻译并重新排版，支持包括泰语在内的多语种覆盖。
+
+### 5. 🔤 批量文本本地化 (Batch Text Translation)
+*   **单次请求多语言**：采用 AI Batch 模式，一次请求提交多个目标语言，包括中文和泰语。
 *   **智能聚合历史**：批量任务自动聚合为一条历史记录，支持一键全量还原回显。
 *   **电商词库优化**：避开生硬翻译，自动使用目标市场的高转化电商词汇。
+
+### 6. ⚙️ AI 线路设置与运行日志
+*   **按能力切换**：文本和图片能力分别绑定线路，支持 Gemini、Vertex AI 和 OpenAI Compatible。
+*   **图片模式**：OpenAI Compatible 图片线路可选择文生图或图生图；图生图使用 `/v1/images/edits` 上传产品参考图，文生图使用 `/v1/images/generations`。
+*   **立即生效**：线路和绑定保存到本地 SQLite，下一次请求立即使用新配置，无需重启。
+*   **实时日志**：设置页展示当前进程最近 200 条脱敏日志，包含能力、线路、模型、耗时、重试、图片模式和端点信息。
 
 ---
 
@@ -32,7 +44,7 @@
 
 ### 后端 (Backend)
 *   **核心框架**：FastAPI (Python 3.10+)
-*   **AI 引擎**：Google Gemini Pro / Flash (支持 Vertex AI 企业级接入)
+*   **AI 引擎**：Google Gemini Pro / Flash、Vertex AI、OpenAI Compatible 中转线路
 *   **爬虫引擎**：Firecrawl (智能 Markdown 提取)
 *   **数据库**：SQLAlchemy + SQLite (支持完整的操作历史持久化)
 *   **并发处理**：基于 Asyncio 的高性能任务调度
@@ -47,7 +59,7 @@
 ## 🚀 快速启动
 
 ### 1. 环境配置
-在 `backend/` 目录下创建 `.env` 文件并填入以下配置：
+在 `backend/` 目录下创建 `.env` 文件并填入默认配置（设置页也可以直接管理线路）：
 ```env
 # AI 配置
 AI_PROVIDER=vertex # 或 gemini
@@ -68,7 +80,8 @@ FIRECRAWL_API_KEY=your_firecrawl_api_key
 文本 AI 和图片 AI 选择线路。保存后下一次请求立即生效，无需重启。
 
 OpenAI Compatible 的 Base URL 填服务根地址；程序调用
-`/v1/chat/completions` 和 `/v1/images/generations`。首次启动使用的密钥可以
+`/v1/chat/completions`，图片模式按设置调用 `/v1/images/generations` 或
+`/v1/images/edits`。首次启动使用的密钥可以
 继续保留在 `backend/.env`，并会导入本地 SQLite；在“设置”中新建或更新的
 API Key 保存在本地 SQLite。设置读取接口和实时日志不会向前端返回密钥原值。
 
@@ -80,26 +93,26 @@ API Key 保存在本地 SQLite。设置读取接口和实时日志不会向前�
 
 ### 2. 安装依赖
 ```bash
-cd backend
-pip install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
+cd frontend && npm install
 ```
 
 ### 3. 启动项目
 根目录下运行：
 ```bash
-python run.py
+.venv/bin/python run.py
 ```
 *   **后端服务**：http://localhost:8000
-*   **前端展示**：http://localhost:8080/index.html
+*   **前端展示**：http://127.0.0.1:8080/index.html
 
 ---
 
-## 📅 更新日志
-*   **V2.5** (最新): 
-    *   重构文本翻译为“批量本地化”模式，提升 5 倍效率。
-    *   实现侧边栏与标签页的 LocalStorage 状态持久化。
-    *   优化竞品分析加载动画与 UI 响应速度。
-*   **V2.0**: 引入矩阵对比模板与智能投资打分系统。
+## ✅ 当前验证
+
+前端测试使用 `node --test frontend/tests/*.test.js`，后端测试使用
+`.venv/bin/python -m pytest backend/tests`。本地修改应先通过
+`git diff --check` 和对应 JavaScript 语法检查，再提交。
 
 ---
 

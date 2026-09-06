@@ -17,7 +17,7 @@
 - Do not automatically fail over to another provider.
 - API keys, Authorization headers, Vertex credential contents, image Base64, complete prompts, and complete provider responses must never enter logs or read APIs.
 - Provider secrets remain backend-only and persist only in ignored local SQLite state.
-- OpenAI-compatible text calls use `POST /v1/chat/completions`; image generation uses `POST /v1/images/generations`.
+- OpenAI-compatible text calls use `POST /v1/chat/completions`; image generation uses the persisted provider mode: `POST /v1/images/generations` for text-to-image or multipart `POST /v1/images/edits` for image-to-image.
 - The log buffer holds exactly the latest 200 entries and is not persisted.
 - Preserve existing business prompts, result formats, scores, and history behavior.
 - Preserve unrelated dirty-worktree changes and never stage `.env`, databases, generated images, `.superpowers/`, or local tool state.

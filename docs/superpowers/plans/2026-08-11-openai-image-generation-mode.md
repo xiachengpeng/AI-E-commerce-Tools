@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.14、FastAPI、SQLAlchemy、Pydantic、httpx、Pillow、pytest、vanilla JavaScript、Node test runner。
 
+**Implementation status:** 已完成并合并到 `main`。实现包含持久化模式字段、设置页选择、`/v1/images/generations` 与 `/v1/images/edits` 路由、安全图片响应下载、结构化日志和完整回归测试。后续修改应以当前代码和 `AGENTS.md` 为准。
+
 ## Global Constraints
 
 - `image_generation_mode` 只允许 `text_to_image` 或 `image_to_image`。

@@ -1,5 +1,7 @@
 # OpenAI Compatible 图片生成模式设计
 
+> 状态：已实现并合并到 `main`。本设计文档保留方案背景，当前行为以代码和 `AGENTS.md` 为准。
+
 ## 背景
 
 当前所有 OpenAI Compatible 图片请求都以 JSON 发送到 `/v1/images/generations`，并把上传图片放在非标准的 `input_images` 字段中。部分中转站会忽略该字段但仍返回一张文生图结果，导致详情页提示词虽然要求产品一致，生成图却没有真正使用产品参考图。
