@@ -67,8 +67,8 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
             return base_type + '; charset=utf-8'
         return base_type
 
-print("Serving HTTP on 0.0.0.0 port 8080 (http://0.0.0.0:8080/) ...")
-with socketserver.TCPServer(("", 8080), MyHandler) as httpd:
+print("Serving HTTP on 127.0.0.1 port 8080 (http://127.0.0.1:8080/) ...")
+with socketserver.TCPServer(("127.0.0.1", 8080), MyHandler) as httpd:
     httpd.serve_forever()
 """
     frontend_process = subprocess.Popen(

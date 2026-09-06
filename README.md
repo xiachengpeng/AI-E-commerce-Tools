@@ -43,7 +43,7 @@
 ## 🛠️ 技术架构
 
 ### 后端 (Backend)
-*   **核心框架**：FastAPI (Python 3.10+)
+*   **核心框架**：FastAPI (Python 3.10+，推荐 Python 3.12)
 *   **AI 引擎**：Google Gemini Pro / Flash、Vertex AI、OpenAI Compatible 中转线路
 *   **爬虫引擎**：Firecrawl (智能 Markdown 提取)
 *   **数据库**：SQLAlchemy + SQLite (支持完整的操作历史持久化)
@@ -93,10 +93,14 @@ API Key 保存在本地 SQLite。设置读取接口和实时日志不会向前�
 
 ### 2. 安装依赖
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
+.venv/bin/pip install pytest pytest-asyncio
 cd frontend && npm install
 ```
+
+后端业务接口按领域注册在 `backend/routes/`，前端语言选项统一维护在
+`frontend/js/languages.js`；新增语言时优先修改该目录，再由各模块筛选支持范围。
 
 ### 3. 启动项目
 根目录下运行：

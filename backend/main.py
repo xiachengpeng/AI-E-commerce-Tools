@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Request, status
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -22,11 +22,9 @@ from dotenv import load_dotenv
 from models.request import (
     CompareRequest, CompareResponse, CompareResponseData, ProductCompareData,
     ComparisonSummary, ScoreCard, EvalDetail, RecItem,
-    TranslationRequest,
-    ListingGenerateRequest, ListingImageExtractRequest, ListingComplianceRequest,
+    ListingGenerateRequest,
     AdCopyGenerateRequest,
     SquareRedrawBatchRequest,
-    WatermarkRemovalRequest,
 )
 from models.settings import (
     AIProviderList,
@@ -35,7 +33,6 @@ from models.settings import (
     CapabilityBindingList,
     CapabilityBindingRead,
     CapabilityBindingWrite,
-    FrontendLogEvent,
     ProviderConnectionTest,
     ProviderConnectionTestResult,
     SavedProviderConnectionTest,
@@ -85,6 +82,7 @@ from services.ai_router import (
     AIProviderRequestError,
     diagnose_provider_error,
 )
+from routes.generation import router as generation_router
 from services.app_log_service import APP_LOG_OVERFLOW, AppLogService, app_logs
 from services.image_validation import (
     MAX_IMAGE_BYTES,
@@ -97,6 +95,24 @@ from config import (
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
 from db import init_db, get_db, SessionLocal, AICapabilityBinding, AIProviderConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory, WatermarkRemovalHistory
+
+"""业务历史模块与持久化模型的唯一映射来源。
+
+新增业务模块时只在此登记一次，列表与删除接口自动生效；
+保存接口仍需补充各自的字段组装逻辑。
+"""
+HISTORY_MODELS = {
+    "analysis": AnalysisHistory,
+    "listing": ListingHistory,
+    "translation": TranslationHistory,
+    "text-translation": TextTranslationHistory,
+    "ads": AdsHistory,
+    "render": RenderHistory,
+    "square-redraw": SquareRedrawHistory,
+    "watermark-removal": WatermarkRemovalHistory,
+}
+HISTORY_DEFAULT_LIMIT = 50
+HISTORY_MAX_LIMIT = 200
 
 MAX_CONNECTION_IMAGE_BYTES = MAX_IMAGE_BYTES
 MAX_CONNECTION_IMAGE_DIMENSION = MAX_IMAGE_DIMENSION
@@ -171,6 +187,7 @@ app = FastAPI(
     title="AI Competitor Analyzer V2",
     lifespan=app_lifespan,
 )
+app.include_router(generation_router)
 app_logs.emit(
     level="success",
     source="system",
@@ -679,157 +696,6 @@ async def compare(request: CompareRequest):
     except Exception as e:
         logger.error(f"❌ [分析] 失败: {e}")
         return CompareResponse(status="error", message=str(e))
-
-@app.post("/api/translate-text")
-async def api_translate_text(request: TranslationRequest):
-    """
-    文本翻译接口：支持单请求多语言批量处理
-    """
-    try:
-        # 整理目标语言列表
-        langs = request.target_langs or ([request.target_lang] if request.target_lang else ["English"])
-        
-        # 调用 AI 批量翻译（异步）
-        result_dict = await AIService.translate_text_batch(
-            text=request.text,
-            target_langs=langs,
-        )
-        
-        return {
-            "status": "success",
-            "translations": result_dict,
-            # 兼容旧版
-            "translated_text": result_dict.get(langs[0], "") if langs else ""
-        }
-    except Exception as e:
-        logger.error(f"❌ [翻译] 失败: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/listing/generate")
-async def api_listing_generate(request: ListingGenerateRequest):
-    try:
-        if not request.name.strip() or not request.points.strip():
-            return {"status": "error", "message": "产品名称与核心卖点不能为空"}
-        data = await generate_listing(request)
-        return {"status": "success", "data": data}
-    except Exception as e:
-        logger.error(f"❌ [Listing] 生成失败: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/listing/extract")
-async def api_listing_extract(request: ListingImageExtractRequest):
-    try:
-        data = await extract_listing_inputs(request)
-        return {"status": "success", "data": data}
-    except Exception as e:
-        logger.error(f"❌ [Listing] 视觉提取失败: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/listing/compliance")
-async def api_listing_compliance(request: ListingComplianceRequest):
-    try:
-        data = await check_listing_compliance(request)
-        return {"status": "success", "data": data}
-    except Exception as e:
-        logger.error(f"❌ [Listing] 合规审查失败: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/ads/generate")
-async def api_ads_generate(request: AdCopyGenerateRequest):
-    try:
-        data = await generate_ad_copy(request)
-        persist_ads_history(request, data)
-        return {"status": "success", "data": data}
-    except Exception as e:
-        logger.error(f"❌ [广告文案] 生成失败: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/watermark-removal")
-async def api_watermark_removal(request: WatermarkRemovalRequest):
-    try:
-        data = await remove_watermark(request)
-        return {"status": "success", "data": data}
-    except Exception as e:
-        logger.error(f"❌ [水印消除] 失败: {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/api/ai/generate")
-async def api_ai_generate(data: dict):
-    capability = data.get("capability")
-    if capability not in {"text", "image"}:
-        raise HTTPException(422, "capability 必须是 text 或 image")
-    try:
-        return await AIService.generate_content(
-            payload=data.get("payload", {}),
-            capability=capability,
-        )
-    except AIProviderRequestError as exc:
-        diagnostic = (
-            AppLogService.sanitize(exc.diagnostic.as_log_dict())
-            if exc.diagnostic is not None
-            else {"category": exc.category}
-        )
-        provider = (
-            AppLogService.sanitize(exc.provider)
-            if exc.provider is not None
-            else None
-        )
-        model = (
-            AppLogService.sanitize(exc.model)
-            if exc.model is not None
-            else None
-        )
-        safe_capability = AppLogService.sanitize(
-            exc.capability or capability
-        )
-        public_status = _PROVIDER_ERROR_HTTP_STATUS.get(
-            exc.category,
-            status.HTTP_502_BAD_GATEWAY,
-        )
-        if (
-            exc.category == "authentication"
-            and exc.diagnostic is not None
-            and exc.diagnostic.http_status == 403
-        ):
-            public_status = status.HTTP_403_FORBIDDEN
-        raise HTTPException(
-            status_code=public_status,
-            detail={
-                "category": exc.category,
-                "diagnostic": diagnostic,
-                "provider": provider,
-                "model": model,
-                "capability": safe_capability,
-                "retry": exc.retry,
-            },
-        ) from None
-    except ValueError:
-        label = "文本" if capability == "text" else "图片"
-        raise HTTPException(
-            status_code=409,
-            detail=f"{label} AI 未配置，请前往设置页面配置",
-        ) from None
-
-@app.post("/log")
-async def receive_frontend_log(data: FrontendLogEvent):
-    app_logs.emit(
-        level=data.level,
-        source="frontend",
-        message=data.message,
-        capability=data.capability,
-        provider=data.provider,
-        model=data.model,
-        duration_ms=data.duration_ms,
-        retry=data.retry,
-    )
-    return {"status": "ok"}
-
 
 def serialize_provider(row) -> dict:
     return {
@@ -1691,7 +1557,7 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
                 source="history",
                 message="历史记录保存失败",
             )
-            return {"status": "error"}
+            raise HTTPException(status_code=404, detail="未知的历史模块")
         
         db.add(hist)
         db.commit()
@@ -1701,6 +1567,9 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
             message="历史记录保存成功",
         )
         return {"status": "success", "id": hist.id}
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         logger.error(f"❌ [历史] 失败: {e}")
         db.rollback()
@@ -1709,26 +1578,35 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
             source="history",
             message="历史记录保存失败",
         )
-        return {"status": "error"}
+        raise HTTPException(status_code=500, detail="历史记录保存失败")
 
 @app.get("/api/history/{module}")
-async def get_history(module: str, db: Session = Depends(get_db)):
-    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory, "square-redraw": SquareRedrawHistory, "watermark-removal": WatermarkRemovalHistory}
-    model = mapping.get(module)
+async def get_history(
+    module: str,
+    limit: int = Query(HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    model = HISTORY_MODELS.get(module)
     if not model: return []
-    return db.query(model).order_by(model.timestamp.desc()).all()
+    return (
+        db.query(model)
+        .order_by(model.timestamp.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
 @app.delete("/api/history/{module}/{id}")
 async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
-    mapping = {"analysis": AnalysisHistory, "listing": ListingHistory, "translation": TranslationHistory, "text-translation": TextTranslationHistory, "ads": AdsHistory, "render": RenderHistory, "square-redraw": SquareRedrawHistory, "watermark-removal": WatermarkRemovalHistory}
-    model = mapping.get(module)
+    model = HISTORY_MODELS.get(module)
     if not model:
         app_logs.emit(
             level="error",
             source="history",
             message="历史记录删除失败",
         )
-        return {"status": "error"}
+        raise HTTPException(status_code=404, detail="未知的历史模块")
     try:
         item = db.query(model).filter(model.id == id).first()
         if item:
@@ -1747,8 +1625,8 @@ async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
             source="history",
             message="历史记录删除失败",
         )
-        return {"status": "error"}
+        raise HTTPException(status_code=500, detail="历史记录删除失败")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

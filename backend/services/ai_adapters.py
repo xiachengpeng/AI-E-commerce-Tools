@@ -414,6 +414,25 @@ def extract_validated_inline_images(payload):
     return images
 
 
+def extract_openai_edit_images(payload):
+    """Return the source and optional mask for an Images Edits request."""
+    images = extract_validated_inline_images(payload)
+    edit = payload.get("imageEdit") or payload.get("image_edit") or {}
+    mask_index = edit.get("maskIndex")
+    if mask_index is None:
+        mask_index = edit.get("mask_index")
+    if mask_index is None:
+        return images, None
+    if not isinstance(mask_index, int) or isinstance(mask_index, bool):
+        raise ValueError("图片编辑遮罩索引无效")
+    if mask_index <= 0 or mask_index >= len(images):
+        raise ValueError("图片编辑遮罩缺失")
+    source_images = [image for index, image in enumerate(images) if index != mask_index]
+    if len(source_images) != 1:
+        raise ValueError("图片编辑需要一张原图和一张遮罩")
+    return images, images[mask_index]
+
+
 def _openai_image_size(payload):
     generation_config = (
         payload.get("generationConfig")
@@ -425,10 +444,7 @@ def _openai_image_size(payload):
         or generation_config.get("image_config")
         or {}
     )
-    ratio = (
-        image_config.get("aspectRatio")
-        or image_config.get("aspect_ratio")
-    )
+    ratio = image_config.get("aspectRatio") or image_config.get("aspect_ratio")
     if not isinstance(ratio, str) or ":" not in ratio:
         return None
     try:
@@ -543,24 +559,30 @@ class OpenAICompatibleAdapter(AIAdapter):
                     timeout=snapshot.timeout_seconds,
                 )
             elif mode == "image_to_image":
-                images = extract_validated_inline_images(payload)
+                images, mask = extract_openai_edit_images(payload)
                 if not images:
                     raise ValueError("图生图模式缺少参考图")
                 data = dict(common)
                 size = _openai_image_size(payload)
                 if size:
                     data["size"] = size
-                files = [
-                    (
-                        "image[]",
+                if mask is not None:
+                    files = [
+                        ("image", ("source.png", images[0].data, images[0].mime_type)),
+                        ("mask", ("mask.png", mask.data, mask.mime_type)),
+                    ]
+                else:
+                    files = [
                         (
-                            f"reference-{index}.{_image_extension(image)}",
-                            image.data,
-                            image.mime_type,
-                        ),
-                    )
-                    for index, image in enumerate(images, 1)
-                ]
+                            "image[]",
+                            (
+                                f"reference-{index}.{_image_extension(image)}",
+                                image.data,
+                                image.mime_type,
+                            ),
+                        )
+                        for index, image in enumerate(images, 1)
+                    ]
                 response = await self.client.post(
                     f"{base_url}/v1/images/edits",
                     headers=headers,

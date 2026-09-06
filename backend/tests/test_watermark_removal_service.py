@@ -9,6 +9,9 @@ from pydantic import ValidationError
 
 from models.request import WatermarkRegion, WatermarkRemovalRequest
 from services.watermark_removal_service import (
+    _expanded_mask,
+    _feathered_mask,
+    _redact_repair_area,
     decode_data_url,
     remove_watermark,
     validate_mask,
@@ -209,6 +212,39 @@ def test_validate_mask_handles_100_overlapping_large_regions_efficiently():
     assert time.perf_counter() - started_at < 2
 
 
+def test_expanded_mask_covers_watermark_edge_padding():
+    mask = Image.new("L", (100, 100), 0)
+    ImageDraw.Draw(mask).rectangle((40, 40, 49, 49), fill=255)
+
+    expanded = _expanded_mask(mask, padding=5)
+
+    assert expanded.getpixel((35, 45)) == 255
+    assert expanded.getpixel((54, 45)) == 255
+    assert expanded.getpixel((30, 45)) == 0
+
+
+def test_feathered_mask_has_soft_transition_at_edge():
+    mask = Image.new("L", (100, 100), 0)
+    ImageDraw.Draw(mask).rectangle((40, 40, 49, 49), fill=255)
+
+    feathered = _feathered_mask(mask, padding=5)
+
+    assert 0 < feathered.getpixel((35, 45)) < 255
+    assert feathered.getpixel((45, 45)) == 255
+
+
+def test_redact_repair_area_hides_original_mark_inside_mask():
+    image = Image.new("RGB", (10, 10), "white")
+    ImageDraw.Draw(image).rectangle((2, 2, 4, 4), fill="black")
+    mask = Image.new("L", (10, 10), 0)
+    ImageDraw.Draw(mask).rectangle((2, 2, 4, 4), fill=255)
+
+    redacted = _redact_repair_area(image, mask)
+
+    assert redacted.getpixel((3, 3)) == (255, 255, 255, 255)
+    assert redacted.getpixel((0, 0)) == (255, 255, 255, 255)
+
+
 @pytest.mark.asyncio
 async def test_remove_watermark_sends_source_and_mask_to_image_model(tmp_path, monkeypatch):
     import services.watermark_removal_service as watermark_service
@@ -227,11 +263,41 @@ async def test_remove_watermark_sends_source_and_mask_to_image_model(tmp_path, m
     payload = ai_mock.await_args.kwargs["payload"]
     parts = payload["contents"][0]["parts"]
     assert len([part for part in parts if "inlineData" in part]) == 2
+    assert payload["imageEdit"] == {"maskIndex": 1}
     assert payload["generationConfig"]["imageConfig"]["aspectRatio"] == "1:1"
     prompt = parts[0]["text"]
-    assert "context only" in prompt
-    assert "must remain unchanged exactly" not in prompt
-    assert "unmasked pixels" not in prompt
+    assert "Edit only the white masked regions" in prompt
+    assert "Preserve all unmasked content" in prompt
+    assert "Do not preserve any content inside the white mask" in prompt
+
+
+@pytest.mark.asyncio
+async def test_remove_watermark_sends_only_local_repair_crop(tmp_path, monkeypatch):
+    import services.watermark_removal_service as watermark_service
+
+    static_root = tmp_path / "static"
+    monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
+    source_data = make_png_bytes(100, 100)
+    request = WatermarkRemovalRequest(
+        filename="large.png",
+        image_data=png_data_url(source_data),
+        mask_data=make_mask_url([(45, 45, 10, 10)], 100, 100),
+        regions=[WatermarkRegion(x=.45, y=.45, width=.1, height=.1)],
+    )
+    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes(50, 50)))
+
+    with patch(
+        "services.watermark_removal_service.AIService.generate_content",
+        new=ai_mock,
+    ):
+        await remove_watermark(request)
+
+    parts = ai_mock.await_args.kwargs["payload"]["contents"][0]["parts"]
+    image_parts = [part["inlineData"] for part in parts if "inlineData" in part]
+    with Image.open(io.BytesIO(base64.b64decode(image_parts[0]["data"]))) as sent_source:
+        with Image.open(io.BytesIO(base64.b64decode(image_parts[1]["data"]))) as sent_mask:
+            assert sent_source.size == (47, 47)
+            assert sent_mask.size == sent_source.size
 
 
 @pytest.mark.asyncio
@@ -297,7 +363,7 @@ async def test_remove_watermark_normalizes_changed_dimensions(tmp_path, monkeypa
     with Image.open(result_path) as saved:
         assert saved.size == (10, 10)
         assert saved.convert("RGB").getpixel((1, 1)) == (12, 34, 56)
-        assert saved.convert("RGB").getpixel((0, 0)) == (255, 255, 255)
+        assert saved.convert("RGB").getpixel((9, 9)) == (255, 255, 255)
     assert result["width"] == 10
     assert result["height"] == 10
 
@@ -389,14 +455,11 @@ async def test_remove_watermark_preserves_every_pixel_outside_canonical_mask(
     with Image.open(io.BytesIO(source_data)) as source_image, Image.open(result_path) as saved:
         source_pixels = source_image.convert("RGBA")
         saved_pixels = saved.convert("RGBA")
-        for y in range(10):
-            for x in range(10):
-                expected = (
-                    model_image.getpixel((x, y))
-                    if 2 <= x < 5 and 2 <= y < 5
-                    else source_pixels.getpixel((x, y))
-                )
-                assert saved_pixels.getpixel((x, y)) == expected, (x, y)
+        # 中央修复区来自模型；远离羽化区的角落必须精确保留。
+        assert saved_pixels.getpixel((9, 9)) == source_pixels.getpixel((9, 9))
+        for y in range(2, 5):
+            for x in range(2, 5):
+                assert saved_pixels.getpixel((x, y)) != source_pixels.getpixel((x, y))
 
     assert result["result_mime_type"] == "image/png"
     assert result["result_url"].endswith("-result.png")
@@ -442,5 +505,5 @@ async def test_remove_watermark_sends_and_saves_regions_as_opaque_binary_mask(
         } == {0, 255}
         for y in range(10):
             for x in range(10):
-                expected = 255 if 1 <= x < 4 and 1 <= y < 4 else 0
+                expected = 255 if 0 <= x < 6 and 0 <= y < 6 else 0
                 assert canonical_mask.getpixel((x, y)) == expected, (x, y)

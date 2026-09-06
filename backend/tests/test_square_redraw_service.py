@@ -121,6 +121,40 @@ def test_square_redraw_models_are_registered():
     assert not Base.metadata.tables["square_redraw_items"].c.batch_id.nullable
 
 
+def test_batch_output_dir_is_scoped_to_batch_id(tmp_path, monkeypatch):
+    """批次目录必须落在自己的 id 子目录下，而不是共用父目录。
+
+    回归保护：output_dir 曾在拿到自增 id 之前赋值，导致所有批次都指向
+    square-redraw 根目录，无法界定文件归属，孤儿文件也就无法识别。
+    """
+    import services.square_redraw_service as square_service
+
+    output_root = tmp_path / "outputs" / "square-redraw"
+    monkeypatch.setattr(square_service, "SQUARE_OUTPUT_ROOT", str(output_root))
+
+    session = make_test_session(tmp_path)
+    try:
+        class _Req:
+            target_aspect_ratio = "1:1"
+            images = []
+
+        first = square_service.create_square_redraw_batch(session, _Req())
+        second = square_service.create_square_redraw_batch(session, _Req())
+
+        assert first.output_dir == str(output_root / str(first.id))
+        assert second.output_dir == str(output_root / str(second.id))
+        assert first.output_dir != second.output_dir
+        # 绝不能等于共用根目录
+        assert first.output_dir != str(output_root)
+        # 产物路径必须落在批次目录内
+        saved = square_service.save_bytes_for_item(
+            first.id, "a.png", b"x", "image/png", "redrawn"
+        )
+        assert f"/square-redraw/{first.id}/redrawn/" in saved
+    finally:
+        session.close()
+
+
 def test_square_redraw_model_defaults_are_persisted(tmp_path):
     session = make_test_session(tmp_path)
     try:

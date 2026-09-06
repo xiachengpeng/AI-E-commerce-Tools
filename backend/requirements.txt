@@ -7,3 +7,5 @@ sqlalchemy
 google-auth
 google-genai
 Pillow>=10.0.0
+pytest
+pytest-asyncio

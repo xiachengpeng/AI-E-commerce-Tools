@@ -4,6 +4,7 @@
 
 // 初始化逻辑
 document.addEventListener('DOMContentLoaded', () => {
+    renderTextTranslationLanguages();
     const customSelect = document.getElementById('customLangSelect');
     const optionsList = document.getElementById('langOptionsList');
     
@@ -22,6 +23,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+function renderTextTranslationLanguages() {
+    const container = document.getElementById('textTranslationLanguageOptions');
+    if (!container || typeof ALL_LANGUAGE_OPTIONS === 'undefined') return;
+    container.innerHTML = ALL_LANGUAGE_OPTIONS.map(language => `
+        <label class="lang-option-item p-4 flex items-center gap-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-50 transition-colors">
+            <input type="checkbox" value="${language.value}" class="lang-checkbox w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+            <span class="text-sm font-bold text-gray-600">${language.textLabel}</span>
+        </label>
+    `).join('');
+}
 
 /**
  * 确认语言选择并更新 UI 显示

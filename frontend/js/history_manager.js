@@ -372,13 +372,21 @@ async function restoreHistoryItemByIndex(module, index) {
 
 async function saveToHistory(module, data) {
     try {
-        await fetch(`${API_BASE}/api/history/${module}`, {
+        const res = await fetch(`${API_BASE}/api/history/${module}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
+        if (!res.ok) {
+            console.error(`History save failed: HTTP ${res.status}`);
+            showToast('历史记录保存失败', 'error');
+            return false;
+        }
+        return true;
     } catch (e) {
         console.error('History save failed:', e);
+        showToast('历史记录保存失败', 'error');
+        return false;
     }
 }
 
@@ -389,6 +397,11 @@ async function deleteHistoryItem(module, id) {
         const response = await fetch(`${API_BASE}/api/history/${module}/${id}`, {
             method: 'DELETE'
         });
+        if (!response.ok) {
+            console.error(`Delete history failed: HTTP ${response.status}`);
+            showToast('删除失败', 'error');
+            return;
+        }
         const data = await response.json();
         if (data.status === 'success') {
             showToast('记录已删除', 'success');

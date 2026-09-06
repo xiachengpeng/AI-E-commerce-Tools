@@ -56,21 +56,6 @@ const MARKET_TONE_MAP = {
     "Global Market": "Neutral, professional, broadly understandable, clear, and practical."
 };
 
-const LANGUAGE_OPTIONS = [
-    { value: "English",    label: "英文 (English)" },
-    { value: "Chinese",    label: "中文 (Chinese)" },
-    { value: "Japanese",   label: "日文 (Japanese)" },
-    { value: "Spanish",    label: "西语 (Spanish)" },
-    { value: "German",     label: "德语 (German)" },
-    { value: "French",     label: "法语 (French)" },
-    { value: "Italian",    label: "意语 (Italian)" },
-    { value: "Portuguese", label: "葡语 (Portuguese)" },
-    { value: "Russian",    label: "俄语 (Russian)" },
-    { value: "Arabic",     label: "阿拉伯语 (Arabic)" },
-    { value: "Korean",     label: "韩语 (Korean)" },
-    { value: "Thai",       label: "泰语 (Thai)" }
-];
-
 const ASPECT_RATIO_OPTIONS = [
     { value: "1:1",    label: "1:1 (正方形)" },
     { value: "3:4",    label: "3:4 (竖图)" },

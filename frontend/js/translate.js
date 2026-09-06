@@ -5,21 +5,6 @@
 let transImages = [];
 let transRunning = false;
 
-// 目标语言配置
-const TRANS_LANG_OPTIONS = [
-    { value: 'English', label: '英文', short: 'EN' },
-    { value: 'Japanese', label: '日文', short: 'JA' },
-    { value: 'Spanish', label: '西语', short: 'ES' },
-    { value: 'German', label: '德语', short: 'DE' },
-    { value: 'French', label: '法语', short: 'FR' },
-    { value: 'Korean', label: '韩语', short: 'KO' },
-    { value: 'Arabic', label: '阿语', short: 'AR' },
-    { value: 'Portuguese', label: '葡语', short: 'PT' },
-    { value: 'Russian', label: '俄语', short: 'RU' },
-    { value: 'Italian', label: '意语 (IT)', short: 'IT' },
-    { value: 'Thai', label: '泰语', short: 'TH' },
-];
-
 // 点击外部关闭下拉菜单
 window.addEventListener('click', (e) => {
     const dropdown = document.getElementById('langDropdown');

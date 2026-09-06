@@ -31,11 +31,15 @@ SUPPORTED_GENERATION_ASPECT_RATIOS = (
     ("16:9", 16 / 9),
     ("21:9", 21 / 9),
 )
-WATERMARK_REMOVAL_PROMPT = """Create one new edited image using the first image as visual context.
+MASK_PADDING_RATIO = 0.012
+MASK_FEATHER_RATIO = 0.006
+WATERMARK_REMOVAL_PROMPT = """Create one edited image using the first image as visual context.
 
-The second image is a guide: reconstruct the area shown in white with a plausible continuation of nearby colors, lighting, and texture.
-Avoid text, logos, symbols, or watermarks. You may freely regenerate the rest of the canvas because it is context only.
-Return one image only."""
+The second image is a binary edit mask: white means the area MUST be repaired, black means the area MUST be preserved. Edit only the white masked regions and reconstruct them as a seamless continuation of nearby colors, lighting, texture, perspective, and geometry.
+
+CRITICAL MASK RULE: remove every watermark, logo, letter, number, symbol, or dark mark that lies inside a white masked region, even if it looks like printed packaging or a label. Do not preserve any content inside the white mask. Preserve all unmasked content exactly, including the subject, composition, objects, colors, lighting, shadows, perspective, texture, logos, labels, and background structure.
+
+Do not add text, logos, symbols, watermarks, or new objects. Return one image only with the same dimensions and aspect ratio."""
 
 
 def _closest_generation_aspect_ratio(width: int, height: int) -> str:
@@ -104,6 +108,51 @@ def _expected_mask(width: int, height: int, regions: list[WatermarkRegion]) -> I
             start, end = left, right
         draw.line((start, y, end - 1, y), fill=255)
     return expected
+
+
+def _mask_padding(width: int, height: int) -> int:
+    return max(2, round(min(width, height) * MASK_PADDING_RATIO))
+
+
+def _expanded_mask(mask: Image.Image, padding: int) -> Image.Image:
+    """扩大修复范围，覆盖水印边缘的半透明像素和压缩残留。"""
+    size = max(3, padding * 2 + 1)
+    if size % 2 == 0:
+        size += 1
+    return mask.filter(ImageFilter.MaxFilter(size))
+
+
+def _feathered_mask(mask: Image.Image, padding: int) -> Image.Image:
+    """把扩大后的修复范围羽化，避免贴图式硬边。"""
+    expanded = _expanded_mask(mask, padding)
+    radius = max(1, round(padding * MASK_FEATHER_RATIO / MASK_PADDING_RATIO))
+    return expanded.filter(ImageFilter.GaussianBlur(radius))
+
+
+def _repair_crop_box(mask: Image.Image, padding: int) -> tuple[int, int, int, int]:
+    """返回包含修复区和上下文的局部处理框，避免无关整图重绘。"""
+    bbox = mask.getbbox()
+    if bbox is None:
+        raise ValueError("遮罩至少需要包含一个白色像素")
+    context = max(16, padding * 2)
+    left = max(0, bbox[0] - context)
+    top = max(0, bbox[1] - context)
+    right = min(mask.width, bbox[2] + context)
+    bottom = min(mask.height, bbox[3] + context)
+    return left, top, right, bottom
+
+
+def _image_bytes(image: Image.Image, image_format: str = "PNG") -> bytes:
+    buffer = BytesIO()
+    image.save(buffer, format=image_format)
+    return buffer.getvalue()
+
+
+def _redact_repair_area(image: Image.Image, mask: Image.Image) -> Image.Image:
+    """在送入模型前遮掉原始文字，避免模型直接照抄待删除内容。"""
+    redacted = image.convert("RGBA").copy()
+    placeholder = Image.new("RGBA", redacted.size, (255, 255, 255, 255))
+    return Image.composite(placeholder, redacted, mask)
 
 
 def _png_bytes(image: Image.Image) -> bytes:
@@ -199,20 +248,25 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
     regions = validate_regions(request.regions)
     validate_mask(source, mask, regions)
     canonical_mask = _expected_mask(source.width, source.height, regions)
-    canonical_mask_data = _png_bytes(canonical_mask)
+    padding = _mask_padding(source.width, source.height)
+    model_mask = _expanded_mask(canonical_mask, padding)
+    crop_box = _repair_crop_box(model_mask, padding)
+    with Image.open(BytesIO(source.data)) as source_image:
+        source_crop_data = _image_bytes(source_image.crop(crop_box), "PNG")
+    model_mask_crop_data = _png_bytes(model_mask.crop(crop_box))
 
     parts = [
         {"text": WATERMARK_REMOVAL_PROMPT},
         {
             "inlineData": {
-                "mimeType": source.mime_type,
-                "data": base64.b64encode(source.data).decode("ascii"),
+                "mimeType": "image/png",
+                "data": base64.b64encode(source_crop_data).decode("ascii"),
             }
         },
         {
             "inlineData": {
                 "mimeType": "image/png",
-                "data": base64.b64encode(canonical_mask_data).decode("ascii"),
+                "data": base64.b64encode(model_mask_crop_data).decode("ascii"),
             }
         },
     ]
@@ -223,31 +277,34 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
                 "responseModalities": ["IMAGE"],
                 "imageConfig": {
                     "aspectRatio": _closest_generation_aspect_ratio(
-                        source.width,
-                        source.height,
+                        crop_box[2] - crop_box[0],
+                        crop_box[3] - crop_box[1],
                     )
                 },
             },
+            "imageEdit": {"maskIndex": 1},
         },
         capability="image",
     )
     result = _model_image(response)
 
-    with (
-        Image.open(BytesIO(source.data)) as source_image,
-        Image.open(BytesIO(result.data)) as result_image,
-    ):
+    with Image.open(BytesIO(source.data)) as source_image, Image.open(BytesIO(result.data)) as result_image:
         normalized_result = result_image.convert("RGBA")
-        if normalized_result.size != source_image.size:
+        crop_size = (crop_box[2] - crop_box[0], crop_box[3] - crop_box[1])
+        if normalized_result.size != crop_size:
             normalized_result = normalized_result.resize(
-                source_image.size,
+                crop_size,
                 Image.Resampling.LANCZOS,
             )
-        composited = Image.composite(
+        source_rgba = source_image.convert("RGBA")
+        source_crop = source_rgba.crop(crop_box)
+        composited_crop = Image.composite(
             normalized_result,
-            source_image.convert("RGBA"),
-            canonical_mask,
+            source_crop,
+            _feathered_mask(canonical_mask.crop(crop_box), padding),
         )
+        composited = source_rgba.copy()
+        composited.paste(composited_crop, crop_box[:2])
         result_data = _png_bytes(composited)
 
     processing_id = uuid.uuid4().hex
@@ -263,7 +320,7 @@ async def remove_watermark(request: WatermarkRemovalRequest) -> dict:
     mask_path = output_dir / f"{stem}-mask.png"
     result_path = output_dir / f"{stem}-result.png"
     source_path.write_bytes(source.data)
-    mask_path.write_bytes(canonical_mask_data)
+    mask_path.write_bytes(_png_bytes(model_mask))
     result_path.write_bytes(result_data)
 
     return {

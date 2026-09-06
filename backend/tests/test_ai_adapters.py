@@ -265,6 +265,31 @@ async def test_openai_image_forwards_inline_images_and_image_extensions():
 
 
 @pytest.mark.asyncio
+async def test_openai_image_edit_sends_mask_as_dedicated_field():
+    response = MagicMock()
+    response.json.return_value = {"data": [{"b64_json": TINY_PNG_BASE64}]}
+    transport = MagicMock()
+    transport.post = AsyncMock(return_value=response)
+    adapter = OpenAICompatibleAdapter(client=transport)
+
+    await adapter.generate(
+        make_snapshot(capability="image", image_generation_mode="image_to_image"),
+        {
+            "contents": [{"parts": [
+                {"text": "Remove the mark"},
+                {"inlineData": {"mimeType": "image/png", "data": TINY_PNG_BASE64}},
+                {"inlineData": {"mimeType": "image/png", "data": TINY_PNG_BASE64}},
+            ]}],
+            "imageEdit": {"maskIndex": 1},
+        },
+    )
+
+    files = transport.post.await_args.kwargs["files"]
+    assert [field for field, _ in files] == ["image", "mask"]
+
+
+
+@pytest.mark.asyncio
 async def test_openai_image_to_image_missing_reference_makes_no_request():
     transport = MagicMock()
     transport.post = AsyncMock()

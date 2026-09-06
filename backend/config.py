@@ -18,9 +18,10 @@ GEMINI_MODEL_ID = (
 )
 
 # Vertex AI 默认配置
-VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "project-926fcb81-e62c-4158-927")
+# 仅作为首次启动导入来源，真实值应通过 backend/.env 或系统环境变量提供。
+VERTEX_PROJECT_ID = os.getenv("VERTEX_PROJECT_ID", "")
 VERTEX_LOCATION = os.getenv("VERTEX_LOCATION", "global")
-VERTEX_KEY_PATH = os.getenv("VERTEX_KEY_PATH", r"D:\Workspace\miyao\hezihua0215 Gemini API Key\ornate-rarity-493511-p5-6759bce81d52.json")
+VERTEX_KEY_PATH = os.getenv("VERTEX_KEY_PATH", "")
 
 # CORS 配置
 # 开发环境默认放行本地前端；生产环境应通过环境变量显式指定域名

@@ -22,6 +22,7 @@ Current product areas:
 
 - `run.py` starts the FastAPI backend on port 8000 and the static frontend on port 8080.
 - `backend/main.py` owns HTTP routes, startup/shutdown hooks, settings APIs, history APIs, and feature endpoints.
+- `backend/routes/generation.py` owns AI-backed translation, Listing, advertising, watermark, generic AI, and frontend-log endpoints; it is included by `backend/main.py` without changing public paths.
 - `frontend/index.html` contains the application shell and feature views.
 - `frontend/js/app.js` loads public runtime configuration, provides `callAI(capability, payload)`, and switches top-level views.
 - `backend/db.py` contains SQLAlchemy database setup and persisted history/settings models.
@@ -46,6 +47,7 @@ The browser must not call AI providers directly.
 - `frontend/js/analysis.js`: competitor URLs, analysis progress, comparison rendering, and report export.
 - `frontend/js/details.js`: detail-page uploads, AI product-name/selling-point extraction, module planning, prompts, generation, regeneration, SEO, quality checks, long-image export, and history restoration.
 - `frontend/js/config.js`: stable frontend options and detail-page module defaults.
+- `frontend/js/languages.js`: shared language catalog for detail/listing/ads, image translation, and text translation.
 - `frontend/js/listing.js`: Listing input extraction, generation, validation, rendering, and compliance suggestions.
 - `frontend/js/ads.js`: advertising inputs, platform selection, generation, rendering, and copy actions.
 - `frontend/js/translate.js`: batch image translation and localized image rendering.
@@ -100,10 +102,10 @@ The browser must not call AI providers directly.
 
 ## Setup, Run, Build, And Test
 
-Create a local environment and install dependencies:
+Create a local environment with Python 3.10+ (the codebase uses modern union type annotations) and install dependencies:
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
 cd frontend && npm install
 ```

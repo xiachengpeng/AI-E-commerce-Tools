@@ -87,6 +87,11 @@ def mime_extension(mime_type: str) -> str:
     return mapping.get((mime_type or "").lower(), "png")
 
 
+def batch_output_dir(batch_id: int) -> str:
+    """批次专属输出目录，是该批次所有产物的唯一归属位置。"""
+    return os.path.join(SQUARE_OUTPUT_ROOT, str(batch_id))
+
+
 def static_url_for_path(path: str) -> str:
     rel_path = os.path.relpath(path, STATIC_DIR).replace(os.sep, "/")
     return f"/static/{rel_path}"
@@ -95,7 +100,7 @@ def static_url_for_path(path: str) -> str:
 def save_bytes_for_item(batch_id: int, filename: str, data: bytes, mime_type: str, folder: str) -> str:
     ext = mime_extension(mime_type)
     basename = safe_output_basename(filename)
-    out_dir = os.path.join(SQUARE_OUTPUT_ROOT, str(batch_id), folder)
+    out_dir = os.path.join(batch_output_dir(batch_id), folder)
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"{basename}-{uuid.uuid4().hex[:8]}.{ext}")
     with open(out_path, "wb") as file:
@@ -175,8 +180,12 @@ def _update_batch_status(db, batch_id: int) -> None:
 
 def create_square_redraw_batch(db, request) -> SquareRedrawBatch:
     target_aspect_ratio = request.target_aspect_ratio or "1:1"
-    batch = SquareRedrawBatch(status="queued", target_aspect_ratio=target_aspect_ratio, output_dir=SQUARE_OUTPUT_ROOT)
+    batch = SquareRedrawBatch(status="queued", target_aspect_ratio=target_aspect_ratio)
     db.add(batch)
+    db.flush()
+    # 批次目录依赖自增主键，必须在 flush 拿到 id 之后再落盘，
+    # 否则 output_dir 会指向所有批次共用的父目录，无法界定归属。
+    batch.output_dir = batch_output_dir(batch.id)
     db.commit()
     db.refresh(batch)
 
@@ -411,7 +420,7 @@ def build_square_redraw_zip(db, batch_id: int) -> str:
     if not usable_items:
         raise ValueError("没有可导出的图片")
 
-    out_dir = os.path.join(SQUARE_OUTPUT_ROOT, str(batch_id))
+    out_dir = batch_output_dir(batch_id)
     os.makedirs(out_dir, exist_ok=True)
     zip_path = os.path.join(out_dir, f"square-redraw-{batch_id}.zip")
     manifest = {

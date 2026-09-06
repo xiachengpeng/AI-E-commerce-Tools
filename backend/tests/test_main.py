@@ -957,6 +957,57 @@ def test_history_invalid_module():
     assert resp.json() == []
 
 
+def test_history_list_paginates_newest_first():
+    """列表接口按 limit/offset 分页，且保持时间倒序。"""
+    for index in range(5):
+        saved = client.post(
+            "/api/history/listing",
+            json={"name": f"分页商品 {index}", "platform": "amazon", "result": {}},
+        )
+        assert saved.status_code == 200
+
+    first_page = client.get("/api/history/listing?limit=2")
+    assert first_page.status_code == 200
+    assert len(first_page.json()) == 2
+
+    second_page = client.get("/api/history/listing?limit=2&offset=2")
+    assert second_page.status_code == 200
+    assert len(second_page.json()) == 2
+
+    first_ids = [item["id"] for item in first_page.json()]
+    second_ids = [item["id"] for item in second_page.json()]
+    assert not set(first_ids) & set(second_ids)
+    assert first_ids == sorted(first_ids, reverse=True)
+    assert min(first_ids) > max(second_ids)
+
+
+def test_history_list_rejects_out_of_range_limit():
+    """limit 超出允许区间时由 FastAPI 校验拦截。"""
+    assert client.get("/api/history/listing?limit=0").status_code == 422
+    assert client.get("/api/history/listing?limit=201").status_code == 422
+    assert client.get("/api/history/listing?offset=-1").status_code == 422
+
+
+def test_history_delete_invalid_module_returns_404():
+    """删除未知模块返回 404，而不是 200 加错误体。"""
+    resp = client.delete("/api/history/invalid/1")
+    assert resp.status_code == 404
+
+
+def test_history_save_failure_returns_500(monkeypatch):
+    """保存过程异常时返回 500，前端不会误判为成功。"""
+    def explode(self):
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr("sqlalchemy.orm.Session.commit", explode)
+
+    resp = client.post(
+        "/api/history/listing",
+        json={"name": "失败商品", "platform": "amazon", "result": {}},
+    )
+    assert resp.status_code == 500
+
+
 def test_square_redraw_history_save_and_list():
     payload = {
         "batch_id": 123,
@@ -1014,7 +1065,7 @@ def test_invalid_history_save_emits_failure(monkeypatch):
         json={"image_data": "data:image/png;base64,PRIVATE"},
     )
 
-    assert response.json()["status"] == "error"
+    assert response.status_code == 404
     assert emit.call_args.kwargs["source"] == "history"
     assert emit.call_args.kwargs["message"] == "历史记录保存失败"
     assert "PRIVATE" not in repr(emit.call_args)

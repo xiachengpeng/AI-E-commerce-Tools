@@ -3,20 +3,18 @@ const fs = require('fs');
 const path = require('path');
 
 const html = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'), 'utf8');
-const listStart = html.indexOf('id="langOptionsList"');
-const listEnd = html.indexOf('</div>\n                            </div>', listStart);
-const languageList = html.slice(listStart, listEnd);
+const languages = fs.readFileSync(path.resolve(__dirname, '..', 'js', 'languages.js'), 'utf8');
 
-assert.ok(listStart >= 0, 'text translation language list must exist');
+assert.match(html, /id="textTranslationLanguageOptions"/);
 assert.strictEqual(
-    (languageList.match(/value="Chinese"/g) || []).length,
+    (languages.match(/value: 'Chinese'/g) || []).length,
     1,
     'text translation language list must contain one Chinese target'
 );
-assert.match(languageList, /value="Chinese"[\s\S]*?中文 \(ZH\)/);
+assert.match(languages, /value: 'Chinese'[\s\S]*?textLabel: '中文 \(ZH\)'/);
 assert.strictEqual(
-    (languageList.match(/value="Thai"/g) || []).length,
+    (languages.match(/value: 'Thai'/g) || []).length,
     1,
     'text translation language list must contain one Thai target'
 );
-assert.match(languageList, /value="Thai"[\s\S]*?ไทย \(TH\)/);
+assert.match(languages, /value: 'Thai'[\s\S]*?textLabel: 'ไทย \(TH\)'/);
