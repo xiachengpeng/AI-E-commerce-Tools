@@ -4,6 +4,8 @@
 
 let currentHistoryModule = 'analysis'; // 默认标签
 let _history_cache = []; // 全局缓存，防止 DOM 溢出
+let isHistoryBatchMode = false; // 是否处于批量删除模式
+let selectedHistoryIds = new Set(); // 当前选中的历史记录 ID 集合
 
 function formatImgSrc(src) {
     if (!src) return '';
@@ -37,18 +39,181 @@ function formatHistoryImgSrc(src) {
     return '';
 }
 
-function toggleGlobalHistory() {
+function getHistoryModuleForActiveTab(tabId) {
+    const map = {
+        'analysis': 'analysis',
+        'generate': 'render',
+        'listing': 'listing',
+        'ads': 'ads',
+        'square-redraw': 'square-redraw',
+        'watermark-removal': 'watermark-removal',
+        'translate': 'translation',
+        'text-translate': 'text-translation'
+    };
+    return map[tabId] || null;
+}
+
+function toggleGlobalHistory(forceState) {
     const panel = document.getElementById('globalHistoryPanel');
     if (!panel) return;
-    panel.classList.toggle('open');
-    if (panel.classList.contains('open')) {
+    const btn = document.getElementById('btnOpenHistory');
+    const shouldOpen = typeof forceState === 'boolean' ? forceState : !panel.classList.contains('open');
+
+    panel.classList.toggle('open', shouldOpen);
+    if (btn && btn.classList) {
+        if (typeof btn.classList.toggle === 'function') {
+            btn.classList.toggle('active', shouldOpen);
+        } else if (shouldOpen) {
+            btn.classList.add?.('active');
+        } else {
+            btn.classList.remove?.('active');
+        }
+    }
+
+    if (shouldOpen) {
+        const activeTab = (typeof localStorage !== 'undefined' && localStorage.getItem('activeMainTab')) || 'analysis';
+        const mappedMod = getHistoryModuleForActiveTab(activeTab);
+        if (mappedMod) {
+            currentHistoryModule = mappedMod;
+        }
         loadGlobalHistory(currentHistoryModule);
     }
 }
 
 function switchHistoryTab(module) {
     currentHistoryModule = module;
+    selectedHistoryIds.clear();
+    isHistoryBatchMode = false;
     loadGlobalHistory(module);
+}
+
+function updateHistoryBatchUI() {
+    const toolbar = document.getElementById('historyToolbar');
+    const batchBar = document.getElementById('historyBatchBar');
+    const toggleBtn = document.getElementById('historyBatchToggleBtn');
+    const selectAllCb = document.getElementById('historySelectAllCheckbox');
+    const countBadge = document.getElementById('historySelectedCount');
+    const deleteBtn = document.getElementById('historyBatchDeleteBtn');
+    const totalCountEl = document.getElementById('historyItemCount');
+
+    const totalCount = Array.isArray(_history_cache) ? _history_cache.length : 0;
+    if (totalCountEl) {
+        totalCountEl.textContent = `共 ${totalCount} 条记录`;
+    }
+
+    if (toggleBtn) {
+        toggleBtn.disabled = totalCount === 0;
+        toggleBtn.classList.toggle('opacity-50', totalCount === 0);
+        toggleBtn.classList.toggle('cursor-not-allowed', totalCount === 0);
+    }
+
+    if (isHistoryBatchMode) {
+        toolbar?.classList.add('hidden');
+        batchBar?.classList.remove('hidden');
+        if (countBadge) countBadge.textContent = `已选 ${selectedHistoryIds.size} 项`;
+        if (deleteBtn) {
+            deleteBtn.disabled = selectedHistoryIds.size === 0;
+            deleteBtn.innerHTML = `<i class="ph ph-trash"></i> <span>删除所选${selectedHistoryIds.size > 0 ? ` (${selectedHistoryIds.size})` : ''}</span>`;
+        }
+        if (selectAllCb) {
+            selectAllCb.checked = totalCount > 0 && selectedHistoryIds.size === totalCount;
+            selectAllCb.indeterminate = selectedHistoryIds.size > 0 && selectedHistoryIds.size < totalCount;
+        }
+    } else {
+        toolbar?.classList.remove('hidden');
+        batchBar?.classList.add('hidden');
+    }
+}
+
+function toggleHistoryBatchMode(forceState) {
+    isHistoryBatchMode = typeof forceState === 'boolean' ? forceState : !isHistoryBatchMode;
+    if (!isHistoryBatchMode) {
+        selectedHistoryIds.clear();
+    }
+    updateHistoryBatchUI();
+    renderHistoryItems();
+}
+
+function toggleHistorySelectAll(checked) {
+    if (checked) {
+        _history_cache.forEach(item => {
+            if (item && item.id != null) selectedHistoryIds.add(item.id);
+        });
+    } else {
+        selectedHistoryIds.clear();
+    }
+    updateHistoryBatchUI();
+    renderHistoryItems();
+}
+
+function toggleHistoryItemSelection(id, checked) {
+    if (checked) {
+        selectedHistoryIds.add(id);
+    } else {
+        selectedHistoryIds.delete(id);
+    }
+    updateHistoryBatchUI();
+    renderHistoryItems();
+}
+
+function handleHistoryItemClick(module, index, id) {
+    if (isHistoryBatchMode) {
+        toggleHistoryItemSelection(id, !selectedHistoryIds.has(id));
+    } else {
+        restoreHistoryItemByIndex(module, index);
+    }
+}
+
+async function deleteHistoryBatchSelected() {
+    if (!selectedHistoryIds.size) return;
+    const count = selectedHistoryIds.size;
+    if (!confirm(`确定要批量删除选中的 ${count} 条历史记录吗？删除后无法恢复。`)) return;
+
+    try {
+        const ids = Array.from(selectedHistoryIds);
+        let res = await fetch(`${API_BASE}/api/history/${currentHistoryModule}/batch-delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+
+        // 兼容性降级：若后端进程尚未重启加载批量路由 (HTTP 404 或 405)，自动降级为并行单条删除
+        if (!res.ok && (res.status === 404 || res.status === 405)) {
+            console.warn(`[History] Batch delete endpoint returned ${res.status}, fallback to parallel single deletes`);
+            const results = await Promise.allSettled(
+                ids.map(id => fetch(`${API_BASE}/api/history/${currentHistoryModule}/${id}`, { method: 'DELETE' }))
+            );
+            const successCount = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
+            if (successCount > 0) {
+                showToast(`已成功删除 ${successCount} 条历史记录`, 'success');
+                selectedHistoryIds.clear();
+                isHistoryBatchMode = false;
+                await loadGlobalHistory(currentHistoryModule);
+                return;
+            }
+        }
+
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            const errMsg = errData.detail || errData.message || `批量删除失败 (HTTP ${res.status})`;
+            console.error(`Batch delete history failed: HTTP ${res.status}`, errData);
+            showToast(errMsg, 'error');
+            return;
+        }
+
+        const data = await res.json();
+        if (data.status === 'success') {
+            showToast(`已成功删除 ${data.deleted_count ?? count} 条历史记录`, 'success');
+            selectedHistoryIds.clear();
+            isHistoryBatchMode = false;
+            await loadGlobalHistory(currentHistoryModule);
+        } else {
+            showToast(data.message || '批量删除失败', 'error');
+        }
+    } catch (e) {
+        console.error('Batch delete failed:', e);
+        showToast('批量删除失败: ' + (e.message || '网络异常'), 'error');
+    }
 }
 
 async function loadGlobalHistory(module) {
@@ -67,103 +232,127 @@ async function loadGlobalHistory(module) {
     try {
         const res = await fetch(`${API_BASE}/api/history/${module}?_t=${Date.now()}`);
         const data = await res.json();
-        _history_cache = data;
+        _history_cache = Array.isArray(data) ? data : [];
 
-        if (!data || data.length === 0) {
-            list.innerHTML = '<div class="text-center py-20 text-gray-400 text-sm">暂无记录</div>';
-            return;
+        if (!_history_cache.length) {
+            isHistoryBatchMode = false;
+            selectedHistoryIds.clear();
         }
-
-        list.innerHTML = data.map((item, index) => {
-            // 极致兼容：依次尝试所有可能的名称字段
-            const name = item.query_url ||
-                item.product_name ||
-                item.task_name ||
-                (module === 'square-redraw' && item.batch_id ? `尺寸重绘批次 #${item.batch_id}` : '') ||
-                (module === 'watermark-removal' ? item.filename : '') ||
-                item.source_text ||
-                item.name ||
-                item.text ||
-                (item.result && (item.result.title?.target || item.result.name)) ||
-                '未命名任务';
-
-            const time = item.timestamp ? new Date(item.timestamp).toLocaleString() : '未知时间';
-            
-            let subInfo = item.platform ? `平台: ${item.platform}` : (item.target_lang ? `语言: ${item.target_lang}` : (item.style ? `风格: ${item.style}` : ''));
-            
-            // 针对文本翻译，把结果摘要放进去
-            if (module === 'text-translation' && item.result) {
-                const preview = typeof item.result === 'string' ? item.result : (item.result.translated_text || '');
-                subInfo += ` | 译文: ${preview.substring(0, 30)}${preview.length > 30 ? '...' : ''}`;
-            } else if (module === 'ads') {
-                subInfo = [item.platforms, item.region, item.target_lang].filter(Boolean).join(' / ');
-            } else if (module === 'square-redraw') {
-                const result = item.result || {};
-                const summary = result.summary || {};
-                subInfo = `目标 ${item.target_aspect_ratio || result.target_aspect_ratio || '1:1'} | 成功 ${summary.done || 0} | 跳过 ${summary.skipped || 0} | 失败 ${summary.failed || 0}`;
-            } else if (module === 'watermark-removal') {
-                const result = item.result || {};
-                const size = result.width && result.height ? `${result.width} × ${result.height}` : '';
-                const regionCount = Array.isArray(result.regions) ? `${result.regions.length} 个区域` : '';
-                subInfo = [size, regionCount].filter(Boolean).join(' | ') || '已完成消除';
-            }
-
-            // 提取缩略图 (针对翻译和渲染模块)
-            let thumb = '';
-            if (module === 'square-redraw') {
-                const firstImage = (item.result?.items || []).find(img => img.output_url || img.source_url);
-                const imgSrc = formatHistoryImgSrc(firstImage?.output_url || firstImage?.source_url);
-                if (imgSrc) {
-                    thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
-                                <img src="${escapeHistoryHtml(imgSrc)}" class="w-full h-full object-cover">
-                             </div>`;
-                }
-            } else if (module === 'watermark-removal') {
-                const imgSrc = formatHistoryImgSrc(item.result?.result_url);
-                if (imgSrc) {
-                    thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
-                                <img src="${escapeHistoryHtml(imgSrc)}" class="w-full h-full object-cover" alt="">
-                             </div>`;
-                }
-            } else if (module === 'render' || module === 'translation' || module === 'ads') {
-                const imgData = item.image_url || item.image_base64 || item.result || item.data || item.metadata_info?.finalImage;
-                let imgSrc = formatHistoryImgSrc(typeof imgData === 'string' ? imgData : (imgData && imgData.image));
-                
-                if (imgSrc) {
-                    thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
-                                <img src="${escapeHistoryHtml(imgSrc)}" class="w-full h-full object-cover">
-                             </div>`;
-                }
-            } else if (module === 'text-translation') {
-                thumb = `<div class="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0 text-indigo-500">
-                            <i class="ph-fill ph-text-t text-base"></i>
-                         </div>`;
-            }
-
-            return `
-                <div class="history-item p-3 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors flex items-center gap-3 group" onclick="restoreHistoryItemByIndex('${module}', ${index})">
-                    ${thumb}
-                    <div class="flex-1 min-w-0">
-                        <div class="flex justify-between mb-1">
-                            <span class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${module}</span>
-                            <span class="text-[9px] text-gray-400">${escapeHistoryHtml(time)}</span>
-                        </div>
-                        <div class="text-xs font-bold text-gray-800 truncate">${escapeHistoryHtml(name)}</div>
-                        ${subInfo ? `<div class="text-[9px] text-gray-400 mt-1">${escapeHistoryHtml(subInfo)}</div>` : ''}
-                    </div>
-                    <!-- 删除按钮：放在末尾 -->
-                    <button onclick="event.stopPropagation(); deleteHistoryItem('${module}', ${item.id})" 
-                            class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0" 
-                            title="删除此记录">
-                        <i class="ph ph-trash text-base"></i>
-                    </button>
-                </div>
-            `;
-        }).join('');
+        updateHistoryBatchUI();
+        renderHistoryItems();
     } catch (e) {
         list.innerHTML = '<div class="text-center py-20 text-red-400">加载失败</div>';
+        updateHistoryBatchUI();
     }
 }
+
+function renderHistoryItems() {
+    const list = document.getElementById('globalHistoryList');
+    if (!list) return;
+
+    if (!_history_cache || _history_cache.length === 0) {
+        list.innerHTML = '<div class="text-center py-20 text-gray-400 text-sm">暂无记录</div>';
+        return;
+    }
+
+    const module = currentHistoryModule;
+    list.innerHTML = _history_cache.map((item, index) => {
+        // 极致兼容：依次尝试所有可能的名称字段
+        const name = item.query_url ||
+            item.product_name ||
+            item.task_name ||
+            (module === 'square-redraw' && item.batch_id ? `尺寸重绘批次 #${item.batch_id}` : '') ||
+            (module === 'watermark-removal' ? item.filename : '') ||
+            item.source_text ||
+            item.name ||
+            item.text ||
+            (item.result && (item.result.title?.target || item.result.name)) ||
+            '未命名任务';
+
+        const time = item.timestamp ? new Date(item.timestamp).toLocaleString() : '未知时间';
+
+        let subInfo = item.platform ? `平台: ${item.platform}` : (item.target_lang ? `语言: ${item.target_lang}` : (item.style ? `风格: ${item.style}` : ''));
+
+        // 针对文本翻译，把结果摘要放进去
+        if (module === 'text-translation' && item.result) {
+            const preview = typeof item.result === 'string' ? item.result : (item.result.translated_text || '');
+            subInfo += ` | 译文: ${preview.substring(0, 30)}${preview.length > 30 ? '...' : ''}`;
+        } else if (module === 'ads') {
+            subInfo = [item.platforms, item.region, item.target_lang].filter(Boolean).join(' / ');
+        } else if (module === 'square-redraw') {
+            const result = item.result || {};
+            const summary = result.summary || {};
+            subInfo = `目标 ${item.target_aspect_ratio || result.target_aspect_ratio || '1:1'} | 成功 ${summary.done || 0} | 跳过 ${summary.skipped || 0} | 失败 ${summary.failed || 0}`;
+        } else if (module === 'watermark-removal') {
+            const result = item.result || {};
+            const size = result.width && result.height ? `${result.width} × ${result.height}` : '';
+            const regionCount = Array.isArray(result.regions) ? `${result.regions.length} 个区域` : '';
+            subInfo = [size, regionCount].filter(Boolean).join(' | ') || '已完成消除';
+        }
+
+        // 提取缩略图 (针对翻译和渲染模块)
+        let thumb = '';
+        if (module === 'square-redraw') {
+            const firstImage = (item.result?.items || []).find(img => img.output_url || img.source_url);
+            const imgSrc = formatHistoryImgSrc(firstImage?.output_url || firstImage?.source_url);
+            if (imgSrc) {
+                thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
+                            <img src="${escapeHistoryHtml(imgSrc)}" class="w-full h-full object-cover">
+                         </div>`;
+            }
+        } else if (module === 'watermark-removal') {
+            const imgSrc = formatHistoryImgSrc(item.result?.result_url);
+            if (imgSrc) {
+                thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
+                            <img src="${escapeHistoryHtml(imgSrc)}" class="w-full h-full object-cover" alt="">
+                         </div>`;
+            }
+        } else if (module === 'render' || module === 'translation' || module === 'ads') {
+            const imgData = item.image_url || item.image_base64 || item.result || item.data || item.metadata_info?.finalImage;
+            let imgSrc = formatHistoryImgSrc(typeof imgData === 'string' ? imgData : (imgData && imgData.image));
+
+            if (imgSrc) {
+                thumb = `<div class="w-10 h-10 rounded border border-gray-100 overflow-hidden flex-shrink-0 bg-gray-50">
+                            <img src="${escapeHistoryHtml(imgSrc)}" class="w-full h-full object-cover">
+                         </div>`;
+            }
+        } else if (module === 'text-translation') {
+            thumb = `<div class="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0 text-indigo-500">
+                        <i class="ph-fill ph-text-t text-base"></i>
+                     </div>`;
+        }
+
+        const isSelected = selectedHistoryIds.has(item.id);
+
+        return `
+            <div class="history-item p-3 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors flex items-center gap-3 group ${isSelected ? 'bg-indigo-50/90 border-indigo-200 shadow-xs' : ''}"
+                 onclick="handleHistoryItemClick('${module}', ${index}, ${item.id})">
+                ${isHistoryBatchMode ? `
+                    <input type="checkbox" class="history-item-checkbox rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 shrink-0 cursor-pointer"
+                           ${isSelected ? 'checked' : ''}
+                           onclick="event.stopPropagation(); toggleHistoryItemSelection(${item.id}, this.checked)">
+                ` : ''}
+                ${thumb}
+                <div class="flex-1 min-w-0">
+                    <div class="flex justify-between mb-1">
+                        <span class="text-[9px] font-black text-blue-500 uppercase tracking-widest">${module}</span>
+                        <span class="text-[9px] text-gray-400">${escapeHistoryHtml(time)}</span>
+                    </div>
+                    <div class="text-xs font-bold text-gray-800 truncate">${escapeHistoryHtml(name)}</div>
+                    ${subInfo ? `<div class="text-[9px] text-gray-400 mt-1">${escapeHistoryHtml(subInfo)}</div>` : ''}
+                </div>
+                ${!isHistoryBatchMode ? `
+                <button onclick="event.stopPropagation(); deleteHistoryItem('${module}', ${item.id})"
+                        class="w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                        title="删除此记录">
+                    <i class="ph ph-trash text-base"></i>
+                </button>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+}
+
 
 async function restoreHistoryItemByIndex(module, index) {
     const dataObj = _history_cache[index];
@@ -209,7 +398,10 @@ async function restoreHistoryItemByIndex(module, index) {
         switchMainTab('listing');
         if (!responseObj) return;
         setTimeout(() => {
-            if (typeof renderListingData === 'function') {
+            if (typeof restoreListingFullState === 'function') {
+                restoreListingFullState(dataObj);
+                showToast('Listing 历史已完整恢复', 'success');
+            } else if (typeof renderListingData === 'function') {
                 renderListingData(responseObj);
                 showToast('Listing 历史已恢复', 'success');
             }
@@ -237,7 +429,23 @@ async function restoreHistoryItemByIndex(module, index) {
     } else if (module === 'render') {
         switchMainTab('generate');
 
-        const metadata = dataObj.metadata_info || dataObj.metadata || {};
+        let metadata = dataObj.metadata_info || dataObj.metadata || null;
+        if (!metadata && dataObj.id) {
+            try {
+                const itemRes = await fetch(`${API_BASE}/api/history/render/${dataObj.id}`);
+                if (itemRes.ok) {
+                    const fullItem = await itemRes.json();
+                    if (fullItem) {
+                        dataObj.metadata_info = fullItem.metadata_info;
+                        dataObj.image_base64 = fullItem.image_base64 || dataObj.image_base64;
+                        metadata = fullItem.metadata_info || fullItem.metadata || {};
+                    }
+                }
+            } catch (err) {
+                console.warn('[History] 按需拉取详情页项目详情失败:', err);
+            }
+        }
+        metadata = metadata || {};
         let imgData = dataObj.image_base64 || responseObj;
         if (imgData && typeof imgData === 'object') {
             imgData = imgData.image_base64 || imgData.image || imgData.data || imgData.finalImage || '';
@@ -405,6 +613,7 @@ async function deleteHistoryItem(module, id) {
         const data = await response.json();
         if (data.status === 'success') {
             showToast('记录已删除', 'success');
+            selectedHistoryIds.delete(id);
             loadGlobalHistory(module); // 刷新列表
         } else {
             showToast('删除失败', 'error');
@@ -413,4 +622,118 @@ async function deleteHistoryItem(module, id) {
         console.error('Delete history failed:', e);
         showToast('删除失败', 'error');
     }
+}
+
+function getHistoryBatchMode() {
+    return isHistoryBatchMode;
+}
+
+function getSelectedHistoryIds() {
+    return selectedHistoryIds;
+}
+
+function setHistoryCache(items) {
+    _history_cache = Array.isArray(items) ? items : [];
+}
+
+function getHistoryCache() {
+    return _history_cache;
+}
+
+function getCurrentHistoryModule() {
+    return currentHistoryModule;
+}
+
+function setCurrentHistoryModule(mod) {
+    currentHistoryModule = mod;
+}
+
+if (typeof window !== 'undefined') {
+    window.toggleGlobalHistory = toggleGlobalHistory;
+    window.switchHistoryTab = switchHistoryTab;
+    window.loadGlobalHistory = loadGlobalHistory;
+    window.renderHistoryItems = renderHistoryItems;
+    window.restoreHistoryItemByIndex = restoreHistoryItemByIndex;
+    window.saveToHistory = saveToHistory;
+    window.deleteHistoryItem = deleteHistoryItem;
+    window.toggleHistoryBatchMode = toggleHistoryBatchMode;
+    window.toggleHistorySelectAll = toggleHistorySelectAll;
+    window.toggleHistoryItemSelection = toggleHistoryItemSelection;
+    window.handleHistoryItemClick = handleHistoryItemClick;
+    window.deleteHistoryBatchSelected = deleteHistoryBatchSelected;
+    window.updateHistoryBatchUI = updateHistoryBatchUI;
+    window.getHistoryBatchMode = getHistoryBatchMode;
+    window.getSelectedHistoryIds = getSelectedHistoryIds;
+    window.setHistoryCache = setHistoryCache;
+    window.getHistoryCache = getHistoryCache;
+    window.getCurrentHistoryModule = getCurrentHistoryModule;
+    window.setCurrentHistoryModule = setCurrentHistoryModule;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.toggleGlobalHistory = toggleGlobalHistory;
+    globalThis.switchHistoryTab = switchHistoryTab;
+    globalThis.loadGlobalHistory = loadGlobalHistory;
+    globalThis.renderHistoryItems = renderHistoryItems;
+    globalThis.restoreHistoryItemByIndex = restoreHistoryItemByIndex;
+    globalThis.saveToHistory = saveToHistory;
+    globalThis.deleteHistoryItem = deleteHistoryItem;
+    globalThis.toggleHistoryBatchMode = toggleHistoryBatchMode;
+    globalThis.toggleHistorySelectAll = toggleHistorySelectAll;
+    globalThis.toggleHistoryItemSelection = toggleHistoryItemSelection;
+    globalThis.handleHistoryItemClick = handleHistoryItemClick;
+    globalThis.deleteHistoryBatchSelected = deleteHistoryBatchSelected;
+    globalThis.updateHistoryBatchUI = updateHistoryBatchUI;
+    globalThis.getHistoryBatchMode = getHistoryBatchMode;
+    globalThis.getSelectedHistoryIds = getSelectedHistoryIds;
+    globalThis.setHistoryCache = setHistoryCache;
+    globalThis.getHistoryCache = getHistoryCache;
+    globalThis.getCurrentHistoryModule = getCurrentHistoryModule;
+    globalThis.setCurrentHistoryModule = setCurrentHistoryModule;
+    globalThis.getHistoryModuleForActiveTab = getHistoryModuleForActiveTab;
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const panel = document.getElementById('globalHistoryPanel');
+            if (panel && panel.classList.contains('open')) {
+                toggleGlobalHistory(false);
+            }
+        }
+    });
+
+    window.addEventListener('click', (e) => {
+        const panel = document.getElementById('globalHistoryPanel');
+        const btn = document.getElementById('btnOpenHistory');
+        if (panel && panel.classList.contains('open')) {
+            if (!panel.contains(e.target) && (!btn || !btn.contains(e.target))) {
+                toggleGlobalHistory(false);
+            }
+        }
+    });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        toggleGlobalHistory,
+        switchHistoryTab,
+        loadGlobalHistory,
+        renderHistoryItems,
+        restoreHistoryItemByIndex,
+        saveToHistory,
+        deleteHistoryItem,
+        toggleHistoryBatchMode,
+        toggleHistorySelectAll,
+        toggleHistoryItemSelection,
+        handleHistoryItemClick,
+        deleteHistoryBatchSelected,
+        updateHistoryBatchUI,
+        getHistoryBatchMode,
+        getSelectedHistoryIds,
+        setHistoryCache,
+        getHistoryCache,
+        getCurrentHistoryModule,
+        setCurrentHistoryModule,
+        getHistoryModuleForActiveTab
+    };
 }

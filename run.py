@@ -18,6 +18,10 @@ if sys.platform == "win32":
     else:
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
+FRONTEND_PORT = 9502
+BACKEND_PORT = 9503
+
+
 def is_port_available(host, port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.5)
@@ -31,24 +35,32 @@ def run_app():
 
     print("🚀 正在启动 AI 竞品分析工具...")
 
-    if not is_port_available("127.0.0.1", 8000):
-        print("❌ 后端端口 8000 已被占用。请先关闭旧的后端服务后再运行 python run.py。")
+    dist_css = os.path.join(frontend_dir, "dist", "output.css")
+    if not os.path.exists(dist_css):
+        print("🎨 检测到缺少 Tailwind CSS 文件，正在自动编译...")
+        try:
+            subprocess.run(["npm", "run", "build:css"], cwd=frontend_dir, check=True)
+            print("✅ Tailwind CSS 编译成功")
+        except Exception as e:
+            print(f"⚠️ 自动编译 CSS 失败 ({e})，请在 frontend/ 目录下手动执行 npm run build:css")
+
+    if not is_port_available("127.0.0.1", BACKEND_PORT):
+        print(f"❌ 后端端口 {BACKEND_PORT} 已被占用。请先关闭旧的后端服务后再运行 python run.py。")
         return
-    if not is_port_available("127.0.0.1", 8080):
-        print("❌ 前端端口 8080 已被占用。请先关闭旧的前端服务后再运行 python run.py。")
+    if not is_port_available("127.0.0.1", FRONTEND_PORT):
+        print(f"❌ 前端端口 {FRONTEND_PORT} 已被占用。请先关闭旧的前端服务后再运行 python run.py。")
         return
 
-    # 1. 启动后端 (Uvicorn) - 竞品分析服务 端口 8000
+    # 1. 启动后端 (Uvicorn) - 端口 9503
     backend_process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000",
+        [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", str(BACKEND_PORT),
          "--app-dir", backend_dir],
         cwd=backend_dir,
         env={**os.environ, "PYTHONPATH": backend_dir}
     )
-    print("✅ 竞品分析后端已启动: http://localhost:8000")
+    print(f"✅ 竞品分析后端已启动: http://localhost:{BACKEND_PORT}")
 
-    # 2. 启动前端 HTTP Server - 端口 8080
-    # 使用 python -c 启动一个带 UTF-8 头的简单服务器
+    # 2. 启动前端 HTTP Server - 端口 9502
     frontend_script = f"""
 import http.server
 import socketserver
@@ -67,19 +79,19 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
             return base_type + '; charset=utf-8'
         return base_type
 
-print("Serving HTTP on 127.0.0.1 port 8080 (http://127.0.0.1:8080/) ...")
-with socketserver.TCPServer(("127.0.0.1", 8080), MyHandler) as httpd:
+print("Serving HTTP on 127.0.0.1 port {FRONTEND_PORT} (http://127.0.0.1:{FRONTEND_PORT}/) ...")
+with socketserver.TCPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) as httpd:
     httpd.serve_forever()
 """
     frontend_process = subprocess.Popen(
         [sys.executable, "-c", frontend_script],
         cwd=frontend_dir
     )
-    print("✅ 前端服务已启动: http://localhost:8080")
+    print(f"✅ 前端服务已启动: http://localhost:{FRONTEND_PORT}")
 
     # 3. 等待启动后打开浏览器
     time.sleep(1.5)
-    url = "http://localhost:8080/index.html"
+    url = f"http://localhost:{FRONTEND_PORT}/index.html"
     print(f"🌐 正在打开浏览器: {url}")
     try:
         webbrowser.open(url)
@@ -87,7 +99,8 @@ with socketserver.TCPServer(("127.0.0.1", 8080), MyHandler) as httpd:
         pass
 
     print("\n💡 提示:")
-    print("   - 前端页面: http://localhost:8080/index.html")
+    print(f"   - 前端页面: http://localhost:{FRONTEND_PORT}/index.html")
+    print(f"   - 后端服务: http://localhost:{BACKEND_PORT}")
     print("   - 按 Ctrl+C 同时停止所有服务\n")
 
     try:

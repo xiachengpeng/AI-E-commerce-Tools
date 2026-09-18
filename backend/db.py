@@ -3,12 +3,11 @@ import json
 import uuid
 
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, Index, event, inspect, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 import os
 
 # 数据库文件路径
-DB_PATH = os.path.join(os.path.dirname(__file__), "history.db")
+DB_PATH = os.getenv("SQLITE_DB_PATH") or os.path.join(os.path.dirname(__file__), "history.db")
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(
@@ -24,6 +23,12 @@ def enable_sqlite_foreign_keys(db_engine):
     def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        except Exception:
+            pass
         cursor.close()
 
 
@@ -130,6 +135,14 @@ class SquareRedrawItem(Base):
     error_message = Column(Text, nullable=True)
 
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+    key = Column(String(100), primary_key=True)
+    value = Column(JSON, nullable=True)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+
 class AIProviderConfig(Base):
     __tablename__ = "ai_provider_configs"
     __table_args__ = (
@@ -180,11 +193,117 @@ class AICapabilityBinding(Base):
     )
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
 
+
+class StorageConfig(Base):
+    __tablename__ = "storage_configs"
+
+    id = Column(Integer, primary_key=True)
+    storage_type = Column(String(32), nullable=False)  # 'wordpress', 'shopify', or 'r2'
+    name = Column(String(120), nullable=True)  # User-defined site/store remark
+    is_default = Column(Integer, nullable=False, default=0)  # 1 if active default for this storage_type
+    enabled = Column(Integer, nullable=False, default=1)
+
+    # WordPress fields
+    wp_url = Column(Text, nullable=True)
+    wp_username = Column(String(120), nullable=True)
+    wp_app_password = Column(Text, nullable=True)
+
+    # Shopify fields
+    shopify_shop_domain = Column(String(120), nullable=True)
+    shopify_access_token = Column(Text, nullable=True)
+
+    # Cloudflare R2 fields
+    r2_account_id = Column(String(120), nullable=True)
+    r2_access_key_id = Column(String(120), nullable=True)
+    r2_secret_access_key = Column(Text, nullable=True)
+    r2_bucket_name = Column(String(120), nullable=True)
+    r2_public_url = Column(Text, nullable=True)
+    r2_path_prefix = Column(String(120), nullable=True, default="pdp/")
+
+    # Diagnostics
+    last_test_status = Column(String(30), nullable=True)
+    last_test_message = Column(Text, nullable=True)
+    last_tested_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
+class FirecrawlConfig(Base):
+    __tablename__ = "firecrawl_configs"
+
+    id = Column(Integer, primary_key=True)
+    api_key = Column(Text, nullable=True)
+    api_url = Column(Text, nullable=False, default="https://api.firecrawl.dev/v1/scrape")
+    last_test_status = Column(String(30), nullable=True)
+    last_test_message = Column(Text, nullable=True)
+    last_tested_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.datetime.now)
+    updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+
 # 创建所有表
 def init_db():
     Base.metadata.create_all(bind=engine)
     migrate_square_redraw_tables()
     migrate_ai_settings_tables()
+    migrate_storage_tables()
+
+
+def migrate_storage_tables():
+    Base.metadata.create_all(bind=engine)
+    if engine.dialect.name != "sqlite":
+        return
+
+    inspector = inspect(engine)
+    if "storage_configs" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("storage_configs")}
+    unique_constraints = inspector.get_unique_constraints("storage_configs")
+    indexes = inspector.get_indexes("storage_configs")
+
+    has_type_unique = False
+    for uc in unique_constraints:
+        if uc.get("column_names") == ["storage_type"]:
+            has_type_unique = True
+            break
+    for idx in indexes:
+        if idx.get("unique") and idx.get("column_names") == ["storage_type"]:
+            has_type_unique = True
+            break
+
+    needs_migration = has_type_unique or "name" not in columns or "shopify_shop_domain" not in columns
+
+    if needs_migration:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE storage_configs RENAME TO storage_configs_old"))
+            Base.metadata.tables["storage_configs"].create(bind=conn)
+
+            old_cols = [c["name"] for c in inspector.get_columns("storage_configs_old")]
+            common_cols = [
+                c for c in old_cols
+                if c in (
+                    "id", "storage_type", "enabled", "wp_url", "wp_username", "wp_app_password",
+                    "r2_account_id", "r2_access_key_id", "r2_secret_access_key", "r2_bucket_name",
+                    "r2_public_url", "r2_path_prefix", "last_test_status", "last_test_message",
+                    "last_tested_at", "created_at", "updated_at"
+                )
+            ]
+            cols_str = ", ".join(common_cols)
+            conn.execute(text(f"""
+                INSERT INTO storage_configs ({cols_str}, name, is_default)
+                SELECT {cols_str},
+                    CASE
+                        WHEN storage_type = 'wordpress' THEN coalesce(wp_username || ' (' || wp_url || ')', '默认 WordPress 站点')
+                        WHEN storage_type = 'r2' THEN '默认 Cloudflare R2'
+                        ELSE '默认配置'
+                    END as name,
+                    1 as is_default
+                FROM storage_configs_old
+            """))
+            conn.execute(text("DROP TABLE storage_configs_old"))
 
 
 def migrate_square_redraw_tables():

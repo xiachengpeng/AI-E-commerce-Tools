@@ -143,6 +143,15 @@ def test_compare_valid_url_accepted():
     assert "长度超过限制" not in data.get("message", "")
 
 
+def test_compare_accepts_mode():
+    """/compare 端点接受 mode 参数（quick / deep）"""
+    with patch("main.fetch_markdown", new=AsyncMock(side_effect=Exception("stop after validation"))):
+        resp = client.post("/compare", json={"urls": ["https://example.com/product"], "mode": "quick"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "URL 格式无效" not in data.get("message", "")
+
+
 # ============================================================
 # CORS
 # ============================================================
@@ -1069,6 +1078,39 @@ def test_invalid_history_save_emits_failure(monkeypatch):
     assert emit.call_args.kwargs["source"] == "history"
     assert emit.call_args.kwargs["message"] == "历史记录保存失败"
     assert "PRIVATE" not in repr(emit.call_args)
+
+
+def test_history_batch_delete_success():
+    """POST /api/history/{module}/batch-delete 批量删除记录。"""
+    id1 = client.post("/api/history/listing", json={"name": "批量商品1", "platform": "amazon", "result": {}}).json()["id"]
+    id2 = client.post("/api/history/listing", json={"name": "批量商品2", "platform": "amazon", "result": {}}).json()["id"]
+    id3 = client.post("/api/history/listing", json={"name": "批量商品3", "platform": "amazon", "result": {}}).json()["id"]
+
+    resp = client.post("/api/history/listing/batch-delete", json={"ids": [id1, id2]})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+    assert resp.json()["deleted_count"] == 2
+
+    # id3 依然存在，id1 和 id2 已被删除
+    remaining = client.get("/api/history/listing").json()
+    remaining_ids = [item["id"] for item in remaining]
+    assert id3 in remaining_ids
+    assert id1 not in remaining_ids
+    assert id2 not in remaining_ids
+
+
+def test_history_batch_delete_empty_ids_returns_zero():
+    """空列表直接返回 deleted_count = 0。"""
+    resp = client.post("/api/history/listing/batch-delete", json={"ids": []})
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "success", "deleted_count": 0}
+
+
+def test_history_batch_delete_invalid_module_returns_404():
+    """未知模块批量删除返回 404。"""
+    resp = client.post("/api/history/invalid/batch-delete", json={"ids": [1, 2]})
+    assert resp.status_code == 404
+
 
 
 # ============================================================

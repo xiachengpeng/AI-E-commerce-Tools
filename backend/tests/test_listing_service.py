@@ -214,3 +214,41 @@ async def test_check_listing_compliance_routes_text_output_to_text_capability():
 
     assert result["overall_level"] == "low"
     assert mocked.await_args.kwargs["capability"] == "text"
+
+
+def test_normalize_listing_result_includes_search_terms_and_alternatives():
+    data = {
+        "title": {"target": "Modern Rattan Pendant Light", "zh": "复古吊灯"},
+        "titleAlternatives": [
+            {"target": "Boho Woven Ceiling Chandelier", "zh": "波西米亚吊灯", "style": "场景买点导向"},
+        ],
+        "keywords": {
+            "core": [{"target": "rattan pendant light fixture", "zh": "藤编灯具"}],
+            "longTail": [{"target": "dining room woven lampshade", "zh": "餐厅编织灯罩"}],
+        },
+    }
+    result = normalize_listing_result(data)
+    assert len(result["titleAlternatives"]) == 1
+    assert result["titleAlternatives"][0]["target"] == "Boho Woven Ceiling Chandelier"
+    assert "searchTerms" in result
+    # Search terms should exclude words from main title ("Modern", "Rattan", "Pendant", "Light")
+    st = result["searchTerms"]["target"]
+    assert "fixture" in st
+    assert "dining" in st
+    assert len(st.encode("utf-8")) <= 249
+
+
+def test_listing_prompt_contains_anti_fluff_and_outcome_bracket_guidelines():
+    from services.listing_service import _listing_prompt
+    request = ListingGenerateRequest(
+        name="Ergonomic Desk Chair",
+        points="Adjustable lumbar support\nBreathable mesh",
+        keywords="office chair, ergonomic chair",
+        platform="Amazon",
+        region="US Market",
+    )
+    prompt = _listing_prompt(request)
+    assert "Strict Anti-Fluff & Voice of Customer" in prompt
+    assert "revolutionary" in prompt
+    assert "game-changing" in prompt
+    assert "uppercase bracketed outcome/benefit tag" in prompt

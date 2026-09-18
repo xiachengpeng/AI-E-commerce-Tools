@@ -432,4 +432,83 @@ const checklist = context.buildExportChecklist([
 assert(checklist.some(item => item.level === 'warning'));
 assert(checklist.some(item => /fallback|降级/i.test(item.text)));
 
+// ==========================================
+// 卖点智能解析与跨品类去健身偏差专项测试
+// ==========================================
+assert.strictEqual(typeof context.parseSellingPointsList, 'function');
+assert.strictEqual(typeof context.resolveModuleFocalFeature, 'function');
+
+// 1. 测试 AI 提取结构化卖点解析
+const aiBrief = [
+    '1. Product name: Ultrasonic Dog Bark Deterrent',
+    '2. Product type and core use: Handheld anti-barking device for pets.',
+    '3. Known facts: 1200mAh battery; 50ft range; Weatherproof IPX4.',
+    '4. Core selling points:',
+    '- 3 Variable Frequency Modes (20-30kHz) prevent dog habituation',
+    '- Dual High-Frequency Speakers deliver 50ft effective deterrent range',
+    '- Ergonomic Anti-Slip Grip with built-in LED flashlight for night walks',
+    '5. Target users: Dog owners, urban pet walkers',
+    '6. Use scenarios: Backyard barking, outdoor leash walking, neighbor dog calming'
+].join('\n');
+
+const parsedAiBrief = context.parseSellingPointsList(aiBrief);
+assert(parsedAiBrief.coreBenefits.length >= 3);
+assert.match(parsedAiBrief.coreBenefits[0], /3 Variable Frequency Modes/);
+assert.match(parsedAiBrief.coreBenefits[1], /Dual High-Frequency Speakers/);
+assert.match(parsedAiBrief.facts[0], /1200mAh/);
+assert.match(parsedAiBrief.scenarios[0], /Backyard barking/);
+
+// 2. 厨房破壁机跨品类测试：验证卖点精准绑定且绝对不包含走步机/跑步机专属词
+const blenderSellingPoints = [
+    '1. 500W High-Torque Pure Copper Motor crushes ice in 10 seconds',
+    '2. 6-Leaf 304 Stainless Steel Blades with serrated edges',
+    '3. 450ml Portable Tritan Sports Bottle with leak-proof travel lid',
+    '4. Magnetic Induction Safety Lock prevents accidental blade rotation'
+].join('\n');
+
+const blenderConfig = {
+    ...config,
+    productName: 'Portable Personal Blender',
+    productFacts: 'Power: 500W; Capacity: 450ml; Material: Tritan & 304 Stainless Steel',
+    forbiddenClaims: 'Do not claim commercial restaurant heavy-duty usage'
+};
+
+const blenderTasks = context.buildStrategyTasks([
+    { id: 'm1', promptTitle: 'Hero Product Understanding', title: '首屏认知', count: 1 },
+    { id: 'm2', promptTitle: 'Core Benefit Proof', title: '核心功能证明', count: 2 },
+    { id: 'm6', promptTitle: 'Detail and Material Proof', title: '细节材质证明', count: 1 }
+], blenderSellingPoints, blenderConfig);
+
+assert.strictEqual(blenderTasks.length, 4);
+assert.match(blenderTasks[1].focalFeature, /500W|Copper Motor/i);
+assert.match(blenderTasks[2].focalFeature, /304 Stainless Steel Blades/i);
+assert.match(blenderTasks[3].focalFeature, /Stainless Steel|Tritan/i);
+
+const blenderPrompt0 = context.buildModuleGenerationPrompt(blenderTasks[1], blenderSellingPoints, blenderConfig);
+const blenderPrompt1 = context.buildModuleGenerationPrompt(blenderTasks[2], blenderSellingPoints, blenderConfig);
+
+// 核心断言：Prompt 绝不能出现写死的走步机专属词汇
+assert.doesNotMatch(blenderPrompt0, /under-desk|walking pad|treadmill|running belt|vibration mode/i);
+assert.doesNotMatch(blenderPrompt1, /under-desk|walking pad|treadmill|running belt|vibration mode/i);
+
+// 核心断言：角色职责保留通用且精准的角标
+assert.match(blenderPrompt0, /Benefit 1: core daily-use angle/i);
+assert.match(blenderPrompt1, /Benefit 2: secondary function angle/i);
+
+// 3. 验证 buildSEOMetadataPrompt 与 buildModuleTextPolicy 严格对齐商品名称与专属卖点
+const blenderSeoPrompt = context.buildSEOMetadataPrompt(blenderTasks[1], blenderSellingPoints, blenderConfig);
+assert.match(blenderSeoPrompt, /Product name: Portable Personal Blender/);
+assert.match(blenderSeoPrompt, /Module focal feature:/);
+assert.match(blenderSeoPrompt, /Copper Motor|500W/);
+assert.doesNotMatch(blenderSeoPrompt, /walking pad|treadmill/);
+
+const textPolicyWithFocal = context.buildModuleTextPolicy(blenderTasks[1], blenderConfig);
+assert.match(textPolicyWithFocal, /Focal copy requirement:/);
+assert.match(textPolicyWithFocal, /Copper Motor|500W/);
+assert.doesNotMatch(textPolicyWithFocal, /Brushless Motor|Titanium Core/);
+
+const executionBriefWithFocal = context.buildModuleExecutionBrief(blenderTasks[1], blenderSellingPoints, blenderConfig);
+assert.match(executionBriefWithFocal, /Focal Feature \/ Angle:/);
+assert.match(executionBriefWithFocal, /Copper Motor|500W/);
+
 console.log('detail prompt tests passed');

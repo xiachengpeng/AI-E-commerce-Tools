@@ -16,31 +16,19 @@ from db import SessionLocal, SquareRedrawBatch, SquareRedrawItem
 from services.ai_service import AIService
 from services.app_log_service import app_logs
 from services.image_validation import validate_image_payload
+from services.storage_cleanup_service import safe_delete_static_file
 
 
 MAX_SQUARE_REDRAW_BATCH_SIZE = 100
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 SQUARE_OUTPUT_ROOT = os.path.join(STATIC_DIR, "outputs", "square-redraw")
-SQUARE_REDRAW_PROMPT_TEMPLATE = """Redraw the uploaded image into a perfect {aspect_ratio} format.
+SQUARE_REDRAW_PROMPT_TEMPLATE = """Expand and outpaint the reference image into a clean {aspect_ratio} aspect ratio composition.
 
-Keep the original subject, clothing, composition, lighting, colors, textures, and visual style unchanged.
-
-Extend or intelligently reconstruct the missing areas if necessary to fit the target canvas.
-
-Do not crop important elements.
-Do not cut off the model, clothing, accessories, or product.
-
-Maintain:
-- original outfit details
-- fabric texture
-- colors and patterns
-- lighting and shadows
-- photography style
-- commercial quality
-
-The final image should look like the original image was naturally photographed in a {aspect_ratio} composition.
-
-High-end ecommerce photography, ultra realistic, Pinterest advertising quality."""
+CORE DIRECTIVES:
+1. SUBJECT PRESERVATION: The original primary subject (product or focal item) must remain completely centered, uncropped, and structurally unchanged in form, geometry, material textures, and colors.
+2. SEAMLESS OUTPAINTING: Naturally extend the existing background, surface planes, lighting direction, ambient reflections, and perspective vanishing lines to fill the new canvas dimensions without visible seams.
+3. COMPOSITION INTEGRITY: Do not add extraneous objects, models, or decorative clutter unless required to naturally complete existing background surfaces (e.g. extending a tabletop, floor, or studio backdrop).
+4. QUALITY: Commercial e-commerce hero photography, consistent depth of field, sharp edge definition, natural ground contact shadows."""
 
 
 def decode_image_data_url(image_data: str) -> tuple[str, bytes]:
@@ -220,7 +208,11 @@ def _read_static_url_bytes(static_url: str) -> bytes:
     if not static_url or not static_url.startswith("/static/"):
         raise ValueError("源图片路径无效")
     rel_path = static_url.replace("/static/", "", 1)
-    abs_path = os.path.join(STATIC_DIR, rel_path)
+    abs_path = os.path.abspath(os.path.join(STATIC_DIR, rel_path))
+    if not abs_path.startswith(os.path.abspath(STATIC_DIR)):
+        raise ValueError("非法访问静态目录外文件")
+    if not os.path.isfile(abs_path):
+        raise ValueError("源图片文件不存在")
     with open(abs_path, "rb") as file:
         return file.read()
 
@@ -381,6 +373,11 @@ def delete_square_redraw_item(db, batch_id: int, item_id: int) -> None:
         raise ValueError("图片不存在")
     if item.status == "running":
         raise ValueError("图片正在处理中，暂不能删除")
+
+    if item.source_url:
+        safe_delete_static_file(item.source_url)
+    if item.output_url:
+        safe_delete_static_file(item.output_url)
 
     db.delete(item)
     db.commit()

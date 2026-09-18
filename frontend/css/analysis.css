@@ -48,10 +48,10 @@
 }
 
 .xp-left-panel {
-    flex: 0 0 330px;
-    min-width: 280px;
-    max-width: 330px;
-    padding: 1.5rem;
+    flex: 0 0 clamp(340px, 24vw, 420px);
+    min-width: 320px;
+    max-width: 440px;
+    padding: 1.25rem 1.5rem;
     display: flex;
     flex-direction: column;
     border-right: 1px solid #e2e8f0;
@@ -95,15 +95,68 @@
 }
 
 .xp-app-title {
-    font-size: 1.6rem;
+    font-size: clamp(1.2rem, 1.6vw, 1.45rem);
     font-weight: 800;
     background: linear-gradient(135deg, #1e293b, #475569);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    margin-bottom: .3rem;
+    margin-bottom: 0;
     cursor: pointer;
     display: inline-block;
+    white-space: nowrap;
+    flex-shrink: 0;
+    line-height: 1.25;
+}
+
+.xp-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 0.35rem;
+}
+
+.xp-crawler-cfg-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #4f46e5;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.xp-crawler-cfg-btn:hover {
+    background: #e0e7ff;
+    border-color: #a5b4fc;
+    color: #4338ca;
+    transform: translateY(-1px);
+}
+
+.xp-error-action-btn {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #ffffff;
+    background: #4f46e5;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.xp-error-action-btn:hover {
+    background: #4338ca;
 }
 
 .xp-app-title:hover {
@@ -478,6 +531,19 @@
     display: inline-flex;
     align-items: center;
     gap: .4rem;
+}
+
+.xp-save-brand-hub-btn {
+    background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid #4f46e5 !important;
+    box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2) !important;
+}
+
+.xp-save-brand-hub-btn:hover {
+    background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%) !important;
+    box-shadow: 0 4px 8px rgba(79, 70, 229, 0.35) !important;
+    transform: translateY(-1px);
 }
 
 .xp-export-btn:hover:not(:disabled),
@@ -1485,4 +1551,931 @@ strong {
     width: 100%;
     max-width: 400px;
     margin: 0 auto 1.5rem;
+}
+
+/* =====================================================
+   P0: 业务流转操作工具栏 (Flow Actions Bar)
+   ===================================================== */
+.xp-flow-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1.25rem;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.xp-flow-actions-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #334155;
+}
+
+.xp-flow-actions-btns {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.xp-flow-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.9rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    outline: none;
+}
+
+.xp-flow-btn i {
+    font-size: 1rem;
+}
+
+.xp-flow-btn-primary {
+    background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(79, 70, 229, 0.25);
+}
+
+.xp-flow-btn-primary:hover {
+    background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%);
+    box-shadow: 0 4px 8px rgba(79, 70, 229, 0.35);
+    transform: translateY(-1px);
+}
+
+.xp-flow-btn-secondary {
+    background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(234, 88, 12, 0.25);
+}
+
+.xp-flow-btn-secondary:hover {
+    background: linear-gradient(135deg, #c2410c 0%, #ea580c 100%);
+    box-shadow: 0 4px 8px rgba(234, 88, 12, 0.35);
+    transform: translateY(-1px);
+}
+
+.xp-flow-btn-outline {
+    background: #ffffff;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+}
+
+.xp-flow-btn-outline:hover {
+    background: #f8fafc;
+    color: #0f172a;
+    border-color: #94a3b8;
+    transform: translateY(-1px);
+}
+
+.xp-flow-btn-brand {
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(79, 70, 229, 0.25);
+}
+
+.xp-flow-btn-brand:hover {
+    background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
+    box-shadow: 0 4px 8px rgba(79, 70, 229, 0.35);
+    transform: translateY(-1px);
+}
+
+/* =====================================================
+   P1: TL;DR 极速选品决策看板 (Executive Summary Card)
+   ===================================================== */
+.xp-tldr-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.05);
+    position: relative;
+    overflow: hidden;
+}
+
+.xp-tldr-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #4f46e5 0%, #f59e0b 50%, #10b981 100%);
+}
+
+.xp-tldr-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.85rem;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.xp-tldr-header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.xp-tldr-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #1e293b;
+}
+
+.xp-tldr-sub {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.xp-tldr-decision-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 9999px;
+    font-size: 0.85rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.xp-tldr-scores {
+    font-size: 0.75rem;
+    opacity: 0.85;
+    margin-left: 0.2rem;
+}
+
+.xp-tldr-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: xp-pulse 2s infinite ease-in-out;
+}
+
+@keyframes xp-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.xp-tldr-badge-success {
+    background: #ecfdf5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+.xp-tldr-badge-success .xp-tldr-dot {
+    background: #10b981;
+}
+
+.xp-tldr-badge-warning {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+.xp-tldr-badge-warning .xp-tldr-dot {
+    background: #f59e0b;
+}
+
+.xp-tldr-badge-danger {
+    background: #fff1f2;
+    color: #9f1239;
+    border: 1px solid #fecdd3;
+}
+.xp-tldr-badge-danger .xp-tldr-dot {
+    background: #f43f5e;
+}
+
+.xp-tldr-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+@media (max-width: 900px) {
+    .xp-tldr-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.xp-tldr-col {
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.xp-tldr-col-conclusion {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+
+.xp-tldr-col-pitfall {
+    background: #fff5f5;
+    border: 1px solid #fed7d7;
+}
+
+.xp-tldr-col-breakthrough {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+}
+
+.xp-tldr-col-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 0.2rem;
+}
+
+.xp-tldr-col-desc {
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: #334155;
+}
+
+/* =====================================================
+   P1: 分镜头级广告创意脚本卡片 (Script-Level Ad Hooks)
+   ===================================================== */
+.xp-ad-script-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 0.75rem;
+}
+
+.xp-ad-script-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.xp-ad-script-card:hover {
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    border-color: #cbd5e1;
+}
+
+.xp-ad-script-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.6rem;
+}
+
+.xp-ad-script-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+    font-size: 0.75rem;
+    font-weight: 800;
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+}
+
+.xp-ad-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #64748b;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.25rem 0.55rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.xp-ad-copy-btn:hover {
+    color: #4f46e5;
+    background: #eef2ff;
+    border-color: #c7d2fe;
+}
+
+.xp-ad-section-box {
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+.xp-ad-section-box:last-child {
+    margin-bottom: 0;
+}
+
+.xp-ad-hook-box {
+    background: #fffbeb;
+    border-left: 3px solid #f59e0b;
+}
+
+.xp-ad-script-box {
+    background: #f8fafc;
+    border-left: 3px solid #6366f1;
+}
+
+.xp-ad-cta-box {
+    background: #f0fdf4;
+    border-left: 3px solid #10b981;
+}
+
+.xp-ad-sublabel {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 0.2rem;
+    font-size: 0.75rem;
+}
+
+.xp-ad-text-content {
+    color: #334155;
+}
+
+.xp-ad-cta-text {
+    color: #047857;
+    font-weight: 600;
+}
+
+/* Mode Selector */
+.xp-mode-selector-container {
+    margin-bottom: 0.9rem;
+}
+.xp-mode-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--xp-text-secondary);
+    margin-bottom: 0.35rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.xp-mode-switch {
+    display: flex;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--xp-border);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 4px;
+}
+.xp-mode-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    color: var(--xp-text-secondary);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+.xp-mode-btn:hover {
+    color: var(--xp-text-primary);
+    background: rgba(255, 255, 255, 0.04);
+}
+.xp-mode-btn.active {
+    background: #4f46e5;
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.35);
+}
+
+/* Mode Description & Usage Card */
+.xp-mode-desc-card {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    padding: 6px 7px;
+    font-size: 0.72rem;
+    line-height: 1.45;
+}
+
+.xp-mode-desc-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    transition: all 0.18s ease;
+    cursor: pointer;
+    user-select: none;
+}
+
+.xp-mode-desc-row:hover {
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.xp-mode-desc-row.active {
+    background: #ffffff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.xp-mode-row-quick.active {
+    border-color: #fde68a;
+    background: #fffbeb;
+}
+
+.xp-mode-row-deep.active {
+    border-color: #c7d2fe;
+    background: #f5f3ff;
+}
+
+.xp-mode-row-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    font-weight: 700;
+    font-size: 0.72rem;
+    color: #334155;
+}
+
+.xp-mode-row-quick .xp-mode-row-title i {
+    color: #d97706;
+}
+
+.xp-mode-row-deep .xp-mode-row-title i {
+    color: #4f46e5;
+}
+
+.xp-mode-row-quick.active .xp-mode-row-title {
+    color: #92400e;
+}
+
+.xp-mode-row-deep.active .xp-mode-row-title {
+    color: #4338ca;
+}
+
+.xp-mode-row-body {
+    flex: 1;
+    color: #64748b;
+    font-size: 0.7rem;
+    line-height: 1.4;
+}
+
+.xp-mode-desc-row.active .xp-mode-row-body {
+    color: #334155;
+}
+
+.xp-mode-desc-row.active .xp-mode-row-body strong {
+    color: #0f172a;
+    font-weight: 600;
+}
+
+/* Brand Positioning & Trust Triggers */
+.xp-brand-pos-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 16px 20px;
+    margin-bottom: 1.25rem;
+}
+.xp-brand-pos-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.xp-brand-tagline {
+    font-size: 1.08rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.4;
+}
+.xp-brand-angle-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%);
+    color: #4338ca;
+    border: 1px solid #c7d2fe;
+    font-size: 0.78rem;
+    font-weight: 800;
+    padding: 4px 12px;
+    border-radius: 9999px;
+}
+.xp-brand-trust-container {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #f1f5f9;
+}
+.xp-brand-trust-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: 4px;
+}
+.xp-trust-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 3px 9px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: #334155;
+}
+.xp-trust-chip i {
+    color: #059669;
+}
+
+/* 2D Positioning Map */
+.xp-positioning-map-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 16px 20px;
+    margin-bottom: 1.25rem;
+}
+.xp-map-svg-wrap {
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+    overflow: hidden;
+}
+.xp-map-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 10px;
+    font-size: 0.76rem;
+    color: #64748b;
+}
+.xp-map-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.xp-map-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+/* Competitive Battle Card */
+.xp-battle-card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 1.25rem;
+}
+@media (max-width: 768px) {
+    .xp-battle-card-grid {
+        grid-template-columns: 1fr;
+    }
+}
+.xp-battle-col {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+}
+.xp-battle-col-strong {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    border-left: 4px solid #64748b;
+}
+.xp-battle-col-attack {
+    background: #fff7ed;
+    border-color: #fed7aa;
+    border-left: 4px solid #f97316;
+}
+.xp-battle-col-whitespace {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+    border-left: 4px solid #10b981;
+}
+.xp-battle-col-threat {
+    background: #fff1f2;
+    border-color: #fecdd3;
+    border-left: 4px solid #f43f5e;
+}
+.xp-battle-col-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.xp-battle-col-title {
+    font-size: 0.82rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.xp-battle-col-strong .xp-battle-col-title { color: #334155; }
+.xp-battle-col-attack .xp-battle-col-title { color: #c2410c; }
+.xp-battle-col-whitespace .xp-battle-col-title { color: #047857; }
+.xp-battle-col-threat .xp-battle-col-title { color: #be123c; }
+.xp-battle-subtag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.xp-battle-col-strong .xp-battle-subtag { background: #e2e8f0; color: #475569; }
+.xp-battle-col-attack .xp-battle-subtag { background: #ffedd5; color: #9a3412; }
+.xp-battle-col-whitespace .xp-battle-subtag { background: #dcfce7; color: #166534; }
+.xp-battle-col-threat .xp-battle-subtag { background: #ffe4e6; color: #9f1239; }
+.xp-battle-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: #334155;
+}
+.xp-battle-list li {
+    position: relative;
+    padding-left: 14px;
+}
+.xp-battle-list li::before {
+    content: '•';
+    position: absolute;
+    left: 2px;
+    font-weight: 800;
+}
+.xp-battle-col-strong .xp-battle-list li::before { color: #64748b; }
+.xp-battle-col-attack .xp-battle-list li::before { color: #f97316; }
+.xp-battle-col-whitespace .xp-battle-list li::before { color: #10b981; }
+.xp-battle-col-threat .xp-battle-list li::before { color: #f43f5e; }
+
+/* Customer Objection Handling & Defense Q&A */
+.xp-objections-section {
+    margin-bottom: 1.5rem;
+}
+.xp-objections-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.xp-objection-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.xp-objection-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+.xp-objection-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.xp-objection-q {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.92rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.45;
+}
+.xp-objection-tag-q {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #fee2e2;
+    color: #b91c1c;
+    font-size: 0.72rem;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+.xp-objection-a {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #3b82f6;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    color: #1e293b;
+    line-height: 1.55;
+    position: relative;
+}
+.xp-objection-tag-a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #2563eb;
+    font-size: 0.75rem;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+.xp-objection-proof {
+    background: #f0fdf4;
+    border: 1px dashed #86efac;
+    border-radius: 6px;
+    padding: 7px 12px;
+    font-size: 0.78rem;
+    color: #166534;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.4;
+}
+.xp-objection-proof i {
+    color: #16a34a;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+/* 多品战略破局蓝图看板 */
+.xp-matrix-strategy-section {
+    margin-bottom: 2rem;
+}
+.xp-matrix-strategy-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+}
+.xp-strategy-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.xp-strategy-winner-card {
+    border-top: 4px solid #7c3aed;
+    background: linear-gradient(180deg, #faf5ff 0%, #ffffff 60px);
+}
+.xp-strategy-breakthrough-card {
+    border-top: 4px solid #059669;
+    background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 60px);
+}
+.xp-strategy-landscape-card {
+    border-top: 4px solid #0284c7;
+    background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 60px);
+}
+.xp-strategy-card-title {
+    font-size: 0.95rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.xp-strategy-winner-card .xp-strategy-card-title { color: #5b21b6; }
+.xp-strategy-breakthrough-card .xp-strategy-card-title { color: #065f46; }
+.xp-strategy-landscape-card .xp-strategy-card-title { color: #0369a1; }
+.xp-strategy-battle-card {
+    border-top: 4px solid #ea580c;
+    background: linear-gradient(180deg, #fff7ed 0%, #ffffff 70px);
+}
+.xp-strategy-battle-card .xp-strategy-card-title { color: #c2410c; }
+.xp-battle-item-switch {
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+}
+.xp-battle-item-switch strong {
+    color: #9a3412;
+}
+.xp-battle-counter-badge {
+    display: inline-block;
+    background: #ffedd5;
+    color: #9a3412;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-right: 4px;
+}
+
+.xp-strategy-item {
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: #334155;
+    background: #f8fafc;
+    border: 1px solid #f1f5f9;
+    border-radius: 8px;
+    padding: 0.6rem 0.85rem;
+}
+.xp-strategy-item strong {
+    color: #0f172a;
+    display: block;
+    margin-bottom: 0.2rem;
+    font-size: 0.82rem;
+}
+.xp-vulnerability-item {
+    background: #fef2f2;
+    border: 1px solid #fee2e2;
+    color: #991b1b;
+}
+.xp-vulnerability-item strong {
+    color: #b91c1c;
+}
+
+/* 各竞品深度情报透视 */
+.xp-matrix-detail-section {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+.xp-matrix-product-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+.xp-matrix-tab-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #475569;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 9999px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.xp-matrix-tab-btn:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+.xp-matrix-tab-btn.active {
+    background: #1e293b;
+    color: #ffffff;
+    border-color: #1e293b;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
+}
+.xp-matrix-tab-btn.xp-winner-tab {
+    border-color: #f59e0b;
+}
+.xp-matrix-tab-btn.active.xp-winner-tab {
+    background: #7c3aed;
+    border-color: #7c3aed;
+}
+.xp-matrix-product-detail-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
 }

@@ -181,3 +181,20 @@ async def receive_frontend_log(data: FrontendLogEvent):
         retry=data.retry,
     )
     return {"status": "ok"}
+
+
+@router.post("/api/image/compress-webp")
+async def api_compress_webp(data: dict):
+    from services.image_compression_service import compress_data_url_to_webp
+
+    image_data = str(data.get("image_data") or "")
+    quality = data.get("quality", 90)
+    try:
+        webp_data_url, stats = compress_data_url_to_webp(image_data, quality=quality)
+        return {
+            "status": "success",
+            "webp_data": webp_data_url,
+            "stats": stats,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

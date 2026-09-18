@@ -30,6 +30,7 @@ def _isolated_backend(tmp_path: Path) -> Path:
 def _startup_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
+    env.pop("SQLITE_DB_PATH", None)
     env.update(
         {
             "AI_PROVIDER": "gemini",

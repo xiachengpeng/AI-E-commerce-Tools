@@ -1,10 +1,14 @@
 const ADS_REGION_LANGUAGE_MAP = {
     'US Market': 'English',
-    'European Market': 'English',
     'UK Market': 'English',
+    'Germany Market': 'German',
+    'France Market': 'French',
+    'Spain Market': 'Spanish',
+    'Italy Market': 'Italian',
+    'European Market': 'English',
     'Japan Market': 'Japanese',
     'Southeast Asia Market': 'English',
-    'Middle East Market': 'English',
+    'Middle East Market': 'Arabic',
     'Australian Market': 'English',
     'Global Market': 'English'
 };
@@ -116,28 +120,71 @@ function selectedAdsPlatforms() {
     return Array.from(document.querySelectorAll('.ads-platform-checkbox:checked')).map(item => item.value);
 }
 
-function handleAdsImageUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+function ingestAdsImageFile(file) {
+    if (!file) return false;
+    if (!file.type || !file.type.startsWith('image/')) {
+        showToast('请选择图片文件', 'error');
+        return false;
+    }
     if (file.size > 6 * 1024 * 1024) {
         showToast('图片过大，请选择 6MB 以内的图片', 'error');
-        event.target.value = '';
-        return;
+        return false;
     }
     const reader = new FileReader();
     reader.onload = e => {
         currentAdsUploadedBase64 = e.target.result;
-        document.getElementById('adsUploadedImagePreview').src = currentAdsUploadedBase64;
-        document.getElementById('adsImagePreviewContainer').classList.remove('hidden');
+        const preview = document.getElementById('adsUploadedImagePreview');
+        if (preview) preview.src = currentAdsUploadedBase64;
+        const container = document.getElementById('adsImagePreviewContainer');
+        if (container) container.classList.remove('hidden');
+        showToast('商品图片已添加', 'success');
     };
     reader.readAsDataURL(file);
+    return true;
+}
+
+function handleAdsImageUpload(event) {
+    try {
+        const file = event?.target?.files?.[0];
+        if (file) ingestAdsImageFile(file);
+    } finally {
+        if (event?.target) event.target.value = '';
+    }
+}
+
+function handleAdsImagePaste(files) {
+    const file = Array.isArray(files) ? files[0] : files;
+    if (file) return ingestAdsImageFile(file);
+    return false;
+}
+
+function handleAdsImageDrop(event) {
+    if (event?.preventDefault) event.preventDefault();
+    const dtFiles = Array.from(event?.dataTransfer?.files || []).filter(f => f.type && f.type.startsWith('image/'));
+    if (dtFiles.length) {
+        ingestAdsImageFile(dtFiles[0]);
+    }
 }
 
 function removeAdsImage() {
     currentAdsUploadedBase64 = null;
-    document.getElementById('adsImageUpload').value = '';
-    document.getElementById('adsImagePreviewContainer').classList.add('hidden');
+    const input = document.getElementById('adsImageUpload');
+    if (input) input.value = '';
+    const container = document.getElementById('adsImagePreviewContainer');
+    if (container) container.classList.add('hidden');
 }
+
+if (typeof window !== 'undefined') {
+    window.ingestAdsImageFile = ingestAdsImageFile;
+    window.handleAdsImagePaste = handleAdsImagePaste;
+    window.handleAdsImageDrop = handleAdsImageDrop;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.ingestAdsImageFile = ingestAdsImageFile;
+    globalThis.handleAdsImagePaste = handleAdsImagePaste;
+    globalThis.handleAdsImageDrop = handleAdsImageDrop;
+}
+
 
 function appendAdsText(parent, className, text) {
     const el = document.createElement('div');
@@ -308,6 +355,191 @@ function renderAdsData(data) {
     renderFilteredAdsResults();
 }
 
+function copyAdsText(text, successMsg = '已复制到剪贴板') {
+    if (!text) return;
+    if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(
+            () => showToast(successMsg, 'success'),
+            () => showToast('复制失败', 'error')
+        );
+    } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast(successMsg, 'success');
+    }
+}
+
+function renderAdsGoldenHooks(container, goldenHooks) {
+    if (!Array.isArray(goldenHooks) || goldenHooks.length === 0) return;
+    const validHooks = goldenHooks.filter(h => h && (h.target || h.zh));
+    if (validHooks.length === 0) return;
+
+    const block = document.createElement('div');
+    block.className = 'bg-gradient-to-br from-amber-50 to-orange-50/60 rounded-2xl shadow-sm border border-amber-200 p-5';
+
+    const header = document.createElement('div');
+    header.className = 'flex items-center justify-between gap-3 mb-3';
+
+    const titleBox = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'text-sm font-black text-amber-900 flex items-center gap-2';
+    title.innerHTML = '<i class="ph-fill ph-lightning text-amber-500 text-lg"></i> 5秒爆款金牌开头 (Golden Hooks) - 专治前3秒跳出率';
+    const sub = document.createElement('div');
+    sub.className = 'text-xs text-amber-700/80 mt-0.5';
+    sub.textContent = '基于打破认知、痛点点名、前后对比、好奇诱饵与从众背书 5 大高转化营销心理学模型打造';
+    titleBox.append(title, sub);
+
+    const copyAllBtn = document.createElement('button');
+    copyAllBtn.type = 'button';
+    copyAllBtn.className = 'text-xs bg-white hover:bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1.5 rounded-lg font-bold transition-all shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer';
+    copyAllBtn.innerHTML = '<i class="ph ph-copy"></i> 复制全部开头';
+    copyAllBtn.addEventListener('click', () => {
+        const text = validHooks.map(h => {
+            const label = h.typeLabel?.zh || h.typeLabel?.target || h.type;
+            return `【${label}】\n${h.target}${h.zh ? `\n中文: ${h.zh}` : ''}`;
+        }).join('\n\n');
+        copyAdsText(text, '已复制全部 5 条金牌开头');
+    });
+
+    header.append(titleBox, copyAllBtn);
+    block.appendChild(header);
+
+    const list = document.createElement('div');
+    list.className = 'grid grid-cols-1 gap-2.5';
+
+    validHooks.forEach(hook => {
+        const item = document.createElement('div');
+        item.className = 'bg-white rounded-xl border border-amber-200/80 p-3 flex items-start justify-between gap-3 hover:border-amber-400 transition-colors';
+
+        const content = document.createElement('div');
+        content.className = 'min-w-0 flex-1';
+
+        const badge = document.createElement('span');
+        badge.className = 'inline-block text-[11px] font-bold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md mb-1.5';
+        badge.textContent = hook.typeLabel?.zh ? `${hook.typeLabel.zh} (${hook.typeLabel.target})` : (hook.typeLabel?.target || hook.type);
+        content.appendChild(badge);
+
+        if (hook.target) {
+            const targetEl = document.createElement('div');
+            targetEl.className = 'text-sm font-bold text-gray-900 leading-snug';
+            targetEl.textContent = hook.target;
+            content.appendChild(targetEl);
+        }
+        if (hook.zh) {
+            const zhEl = document.createElement('div');
+            zhEl.className = 'text-xs text-gray-500 mt-1';
+            zhEl.textContent = hook.zh;
+            content.appendChild(zhEl);
+        }
+
+        const copySingleBtn = document.createElement('button');
+        copySingleBtn.type = 'button';
+        copySingleBtn.className = 'text-xs text-gray-400 hover:text-amber-600 hover:bg-amber-50 p-1.5 rounded-md transition-colors shrink-0 cursor-pointer';
+        copySingleBtn.title = '复制本条开头';
+        copySingleBtn.innerHTML = '<i class="ph ph-copy text-base"></i>';
+        copySingleBtn.addEventListener('click', () => {
+            const t = hook.target ? (hook.zh ? `${hook.target}\n${hook.zh}` : hook.target) : hook.zh;
+            copyAdsText(t, '已复制该开头文案');
+        });
+
+        item.append(content, copySingleBtn);
+        list.appendChild(item);
+    });
+
+    block.appendChild(list);
+    container.appendChild(block);
+}
+
+function renderAdsCreativeBrief(container, creativeBrief) {
+    if (!creativeBrief || typeof creativeBrief !== 'object') return;
+    const hasContent = creativeBrief.hookScene?.target || creativeBrief.hookScene?.zh
+        || creativeBrief.bodyScene?.target || creativeBrief.bodyScene?.zh
+        || creativeBrief.ctaScene?.target || creativeBrief.ctaScene?.zh;
+    if (!hasContent) return;
+
+    const block = document.createElement('div');
+    block.className = 'bg-gradient-to-br from-indigo-50/70 to-blue-50/50 rounded-2xl shadow-sm border border-indigo-200/80 p-5';
+
+    const header = document.createElement('div');
+    header.className = 'flex items-center justify-between gap-3 mb-3';
+
+    const titleBox = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'text-sm font-black text-indigo-950 flex items-center gap-2';
+    title.innerHTML = '<i class="ph-fill ph-video-camera text-indigo-600 text-lg"></i> 🎬 视觉脚本与分镜指引 (Creative Direction Brief)';
+    const sub = document.createElement('div');
+    sub.className = 'text-xs text-indigo-700/80 mt-0.5';
+    sub.textContent = '为短视频与信息流广告团队提供前3秒吸睛、痛点化解与结尾逼单的实操分镜脚本';
+    titleBox.append(title, sub);
+
+    const copyBriefBtn = document.createElement('button');
+    copyBriefBtn.type = 'button';
+    copyBriefBtn.className = 'text-xs bg-white hover:bg-indigo-100 text-indigo-900 border border-indigo-300 px-3 py-1.5 rounded-lg font-bold transition-all shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer';
+    copyBriefBtn.innerHTML = '<i class="ph ph-copy"></i> 复制分镜脚本';
+    copyBriefBtn.addEventListener('click', () => {
+        const lines = [
+            '【0-3秒 抓人画面 (Hook Scene)】',
+            creativeBrief.hookScene?.target || '',
+            creativeBrief.hookScene?.zh ? `中文: ${creativeBrief.hookScene.zh}` : '',
+            '\n【4-15秒 功能演示 (Body Scene)】',
+            creativeBrief.bodyScene?.target || '',
+            creativeBrief.bodyScene?.zh ? `中文: ${creativeBrief.bodyScene.zh}` : '',
+            '\n【结尾 促单行动号召 (CTA Scene)】',
+            creativeBrief.ctaScene?.target || '',
+            creativeBrief.ctaScene?.zh ? `中文: ${creativeBrief.ctaScene.zh}` : ''
+        ].filter(Boolean).join('\n');
+        copyAdsText(lines, '已复制视觉分镜脚本');
+    });
+
+    header.append(titleBox, copyBriefBtn);
+    block.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-cols-1 md:grid-cols-3 gap-3';
+
+    const scenes = [
+        { label: '0-3s 抓人画面 (Hook)', icon: 'ph-lightning', data: creativeBrief.hookScene, color: 'border-amber-200 bg-amber-50/40 text-amber-900' },
+        { label: '4-15s 功能演示 (Body)', icon: 'ph-play-circle', data: creativeBrief.bodyScene, color: 'border-blue-200 bg-blue-50/40 text-blue-900' },
+        { label: '结尾 促单行动号召 (CTA)', icon: 'ph-shopping-cart-simple', data: creativeBrief.ctaScene, color: 'border-emerald-200 bg-emerald-50/40 text-emerald-900' },
+    ];
+
+    scenes.forEach(s => {
+        const card = document.createElement('div');
+        card.className = `bg-white rounded-xl border ${s.color.split(' ')[0]} p-3.5 flex flex-col justify-between`;
+        const stepHead = document.createElement('div');
+        stepHead.className = `text-xs font-bold flex items-center gap-1.5 mb-2 ${s.color.split(' ')[2]}`;
+        stepHead.innerHTML = `<i class="ph-bold ${s.icon}"></i> ${s.label}`;
+        card.appendChild(stepHead);
+
+        const body = document.createElement('div');
+        body.className = 'text-xs text-gray-700 leading-relaxed';
+        if (s.data?.target) {
+            const p1 = document.createElement('div');
+            p1.className = 'font-semibold text-gray-900';
+            p1.textContent = s.data.target;
+            body.appendChild(p1);
+        }
+        if (s.data?.zh) {
+            const p2 = document.createElement('div');
+            p2.className = 'text-gray-500 mt-1 text-[11px]';
+            p2.textContent = s.data.zh;
+            body.appendChild(p2);
+        }
+        if (!s.data?.target && !s.data?.zh) {
+            body.textContent = '暂无明确建议';
+        }
+        card.appendChild(body);
+        grid.appendChild(card);
+    });
+
+    block.appendChild(grid);
+    container.appendChild(block);
+}
+
 function renderFilteredAdsResults() {
     const scrollPane = document.getElementById('adsResultsScroll');
     const previousScrollTop = scrollPane?.scrollTop || 0;
@@ -326,6 +558,9 @@ function renderFilteredAdsResults() {
     appendAdsPair(productBlock, ADS_RESULT_LABELS.productName, product.name);
     appendAdsPair(productBlock, ADS_RESULT_LABELS.productSummary, product.summary);
     container.appendChild(productBlock);
+
+    renderAdsGoldenHooks(container, data.goldenHooks);
+    renderAdsCreativeBrief(container, data.creativeBrief);
 
     const filteredStyles = styles.filter((style, index) => {
         const styleMatches = currentAdsStyleFilter === 'all'
@@ -470,4 +705,102 @@ async function generateAdsCopy() {
         btn.innerHTML = origHtml;
         btn.disabled = false;
     }
+}
+
+const ADS_DRAFT_KEY = 'ai_ecommerce_ads_draft_v1';
+
+function saveAdsDraft() {
+    if (typeof localStorage === 'undefined' || typeof document === 'undefined') return;
+    const draft = {
+        productName: document.getElementById('adsProductNameInput')?.value || '',
+        region: document.getElementById('adsRegionSelect')?.value || '',
+        language: document.getElementById('adsLanguageSelect')?.value || '',
+        theme: document.getElementById('adsMarketingThemeSelect')?.value || ''
+    };
+    try {
+        localStorage.setItem(ADS_DRAFT_KEY, JSON.stringify(draft));
+    } catch (e) {}
+}
+
+function restoreAdsDraft() {
+    if (typeof localStorage === 'undefined' || typeof document === 'undefined') return;
+    try {
+        const raw = localStorage.getItem(ADS_DRAFT_KEY);
+        if (!raw) return;
+        const draft = JSON.parse(raw);
+        if (!draft) return;
+        const nameEl = document.getElementById('adsProductNameInput');
+        const regionEl = document.getElementById('adsRegionSelect');
+        const langEl = document.getElementById('adsLanguageSelect');
+        const themeEl = document.getElementById('adsMarketingThemeSelect');
+
+        if (nameEl && !nameEl.value && draft.productName) nameEl.value = draft.productName;
+        if (regionEl && draft.region) regionEl.value = draft.region;
+        if (langEl && draft.language) langEl.value = draft.language;
+        if (themeEl && draft.theme) themeEl.value = draft.theme;
+    } catch (e) {
+        console.warn('Failed to restore ads draft:', e);
+    }
+}
+
+function initAdsDraftSync() {
+    if (typeof document === 'undefined') return;
+    const debouncedSave = typeof debounce === 'function' ? debounce(saveAdsDraft, 400) : saveAdsDraft;
+    ['adsProductNameInput', 'adsRegionSelect', 'adsLanguageSelect', 'adsMarketingThemeSelect'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el || typeof el.addEventListener !== 'function') return;
+        el.addEventListener('input', debouncedSave);
+        el.addEventListener('change', saveAdsDraft);
+    });
+    restoreAdsDraft();
+}
+
+function clearAdsDraft() {
+    try {
+        localStorage.removeItem(ADS_DRAFT_KEY);
+    } catch (e) {}
+    const nameEl = document.getElementById('adsProductNameInput');
+    const sellingEl = document.getElementById('adsSellingPoints');
+    if (nameEl) nameEl.value = '';
+    if (sellingEl) sellingEl.value = '';
+    if (typeof showToast === 'function') showToast('已清空广告输入草稿', 'info');
+}
+
+function getCurrentAdsData() {
+    return currentAdsData;
+}
+
+function setCurrentAdsData(data) {
+    currentAdsData = data;
+}
+
+if (typeof window !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAdsDraftSync);
+    } else {
+        initAdsDraftSync();
+    }
+    window.saveAdsDraft = saveAdsDraft;
+    window.restoreAdsDraft = restoreAdsDraft;
+    window.clearAdsDraft = clearAdsDraft;
+    window.getCurrentAdsData = getCurrentAdsData;
+    window.setCurrentAdsData = setCurrentAdsData;
+}
+
+if (typeof globalThis !== 'undefined') {
+    globalThis.saveAdsDraft = saveAdsDraft;
+    globalThis.restoreAdsDraft = restoreAdsDraft;
+    globalThis.clearAdsDraft = clearAdsDraft;
+    globalThis.getCurrentAdsData = getCurrentAdsData;
+    globalThis.setCurrentAdsData = setCurrentAdsData;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        saveAdsDraft,
+        restoreAdsDraft,
+        clearAdsDraft,
+        getCurrentAdsData,
+        setCurrentAdsData
+    };
 }

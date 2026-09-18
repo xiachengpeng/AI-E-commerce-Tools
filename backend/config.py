@@ -4,8 +4,9 @@ from dotenv import load_dotenv
 # 加载 .env 文件（优先级低于系统环境变量）
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
 
-# Firecrawl 默认配置
-FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "http://localhost:3002/v1/scrape")
+# Firecrawl 默认配置：使用官方云端服务，亦可配置自定义地址
+FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "https://api.firecrawl.dev/v1/scrape").strip()
+FIRECRAWL_API_KEY = (os.getenv("FIRECRAWL_API_KEY") or "").strip()
 
 # AI 提供商配置仅作为首次启动导入来源。
 AI_PROVIDER = (os.getenv("AI_PROVIDER") or "gemini").strip().lower()
@@ -25,7 +26,7 @@ VERTEX_KEY_PATH = os.getenv("VERTEX_KEY_PATH", "")
 
 # CORS 配置
 # 开发环境默认放行本地前端；生产环境应通过环境变量显式指定域名
-_CORS_DEFAULT = os.getenv("CORS_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080")
+_CORS_DEFAULT = os.getenv("CORS_ORIGINS", "http://localhost:9502,http://127.0.0.1:9502,http://localhost:8080,http://127.0.0.1:8080")
 CORS_ORIGINS = [o.strip() for o in _CORS_DEFAULT.split(",") if o.strip()]
 
 # 前端并发配置

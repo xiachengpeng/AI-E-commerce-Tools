@@ -62,16 +62,11 @@ PROMPT_TEMPLATE_SCORE = """你是一名资深跨境电商投资评估专家。
 """
 
 
+from .json_utils import extract_json_string, safe_extract_and_parse_json
+
+
 def _extract_json(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-    return text
+    return extract_json_string(text)
 
 
 from .ai_service import AIService
@@ -87,7 +82,7 @@ async def calculate_score(product_data: dict) -> dict:
             capability="text",
             response_mime_type="application/json",
         )
-        parsed = json.loads(_extract_json(json_str))
+        parsed = safe_extract_and_parse_json(json_str)
         if isinstance(parsed, list):
             return {}
         return parsed

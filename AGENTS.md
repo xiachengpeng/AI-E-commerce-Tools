@@ -10,6 +10,11 @@ Current product areas:
 
 - Competitor URL scraping, analysis, comparison, and deterministic scoring.
 - AI detail-page image planning, generation, regeneration, SEO metadata, long-image composition, and project history.
+- DTC hybrid PDP generation, 5-style aesthetic layouts, custom brand color grading, typography modal with template persistence, and self-contained dual CMS export (Shopify & WordPress).
+- Multi-target cloud storage and image asset hosting (WordPress REST API multi-site, Shopify Admin API multi-store, Cloudflare R2 S3-compatible SigV4) with per-destination upload isolation, dynamic queue synchronization on target/sub-site switch, zero-touch policy, and PDP HTML cloud URL replacement/revert.
+- WebP high-fidelity image compression service with visual lossless defaults, transparency/ICC/EXIF preservation, and size reduction stats.
+- Global Brand Profile Hub (`brandContextHub`) with cross-module persistence (Listing, Ads, Details, Analysis), heuristic + AI product category inference, and competitive battle-card synthesis.
+- AI watermark and object removal with interactive canvas editor, 8-way handles, and localized history.
 - Listing extraction, generation, and compliance checks.
 - Multi-platform advertising copy generation.
 - Image translation, cleanup, localization, and rendering, including Thai.
@@ -20,9 +25,11 @@ Current product areas:
 
 ## Runtime Architecture
 
-- `run.py` starts the FastAPI backend on port 8000 and the static frontend on port 8080.
+- `run.py` starts the FastAPI backend on port 9503 and the static frontend on port 9502.
 - `backend/main.py` owns HTTP routes, startup/shutdown hooks, settings APIs, history APIs, and feature endpoints.
 - `backend/routes/generation.py` owns AI-backed translation, Listing, advertising, watermark, generic AI, and frontend-log endpoints; it is included by `backend/main.py` without changing public paths.
+- `backend/routes/storage.py` owns storage configuration CRUD, connection testing, and proxied image upload dispatching for WordPress, Shopify, and Cloudflare R2.
+- `backend/models/storage.py` owns storage schemas, credentials, upload requests/responses, and masked configuration models.
 - `frontend/index.html` contains the application shell and feature views.
 - `frontend/js/app.js` loads public runtime configuration, provides `callAI(capability, payload)`, and switches top-level views.
 - `backend/db.py` contains SQLAlchemy database setup and persisted history/settings models.
@@ -45,7 +52,8 @@ The browser must not call AI providers directly.
 ## Feature And Frontend Map
 
 - `frontend/js/analysis.js`: competitor URLs, analysis progress, comparison rendering, and report export.
-- `frontend/js/details.js`: detail-page uploads, AI product-name/selling-point extraction, module planning, prompts, generation, regeneration, SEO, quality checks, long-image export, and history restoration.
+- `frontend/js/brand_context.js`: global product and brand context hub, modal controller, inline selector updates, multi-profile localStorage management, heuristic/AI category inference, and cross-module dispatch.
+- `frontend/js/details.js`: detail-page uploads, AI product-name/selling-point extraction, module planning, prompts, generation, regeneration, SEO, quality checks, long-image export, history restoration, asset hosting drawer, per-destination queue synchronization, and HTML cloud URL replacement/reversion.
 - `frontend/js/config.js`: stable frontend options and detail-page module defaults.
 - `frontend/js/languages.js`: shared language catalog for detail/listing/ads, image translation, and text translation.
 - `frontend/js/listing.js`: Listing input extraction, generation, validation, rendering, and compliance suggestions.
@@ -67,6 +75,8 @@ The browser must not call AI providers directly.
 - `backend/services/ai_adapters.py`: protocol adapters and normalized request/response conversion.
 - `backend/services/ai_config_service.py`: provider validation, CRUD, capability bindings, snapshots, and initial environment import.
 - `backend/services/app_log_service.py`: bounded in-memory logs, subscribers, structured fields, and sensitive-data redaction.
+- `backend/services/storage_service.py`: multi-target storage driver for WordPress REST API (media upload), Shopify Admin GraphQL API (staged uploads), and Cloudflare R2 (SigV4 S3 signature), secret masking, and destination routing.
+- `backend/services/image_compression_service.py`: Pillow-backed high-quality WebP conversion, quality/method tuning, ICC/EXIF preservation, and size savings reporting.
 - `backend/services/firecrawl.py`: remote page scraping.
 - `backend/services/amazon_parser.py` and `cleaner.py`: scraped content parsing and cleanup.
 - `backend/services/ai_single.py`, `ai_compare.py`, and `scoring.py`: competitor analysis and deterministic scores.
@@ -118,10 +128,10 @@ Start the full application from the repository root:
 
 Local URLs:
 
-- Backend: `http://127.0.0.1:8000`
-- Frontend: `http://127.0.0.1:8080/index.html`
+- Backend: `http://127.0.0.1:9503`
+- Frontend: `http://127.0.0.1:9502/index.html`
 
-Before restarting, stop existing project processes and ensure ports 8000 and 8080 are free.
+Before restarting, stop existing project processes and ensure ports 9503 and 9502 are free.
 
 Build or watch Tailwind CSS:
 
@@ -181,6 +191,54 @@ When testing in an isolated worktree, copy local state only when necessary, keep
 - AI selling-point extraction fills an inferred localized product name only when the product-name input was empty. Never overwrite a user-entered product name.
 - Module copy mode must propagate into generation tasks, regeneration, saved project snapshots, and history restoration. Old history without the field defaults to copy enabled.
 - SEO title and Alt metadata remain separate from text rendered into the generated image.
+
+### DTC hybrid PDP and typography
+
+- The detail page supports two presentation views: DTC Hybrid PDP (`hybrid`) and Single Image Gallery (`gallery`). Controls for viewport, styles, brand colors, and typography modal must toggle with view state.
+- Layout style switcher supports 5 distinct aesthetic styles (`editorial`, `minimalist`, `bento`, `lookbook`, `technical`) that switch live without regenerating images or text.
+- Brand colors support 7 presets plus arbitrary custom hex values. Custom color derivation mathematically calculates:
+  - `primary`: base hex color.
+  - `light`: 93% blend with pure white for subtle tinted module backgrounds.
+  - `border`: 75% blend with pure white for borders and dividers.
+  - `text`: 25% darkened contrast value for readable text on light tints.
+- Color pickers and hex inputs must update via both `oninput` (real-time dragging/typing) and `onchange`.
+- Typography customization modal (`#dtcTypographyModal`) manages global font families (including Google Fonts auto-import), title font/size/weight/spacing, subtitle size/weight, and body size/weight/line-height with instant live preview.
+- Built-in typography presets provide 5 curated scenarios (`modern`, `luxury`, `tech`, `bold_cpg`, `minimal_lifestyle`). User-saved templates persist to browser `localStorage` with save, dropdown listing, and deletion capabilities.
+- Standalone HTML export (`copyShopifyHtml` and `copyDtcSectionHtml`) must be completely self-contained:
+  - Embed Google Fonts `@import` rules for all non-system fonts used.
+  - CSS variables scoped to `.dtc-pdp-wrapper` and `.dtc-modular-section`.
+  - Defensive resets must precede typography hierarchy rules so that custom title and body weights are never overwritten.
+  - Typography properties use `!important` to prevent host CMS themes (e.g. Astra, OceanWP, Shopify Dawn) from altering font sizes, weights, or line heights.
+  - Neutralize WordPress `wpautop` automatic paragraph injection via newline compression in `cleanDtcExportHtml`.
+  - Use zero-JS semantic `<details>` and `<summary>` for FAQ accordions so they function across restrictive CMS environments without external JavaScript.
+- Project snapshots and history restoration must capture and restore `customBrandColor` and `typography` configurations, with fallback defaults for legacy records.
+
+### PDP asset hosting and multi-site storage
+
+- Supported storage targets: WordPress (`wordpress`), Shopify (`shopify`), Cloudflare R2 (`r2`).
+- Composite target destination key format: `${storage_type}:${config_id}` (e.g. `wordpress:1`, `shopify:3`, `r2:2`).
+- Per-destination upload state isolation: images maintain uploaded remote URLs indexed by destination key in `uploadedUrls` / `remoteUrlsByTarget`.
+- Target and sub-site switching (`syncPdpQueueStateToCurrentTarget`) must recompute per-image status badges (`已上传` with green check vs `未上传` / `待上传` with upload action) based solely on whether the active destination key has a valid remote URL. Switching targets must never bleed upload status across different sites or stores.
+- Sub-site/store dropdown changes must update `activeWpConfigId` / `activeShopifyConfigId` and immediately invoke `syncPdpQueueStateToCurrentTarget()` and header badge updates.
+- Zero-touch confirmation: selecting a target or sub-site never alters remote assets or triggers automatic uploads.
+- Upload lock: `isPdpAssetUploading` prevents concurrent upload batch conflicts or destination toggling corruption.
+- HTML replacement (`applyRemoteUrlsToPdpHtml`) replaces local/static paths in PDP HTML with cloud URLs; missing uploads trigger explicit warnings rather than silent broken links. `revertToLocalPdpImages` restores local paths without data loss.
+- Storage secrets (Application Passwords, Admin API Access Tokens, S3 Secret Access Keys) must be masked (`••••••••` / `val[:3]••••val[-3:]`) when returned to the browser; blank inputs during edits preserve saved secrets.
+
+### WebP image compression
+
+- Default compression quality is 90 with compression method 6 for visually lossless fidelity.
+- Alpha channel transparency must be preserved (convert LA/P-with-transparency to RGBA, not RGB).
+- CMYK images must be converted to RGB.
+- ICC color profile and EXIF metadata must be carried over when present.
+- Return detailed statistics: `original_size`, `compressed_size`, `savings_bytes`, `savings_percent`.
+
+### Brand Profile Hub and category inference
+
+- Global singleton `window.brandContextHub` persists profiles in `localStorage` under `ai_ecommerce_brand_profiles`.
+- Fields: `name`, `brandName`, `category`, `icp`, `painPoints`, `differentiators`, `vocKeywords`, `tone`, `competitorNotes`.
+- Category resolution follows a two-tier strategy: instant rule-based keyword heuristics (`inferCategoryFromText`) followed by AI-assisted inference (`aiInferCategoryFromModal` / `xp_inferCategoryFromText`) fallback.
+- Multi-module profile injection into Listing, Ads, and Details must never clobber existing user edits without confirmation.
 
 ### Competitor analysis
 

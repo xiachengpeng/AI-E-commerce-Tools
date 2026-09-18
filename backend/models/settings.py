@@ -98,3 +98,28 @@ class FrontendLogEvent(BaseModel):
     model: str | None = None
     duration_ms: int | str | None = None
     retry: int | str | None = None
+
+
+class FirecrawlConfigRead(BaseModel):
+    api_url: str
+    has_api_key: bool
+    api_key_masked: str | None = None
+    last_test_status: str | None = None
+    last_test_message: str | None = None
+    last_tested_at: datetime | None = None
+
+
+class FirecrawlConfigWrite(BaseModel):
+    api_key: str | None = None
+    api_url: str | None = None
+
+
+class FirecrawlConnectionTest(BaseModel):
+    api_key: str | None = None
+    api_url: str | None = None
+
+
+class FirecrawlConnectionTestResult(BaseModel):
+    status: Literal["success", "error"]
+    duration_ms: int
+    message: str

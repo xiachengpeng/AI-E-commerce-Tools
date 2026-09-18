@@ -71,6 +71,27 @@ function handleTransDrop(event) {
     loadTransFiles([...event.dataTransfer.files].filter(f => f.type.startsWith('image/')));
 }
 
+function handleTranslateImagePaste(files) {
+    const raw = Array.isArray(files) ? files : Array.from(files || []);
+    const valid = raw.filter(file => file && file.type && file.type.startsWith('image/'));
+    if (valid.length) {
+        loadTransFiles(valid);
+        return true;
+    }
+    return false;
+}
+
+function handleTransPaste(event) {
+    const files = typeof extractImageFilesFromClipboard === 'function'
+        ? extractImageFilesFromClipboard(event)
+        : Array.from(event?.clipboardData?.files || []).filter(f => f.type && f.type.startsWith('image/'));
+    if (files.length) {
+        event.preventDefault();
+        handleTranslateImagePaste(files);
+    }
+}
+
+
 function loadTransFiles(files) {
     if (!files.length) return;
     let loaded = 0;
@@ -135,6 +156,7 @@ function renderTransCards() {
                 <div class="flex flex-col items-end gap-2 flex-shrink-0 min-w-[100px]">
                     <button onclick="event.stopPropagation();removeTransImage('${img.id}')" class="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><i class="ph ph-trash text-sm"></i></button>
                     <button id="trans-card-retrans-${img.id}" onclick="event.stopPropagation();retransCard('${img.id}')" class="hidden flex items-center gap-1.5 bg-amber-50 text-amber-600 hover:bg-amber-500 hover:text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all border border-amber-200"><i class="ph ph-arrows-clockwise text-sm"></i> 重新生成</button>
+                    <button id="trans-card-upload-${img.id}" onclick="event.stopPropagation();uploadTransCardToCloud('${img.id}')" class="hidden flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all border border-blue-200 cursor-pointer"><i class="ph ph-cloud-arrow-up text-sm"></i> 上传图床</button>
                     <button id="trans-card-export-${img.id}" onclick="event.stopPropagation();exportTransCard('${img.id}')" class="hidden flex items-center gap-1.5 bg-slate-50 text-slate-600 hover:bg-slate-600 hover:text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all border border-slate-200"><i class="ph ph-download-simple text-sm"></i> 导出</button>
                     <button id="trans-card-preview-${img.id}" onclick="openTransPreview('${img.id}')" class="hidden flex items-center gap-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all"><i class="ph ph-eye text-sm"></i> 预览</button>
                 </div>
@@ -186,6 +208,10 @@ function updateTransSelection() {
     const btn = document.getElementById('transBatchDownloadBtn');
     if (btn) {
         btn.disabled = checked.length === 0;
+    }
+    const uploadBtn = document.getElementById('transBatchUploadBtn');
+    if (uploadBtn) {
+        uploadBtn.disabled = checked.length === 0;
     }
 }
 
@@ -275,8 +301,11 @@ function openTransPreview(imgId) {
             wrap.insertAdjacentHTML('beforeend', `
                 <div class="flex flex-col gap-2 mb-4">
                     <div class="flex justify-between items-center px-1">
-                        <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest">→ ${langInfo.label} (${langInfo.short})</span>
-                        ${imgEl ? `<button onclick="downloadTransResult('${slotId}-img','${img.name}-${langInfo.short}')" class="text-[10px] text-blue-600 hover:underline font-bold flex items-center gap-1"><i class="ph ph-download-simple"></i> 导出</button>` : ''}
+                        ${imgEl ? `
+                        <div class="flex items-center gap-2">
+                            <button onclick="uploadTransSlotToCloud('${slotId}-img','${img.name}-${langInfo.short}')" class="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 cursor-pointer"><i class="ph ph-cloud-arrow-up"></i> 上传图床</button>
+                            <button onclick="downloadTransResult('${slotId}-img','${img.name}-${langInfo.short}')" class="text-[10px] text-slate-500 hover:text-slate-700 font-bold flex items-center gap-1 cursor-pointer"><i class="ph ph-download-simple"></i> 导出</button>
+                        </div>` : ''}
                     </div>
                     <div class="rounded-2xl border-4 border-white shadow-xl overflow-hidden bg-slate-100" style="min-height:120px;display:flex;align-items:center;justify-content:center">${displayHtml}</div>
                 </div>`);
@@ -395,7 +424,7 @@ async function startTranslation() {
                     }
                     if (stepEl) stepEl.textContent = '处理完成';
                     setTimeout(() => { if (progWrap) progWrap.classList.add('hidden'); }, 1000);
-                    ['preview', 'export', 'retrans'].forEach(action => {
+                    ['preview', 'export', 'upload', 'retrans'].forEach(action => {
                         document.getElementById(`trans-card-${action}-${img.id}`)?.classList.remove('hidden');
                     });
                 }
@@ -482,6 +511,7 @@ async function retransCard(imgId) {
     setTimeout(() => { if (progWrap) progWrap.classList.add('hidden'); }, 1000);
     if (previewBtn) previewBtn.classList.remove('hidden');
     if (exportBtn) exportBtn.classList.remove('hidden');
+    document.getElementById(`trans-card-upload-${imgId}`)?.classList.remove('hidden');
     if (retransBtn) retransBtn.classList.remove('hidden');
     showToast(`${img.name} 重新生成完成`, 'success');
 }
@@ -491,13 +521,15 @@ async function translateSingleImageToLang(img, lang, langInfo, slotId, styleStre
     const base64Data = img.base64.split(',')[1];
     const mimeType = img.mimeType;
 
-    const prompt = `Generate a completely NEW image based on this reference.
-TASK: Translate all text in the image into ${lang} (${langInfo.label}).
-REQUIREMENTS:
-1. Completely redraw the image. Do NOT return the original image.
-2. Replace the original text with the ${lang} translation.
-3. Keep the exact same product, background, style, and typography layout.
-OUTPUT: You must generate and return the modified image.`;
+    const prompt = `You are a professional multilingual graphic design and visual localization expert.
+TASK: Translate all visible text in the provided e-commerce product image into natural, fluent ${lang} (${langInfo.label}).
+
+STRICT INVARIANTS:
+1. ZERO PRODUCT MODIFICATION: The central product, its silhouette, physical structure, materials, colors, textures, brand logos, buttons, and geometric proportions must remain 100% pixel-faithful to the reference image. Do NOT redesign, alter, or deform the product.
+2. BACKGROUND & SCENE FIDELITY: Keep the exact same background environment, lighting direction, shadows, reflections, and overall color grading.
+3. TYPOGRAPHY INPAINTING & LOCALIZATION: Detect all embedded text regions in the reference image. Seamlessly erase the original text and replace it with the accurate ${lang} translation. Match the original typographic hierarchy, font weight, color, alignment, and position.
+
+OUTPUT: Return the modified image with translated text seamlessly rendered.`;
 
     try {
         const payload = {
@@ -529,4 +561,158 @@ OUTPUT: You must generate and return the modified image.`;
         console.warn(`[Trans] ${img.name} → ${lang}:`, err.message);
         if (contentDiv) contentDiv.innerHTML = `<div id="${slotId}-img-error" class="hidden">${err.message}</div>`;
     }
+}
+
+function uploadTransSlotToCloud(imgElementId, baseFilename) {
+    const el = document.getElementById(imgElementId);
+    if (!el || el.tagName !== 'IMG' || !el.src) {
+        if (typeof showToast === 'function') showToast('图片尚未生成', 'error');
+        return;
+    }
+    const cleanBase = (baseFilename || 'translated_image').replace(/\.[^/.]+$/, '');
+    const isGen = typeof window !== 'undefined' && typeof window.universalUploader?.isGenericPlaceholderName === 'function'
+        ? window.universalUploader.isGenericPlaceholderName(cleanBase)
+        : (typeof isGenericPlaceholderName === 'function' && isGenericPlaceholderName(cleanBase));
+
+    if (typeof window !== 'undefined' && typeof window.openUniversalImageUploader === 'function') {
+        window.openUniversalImageUploader({
+            sourceModule: 'translate',
+            imageData: el.src,
+            filename: `${cleanBase}_translated.png`,
+            title: isGen ? '' : cleanBase,
+            altText: isGen ? '' : `${cleanBase} localized image`
+        });
+    } else {
+        if (typeof showToast === 'function') showToast('云存储图床托管组件未加载', 'warning');
+    }
+}
+
+function uploadTransCardToCloud(imgId) {
+    const img = transImages.find(i => i.id === imgId);
+    if (!img) return;
+    const langs = getSelectedTransLangs();
+    const items = [];
+    const checkGeneric = typeof window !== 'undefined' && typeof window.universalUploader?.isGenericPlaceholderName === 'function'
+        ? window.universalUploader.isGenericPlaceholderName
+        : (typeof isGenericPlaceholderName === 'function' ? isGenericPlaceholderName : null);
+
+    for (const lang of langs) {
+        const langInfo = TRANS_LANG_OPTIONS.find(l => l.value === lang) || { label: lang, short: lang.slice(0, 2).toUpperCase() };
+        const slotId = `trans-slot-${imgId}-${lang.replace(/\s/g, '')}`;
+        const imgEl = document.getElementById(`${slotId}-img`);
+        if (!imgEl || imgEl.tagName !== 'IMG' || !imgEl.src) continue;
+        const cleanBase = img.name.replace(/\.[^/.]+$/, '');
+        const isGen = checkGeneric ? checkGeneric(cleanBase) : false;
+
+        items.push({
+            id: `${imgId}_${langInfo.short}`,
+            filename: `${cleanBase}_${langInfo.short}.png`,
+            imageData: imgEl.src,
+            title: isGen ? '' : `${cleanBase} [${langInfo.short}]`,
+            altText: isGen ? '' : `${cleanBase} - ${langInfo.value || 'English'} localized product showcase`,
+            lang: langInfo.value || langInfo.label || lang
+        });
+    }
+
+    if (!items.length) {
+        if (typeof showToast === 'function') showToast('当前素材暂无已生成的译图', 'warning');
+        return;
+    }
+
+    if (items.length === 1) {
+        if (typeof window !== 'undefined' && typeof window.openUniversalImageUploader === 'function') {
+            window.openUniversalImageUploader({
+                sourceModule: 'translate',
+                imageData: items[0].imageData,
+                filename: items[0].filename,
+                title: items[0].title,
+                altText: items[0].altText,
+                lang: items[0].lang
+            });
+        }
+    } else {
+        if (typeof window !== 'undefined' && typeof window.openUniversalBatchUploader === 'function') {
+            window.openUniversalBatchUploader({
+                sourceModule: 'translate',
+                items: items
+            });
+        }
+    }
+}
+
+function uploadSelectedTransToCloud() {
+    const checked = [...document.querySelectorAll('#transCardContainer input[type=checkbox][data-imgid]:checked')];
+    if (!checked.length) {
+        if (typeof showToast === 'function') showToast('请至少勾选一个翻译素材', 'warning');
+        return;
+    }
+    const langs = getSelectedTransLangs();
+    const items = [];
+    const checkGeneric = typeof window !== 'undefined' && typeof window.universalUploader?.isGenericPlaceholderName === 'function'
+        ? window.universalUploader.isGenericPlaceholderName
+        : (typeof isGenericPlaceholderName === 'function' ? isGenericPlaceholderName : null);
+
+    for (const cb of checked) {
+        const img = transImages.find(i => i.id === cb.dataset.imgid);
+        if (!img) continue;
+        for (const lang of langs) {
+            const langInfo = TRANS_LANG_OPTIONS.find(l => l.value === lang) || { label: lang, short: lang.slice(0, 2).toUpperCase() };
+            const slotId = `trans-slot-${img.id}-${lang.replace(/\s/g, '')}`;
+            const imgEl = document.getElementById(`${slotId}-img`);
+            if (!imgEl || imgEl.tagName !== 'IMG' || !imgEl.src) continue;
+            const cleanBase = img.name.replace(/\.[^/.]+$/, '');
+            const isGen = checkGeneric ? checkGeneric(cleanBase) : false;
+
+            items.push({
+                id: `${img.id}_${langInfo.short}`,
+                filename: `${cleanBase}_${langInfo.short}.png`,
+                imageData: imgEl.src,
+                title: isGen ? '' : `${cleanBase} [${langInfo.short}]`,
+                altText: isGen ? '' : `${cleanBase} - ${langInfo.value || 'English'} localized product showcase`,
+                lang: langInfo.value || langInfo.label || lang
+            });
+        }
+    }
+
+    if (!items.length) {
+        if (typeof showToast === 'function') showToast('所选素材暂无可上传的生成译图', 'warning');
+        return;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.openUniversalBatchUploader === 'function') {
+        window.openUniversalBatchUploader({
+            sourceModule: 'translate',
+            items: items
+        });
+    } else {
+        if (typeof showToast === 'function') showToast('云存储图床托管组件未加载', 'warning');
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.loadTransFiles = loadTransFiles;
+    window.handleTranslateImagePaste = handleTranslateImagePaste;
+    window.handleTransPaste = handleTransPaste;
+    window.uploadTransSlotToCloud = uploadTransSlotToCloud;
+    window.uploadTransCardToCloud = uploadTransCardToCloud;
+    window.uploadSelectedTransToCloud = uploadSelectedTransToCloud;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.loadTransFiles = loadTransFiles;
+    globalThis.handleTranslateImagePaste = handleTranslateImagePaste;
+    globalThis.handleTransPaste = handleTransPaste;
+    globalThis.uploadTransSlotToCloud = uploadTransSlotToCloud;
+    globalThis.uploadTransCardToCloud = uploadTransCardToCloud;
+    globalThis.uploadSelectedTransToCloud = uploadSelectedTransToCloud;
+}
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        ...(module.exports || {}),
+        loadTransFiles,
+        handleTranslateImagePaste,
+        handleTransPaste,
+        uploadTransSlotToCloud,
+        uploadTransCardToCloud,
+        uploadSelectedTransToCloud
+    };
 }

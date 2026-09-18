@@ -211,7 +211,7 @@ def test_ads_prompt_defines_platform_specific_emoji_fields():
     prompt = _ads_prompt(request)
 
     assert "Facebook primaryText, headline, and description" in prompt
-    assert "Google headlines and descriptions" in prompt
+    assert "Google headlines, descriptions, keywords, and sitelinks" in prompt
     assert "Pinterest title and description" in prompt
     assert "1–2 semantically relevant Emoji per individual field" in prompt
     assert (
@@ -220,7 +220,7 @@ def test_ads_prompt_defines_platform_specific_emoji_fields():
     ) in prompt
     assert "Do not stack repeated or unrelated Emoji" in prompt
     assert "Facebook CTA and creativeDirection" in prompt
-    assert "Google keywords and sitelinks" in prompt
+    assert "strictly contain NO Emojis or special symbols" in prompt
     assert "Pinterest tags and altText" in prompt
     assert "must not contain Emoji" in prompt
 
@@ -234,7 +234,7 @@ def test_ads_prompt_mentions_emoji_only_for_selected_platforms():
 
     prompt = _ads_prompt(request)
 
-    assert "Google headlines and descriptions" in prompt
+    assert "Google headlines, descriptions, keywords, and sitelinks" in prompt
     assert "Facebook primaryText" not in prompt
     assert "Pinterest title and description" not in prompt
 
@@ -292,3 +292,65 @@ async def test_generate_ad_copy_emits_safe_image_processing_boundaries():
     ]
     assert all(call.kwargs["source"] == "image" for call in emit.call_args_list)
     assert "private-image" not in repr(emit.call_args_list)
+
+
+def test_normalize_ad_copy_result_populates_golden_hooks_and_creative_brief():
+    data = {
+        "product": {"name": {"target": "Wireless Charger", "zh": "无线充"}},
+        "goldenHooks": [
+            {
+                "type": "pattern_interrupt",
+                "target": "Still charging with tangled cords? Stop now 🛑",
+                "zh": "还在用乱七八糟的线充电？立刻停下 🛑",
+            },
+            {
+                "type": "contrast",
+                "target": "From 5 messy cables to 1 sleek pad ⚡",
+                "zh": "从5根杂乱线缆到1块简约充电板 ⚡",
+            },
+        ],
+        "creativeBrief": {
+            "hookScene": {
+                "target": "0-3s: Messy tangled cords being swept away",
+                "zh": "0-3秒：杂乱线缆被一把推开",
+            },
+            "ctaScene": {
+                "target": "50% OFF flash deal badge",
+                "zh": "5折限时特惠徽标",
+            },
+        },
+        "styles": [],
+    }
+    result = normalize_ad_copy_result(data, platforms=["facebook"])
+
+    assert len(result["goldenHooks"]) == 5
+    # First hook matches pattern_interrupt
+    assert result["goldenHooks"][0]["type"] == "pattern_interrupt"
+    assert "tangled cords" in result["goldenHooks"][0]["target"]
+    assert result["goldenHooks"][0]["typeLabel"]["zh"] == "打破认知 / 颠覆常识"
+    # Unsupplied hooks get default empty text pair
+    pain_callout = [h for h in result["goldenHooks"] if h["type"] == "pain_callout"][0]
+    assert pain_callout["target"] == ""
+    assert pain_callout["typeLabel"]["target"] == "Pain Point Callout"
+
+    # Creative brief
+    assert "Messy tangled cords" in result["creativeBrief"]["hookScene"]["target"]
+    assert result["creativeBrief"]["bodyScene"] == {"target": "", "zh": ""}
+    assert "5折" in result["creativeBrief"]["ctaScene"]["zh"]
+
+
+def test_ads_prompt_contains_golden_hooks_and_creative_brief():
+    request = SimpleNamespace(
+        platforms=["facebook", "google"],
+        region="US Market",
+        target_language="English",
+        marketing_theme="summer",
+        marketing_theme_label="Summer Sale",
+        product_name="Noise Cancelling Earbuds",
+    )
+    prompt = _ads_prompt(request)
+    assert "goldenHooks" in prompt
+    assert "pattern_interrupt" in prompt
+    assert "creativeBrief" in prompt
+    assert "hookScene" in prompt
+    assert "bodyScene" in prompt

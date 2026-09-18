@@ -39,6 +39,13 @@ DEEP_JSON = json.dumps({
     "strengths": [{"point": "s1", "detail": "d1"}],
     "weaknesses": [{"risk": "r1", "detail": "d1"}],
     "differentiation_opportunities": [{"opportunity": "o1", "confidence": "medium"}],
+    "customer_objections": [
+        {
+            "objection": "价格偏高 ||| Price too high",
+            "response": "采用航空级材质，寿命提升3倍 ||| Aviation grade materials, 3x lifespan",
+            "proof_point": "3年质保与权威防摔认证 ||| 3-year warranty and drop-test certification"
+        }
+    ],
     "entry_recommendation": "推荐进入",
 }, ensure_ascii=False)
 
@@ -66,6 +73,8 @@ async def test_analyze_single_deep(sample_structured_data):
         parsed = json.loads(result)
         assert parsed["product_name"] == "深度测试 ||| Deep Test"
         assert len(parsed["target_countries"]) == 5
+        assert len(parsed["customer_objections"]) == 1
+        assert parsed["customer_objections"][0]["objection"] == "价格偏高 ||| Price too high"
         assert mocked.await_args.kwargs["capability"] == "text"
 
 
@@ -101,3 +110,41 @@ def test_extract_json_no_fence():
     from services.ai_single import _extract_json
     plain = '{"key": "val"}'
     assert _extract_json(plain) == plain
+
+
+@pytest.mark.asyncio
+async def test_analyze_single_quick(sample_structured_data):
+    """快速扫描模式：返回包含 brand_positioning、battle_card、quadrant_position 的精简 JSON"""
+    quick_json = json.dumps({
+        "product_name": "快扫产品 ||| Quick Product",
+        "price": "$19.99",
+        "reviews_count": "50",
+        "brand_positioning": {
+            "tagline": "极致便携，随行随泡 ||| Ultra portable",
+            "positioning_angle": "极简便携 ||| Minimalist Portable",
+            "trust_triggers": ["红点设计奖 ||| RedDot Winner"]
+        },
+        "battle_card": {
+            "competitor_strengths": ["品牌知名度高 ||| High brand awareness"],
+            "attack_angles": ["针对按压费力进行省力杠杆改良 ||| Ergonomic leverage improvement"],
+            "whitespace_opportunities": ["户外车载专用配件包 ||| In-car outdoor accessory pack"],
+            "potential_threats": ["低价仿品跟进 ||| Copycat risks"]
+        },
+        "quadrant_position": {
+            "x_price": 35,
+            "y_capability": 70,
+            "quadrant_name": "高性价比性能款 ||| Value Champion"
+        },
+        "entry_recommendation": "极速建议 ||| Quick Advice"
+    }, ensure_ascii=False)
+
+    with patch("services.ai_single.AIService.call_ai",
+               new=AsyncMock(return_value=quick_json)) as mocked:
+        from services.ai_single import analyze_single_quick
+        result = await analyze_single_quick(sample_structured_data)
+        parsed = json.loads(result)
+        assert parsed["product_name"] == "快扫产品 ||| Quick Product"
+        assert parsed["brand_positioning"]["positioning_angle"] == "极简便携 ||| Minimalist Portable"
+        assert len(parsed["battle_card"]["attack_angles"]) == 1
+        assert parsed["quadrant_position"]["x_price"] == 35
+        assert mocked.await_args.kwargs["capability"] == "text"

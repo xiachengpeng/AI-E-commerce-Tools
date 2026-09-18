@@ -21,6 +21,14 @@ AD_STYLE_DEFINITIONS = [
     ("curiosity_entertainment", "Curiosity / Entertainment", "猎奇 / 趣味型", "用反常识、测试、幽默或反转吸引冷流量。"),
 ]
 
+GOLDEN_HOOK_DEFINITIONS = [
+    ("pattern_interrupt", "Pattern Interrupt", "打破认知 / 颠覆常识", "用反常识或颠覆性宣告打破滑动惯性，瞬间抓取用户前3秒注意力。"),
+    ("pain_callout", "Pain Point Callout", "痛点点名 / 扎心呼唤", "直击目标客户每天经受的隐秘痛点，引发'这说的就是我'的强烈共鸣。"),
+    ("contrast", "Before vs. After Contrast", "前后极致对比", "对比使用前后的巨大戏剧性反差，瞬间凸显拥有产品的颠覆性价值。"),
+    ("curiosity", "Curiosity / Open Loop", "悬念好奇诱饵", "抛出未解悬念、秘密或反直觉事实，激发无法抗拒的点击求知欲。"),
+    ("social_proof", "Social Proof / Bandwagon", "高信任背书 / 从众", "以真实海量买家反馈、具体数字或权威共识建立不可动摇的信任感。"),
+]
+
 
 def _text_pair(value: Any) -> dict:
     if isinstance(value, str):
@@ -120,6 +128,37 @@ def _pinterest_block(value: Any) -> dict:
     }
 
 
+def _normalize_golden_hooks(value: Any) -> list[dict]:
+    raw_list = value if isinstance(value, list) else []
+    hook_map = {}
+    for item in raw_list:
+        if isinstance(item, dict):
+            key = str(item.get("type") or item.get("id") or "").strip().lower()
+            if key:
+                hook_map[key] = item
+
+    result = []
+    for hook_type, target_label, zh_label, _desc in GOLDEN_HOOK_DEFINITIONS:
+        raw = hook_map.get(hook_type, {})
+        pair = _text_pair(raw.get("text") or raw)
+        result.append({
+            "type": hook_type,
+            "typeLabel": {"target": target_label, "zh": zh_label},
+            "target": pair["target"],
+            "zh": pair["zh"],
+        })
+    return result
+
+
+def _normalize_creative_brief(value: Any) -> dict:
+    source = value if isinstance(value, dict) else {}
+    return {
+        "hookScene": _text_pair(source.get("hookScene") or source.get("hook_scene")),
+        "bodyScene": _text_pair(source.get("bodyScene") or source.get("body_scene")),
+        "ctaScene": _text_pair(source.get("ctaScene") or source.get("cta_scene")),
+    }
+
+
 def normalize_ad_copy_result(data: Any, platforms: list[str]) -> dict:
     data = data if isinstance(data, dict) else {}
     platform_set = set(platforms)
@@ -146,11 +185,20 @@ def normalize_ad_copy_result(data: Any, platforms: list[str]) -> dict:
         styles.append(style)
 
     product = data.get("product") if isinstance(data.get("product"), dict) else {}
+    golden_hooks = _normalize_golden_hooks(
+        data.get("goldenHooks") or data.get("golden_hooks") or data.get("hooks")
+    )
+    creative_brief = _normalize_creative_brief(
+        data.get("creativeBrief") or data.get("creative_brief")
+    )
+
     return {
         "product": {
             "name": _text_pair(product.get("name")),
             "summary": _text_pair(product.get("summary")),
         },
+        "goldenHooks": golden_hooks,
+        "creativeBrief": creative_brief,
         "styles": styles,
     }
 
@@ -242,19 +290,19 @@ Pinterest PIN rules:
         )
     if "google" in request.platforms:
         emoji_rules.append(
-            "- Google headlines and descriptions: use 1–2 semantically relevant Emoji per individual field.\n"
-            "- Google keywords and sitelinks must not contain Emoji."
+            "- Google headlines, descriptions, keywords, and sitelinks: strictly contain NO Emojis or special symbols to comply with Google Ads editorial policy (must not contain Emoji)."
         )
     if "pinterest" in request.platforms:
         emoji_rules.append(
             "- Pinterest title and description: use 1–2 semantically relevant Emoji per individual field.\n"
             "- Pinterest tags and altText must not contain Emoji."
         )
-    emoji_rules.append(
-        "- For every Emoji-enabled bilingual field, both the target string and the zh string "
-        "must each independently contain 1–2 natural, semantically aligned Emoji."
-    )
-    emoji_rules.append("- Do not stack repeated or unrelated Emoji; keep every field readable.")
+    if "facebook" in request.platforms or "pinterest" in request.platforms:
+        emoji_rules.append(
+            "- For every Emoji-enabled bilingual field, both the target string and the zh string "
+            "must each independently contain 1–2 natural, semantically aligned Emoji."
+        )
+        emoji_rules.append("- Do not stack repeated or unrelated Emoji; keep every field readable.")
     emoji_instructions = "\n".join(emoji_rules)
 
     return f"""You are a senior cross-border performance marketing strategist.
@@ -279,6 +327,8 @@ Rules:
 6. Facebook copy should fit feed/social ads and include primary text, headline, description, CTA, and creative direction.
 7. Google copy should fit search ads and include 5 concise headlines, 3 descriptions, 8 keywords, and 4 sitelink ideas.
 {pinterest_rules}
+8. goldenHooks: Generate 5 distinct, high-converting opening hooks (one for each type: pattern_interrupt, pain_callout, contrast, curiosity, social_proof). Each must have bilingual copy (target & zh) and 1-2 relevant emojis.
+9. creativeBrief: Provide an actionable visual creative direction storyboard (hookScene 0-3s, bodyScene 4-15s, ctaScene) with visual scene and on-screen text advice.
 
 Emoji rules:
 {emoji_instructions}
@@ -288,6 +338,38 @@ JSON schema:
   "product": {{
     "name": {{"target": "Product name", "zh": "中文产品名"}},
     "summary": {{"target": "Short positioning", "zh": "中文定位"}}
+  }},
+  "goldenHooks": [
+    {{
+      "type": "pattern_interrupt",
+      "target": "Hook copy in target language 💥",
+      "zh": "中文打破认知开头 💥"
+    }},
+    {{
+      "type": "pain_callout",
+      "target": "Pain callout copy in target language 😫",
+      "zh": "中文痛点点名开头 😫"
+    }},
+    {{
+      "type": "contrast",
+      "target": "Before-after contrast copy in target language ⚡",
+      "zh": "中文前后对比开头 ⚡"
+    }},
+    {{
+      "type": "curiosity",
+      "target": "Curiosity loop copy in target language 🔍",
+      "zh": "中文悬念好奇开头 🔍"
+    }},
+    {{
+      "type": "social_proof",
+      "target": "Social proof copy in target language ⭐",
+      "zh": "中文信任背书开头 ⭐"
+    }}
+  ],
+  "creativeBrief": {{
+    "hookScene": {{"target": "0-3s Visual & hook text", "zh": "0-3秒视觉画面与首屏字幕建议"}},
+    "bodyScene": {{"target": "4-15s Core demo & pain relief visual", "zh": "4-15秒功能演示与痛点化解画面"}},
+    "ctaScene": {{"target": "Ending: Offer badge & CTA action cue", "zh": "片尾促单与行动号召画面"}}
   }},
   "styles": [
     {{

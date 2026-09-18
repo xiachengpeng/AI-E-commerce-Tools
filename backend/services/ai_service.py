@@ -2,6 +2,7 @@ import json
 import logging
 
 from services.ai_router import AIRouter
+from services.json_utils import safe_extract_and_parse_json
 
 
 logger = logging.getLogger(__name__)
@@ -61,19 +62,18 @@ class AIService:
         """Translate text into multiple languages with one text request."""
         langs_str = ", ".join(target_langs)
         prompt = f"""
-        你是一位精通多国语言且深谙全球电商文化的营销专家。
+        你是一位精通多国语言且深谙全球跨境电商本土化表达的翻译专家。
 
-        请将以下内容翻译成以下目标语言：{langs_str}。
+        请将以下 <source_text> 标签内的内容翻译成指定的目标语言列表：{langs_str}。
 
-        【原始文本】：
+        <source_text>
         {text}
-
-        【应用场景】：电商产品描述/Listing (Amazon, TikTok Shop等)
+        </source_text>
 
         【翻译要求】：
-        1. **本地化语境**：不要进行生硬的字面翻译，要符合目标语言母语使用者的表达习惯。
-        2. **电商优化**：使用该语言在电商平台中常用的高转化词汇。
-        3. **格式要求**：必须严格按照以下 JSON 格式返回，不要包含任何多余的解释：
+        1. **忠实原意与语境**：保持原文的语义完整性、格式结构与信息密度，符合目标语言母语使用者的自然表达习惯。
+        2. **电商专业术语**：专有名词、尺寸单位、材质术语翻译准确，避免机械生硬字面直译。
+        3. **格式要求**：必须严格按照以下 JSON 格式返回，不要包含任何多余的解释或 Markdown 格式以外的文字：
         {{
             "语言名称1": "翻译结果1",
             "语言名称2": "翻译结果2"
@@ -89,12 +89,9 @@ class AIService:
                 capability="text",
                 response_mime_type="application/json",
             )
-            clean_json = (
-                response_text.replace("```json", "")
-                .replace("```", "")
-                .strip()
-            )
-            result = json.loads(clean_json)
+            result = safe_extract_and_parse_json(response_text)
+            if not isinstance(result, dict):
+                raise ValueError("翻译结果不是有效的 JSON 对象")
             logger.info(
                 "✅ [AI批量翻译] 成功获取 %s 种语言结果",
                 len(result),

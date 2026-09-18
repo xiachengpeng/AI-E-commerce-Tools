@@ -22,6 +22,27 @@ function handleSquareRedrawDrop(event) {
     loadSquareRedrawFiles([...event.dataTransfer.files].filter(file => file.type.startsWith('image/')));
 }
 
+function handleSquareRedrawImagePaste(files) {
+    const raw = Array.isArray(files) ? files : Array.from(files || []);
+    const valid = raw.filter(file => file && file.type && file.type.startsWith('image/'));
+    if (valid.length) {
+        loadSquareRedrawFiles(valid);
+        return true;
+    }
+    return false;
+}
+
+function handleSquareRedrawPaste(event) {
+    const files = typeof extractImageFilesFromClipboard === 'function'
+        ? extractImageFilesFromClipboard(event)
+        : Array.from(event?.clipboardData?.files || []).filter(f => f.type && f.type.startsWith('image/'));
+    if (files.length) {
+        event.preventDefault();
+        handleSquareRedrawImagePaste(files);
+    }
+}
+
+
 function readImageDimensions(dataUrl) {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -86,15 +107,20 @@ function squareRedrawSummary() {
 function renderSquareRedrawSummary() {
     const summary = squareRedrawSummary();
     const el = document.getElementById('squareRedrawSummary');
-    if (!el) return;
-    el.innerHTML = `
-        <span>总数 ${summary.total}</span>
-        <span>待重绘 ${summary.ready}</span>
-        <span>处理中 ${summary.running}</span>
-        <span>成功 ${summary.done}</span>
-        <span>失败 ${summary.failed}</span>
-        <span>跳过 ${summary.skipped}</span>
-    `;
+    if (el) {
+        el.innerHTML = `
+            <span>总数 ${summary.total}</span>
+            <span>待重绘 ${summary.ready}</span>
+            <span>处理中 ${summary.running}</span>
+            <span>成功 ${summary.done}</span>
+            <span>失败 ${summary.failed}</span>
+            <span>跳过 ${summary.skipped}</span>
+        `;
+    }
+    const batchUploadBtn = document.getElementById('squareRedrawBatchUploadBtn');
+    if (batchUploadBtn) {
+        batchUploadBtn.disabled = summary.done === 0;
+    }
 }
 
 function setSquareRedrawFilter(filter) {
@@ -241,6 +267,15 @@ function renderSquareRedrawList() {
                     ${error}
                 </button>
                 <span class="square-redraw-badge ${statusClass}">${squareRedrawStatusLabel(item.status)}</span>
+                ${item.status === 'done' && item.output_url ? `
+                <button type="button" onclick="uploadSquareRedrawItemToCloud('${item.id}')"
+                    class="square-redraw-preview-btn text-blue-600 hover:text-blue-700 hover:bg-blue-50" title="上传至云存储图床">
+                    <i class="ph ph-cloud-arrow-up text-base"></i>
+                </button>
+                <button type="button" onclick="sendSquareRedrawToDetails('${item.id}')"
+                    class="square-redraw-preview-btn text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50" title="一键设为详情页主图">
+                    <i class="ph ph-arrow-square-out text-base"></i>
+                </button>` : ''}
                 <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
                     class="square-redraw-preview-btn" title="查看对比">
                     <i class="ph ph-eye text-base"></i>
@@ -271,6 +306,18 @@ function openSquareRedrawPreview(itemId) {
     title.textContent = item.filename;
     sourceImg.src = item.source_url;
 
+    const sendBtn = document.getElementById('squareRedrawSendToDetailsBtn');
+    if (sendBtn) {
+        sendBtn.onclick = () => sendSquareRedrawToDetails(itemId);
+        sendBtn.disabled = !(item.status === 'done' && item.output_url);
+    }
+
+    const uploadBtn = document.getElementById('squareRedrawUploadToStorageBtn');
+    if (uploadBtn) {
+        uploadBtn.onclick = () => uploadSquareRedrawItemToCloud(itemId);
+        uploadBtn.disabled = !(item.status === 'done' && item.output_url);
+    }
+
     let resultHtml = '';
     if (item.status === 'done' && item.output_url) {
         resultHtml = `<img src="${formatSquareRedrawUrl(item.output_url)}" class="w-full h-full object-contain">`;
@@ -292,7 +339,7 @@ function openSquareRedrawPreview(itemId) {
             <div class="h-full min-h-[260px] flex flex-col items-center justify-center gap-2 text-center text-slate-300">
                 <i class="ph ph-hourglass text-4xl"></i>
                 <div class="text-sm font-black">${squareRedrawStatusLabel(item.status)}</div>
-                <div class="text-xs">生成完成后这里会显示 1:1 方图</div>
+                <div class="text-xs">生成完成后这里会显示尺寸重绘结果</div>
             </div>
         `;
     }
@@ -302,8 +349,103 @@ function openSquareRedrawPreview(itemId) {
     modal.classList.remove('hidden');
 }
 
+async function sendSquareRedrawToDetails(itemId) {
+    const item = getSquareRedrawItem(itemId);
+    if (!item) return;
+    const url = item.output_url ? formatSquareRedrawUrl(item.output_url) : item.source_url;
+    if (!url) return;
+    try {
+        let dataUrl = url;
+        if (!url.startsWith('data:image')) {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`获取重绘图片失败 (HTTP ${resp.status})`);
+            const blob = await resp.blob();
+            dataUrl = await new Promise((res, rej) => {
+                const reader = new FileReader();
+                reader.onload = () => res(reader.result);
+                reader.onerror = rej;
+                reader.readAsDataURL(blob);
+            });
+        }
+        const setter = (typeof window !== 'undefined' && window.setDetailProductImage) || (typeof globalThis !== 'undefined' && globalThis.setDetailProductImage) || (typeof setDetailProductImage === 'function' ? setDetailProductImage : null);
+        if (typeof setter === 'function') {
+            setter(dataUrl, item.filename || 'Redrawn Product', true);
+            const tabSwitcher = typeof switchMainTab === 'function' ? switchMainTab : (typeof window !== 'undefined' && window.switchMainTab ? window.switchMainTab : (typeof globalThis !== 'undefined' ? globalThis.switchMainTab : null));
+            if (tabSwitcher) {
+                tabSwitcher('generate');
+            }
+            if (typeof showToast === 'function') {
+                showToast('已成功将重绘图设为详情页主图！', 'success');
+            }
+        } else {
+            if (typeof showToast === 'function') {
+                showToast('详情页主图接收接口不可用', 'warning');
+            }
+        }
+    } catch (e) {
+        if (typeof showToast === 'function') {
+            showToast('传递图片失败: ' + e.message, 'error');
+        }
+    }
+}
+
 function closeSquareRedrawPreview() {
     document.getElementById('squareRedrawPreviewModal')?.classList.add('hidden');
+}
+
+function uploadCurrentSquareRedrawPreviewToCloud() {
+    const title = document.getElementById('squareRedrawPreviewTitle')?.textContent;
+    const item = squareRedrawImages.find(i => i.filename === title);
+    if (item) {
+        uploadSquareRedrawItemToCloud(item.id);
+    }
+}
+
+function uploadSquareRedrawItemToCloud(itemId) {
+    const item = getSquareRedrawItem(itemId);
+    if (!item || !item.output_url) {
+        if (typeof showToast === 'function') showToast('当前图片尚未重绘完成', 'warning');
+        return;
+    }
+    const fullUrl = formatSquareRedrawUrl(item.output_url);
+    const baseName = (item.filename || 'image').replace(/\.[^/.]+$/, '');
+    if (typeof window !== 'undefined' && typeof window.openUniversalImageUploader === 'function') {
+        window.openUniversalImageUploader({
+            sourceModule: 'square-redraw',
+            imageData: fullUrl,
+            filename: `${baseName}_resized.png`,
+            title: baseName,
+            altText: `${baseName} resized aspect ratio product view`
+        });
+    } else {
+        if (typeof showToast === 'function') showToast('云存储图床托管组件未加载', 'warning');
+    }
+}
+
+function batchUploadSquareRedrawToCloud() {
+    const completed = squareRedrawImages.filter(i => i.status === 'done' && i.output_url);
+    if (!completed.length) {
+        if (typeof showToast === 'function') showToast('暂无可上传的重绘结果', 'warning');
+        return;
+    }
+    const items = completed.map(i => {
+        const baseName = (i.filename || 'image').replace(/\.[^/.]+$/, '');
+        return {
+            id: i.id,
+            filename: `${baseName}_resized.png`,
+            imageData: formatSquareRedrawUrl(i.output_url),
+            title: baseName,
+            altText: `${baseName} resized product view`
+        };
+    });
+    if (typeof window !== 'undefined' && typeof window.openUniversalBatchUploader === 'function') {
+        window.openUniversalBatchUploader({
+            sourceModule: 'square-redraw',
+            items: items
+        });
+    } else {
+        if (typeof showToast === 'function') showToast('云存储图床托管组件未加载', 'warning');
+    }
 }
 
 function escapeSquareRedrawHtml(value) {
@@ -573,4 +715,38 @@ async function retrySquareRedrawFailed() {
 function downloadSquareRedrawZip() {
     if (!squareRedrawBatchId) return;
     window.location.href = `${API_BASE}/api/square-redraw/batches/${squareRedrawBatchId}/download`;
+}
+
+if (typeof window !== 'undefined') {
+    window.handleSquareRedrawImagePaste = handleSquareRedrawImagePaste;
+    window.handleSquareRedrawPaste = handleSquareRedrawPaste;
+    window.sendSquareRedrawToDetails = sendSquareRedrawToDetails;
+    window.uploadSquareRedrawItemToCloud = uploadSquareRedrawItemToCloud;
+    window.batchUploadSquareRedrawToCloud = batchUploadSquareRedrawToCloud;
+    window.uploadCurrentSquareRedrawPreviewToCloud = uploadCurrentSquareRedrawPreviewToCloud;
+    window.setSquareRedrawImages = (imgs) => { squareRedrawImages = imgs; };
+    window.getSquareRedrawImages = () => squareRedrawImages;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.handleSquareRedrawImagePaste = handleSquareRedrawImagePaste;
+    globalThis.handleSquareRedrawPaste = handleSquareRedrawPaste;
+    globalThis.sendSquareRedrawToDetails = sendSquareRedrawToDetails;
+    globalThis.uploadSquareRedrawItemToCloud = uploadSquareRedrawItemToCloud;
+    globalThis.batchUploadSquareRedrawToCloud = batchUploadSquareRedrawToCloud;
+    globalThis.uploadCurrentSquareRedrawPreviewToCloud = uploadCurrentSquareRedrawPreviewToCloud;
+    globalThis.setSquareRedrawImages = (imgs) => { squareRedrawImages = imgs; };
+    globalThis.getSquareRedrawImages = () => squareRedrawImages;
+}
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        ...(module.exports || {}),
+        handleSquareRedrawImagePaste,
+        handleSquareRedrawPaste,
+        sendSquareRedrawToDetails,
+        uploadSquareRedrawItemToCloud,
+        batchUploadSquareRedrawToCloud,
+        uploadCurrentSquareRedrawPreviewToCloud,
+        setSquareRedrawImages: (imgs) => { squareRedrawImages = imgs; },
+        getSquareRedrawImages: () => squareRedrawImages
+    };
 }

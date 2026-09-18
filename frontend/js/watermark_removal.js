@@ -49,7 +49,9 @@
             original: byId("watermarkRemovalOriginal"),
             resultImage: byId("watermarkRemovalResult"),
             resultMeta: byId("watermarkRemovalResultMeta"),
+            uploadCloud: byId("watermarkRemovalUploadCloud"),
             download: byId("watermarkRemovalDownload"),
+            sendToDetails: byId("watermarkRemovalSendToDetails"),
             zoomButton: byId("watermarkRemovalZoomButton"),
             preview: byId("watermarkRemovalPreview"),
             previewImage: byId("watermarkRemovalPreviewImage"),
@@ -551,7 +553,9 @@
         closeResultPreview({ restoreFocus: false });
         state.result = null;
         if (state.elements.comparison) state.elements.comparison.hidden = true;
+        if (state.elements.uploadCloud) state.elements.uploadCloud.disabled = true;
         if (state.elements.download) state.elements.download.disabled = true;
+        if (state.elements.sendToDetails) state.elements.sendToDetails.disabled = true;
         if (state.elements.original) state.elements.original.removeAttribute("src");
         if (state.elements.resultImage) state.elements.resultImage.removeAttribute("src");
     }
@@ -580,32 +584,46 @@
         requestEditorRedraw();
     }
 
-    async function handleWatermarkUpload(event) {
-        const file = event?.target?.files?.[0];
-        if (!file || state.busy) return;
+    async function ingestWatermarkFile(file) {
+        if (!file || state.busy) return false;
         const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
         if (!supportedTypes.has(file.type)) {
             setWatermarkRemovalError("仅支持 JPG、PNG 或 WebP 图片");
-            event.target.value = "";
-            return;
+            return false;
         }
 
         const objectUrl = URL.createObjectURL(file);
         try {
             const imageData = await readBlobAsDataUrl(file);
             await applySourceImage({
-                filename: file.name,
+                filename: file.name || `watermark_pasted_${Date.now()}.${file.type.split('/')[1] || 'png'}`,
                 imageData,
                 sourceUrl: objectUrl
             });
+            return true;
         } catch (error) {
             URL.revokeObjectURL(objectUrl);
             setWatermarkRemovalError(error.message || "图片加载失败");
-        } finally {
-            event.target.value = "";
+            return false;
         }
     }
+
+    async function handleWatermarkUpload(event) {
+        try {
+            const file = event?.target?.files?.[0];
+            if (file) await ingestWatermarkFile(file);
+        } finally {
+            if (event?.target) event.target.value = "";
+        }
+    }
+
+    async function handleWatermarkImagePaste(files) {
+        const file = Array.isArray(files) ? files[0] : files;
+        if (file) return await ingestWatermarkFile(file);
+        return false;
+    }
+
 
     function renderWatermarkRemovalResult(result, originalUrl) {
         closeResultPreview({ restoreFocus: false });
@@ -616,7 +634,9 @@
             ? `${result.width} × ${result.height} · 已消除 ${result.regions?.length || state.regions.length} 个区域`
             : "对比原图与消除结果";
         state.elements.comparison.hidden = false;
+        if (state.elements.uploadCloud) state.elements.uploadCloud.disabled = false;
         state.elements.download.disabled = false;
+        if (state.elements.sendToDetails) state.elements.sendToDetails.disabled = false;
     }
 
     function buildMaskData() {
@@ -725,6 +745,55 @@
         }
     }
 
+    async function sendWatermarkRemovalResultToDetails() {
+        if (!state.result?.result_url) return;
+        const resultUrl = assetUrl(state.result.result_url);
+        const filename = state.filename || "watermark_removed.png";
+        const button = state.elements.sendToDetails;
+        if (button) button.disabled = true;
+
+        try {
+            const response = await fetch(resultUrl);
+            if (!response.ok) throw new Error(`获取消除图片失败（HTTP ${response.status}）`);
+            const blob = await response.blob();
+            const dataUrl = await readBlobAsDataUrl(blob);
+            if (typeof setDetailProductImage === "function") {
+                const tabSwitcher = typeof switchMainTab === "function" ? switchMainTab : (typeof window !== "undefined" && window.switchMainTab ? window.switchMainTab : (typeof globalThis !== "undefined" ? globalThis.switchMainTab : null));
+                if (tabSwitcher) {
+                    tabSwitcher("generate");
+                }
+                if (typeof showToast === "function") {
+                    showToast("已成功将消除结果设为详情页主图！", "success");
+                }
+            } else {
+                throw new Error("详情页主图接收接口不可用");
+            }
+        } catch (error) {
+            setWatermarkRemovalError(error.message || "传递到详情页失败");
+            if (typeof showToast === "function") showToast("传递到详情页失败", "error");
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function uploadWatermarkRemovalResultToCloud() {
+        if (!state.result?.result_url) return;
+        const resultUrl = assetUrl(state.result.result_url);
+        const filename = state.filename ? state.filename.replace(/\.[^/.]+$/, "") + "-cleaned.png" : "watermark_removed.png";
+        const baseName = filename.replace(/\.[^/.]+$/, "");
+        if (typeof window !== "undefined" && typeof window.openUniversalImageUploader === "function") {
+            window.openUniversalImageUploader({
+                sourceModule: "watermark-removal",
+                imageData: resultUrl,
+                filename: filename,
+                title: baseName,
+                altText: baseName
+            });
+        } else {
+            if (typeof showToast === "function") showToast("云存储图床托管组件未加载", "warning");
+        }
+    }
+
     async function restoreWatermarkRemovalHistory(result) {
         if (state.busy) return false;
         const validationError = historyResultValidationError(result);
@@ -810,6 +879,23 @@
             event.preventDefault();
             if (!state.busy) state.elements.fileInput.click();
         });
+        state.elements.upload.addEventListener("dragover", event => {
+            event.preventDefault();
+        });
+        state.elements.upload.addEventListener("drop", event => {
+            event.preventDefault();
+            const file = event.dataTransfer?.files?.[0];
+            if (file) ingestWatermarkFile(file);
+        });
+        state.elements.upload.addEventListener("paste", event => {
+            const files = typeof extractImageFilesFromClipboard === "function"
+                ? extractImageFilesFromClipboard(event)
+                : Array.from(event?.clipboardData?.files || []).filter(f => f.type && f.type.startsWith("image/"));
+            if (files.length) {
+                event.preventDefault();
+                ingestWatermarkFile(files[0]);
+            }
+        });
         state.elements.replaceButton.addEventListener("click", () => {
             if (!state.busy) state.elements.fileInput.click();
         });
@@ -861,7 +947,11 @@
 
     root.initWatermarkRemoval = initWatermarkRemoval;
     root.handleWatermarkUpload = handleWatermarkUpload;
+    root.ingestWatermarkFile = ingestWatermarkFile;
+    root.handleWatermarkImagePaste = handleWatermarkImagePaste;
     root.submitWatermarkRemoval = submitWatermarkRemoval;
     root.downloadWatermarkRemovalResult = downloadWatermarkRemovalResult;
+    root.sendWatermarkRemovalResultToDetails = sendWatermarkRemovalResultToDetails;
+    root.uploadWatermarkRemovalResultToCloud = uploadWatermarkRemovalResultToCloud;
     root.restoreWatermarkRemovalHistory = restoreWatermarkRemovalHistory;
-})(window);
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));

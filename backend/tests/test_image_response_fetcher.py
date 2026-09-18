@@ -182,3 +182,82 @@ async def test_fetch_public_image_maps_network_timeout_without_url_leak():
             )
 
     assert "secret" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_public_image_accepts_proxy_fake_ip_and_cgnat():
+    async def resolver(host):
+        if host == "proxy-fakeip.example.com":
+            return ["198.18.0.162"]
+        if host == "cgnat.example.com":
+            return ["100.64.0.1"]
+        return ["93.184.216.34"]
+
+    async def handler(request):
+        return httpx.Response(
+            200,
+            headers={"content-type": "image/png"},
+            content=TINY_PNG,
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as client:
+        image1 = await fetch_public_image(
+            "https://proxy-fakeip.example.com/test.png",
+            client,
+            timeout_seconds=5,
+            resolver=resolver,
+        )
+        assert image1.mime_type == "image/png"
+
+        image2 = await fetch_public_image(
+            "https://cgnat.example.com/test.png",
+            client,
+            timeout_seconds=5,
+            resolver=resolver,
+        )
+        assert image2.mime_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_fetch_public_image_rejects_literal_fake_ip_and_dns_rebinding():
+    async def resolver(host):
+        if host == "rebind-loopback.example.com":
+            return ["127.0.0.1"]
+        if host == "rebind-lan.example.com":
+            return ["192.168.1.100"]
+        return ["10.0.0.1"]
+
+    async def handler(request):
+        return httpx.Response(200, content=TINY_PNG)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as client:
+        # Literal Fake-IP must be rejected
+        with pytest.raises(ValueError, match="公网"):
+            await fetch_public_image(
+                "http://198.18.0.162/image.png",
+                client,
+                timeout_seconds=5,
+                resolver=resolver,
+            )
+
+        # Domain resolving to loopback must be rejected
+        with pytest.raises(ValueError, match="公网"):
+            await fetch_public_image(
+                "https://rebind-loopback.example.com/image.png",
+                client,
+                timeout_seconds=5,
+                resolver=resolver,
+            )
+
+        # Domain resolving to LAN must be rejected
+        with pytest.raises(ValueError, match="公网"):
+            await fetch_public_image(
+                "https://rebind-lan.example.com/image.png",
+                client,
+                timeout_seconds=5,
+                resolver=resolver,
+            )

@@ -16,7 +16,7 @@ import threading
 import time
 from typing import List, Literal, Union, Any, Optional
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 from dotenv import load_dotenv
 
 from models.request import (
@@ -25,6 +25,8 @@ from models.request import (
     ListingGenerateRequest,
     AdCopyGenerateRequest,
     SquareRedrawBatchRequest,
+    BatchDeleteHistoryRequest,
+    LaunchKitExportRequest,
 )
 from models.settings import (
     AIProviderList,
@@ -33,14 +35,24 @@ from models.settings import (
     CapabilityBindingList,
     CapabilityBindingRead,
     CapabilityBindingWrite,
+    FirecrawlConfigRead,
+    FirecrawlConfigWrite,
+    FirecrawlConnectionTest,
+    FirecrawlConnectionTestResult,
     ProviderConnectionTest,
     ProviderConnectionTestResult,
     SavedProviderConnectionTest,
 )
-from services.firecrawl import close_client as close_firecrawl_client, fetch_markdown
+from services.firecrawl import (
+    close_client as close_firecrawl_client,
+    fetch_markdown,
+    is_masked_or_empty as is_crawler_masked_or_empty,
+    mask_secret as mask_crawler_secret,
+    test_firecrawl_connection,
+)
 from services.cleaner import clean_content, check_block
 from services.amazon_parser import parse_amazon, parse_general, is_amazon
-from services.ai_single import analyze_single_extract, analyze_single_deep
+from services.ai_single import analyze_single_extract, analyze_single_deep, analyze_single_quick
 from services.ai_compare import compare_products
 from services.scoring import calculate_score
 from services.ai_service import AIService
@@ -51,6 +63,7 @@ from services.listing_service import (
 )
 from services.ads_service import generate_ad_copy
 from services.watermark_removal_service import remove_watermark
+from services.storage_cleanup_service import cleanup_history_associated_files
 from services.square_redraw_service import (
     build_square_redraw_zip,
     create_square_redraw_batch,
@@ -83,6 +96,7 @@ from services.ai_router import (
     diagnose_provider_error,
 )
 from routes.generation import router as generation_router
+from routes.storage import router as storage_router
 from services.app_log_service import APP_LOG_OVERFLOW, AppLogService, app_logs
 from services.image_validation import (
     MAX_IMAGE_BYTES,
@@ -94,7 +108,7 @@ from config import (
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
-from db import init_db, get_db, SessionLocal, AICapabilityBinding, AIProviderConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory, WatermarkRemovalHistory
+from db import init_db, get_db, SessionLocal, AppSetting, AICapabilityBinding, AIProviderConfig, FirecrawlConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory, WatermarkRemovalHistory
 
 """业务历史模块与持久化模型的唯一映射来源。
 
@@ -170,8 +184,29 @@ def initialize_ai_settings():
         db.close()
 
 
+def initialize_firecrawl_settings():
+    db = SessionLocal()
+    try:
+        cfg = db.query(FirecrawlConfig).first()
+        if not cfg:
+            env_key = (os.getenv("FIRECRAWL_API_KEY") or "").strip() or None
+            env_url = (os.getenv("FIRECRAWL_API_URL") or "https://api.firecrawl.dev/v1/scrape").strip()
+            cfg = FirecrawlConfig(
+                api_key=env_key,
+                api_url=env_url,
+            )
+            db.add(cfg)
+            db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Firecrawl 配置初始化失败: %s", exc)
+    finally:
+        db.close()
+
+
 init_db()
 initialize_ai_settings()
+initialize_firecrawl_settings()
 
 
 @asynccontextmanager
@@ -188,6 +223,8 @@ app = FastAPI(
     lifespan=app_lifespan,
 )
 app.include_router(generation_router)
+app.include_router(storage_router, prefix="/api/storage")
+app.include_router(storage_router, prefix="/storage")
 app_logs.emit(
     level="success",
     source="system",
@@ -299,6 +336,21 @@ def persist_render_metadata_images(metadata: Any) -> Any:
     return metadata
 
 
+def persist_square_redraw_images(result: Any) -> Any:
+    """确保方图历史中的 base64 图片落盘为静态文件引用。"""
+    if not isinstance(result, dict):
+        return result
+    items = result.get("items")
+    if isinstance(items, list):
+        for item in items:
+            if isinstance(item, dict):
+                if isinstance(item.get("source_url"), str) and item["source_url"].startswith("data:image"):
+                    item["source_url"] = save_base64_image(item["source_url"], "outputs/square-redraw")
+                if isinstance(item.get("output_url"), str) and item["output_url"].startswith("data:image"):
+                    item["output_url"] = save_base64_image(item["output_url"], "outputs/square-redraw")
+    return result
+
+
 def _text_pair_primary(value: Any) -> str:
     if isinstance(value, str):
         return value
@@ -342,14 +394,33 @@ def persist_ads_history(request: AdCopyGenerateRequest, data: dict) -> None:
 
 
 def normalize_ai_json_object(value: Any) -> dict:
-    """兼容 AI 偶尔把对象包成单元素数组返回的情况。"""
+    """兼容 AI 偶尔把对象包成单元素数组返回的情况，并规范化 battle_card 字段别名。"""
     if isinstance(value, dict):
-        return value
-    if isinstance(value, list):
+        res = value
+    elif isinstance(value, list):
         if value and isinstance(value[0], dict):
-            return value[0]
-        return {}
-    return {}
+            res = value[0]
+        else:
+            res = {}
+    else:
+        res = {}
+
+    bc = res.get("battle_card")
+    if isinstance(bc, dict):
+        moat = bc.get("competitor_moat") or bc.get("competitor_strengths") or []
+        attack = bc.get("attack_vector") or bc.get("attack_angles") or []
+        threat = bc.get("threat_radar") or bc.get("potential_threats") or []
+        whitespace = bc.get("whitespace_opportunities") or []
+
+        bc["competitor_moat"] = moat
+        bc["competitor_strengths"] = moat
+        bc["attack_vector"] = attack
+        bc["attack_angles"] = attack
+        bc["threat_radar"] = threat
+        bc["potential_threats"] = threat
+        bc["whitespace_opportunities"] = whitespace
+
+    return res
 
 
 def _coerce_score(value: Any) -> int:
@@ -420,11 +491,19 @@ def build_consistent_recommendations(products: list[dict], scores: list[dict]) -
     ]
 
 
+async def _safe_fetch_markdown(url: str, max_age: int = 3600) -> str:
+    import inspect
+    sig = inspect.signature(fetch_markdown)
+    if "fallback_to_native" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+        return await fetch_markdown(url, max_age=max_age, fallback_to_native=True)
+    return await fetch_markdown(url, max_age=max_age)
+
+
 async def process_single_url(url: str, markdown_content: str = None, force_refresh: bool = False) -> dict:
     try:
         logger.info(f"🔍 [单品处理] 开始处理 URL: {url}")
         if not markdown_content:
-            markdown_content = await fetch_markdown(url, max_age=0 if force_refresh else 3600)
+            markdown_content = await _safe_fetch_markdown(url, max_age=0 if force_refresh else 3600)
         cleaned_text = clean_content(markdown_content)
         if not cleaned_text:
             raise Exception("内容为空")
@@ -449,16 +528,25 @@ async def process_single_url(url: str, markdown_content: str = None, force_refre
         logger.error(f"❌ [单品处理] 出错: {e}")
         raise e
 
-async def process_single_url_deep(url: str, markdown_content: str = None, force_refresh: bool = False) -> dict:
+async def process_single_url_deep(url: str, markdown_content: str = None, force_refresh: bool = False, mode: str = "deep") -> dict:
     try:
         if not markdown_content:
-            markdown_content = await fetch_markdown(url, max_age=0 if force_refresh else 3600)
+            markdown_content = await _safe_fetch_markdown(url, max_age=0 if force_refresh else 3600)
+        cleaned_text = clean_content(markdown_content)
+        if not cleaned_text:
+            raise Exception("内容为空")
+        if check_block(markdown_content):
+            raise Exception("被拦截")
+
         if is_amazon(url):
             structured_data = parse_amazon(markdown_content)
         else:
             structured_data = parse_general(markdown_content, url=url)
 
-        ai_result_json_str = await analyze_single_deep(structured_data)
+        if mode == "quick":
+            ai_result_json_str = await analyze_single_quick(structured_data)
+        else:
+            ai_result_json_str = await analyze_single_deep(structured_data)
         result = normalize_ai_json_object(json.loads(ai_result_json_str))
         result["source_url"] = url
         return result
@@ -531,6 +619,7 @@ def analysis_cache_key(
     route_identity: tuple[int, str, int] | None | object = (
         _ANALYSIS_ROUTE_UNSET
     ),
+    mode: str = "deep",
 ) -> str:
     if route_identity is _ANALYSIS_ROUTE_UNSET:
         route_identity = analysis_route_identity()
@@ -542,6 +631,7 @@ def analysis_cache_key(
         )
     return (
         f"{';'.join(sorted(unique_urls))}"
+        f"|mode={mode}"
         f"|text-route={serialized_identity}"
     )
 
@@ -551,6 +641,7 @@ async def compare(request: CompareRequest):
     try:
         urls = request.urls
         force_refresh = request.force_refresh
+        mode = request.mode if request.mode in ("quick", "deep") else "deep"
         unique_urls = list(dict.fromkeys([normalize_input_url(u) for u in urls if u.strip()]))
 
         # URL 格式校验
@@ -565,6 +656,7 @@ async def compare(request: CompareRequest):
         cache_key = analysis_cache_key(
             unique_urls,
             route_identity,
+            mode=mode,
         )
 
         with _analysis_cache_lock:
@@ -583,7 +675,7 @@ async def compare(request: CompareRequest):
         
         if len(unique_urls) == 1:
             url = unique_urls[0]
-            markdown_content = await fetch_markdown(url, max_age=0 if force_refresh else 3600)
+            markdown_content = await _safe_fetch_markdown(url, max_age=0 if force_refresh else 3600)
             basic_data = await process_single_url(url, markdown_content=markdown_content)
             score_res = await calculate_score(basic_data)
             
@@ -596,7 +688,7 @@ async def compare(request: CompareRequest):
             score_res.setdefault("product", basic_data.get("product_name", "Product"))
             
             scores = [ScoreCard(**score_res)]
-            single_data = await process_single_url_deep(url, markdown_content=markdown_content)
+            single_data = await process_single_url_deep(url, markdown_content=markdown_content, mode=mode)
             response_data = CompareResponseData(
                 single_data=single_data,
                 scores=scores,
@@ -605,7 +697,14 @@ async def compare(request: CompareRequest):
             template_type = "single"
             msg = "分析完成"
         else:
-            tasks = [process_single_url(url, force_refresh=force_refresh) for url in unique_urls]
+            async def _process_multi_item(u: str) -> dict:
+                try:
+                    return await process_single_url_deep(u, force_refresh=force_refresh, mode=mode)
+                except Exception as ex:
+                    logger.warning(f"process_single_url_deep failed for {u}, falling back to process_single_url: {ex}")
+                    return await process_single_url(u, force_refresh=force_refresh)
+
+            tasks = [_process_multi_item(url) for url in unique_urls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             valid_products = []
             url_statuses = []
@@ -658,7 +757,24 @@ async def compare(request: CompareRequest):
             consistent_recommendations = build_consistent_recommendations(scored_products, score_dicts)
             if consistent_recommendations:
                 comp_result["recommendation_list"] = consistent_recommendations
-            comparison_data = ComparisonSummary(**{k: comp_result.get(k, "") for k in ["market_position", "competition_level", "winner_product"]})
+
+            comp_summary_data = {
+                "market_position": comp_result.get("market_position", ""),
+                "competition_level": comp_result.get("competition_level", ""),
+                "winner_product": comp_result.get("winner_product", ""),
+                "market_landscape": comp_result.get("market_landscape"),
+                "winner_analysis": comp_result.get("winner_analysis"),
+                "breakthrough_strategy": comp_result.get("breakthrough_strategy"),
+                "pricing_tier_analysis": comp_result.get("pricing_tier_analysis"),
+            }
+            comparison_data = ComparisonSummary(**comp_summary_data)
+
+            strategic_insights = {
+                "market_landscape": comp_result.get("market_landscape"),
+                "winner_analysis": comp_result.get("winner_analysis"),
+                "breakthrough_strategy": comp_result.get("breakthrough_strategy"),
+                "pricing_tier_analysis": comp_result.get("pricing_tier_analysis"),
+            }
             
             template_type = "matrix"
             msg = f"分析了 {len(valid_products)} 个产品"
@@ -669,6 +785,8 @@ async def compare(request: CompareRequest):
                 recommendation_list=[RecItem(**r) for r in comp_result.get("recommendation_list", [])],
                 scores=scores,
                 url_statuses=url_statuses,
+                quadrant_map=comp_result.get("quadrant_map"),
+                strategic_insights=strategic_insights,
             )
 
         # 保存历史
@@ -1289,6 +1407,116 @@ async def api_test_saved_ai_provider(
     )
 
 
+@app.get("/api/settings/crawler", response_model=FirecrawlConfigRead)
+def api_get_crawler_settings(db: Session = Depends(get_db)):
+    cfg = db.query(FirecrawlConfig).first()
+    if not cfg:
+        api_url = (os.getenv("FIRECRAWL_API_URL") or "https://api.firecrawl.dev/v1/scrape").strip()
+        api_key = (os.getenv("FIRECRAWL_API_KEY") or "").strip() or None
+        has_key = bool(api_key)
+        return FirecrawlConfigRead(
+            api_url=api_url,
+            has_api_key=has_key,
+            api_key_masked=mask_crawler_secret(api_key) if has_key else None,
+            last_test_status=None,
+            last_test_message=None,
+            last_tested_at=None,
+        )
+    has_key = bool(cfg.api_key and cfg.api_key.strip())
+    return FirecrawlConfigRead(
+        api_url=cfg.api_url or "https://api.firecrawl.dev/v1/scrape",
+        has_api_key=has_key,
+        api_key_masked=mask_crawler_secret(cfg.api_key) if has_key else None,
+        last_test_status=cfg.last_test_status,
+        last_test_message=cfg.last_test_message,
+        last_tested_at=cfg.last_tested_at,
+    )
+
+
+@app.put("/api/settings/crawler", response_model=FirecrawlConfigRead)
+def api_update_crawler_settings(
+    data: FirecrawlConfigWrite,
+    db: Session = Depends(get_db),
+):
+    cfg = db.query(FirecrawlConfig).first()
+    if not cfg:
+        cfg = FirecrawlConfig(
+            api_url="https://api.firecrawl.dev/v1/scrape",
+        )
+        db.add(cfg)
+
+    if data.api_url is not None and data.api_url.strip():
+        cfg.api_url = data.api_url.strip()
+
+    if data.api_key is not None:
+        raw_key = data.api_key.strip()
+        if not is_crawler_masked_or_empty(raw_key):
+            cfg.api_key = raw_key
+        elif raw_key == "":
+            cfg.api_key = None
+
+    db.commit()
+    db.refresh(cfg)
+
+    has_key = bool(cfg.api_key and cfg.api_key.strip())
+    app_logs.emit(
+        level="success",
+        source="system",
+        message="Firecrawl 爬虫配置已更新",
+    )
+    return FirecrawlConfigRead(
+        api_url=cfg.api_url or "https://api.firecrawl.dev/v1/scrape",
+        has_api_key=has_key,
+        api_key_masked=mask_crawler_secret(cfg.api_key) if has_key else None,
+        last_test_status=cfg.last_test_status,
+        last_test_message=cfg.last_test_message,
+        last_tested_at=cfg.last_tested_at,
+    )
+
+
+@app.post("/api/settings/crawler/test", response_model=FirecrawlConnectionTestResult)
+async def api_test_crawler_connection(
+    data: FirecrawlConnectionTest | None = None,
+    db: Session = Depends(get_db),
+):
+    req_data = data or FirecrawlConnectionTest()
+    cfg = db.query(FirecrawlConfig).first()
+
+    target_url = (req_data.api_url or "").strip()
+    target_key = req_data.api_key
+
+    if not target_url:
+        target_url = cfg.api_url if cfg and cfg.api_url else "https://api.firecrawl.dev/v1/scrape"
+
+    if target_key is None or is_crawler_masked_or_empty(target_key):
+        target_key = cfg.api_key if cfg else None
+
+    success, duration_ms, message = await test_firecrawl_connection(
+        api_url=target_url,
+        api_key=target_key,
+        db=db,
+    )
+
+    if cfg:
+        cfg.last_test_status = "success" if success else "error"
+        cfg.last_test_message = f"{message}（{duration_ms} ms）"
+        cfg.last_tested_at = datetime.datetime.now()
+        db.commit()
+
+    app_logs.emit(
+        level="success" if success else "error",
+        source="crawler",
+        message=f"Firecrawl 连通性测试{'成功' if success else '失败'}: {message}",
+        duration_ms=duration_ms,
+    )
+
+    return FirecrawlConnectionTestResult(
+        status="success" if success else "error",
+        duration_ms=duration_ms,
+        message=message,
+    )
+
+
 @app.get("/api/settings/logs/recent")
 def api_recent_logs():
     return {"items": app_logs.recent()}
@@ -1498,12 +1726,70 @@ async def api_square_redraw_download(batch_id: int, db: Session = Depends(get_db
         return {"status": "error", "message": str(e)}
 
 
+@app.post("/api/export/launch-kit")
+async def api_export_launch_kit(request: LaunchKitExportRequest):
+    try:
+        from services.launch_kit_service import build_launch_kit_zip
+        zip_path, filename = build_launch_kit_zip(request)
+        kit_id = filename.rsplit("_", 1)[-1].replace(".zip", "")
+        return {
+            "status": "success",
+            "kit_id": kit_id,
+            "filename": filename,
+            "download_url": f"/api/export/launch-kit/{kit_id}/download"
+        }
+    except Exception as e:
+        logger.error(f"❌ [Launch Kit] 打包生成失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"物料包生成失败: {str(e)}")
+
+
+@app.get("/api/export/launch-kit/{kit_id}/download")
+async def api_download_launch_kit(kit_id: str):
+    import glob
+    from fastapi.responses import FileResponse
+    from services.launch_kit_service import LAUNCH_KITS_DIR
+
+    matches = glob.glob(os.path.join(LAUNCH_KITS_DIR, f"*_{kit_id}.zip"))
+    if not matches:
+        raise HTTPException(status_code=404, detail="Launch Kit 不存在或已过期")
+
+    zip_path = matches[0]
+    filename = os.path.basename(zip_path)
+    return FileResponse(zip_path, media_type="application/zip", filename=filename)
+
+
+@app.get("/api/brand-profiles")
+def get_brand_profiles_endpoint(db: Session = Depends(get_db)):
+    setting = db.query(AppSetting).filter(AppSetting.key == "brand_profiles").first()
+    if setting and setting.value is not None:
+        return {"status": "success", "data": setting.value}
+    return {"status": "success", "data": []}
+
+
+@app.post("/api/brand-profiles")
+def save_brand_profiles_endpoint(data: dict, db: Session = Depends(get_db)):
+    profiles = data.get("profiles")
+    if not isinstance(profiles, list):
+        raise HTTPException(status_code=400, detail="profiles 必须是数组")
+
+    setting = db.query(AppSetting).filter(AppSetting.key == "brand_profiles").first()
+    if setting:
+        setting.value = profiles
+    else:
+        setting = AppSetting(key="brand_profiles", value=profiles)
+        db.add(setting)
+    db.commit()
+    return {"status": "success", "data": profiles}
+
+
 @app.post("/api/history/{module}")
 async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
     try:
-        init_db() 
         if module == "listing":
-            hist = ListingHistory(product_name=data.get("name"), platform=data.get("platform"), result=data.get("result"))
+            res_data = data.get("result")
+            if isinstance(res_data, dict) and data.get("inputs"):
+                res_data = {**res_data, "_inputs": data.get("inputs")}
+            hist = ListingHistory(product_name=data.get("name"), platform=data.get("platform"), result=res_data)
         elif module == "translation":
             res_data = data.get("result")
             if isinstance(res_data, str) and res_data.startswith("data:image"):
@@ -1540,7 +1826,7 @@ async def save_history(module: str, data: dict, db: Session = Depends(get_db)):
         elif module == "analysis":
             hist = AnalysisHistory(query_url=data.get("url"), template_type=data.get("type"), data=data.get("data"))
         elif module == "square-redraw":
-            result = data.get("result") or {}
+            result = persist_square_redraw_images(data.get("result") or {})
             hist = SquareRedrawHistory(
                 batch_id=data.get("batch_id") or result.get("id"),
                 target_aspect_ratio=data.get("target_aspect_ratio") or result.get("target_aspect_ratio") or "1:1",
@@ -1589,13 +1875,73 @@ async def get_history(
 ):
     model = HISTORY_MODELS.get(module)
     if not model: return []
+    query = db.query(model)
+    if module == "render" and hasattr(model, "metadata_info"):
+        query = query.options(defer(model.metadata_info))
     return (
-        db.query(model)
-        .order_by(model.timestamp.desc())
+        query.order_by(model.timestamp.desc())
         .offset(offset)
         .limit(limit)
         .all()
     )
+
+
+@app.get("/api/history/{module}/{item_id}")
+async def get_history_item(
+    module: str,
+    item_id: int,
+    db: Session = Depends(get_db),
+):
+    model = HISTORY_MODELS.get(module)
+    if not model:
+        raise HTTPException(status_code=404, detail="未知的历史模块")
+    item = db.query(model).filter(model.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="历史记录不存在")
+    return item
+
+@app.post("/api/history/{module}/batch-delete")
+@app.delete("/api/history/{module}/batch-delete")
+async def batch_delete_history(
+    module: str,
+    request: BatchDeleteHistoryRequest,
+    db: Session = Depends(get_db),
+):
+    model = HISTORY_MODELS.get(module)
+    if not model:
+        app_logs.emit(
+            level="error",
+            source="history",
+            message="历史记录批量删除失败",
+        )
+        raise HTTPException(status_code=404, detail="未知的历史模块")
+    if not request.ids:
+        return {"status": "success", "deleted_count": 0}
+    try:
+        items_to_delete = db.query(model).filter(model.id.in_(request.ids)).all()
+        cleanup_history_associated_files(module, items_to_delete)
+        deleted_count = (
+            db.query(model)
+            .filter(model.id.in_(request.ids))
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        app_logs.emit(
+            level="success",
+            source="history",
+            message=f"历史记录批量删除成功 ({deleted_count} 条)",
+        )
+        return {"status": "success", "deleted_count": deleted_count}
+    except Exception as e:
+        logger.error(f"❌ [历史] 批量删除失败: {e}")
+        db.rollback()
+        app_logs.emit(
+            level="error",
+            source="history",
+            message="历史记录批量删除失败",
+        )
+        raise HTTPException(status_code=500, detail="历史记录批量删除失败")
+
 
 @app.delete("/api/history/{module}/{id}")
 async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
@@ -1610,6 +1956,7 @@ async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
     try:
         item = db.query(model).filter(model.id == id).first()
         if item:
+            cleanup_history_associated_files(module, [item])
             db.delete(item)
             db.commit()
         app_logs.emit(
@@ -1626,6 +1973,8 @@ async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
             message="历史记录删除失败",
         )
         raise HTTPException(status_code=500, detail="历史记录删除失败")
+
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,7 +1,7 @@
 from math import gcd, isfinite
 
 from pydantic import BaseModel, field_validator, model_validator
-from typing import List, Union, Any, Optional
+from typing import List, Union, Any, Optional, Dict
 
 # ============================
 # V2 Models
@@ -10,6 +10,93 @@ from typing import List, Union, Any, Optional
 class CompareRequest(BaseModel):
     urls: List[str]
     force_refresh: bool = False
+    mode: str = "deep"  # "quick" or "deep"
+
+class BrandPositioning(BaseModel):
+    tagline: str = ""
+    positioning_angle: str = ""
+    trust_triggers: List[str] = []
+
+    @field_validator('tagline', 'positioning_angle', mode='before')
+    @classmethod
+    def coerce_string(cls, v: Any) -> str:
+        return str(v) if v is not None else ""
+
+    @field_validator('trust_triggers', mode='before')
+    @classmethod
+    def coerce_list(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            return [v]
+        if isinstance(v, list):
+            return [str(item) for item in v if item]
+        return []
+
+class BattleCard(BaseModel):
+    competitor_moat: List[str] = []
+    attack_vector: List[str] = []
+    whitespace_opportunities: List[str] = []
+    threat_radar: List[str] = []
+    competitor_strengths: List[str] = []
+    attack_angles: List[str] = []
+    potential_threats: List[str] = []
+
+    @field_validator('competitor_moat', 'attack_vector', 'whitespace_opportunities', 'threat_radar',
+                     'competitor_strengths', 'attack_angles', 'potential_threats', mode='before')
+    @classmethod
+    def coerce_list(cls, v: Any) -> List[str]:
+        if isinstance(v, str):
+            return [v]
+        if isinstance(v, list):
+            return [str(item) for item in v if item]
+        return []
+
+    @model_validator(mode='before')
+    @classmethod
+    def sync_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            moat = data.get('competitor_moat') or data.get('competitor_strengths') or []
+            attack = data.get('attack_vector') or data.get('attack_angles') or []
+            threat = data.get('threat_radar') or data.get('potential_threats') or []
+            whitespace = data.get('whitespace_opportunities') or []
+
+            data['competitor_moat'] = moat
+            data['competitor_strengths'] = moat
+            data['attack_vector'] = attack
+            data['attack_angles'] = attack
+            data['threat_radar'] = threat
+            data['potential_threats'] = threat
+            data['whitespace_opportunities'] = whitespace
+        return data
+
+class QuadrantPosition(BaseModel):
+    x_price: int = 50
+    y_capability: int = 50
+    quadrant_name: str = ""
+    entry_recommendation_point: Optional[dict] = None
+
+    @field_validator('x_price', 'y_capability', mode='before')
+    @classmethod
+    def coerce_int(cls, v: Any) -> int:
+        try:
+            val = int(v)
+            return max(0, min(100, val))
+        except (ValueError, TypeError):
+            return 50
+
+    @field_validator('quadrant_name', mode='before')
+    @classmethod
+    def coerce_name(cls, v: Any) -> str:
+        return str(v) if v is not None else ""
+
+class CustomerObjection(BaseModel):
+    objection: str
+    response: str
+    proof_point: str = ""
+
+    @field_validator('objection', 'response', 'proof_point', mode='before')
+    @classmethod
+    def coerce_str(cls, v: Any) -> str:
+        return str(v) if v is not None else ""
 
 class ProductCompareData(BaseModel):
     product_name: str
@@ -24,6 +111,50 @@ class ProductCompareData(BaseModel):
     reviews_count: str = "0"
     voc_analysis: Any = None # Pros/Cons/Sentiment
     source_url: str | None = None
+    brand_positioning: Optional[BrandPositioning] = None
+    battle_card: Optional[BattleCard] = None
+    quadrant_position: Optional[QuadrantPosition] = None
+    customer_objections: List[CustomerObjection] = []
+    swot_analysis: Optional[Any] = None
+    marketing_strategy: Optional[Any] = None
+    ad_angles: Optional[List[Any]] = None
+    investment_advice: Optional[Any] = None
+    entry_recommendation: Optional[str] = None
+    differentiation_opportunities: Optional[List[Any]] = None
+
+    @field_validator('customer_objections', mode='before')
+    @classmethod
+    def parse_customer_objections(cls, v: Any) -> List[CustomerObjection]:
+        if isinstance(v, list):
+            res = []
+            for item in v:
+                if isinstance(item, dict):
+                    res.append(CustomerObjection(**item))
+                elif isinstance(item, CustomerObjection):
+                    res.append(item)
+            return res
+        return []
+
+    @field_validator('brand_positioning', mode='before')
+    @classmethod
+    def parse_brand_positioning(cls, v: Any) -> Optional[BrandPositioning]:
+        if isinstance(v, dict):
+            return BrandPositioning(**v)
+        return v if isinstance(v, BrandPositioning) else None
+
+    @field_validator('battle_card', mode='before')
+    @classmethod
+    def parse_battle_card(cls, v: Any) -> Optional[BattleCard]:
+        if isinstance(v, dict):
+            return BattleCard(**v)
+        return v if isinstance(v, BattleCard) else None
+
+    @field_validator('quadrant_position', mode='before')
+    @classmethod
+    def parse_quadrant_position(cls, v: Any) -> Optional[QuadrantPosition]:
+        if isinstance(v, dict):
+            return QuadrantPosition(**v)
+        return v if isinstance(v, QuadrantPosition) else None
 
     @field_validator('product_name', 'price', mode='before')
     @classmethod
@@ -71,6 +202,10 @@ class ComparisonSummary(BaseModel):
     market_position: str
     competition_level: str
     winner_product: str
+    market_landscape: Optional[str] = None
+    winner_analysis: Optional[dict] = None
+    breakthrough_strategy: Optional[dict] = None
+    pricing_tier_analysis: Optional[str] = None
 
 class EvalDetail(BaseModel):
     dimension: str
@@ -120,6 +255,8 @@ class CompareResponseData(BaseModel):
     scores: List[ScoreCard] = []
     single_data: Any = None  # Populated for single-product deep dive
     url_statuses: List[dict] = []
+    quadrant_map: Optional[dict] = None
+    strategic_insights: Optional[dict] = None
 
 class CompareResponse(BaseModel):
     status: str
@@ -368,3 +505,19 @@ class WatermarkRemovalRequest(BaseModel):
         if len(regions) > 100:
             raise ValueError("最多框选 100 个水印区域")
         return regions
+
+
+class BatchDeleteHistoryRequest(BaseModel):
+    ids: List[int] = []
+
+
+class LaunchKitExportRequest(BaseModel):
+    product_name: str = "Product"
+    brand_name: Optional[str] = None
+    category: Optional[str] = None
+    listing: Optional[Dict[str, Any]] = None
+    ads: Optional[List[Any]] = None
+    pdp_html: Optional[str] = None
+    image_items: Optional[List[Dict[str, Any]]] = None
+    aspect_ratio_precheck: Optional[Dict[str, Any]] = None
+    manifest: Optional[Dict[str, Any]] = None

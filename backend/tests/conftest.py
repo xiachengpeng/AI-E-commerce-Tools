@@ -3,13 +3,30 @@
 """
 import sys
 import os
+import tempfile
+import atexit
+import shutil
 
 # 确保 backend 目录在 sys.path 中
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+# 隔离测试数据库，确保测试套件绝不触碰或修改用户的真实 backend/history.db
+_test_db_dir = tempfile.mkdtemp(prefix="test_ecom_db_")
+_test_db_path = os.path.join(_test_db_dir, "test_history.db")
+os.environ["SQLITE_DB_PATH"] = _test_db_path
+
+def _cleanup_test_db():
+    shutil.rmtree(_test_db_dir, ignore_errors=True)
+
+atexit.register(_cleanup_test_db)
+
+import db
+db.init_db()
+
 import pytest
 import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
+
 
 
 # ---------- AI 响应模板 ----------

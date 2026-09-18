@@ -38,6 +38,31 @@ async def _resolved_addresses(host: str, resolver) -> list[str]:
     return [str(value) for value in result]
 
 
+_PROXY_OR_NAT_NETWORKS = (
+    ipaddress.IPv4Network("198.18.0.0/15"),  # RFC 2544 benchmark / proxy Fake-IP pool (Clash, Surge, Mihomo, etc.)
+    ipaddress.IPv4Network("100.64.0.0/10"),  # RFC 6598 Carrier-Grade NAT (CGNAT)
+)
+
+
+def _is_allowed_public_address(
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    is_literal: bool = False,
+) -> bool:
+    if (
+        address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+    ):
+        return False
+    if address.is_global:
+        return True
+    if not is_literal and isinstance(address, ipaddress.IPv4Address):
+        if any(address in net for net in _PROXY_OR_NAT_NETWORKS):
+            return True
+    return False
+
+
 async def _validate_public_url(url: str, resolver) -> None:
     try:
         parsed = urlparse(url)
@@ -56,14 +81,19 @@ async def _validate_public_url(url: str, resolver) -> None:
     try:
         literal = ipaddress.ip_address(parsed.hostname)
         addresses = [literal]
+        is_literal = True
     except ValueError:
         addresses = []
+        is_literal = False
         for value in await _resolved_addresses(parsed.hostname, resolver):
             try:
                 addresses.append(ipaddress.ip_address(value))
             except ValueError as exc:
                 raise ValueError("图片地址无法解析") from exc
-    if not addresses or any(not address.is_global for address in addresses):
+    if not addresses or any(
+        not _is_allowed_public_address(address, is_literal=is_literal)
+        for address in addresses
+    ):
         raise ValueError("图片地址必须是公网地址")
 
 

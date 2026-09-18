@@ -90,3 +90,42 @@ test("saved status escapes upstream text while retaining capability context", ()
     assert.doesNotMatch(markup, /<img/);
     assert.match(markup, /&lt;img onerror=alert\(1\)&gt;/);
 });
+
+test("updateSettingsOverviewKpis updates overview indicators safely", () => {
+    const originalDocument = global.document;
+
+    const mockKpiTextVal = { textContent: "" };
+    const mockKpiTextDot = { className: "" };
+    const mockKpiImageVal = { textContent: "" };
+    const mockKpiImageDot = { className: "" };
+    const mockKpiCrawlerVal = { textContent: "" };
+    const mockKpiCrawlerDot = { className: "" };
+    const mockKpiStreamVal = { textContent: "" };
+    const mockKpiStreamDot = { className: "" };
+    const mockProviderCountBadge = { textContent: "" };
+
+    global.document = {
+        getElementById: (id) => {
+            if (id === "settingsKpiTextVal") return mockKpiTextVal;
+            if (id === "settingsKpiTextDot") return mockKpiTextDot;
+            if (id === "settingsKpiImageVal") return mockKpiImageVal;
+            if (id === "settingsKpiImageDot") return mockKpiImageDot;
+            if (id === "settingsKpiCrawlerVal") return mockKpiCrawlerVal;
+            if (id === "settingsKpiCrawlerDot") return mockKpiCrawlerDot;
+            if (id === "settingsKpiStreamVal") return mockKpiStreamVal;
+            if (id === "settingsKpiStreamDot") return mockKpiStreamDot;
+            if (id === "settingsProviderCountBadge") return mockProviderCountBadge;
+            return null;
+        }
+    };
+
+    try {
+        const { updateSettingsOverviewKpis } = require("../js/settings.js");
+        updateSettingsOverviewKpis?.();
+        assert.ok(mockKpiTextVal.textContent);
+        assert.ok(mockKpiImageVal.textContent);
+        assert.ok(mockKpiCrawlerVal.textContent);
+    } finally {
+        global.document = originalDocument;
+    }
+});

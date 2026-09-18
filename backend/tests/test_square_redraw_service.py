@@ -27,6 +27,7 @@ from services.square_redraw_service import (
     safe_output_basename,
     save_bytes_for_item,
     serialize_square_redraw_batch,
+    _read_static_url_bytes,
 )
 from unittest.mock import AsyncMock, patch
 
@@ -797,6 +798,14 @@ def test_build_square_redraw_zip_deduplicates_flat_filenames(tmp_path):
         with zipfile.ZipFile(zip_path) as archive:
             names = archive.namelist()
             assert "same.png" in names
-            assert "same-2.png" in names
+        assert "same-2.png" in names
     finally:
         db.close()
+
+
+def test_read_static_url_bytes_path_traversal_blocked():
+    with pytest.raises(ValueError, match="非法访问静态目录外文件"):
+        _read_static_url_bytes("/static/../../../../etc/passwd")
+
+    with pytest.raises(ValueError, match="源图片路径无效"):
+        _read_static_url_bytes("http://example.com/image.png")

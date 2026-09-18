@@ -12,12 +12,15 @@ let STAGGER_DELAY = 2000;
 let currentUploadedBase64 = null;
 let currentUploadedImages = [];
 let currentListingUploadedBase64 = null;
-let globalGenContext = null; 
-let currentListingDataText = null; 
-let draggedItem = null;
-let detailStrategyOverrides = {};
+var globalGenContext = null;
+var draggedItem = null;
+var detailStrategyOverrides = {};
 
 const modules = MODULES_CONFIG.map(m => ({ ...m }));
+if (typeof globalThis !== 'undefined') {
+    globalThis.modules = modules;
+    globalThis.globalGenContext = globalGenContext;
+}
 
 /**
  * 从后端刷新公开 AI 路由。
@@ -96,27 +99,44 @@ async function safeAIRouteConflictError(response, capability) {
         data = {};
     }
     const expected = unconfiguredAIRouteMessage(capability);
-    const message = data?.detail === expected
-        ? expected
-        : "AI 路由配置不可用，请前往设置页面检查";
-    return new Error(message);
+    if (response.status === 409) {
+        return new Error(data?.detail === expected ? expected : "AI 路由配置不可用，请前往设置页面检查");
+    }
+    if (response.status === 401) {
+        return new Error(data?.detail || "AI 提供商鉴权失败 (401)：API Key 无效或过期，请在设置中检查配置");
+    }
+    if (response.status === 404) {
+        return new Error(data?.detail || "AI 模型或接口不存在 (404)，请在设置中检查模型名称");
+    }
+    if (response.status === 400 || response.status === 422) {
+        return new Error(data?.detail || `AI 请求参数有误 (${response.status})`);
+    }
+    if (data?.detail) {
+        return new Error(data.detail);
+    }
+    return new Error(`AI 请求失败 (HTTP ${response.status})`);
 }
 
 /**
  * 统一 AI 调用封装
  */
-async function callAI(capability, payload) {
+async function callAI(capability, payload, options = {}) {
     const route = await currentPublicAIRoute(capability);
     const logMsg = `正在调用模型: ${route.model} (${route.name})`;
     console.log(`%c[AI请求] ${logMsg}`, "color: #0891b2; font-weight: bold;");
     remoteLog(logMsg);
 
-    return await fetchWithRetry(`${API_BASE}/api/ai/generate`, {
+    const fetchOptions = {
         method: 'POST',
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ capability, payload })
-    }, 5, {
-        nonRetryableStatuses: [409],
+    };
+    if (options?.signal) {
+        fetchOptions.signal = options.signal;
+    }
+
+    return await fetchWithRetry(`${API_BASE}/api/ai/generate`, fetchOptions, 5, {
+        nonRetryableStatuses: [400, 401, 403, 404, 409, 422],
         createError: response => safeAIRouteConflictError(
             response,
             capability
@@ -145,6 +165,11 @@ function switchMainTab(tabId) {
         }
     });
 
+    // 切换主页面时若历史抽屉处于开启状态，平滑收起
+    if (typeof toggleGlobalHistory === 'function') {
+        toggleGlobalHistory(false);
+    }
+
     // 3. 隐藏所有以 view- 开头的视图容器，并显示目标视图
     document.querySelectorAll('div[id^="view-"]').forEach(view => {
         view.classList.add('hidden');
@@ -170,6 +195,32 @@ function switchMainTab(tabId) {
     if (tabId === "watermark-removal" && typeof initWatermarkRemoval === "function") {
         initWatermarkRemoval();
     }
+
+    sanitizeUnintendedAutofill();
+}
+
+/**
+ * 清除浏览器误触发的账号凭据自动填充（防止将本地保存的邮箱误填入产品名称等文本框）
+ */
+function sanitizeUnintendedAutofill() {
+    const targets = ['productNameInput', 'listingName', 'adsProductNameInput'];
+    targets.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const val = el.value || '';
+        const isSuspiciousEmail = val.includes('@') && !val.includes(' ');
+        let isAutofilled = false;
+        try {
+            isAutofilled = typeof el.matches === 'function' && el.matches(':-webkit-autofill, :autofill');
+        } catch (_) {}
+        if (isSuspiciousEmail || (isAutofilled && !globalGenContext?.config?.productName)) {
+            el.value = '';
+        }
+    });
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('pageshow', sanitizeUnintendedAutofill);
 }
 
 /**
@@ -210,9 +261,50 @@ window.onload = async () => {
     if (typeof initSquareRedrawControls === 'function') initSquareRedrawControls();
     if (typeof initWatermarkRemoval === 'function') initWatermarkRemoval();
     if (typeof loadHistoryToList === 'function') loadHistoryToList();
+    if (typeof setupGlobalImagePaste === 'function') setupGlobalImagePaste();
     
     console.log("[System] Switching to initial tab...");
     const lastTab = localStorage.getItem('activeMainTab') || 'analysis';
     switchMainTab(lastTab);
+    initSidebarState();
+    sanitizeUnintendedAutofill();
+    setTimeout(sanitizeUnintendedAutofill, 80);
+    setTimeout(sanitizeUnintendedAutofill, 300);
     console.log("%c[System] App Ready", "color: #10b981; font-weight: bold;");
 };
+
+function toggleSidebarExpansion(forceState) {
+    const sidebar = document.getElementById('appSidebar');
+    if (!sidebar) return;
+    const isCurrentlyExpanded = sidebar.classList.contains('sidebar-expanded');
+    const targetState = typeof forceState === 'boolean' ? forceState : !isCurrentlyExpanded;
+
+    if (targetState) {
+        sidebar.classList.add('sidebar-expanded');
+    } else {
+        sidebar.classList.remove('sidebar-expanded');
+    }
+    try {
+        localStorage.setItem('ai_tool_sidebar_expanded', targetState ? 'true' : 'false');
+    } catch (_) {}
+}
+
+function initSidebarState() {
+    const sidebar = document.getElementById('appSidebar');
+    if (!sidebar) return;
+    try {
+        const saved = localStorage.getItem('ai_tool_sidebar_expanded');
+        if (saved === 'true') {
+            toggleSidebarExpansion(true);
+        }
+    } catch (_) {}
+}
+
+if (typeof window !== 'undefined') {
+    window.toggleSidebarExpansion = toggleSidebarExpansion;
+    window.initSidebarState = initSidebarState;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.toggleSidebarExpansion = toggleSidebarExpansion;
+    globalThis.initSidebarState = initSidebarState;
+}
