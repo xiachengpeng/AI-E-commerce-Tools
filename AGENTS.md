@@ -10,8 +10,13 @@ Current product areas:
 
 - Competitor URL scraping, analysis, comparison, and deterministic scoring.
 - AI detail-page image planning, generation, regeneration, SEO metadata, long-image composition, and project history.
+- High-density 3-card configuration sidebar layout (Presentation & Layout, Scene & Visual Styling, Quality & Performance) with ~35% vertical space reduction.
+- Product Identity & Zero-Drift consistency lock (`strictProductLockToggle`, `零变形约束`) strictly forbidding AI product morphing.
+- Failed module image retry resilience with isolated task filtering, top alert banners, and concurrent in-place regeneration.
 - DTC hybrid PDP generation, 5-style aesthetic layouts, custom brand color grading, typography modal with template persistence, and self-contained dual CMS export (Shopify & WordPress).
 - Multi-target cloud storage and image asset hosting (WordPress REST API multi-site, Shopify Admin API multi-store, Cloudflare R2 S3-compatible SigV4) with per-destination upload isolation, dynamic queue synchronization on target/sub-site switch, zero-touch policy, and PDP HTML cloud URL replacement/revert.
+- Universal cloud image asset uploader (`universal_uploader.js`) with single/batch queues, WebP compression, smart SEO naming, and Vision AI multi-modal tag inference.
+- Launch Kit one-click store deployment packager (`launch_kit_service.py`) generating standalone responsive HTML, section visual slices, JSON-LD Schema, and SEO manifests.
 - WebP high-fidelity image compression service with visual lossless defaults, transparency/ICC/EXIF preservation, and size reduction stats.
 - Global Brand Profile Hub (`brandContextHub`) with cross-module persistence (Listing, Ads, Details, Analysis), heuristic + AI product category inference, and competitive battle-card synthesis.
 - AI watermark and object removal with interactive canvas editor, 8-way handles, and localized history.
@@ -54,6 +59,7 @@ The browser must not call AI providers directly.
 - `frontend/js/analysis.js`: competitor URLs, analysis progress, comparison rendering, and report export.
 - `frontend/js/brand_context.js`: global product and brand context hub, modal controller, inline selector updates, multi-profile localStorage management, heuristic/AI category inference, and cross-module dispatch.
 - `frontend/js/details.js`: detail-page uploads, AI product-name/selling-point extraction, module planning, prompts, generation, regeneration, SEO, quality checks, long-image export, history restoration, asset hosting drawer, per-destination queue synchronization, and HTML cloud URL replacement/reversion.
+- `frontend/js/universal_uploader.js`: universal multi-target cloud uploader modal, queue management, WebP compression, smart SEO naming, and Vision AI semantic image tagging.
 - `frontend/js/config.js`: stable frontend options and detail-page module defaults.
 - `frontend/js/languages.js`: shared language catalog for detail/listing/ads, image translation, and text translation.
 - `frontend/js/listing.js`: Listing input extraction, generation, validation, rendering, and compliance suggestions.
@@ -62,8 +68,9 @@ The browser must not call AI providers directly.
 - `frontend/js/text_translate.js`: one-request multi-language text localization and result cards.
 - `frontend/js/square_redraw.js`: local upload queue, target ratios, server batch coordination, preview, retry, removal, and download.
 - `frontend/js/settings.js`: provider CRUD, saved/draft connection tests, text/image bindings, live log stream, filtering, and copying.
-- `frontend/js/history_manager.js`: history loading, rendering, restoration, and deletion.
+- `frontend/js/history_manager.js`: universal history drawer loading, tab switching, rendering, restoration, and deletion.
 - `frontend/js/utils.js`: shared frontend utilities.
+- `frontend/js/lib/html2canvas.min.js`: local canvas snapshot library for client-side long-image generation.
 - `frontend/css/input.css`: Tailwind input.
 - `frontend/css/style.css`: shared application styles.
 - `frontend/css/analysis.css`, `settings.css`, and `square_redraw.css`: feature-specific styles.
@@ -76,6 +83,10 @@ The browser must not call AI providers directly.
 - `backend/services/ai_config_service.py`: provider validation, CRUD, capability bindings, snapshots, and initial environment import.
 - `backend/services/app_log_service.py`: bounded in-memory logs, subscribers, structured fields, and sensitive-data redaction.
 - `backend/services/storage_service.py`: multi-target storage driver for WordPress REST API (media upload), Shopify Admin GraphQL API (staged uploads), and Cloudflare R2 (SigV4 S3 signature), secret masking, and destination routing.
+- `backend/services/storage_cleanup_service.py`: background cleanup of orphaned temporary files and local asset caches.
+- `backend/services/launch_kit_service.py`: Launch Kit generation, ZIP packaging of standalone PDP HTML, section visual slices, JSON-LD Schema, and SEO manifest.
+- `backend/services/security_utils.py`: credential masking, path traversal prevention, and safe URL sanitization.
+- `backend/services/json_utils.py`: robust JSON extraction and repair for structured AI outputs.
 - `backend/services/image_compression_service.py`: Pillow-backed high-quality WebP conversion, quality/method tuning, ICC/EXIF preservation, and size savings reporting.
 - `backend/services/firecrawl.py`: remote page scraping.
 - `backend/services/amazon_parser.py` and `cleaner.py`: scraped content parsing and cleanup.
@@ -178,9 +189,11 @@ When testing in an isolated worktree, copy local state only when necessary, keep
 
 ## Implementation Invariants
 
-### Detail-page generation
+### Detail-page generation and configuration sidebar
 
 - Uploaded product images are the visual source of truth.
+- High-density 3-card configuration layout: 【呈现形态与版式】(Presentation & Layout), 【场景与视觉风格】(Scene & Visual), 【品控与出图优化】(Quality & Performance). Keep microcopy as compact single-line text (`text-[9px] text-slate-400`) to preserve vertical ergonomics and prevent core inputs from being pushed off-screen.
+- DTC presentation mode switcher (`setDetailPresentationMode`) toggles between `hybrid` and `images`. When in `images` mode, all DTC-specific sub-options (`#dtcStyleConfigContainer` containing layout style, brand color, custom picker, typography trigger, and trust bar) must collapse cleanly.
 - Do not alter or invent product category, silhouette, structure, parts, accessories, color, material, finish, proportions, logo, controls, buttons, ports, labels, texture, or component placement.
 - Background, lighting, and non-product decoration may change only when they do not obscure or redesign the product.
 - Detail-page modules are unselected by default; the user chooses which modules to generate.
@@ -191,6 +204,24 @@ When testing in an isolated worktree, copy local state only when necessary, keep
 - AI selling-point extraction fills an inferred localized product name only when the product-name input was empty. Never overwrite a user-entered product name.
 - Module copy mode must propagate into generation tasks, regeneration, saved project snapshots, and history restoration. Old history without the field defaults to copy enabled.
 - SEO title and Alt metadata remain separate from text rendered into the generated image.
+
+### Product identity & zero-drift consistency lock
+
+- Zero-drift mandate (`strictProductLockToggle`, `零变形约束`): When active, prompt engineering enforces highest-priority `Consistency Mandate` in `IMAGE TASK`, followed by `STRICT ZERO-DRIFT MANDATE (PHYSICAL INVARIANT)`, `ABSOLUTE PROHIBITION ON PRODUCT MORPHING`, and `FEATURE VISUALIZATION BOUNDARY`.
+- Dual-end anchoring: head prompt anchors reference images as immutable physical ground truth; tail `HARD RULES` explicitly defend product fidelity.
+- Repaint defense: user in-place repaint rules (`repaintRule`) strictly forbid modifying the physical product itself.
+
+### Failed image retry and generation resilience
+
+- Task filtering: `getFailedModuleTasks()` filters global generation context specifically for modules with status `failed`, `cancelled`, or missing image data, while strictly preserving already succeeded tasks.
+- Non-destructive execution: `retryFailedModuleImages()` retries only failed items in-place with concurrency limits without re-running completed tasks.
+- Feedback synchronization: `updateDetailFailureUI()` synchronizes toolbar retry button (`btnRetryFailedToolbar`), top banner alert (`detailFailureAlertBar`), and batch retry button (`btnRetryFailedImages`) in real-time upon any failure, retry start, or success.
+
+### Universal cloud asset uploader & launch kit
+
+- Universal uploader modal (`universal_uploader.js`): Single and batch image asset dispatch to WordPress, Shopify, and Cloudflare R2 across Details, Redraw, Watermark, and Translate modules.
+- Built-in WebP conversion pipeline with smart SEO naming sanitation and Vision AI multi-modal tag inference.
+- Launch Kit export (`launch_kit_service.py`): Packages self-contained responsive DTC HTML, section visual slices, JSON-LD Schema, and SEO manifest into a downloadable ZIP.
 
 ### DTC hybrid PDP and typography
 

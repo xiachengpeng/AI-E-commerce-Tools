@@ -18,7 +18,15 @@
 *   **可视化排版**：内置移动端效果模拟预览，支持一键导出高清长图。
 
 ### 3. 🖼️ AI 详情页生成 (AI Detail Page)
-*   **产品真实性与一致性**：上传产品图作为唯一视觉基准，严格锁定产品外观、材质、构型与部件细节，杜绝 AI 凭空臆造。
+*   **优雅三段式高聚合配置栏**：
+    *   将模式、排版、风格与质控高度聚合为【呈现形态与版式】、【场景与视觉风格】、【品控与出图优化】3 大现代卡片。
+    *   微文案精简收紧，纵向高度缩减约 35%，让核心卖点、档案载入与 AI 帮写免翻滚立即可见。
+*   **商品一致性强约束锁定 (Zero-Drift 零变形)**：
+    *   内置 `零变形约束` 强规则锁（首尾双重置顶与多模态素材锚定），确立上传原图为唯一真实依据。
+    *   严禁 AI 擅自重绘、幻视或变更产品外观结构、接缝、按键、接口、颜色与材质细节。
+*   **失败图片高精度重试 (Failed Task Retry)**：
+    *   自动识别并隔离生成失败、中断或超时的模块图片，支持一键并发重试。
+    *   完全保留已成功生成的优质图片，出图异常时提供清晰的顶部告警条与状态徽标提示。
 *   **双展示模式与 5 大排版风格**：
     *   **独立站图文混排 (Hybrid PDP)** 与 **单图画廊 (Gallery)** 双视角自由切换。
     *   内置 5 大出海主流排版风格（🌟 经典杂志交错、🍏 苹果极简大图、🍱 便当盒磁贴风、🎨 优雅生活画册、⚙️ 硬核参数极客），免重新生成实时切换。
@@ -33,6 +41,11 @@
     *   各目标空间与子站点上传状态完全物理隔离，切换空间即时动态刷新（已上传/未上传状态精准对齐，杜绝跨站点状态串扰）。
     *   具备零触碰保护机制（切换目标仅做本地视图刷新，绝不触发多余上传或覆盖）。
     *   一键将导出 HTML 中的本地 Base64/临时链接智能替换为 CDN 云端链接，并支持无损一键还原。
+*   **通用云端上传器 (Universal Uploader)**：
+    *   跨模块（详情页、方图重绘、水印消除、图片翻译）通用图片资产上传中心，支持单张与队列批量上传。
+    *   自动高保真 WebP 压缩，集成智能 SEO 命名规范与 Vision AI 多模态视觉自动推断标签。
+*   **一站式全套上线物料包 (Launch Kit)**：
+    *   一键打包自包含响应式 DTC HTML、高清模块视觉切图、JSON-LD 结构化数据与完整 SEO 元数据。
 *   **WebP 视觉无损压缩**：
     *   内置 Pillow + libwebp 高性能压缩引擎（默认 Q=90, Method=6）。
     *   完整保留 Alpha 透明通道、ICC 颜色配置文件与 EXIF 元数据，兼顾极限压缩率与极致画质。
@@ -76,7 +89,9 @@
 ### 后端 (Backend)
 *   **核心框架**：FastAPI (Python 3.10+，推荐 Python 3.12)
 *   **AI 引擎**：Google Gemini Pro / Flash、Vertex AI、OpenAI Compatible 中转线路
+*   **提示词工程**：Zero-Drift 商品一致性强规约与多模态参考图严密约束
 *   **多源存储引擎**：WordPress REST API、Shopify Admin GraphQL API (Staged Uploads)、Cloudflare R2 (AWS SigV4)
+*   **物料分发与打包**：Launch Kit 一站式导出服务与 ZIP 压缩流水线
 *   **图像压缩引擎**：Pillow + libwebp 视觉无损 WebP 压缩管道
 *   **爬虫引擎**：Firecrawl (智能 Markdown 提取)
 *   **数据库**：SQLAlchemy + SQLite (支持完整的操作历史与存储配置持久化)
@@ -84,7 +99,8 @@
 
 ### 前端 (Frontend)
 *   **界面方案**：Vanilla JS + CSS + Tailwind (JIT 编译)
-*   **设计系统**：现代玻璃拟态 (Glassmorphism)、微动效交互、响应式侧边导航
+*   **设计系统**：高聚合卡片架构、现代微质感交互、响应式侧边导航
+*   **通用资产上传器**：Universal Uploader (跨模块通用图床分发、WebP 自动压缩、Vision AI 标签识别)
 *   **品牌中心**：Brand Context Hub (多画像本地存储、跨模块分发、启发式/AI 类目识别)
 *   **状态保持**：基于 LocalStorage 的标签页与画像状态持久化，刷新不丢失进度
 
@@ -156,8 +172,8 @@ cd frontend && npm install
 
 ## ✅ 当前验证
 
-前端测试使用 `node --test frontend/tests/*.test.js`，后端测试使用
-`.venv/bin/python -m pytest backend/tests`。本地修改应先通过
+前端测试使用 `node --test frontend/tests/*.test.js`（313+ 用例通过），后端测试使用
+`.venv/bin/python -m pytest backend/tests`（552+ 用例通过）。本地修改应先通过
 `git diff --check` 和对应 JavaScript 语法检查，再提交。
 
 ---
