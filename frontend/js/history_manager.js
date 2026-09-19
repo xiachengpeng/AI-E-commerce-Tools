@@ -251,7 +251,15 @@ function renderHistoryItems() {
     if (!list) return;
 
     if (!_history_cache || _history_cache.length === 0) {
-        list.innerHTML = '<div class="text-center py-20 text-gray-400 text-sm">暂无记录</div>';
+        list.innerHTML = `
+            <div class="py-20 px-6 text-center text-slate-400 flex flex-col items-center justify-center">
+                <div class="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-3 shadow-2xs">
+                    <i class="ph ph-clock-counter-clockwise text-2xl"></i>
+                </div>
+                <p class="text-xs font-bold text-slate-600 mb-1">暂无历史快照</p>
+                <p class="text-[11px] text-slate-400 max-w-xs leading-relaxed">生成任务完成后将自动安全归档于此，随时可点击一键还原与对比复用。</p>
+            </div>
+        `;
         return;
     }
 

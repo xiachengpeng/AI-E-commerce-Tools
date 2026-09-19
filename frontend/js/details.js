@@ -2693,10 +2693,16 @@ function initModules() {
     // 4. 空状态处理
     if (!displayModules.length) {
         grid.innerHTML = `
-            <div class="col-span-2 py-8 px-4 text-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-slate-400 text-xs flex flex-col items-center justify-center gap-2">
+            <div class="col-span-2 py-8 px-4 text-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-slate-400 text-xs flex flex-col items-center justify-center gap-2.5">
                 <i class="ph-bold ph-squares-four text-2xl text-slate-300"></i>
-                <span>${currentModuleCategory === 'selected' ? '暂无已选模块，请点击分类标签挑选模块' : '当前分类下暂无模块'}</span>
-                <button type="button" onclick="setModuleCategoryFilter('all')" class="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer">查看全部 18 个模块</button>
+                <span>${currentModuleCategory === 'selected' ? '暂无已选模块，请挑选模块或一键套用组合预设' : '当前分类下暂无模块'}</span>
+                <div class="flex items-center gap-2 flex-wrap justify-center">
+                    <button type="button" onclick="setModuleCategoryFilter('all')" class="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer">查看全部 18 个模块</button>
+                    <span class="text-slate-300">|</span>
+                    <button type="button" onclick="applyModulePreset('amazon_seven')" class="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer">套用 Amazon 7图</button>
+                    <span class="text-slate-300">|</span>
+                    <button type="button" onclick="applyModulePreset('shopify_dtc')" class="text-[11px] font-bold text-indigo-700 hover:underline cursor-pointer">套用独立站视觉流</button>
+                </div>
             </div>`;
         return;
     }
