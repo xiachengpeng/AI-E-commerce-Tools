@@ -21,6 +21,7 @@
     let xp_currentScoreObj = null;
     let xp_matrixCurrentProducts = [];
     let xp_currentMatrixSelectedProductIdx = 0;
+    let xp_analyzeAbortController = null;
 
     // ─── DOM 引用 ─────────────────────────────────────────────────────────────
     function xp_getEl(id) { return document.getElementById(id); }
@@ -43,6 +44,7 @@
         const appTitle = xp_getEl('xp-appTitle');
         const copyAllBtn = xp_getEl('xp-copyAllBtn');
         const clearAllBtn = xp_getEl('xp-clearAllBtn');
+        const cancelBtn = xp_getEl('xp-cancelAnalyzeBtn');
 
         if (!analyzeBtn) return; // 防止重复初始化
 
@@ -130,6 +132,13 @@
 
         // 分析按钮
         analyzeBtn.addEventListener('click', () => xp_handleAnalyze(analyzeBtn, urlInputField, tagsList, urlCounter, errorMsg, loadingSection, resultSection));
+
+        // 取消分析按钮
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                xp_abortAnalyze();
+            });
+        }
 
         // 导出按钮
         exportBtn.addEventListener('click', function () {
@@ -616,6 +625,15 @@
         tldrCard.classList.remove('xp-hidden');
     }
 
+    function xp_confirmOverwriteIfNotEmpty(elements, moduleName) {
+        const hasContent = elements.some(el => el && typeof el.value === 'string' && el.value.trim().length > 0);
+        if (!hasContent) return true;
+        const msg = xp_currentLang === 'zh'
+            ? `【${moduleName}】中已存在正在编辑的草稿内容，继续转存将覆盖现有内容。是否确认覆盖？`
+            : `[${moduleName}] already contains draft content. Overwrite existing content?`;
+        return typeof confirm === 'function' ? confirm(msg) : true;
+    }
+
     function xp_transferToListing(dataOverride = null) {
         const d = dataOverride || xp_currentSingleData;
         if (!d) {
@@ -625,14 +643,18 @@
             return;
         }
 
-        // 1. 产品名称
         const nameEl = xp_getEl('listingName');
+        const pointsEl = xp_getEl('listingPoints');
+        if (!xp_confirmOverwriteIfNotEmpty([nameEl, pointsEl], xp_currentLang === 'zh' ? 'Listing 生成' : 'Listing Generator')) {
+            return;
+        }
+
+        // 1. 产品名称
         if (nameEl) {
             nameEl.value = xp_getI18nText(d.product_name || '').trim();
         }
 
         // 2. 核心卖点与痛点化解
-        const pointsEl = xp_getEl('listingPoints');
         if (pointsEl) {
             const sections = [];
 
@@ -686,20 +708,24 @@
             pointsEl.value = sections.join('\n\n');
         }
 
-        // 3. 主打关键词
+        // 3. 主打关键词（从核心类目与产品名称提取真实搜索词，严禁混入人群/场景标签）
         const kwEl = xp_getEl('listingKeywords');
         if (kwEl) {
             const kwList = [];
-            (d.use_scenarios || []).forEach(s => {
-                const text = typeof s === 'object' ? (s.scenario || s.item || '') : String(s);
-                const t = xp_getI18nText(text).trim();
-                if (t && !kwList.includes(t)) kwList.push(t);
-            });
-            (d.target_audience || []).forEach(a => {
-                const text = typeof a === 'object' ? (a.audience || a.item || '') : String(a);
-                const t = xp_getI18nText(text).trim();
-                if (t && !kwList.includes(t)) kwList.push(t);
-            });
+            // 优先从商品类目中提取
+            if (d.category) {
+                const catText = xp_getI18nText(d.category);
+                catText.split(/[\/,、|]+/).map(k => k.trim()).filter(Boolean).forEach(k => {
+                    if (k.length > 1 && !kwList.includes(k)) kwList.push(k);
+                });
+            }
+            // 从产品名称中补充高频品类词
+            if (d.product_name) {
+                const nameText = xp_getI18nText(d.product_name);
+                nameText.split(/[\s,、\-_/]+/).map(k => k.trim()).filter(k => k.length >= 3).forEach(k => {
+                    if (kwList.length < 5 && !kwList.includes(k)) kwList.push(k);
+                });
+            }
             kwEl.value = kwList.slice(0, 5).join(', ');
         }
 
@@ -728,25 +754,50 @@
             return;
         }
 
-        // 1. 产品名称
         const nameEl = xp_getEl('adsProductNameInput');
-        if (nameEl) {
-            nameEl.value = xp_getI18nText(d.product_name || '').trim().substring(0, 200);
+        if (!xp_confirmOverwriteIfNotEmpty([nameEl], xp_currentLang === 'zh' ? '广告文案' : 'Ad Copy Generator')) {
+            return;
         }
 
-        // 2. 目标市场
-        const adsRegionSelect = xp_getEl('adsRegionSelect');
-        if (adsRegionSelect) {
-            const region = xp_detectRegion(d.target_countries);
-            xp_setSelectValue(adsRegionSelect, region);
+        const productName = xp_getI18nText(d.product_name || '').trim().substring(0, 200);
+        const region = xp_detectRegion(d.target_countries);
+
+        // 收集核心卖点
+        const sellingPointsList = [];
+        (d.core_selling_points || []).forEach(sp => {
+            const text = typeof sp === 'object' ? (sp.point || '') : String(sp);
+            const clean = xp_getI18nText(text).trim();
+            if (clean) sellingPointsList.push(clean);
+        });
+        const sellingPoints = sellingPointsList.slice(0, 4).join('\n');
+
+        // 优先使用 receiveAdsTransferData 注入完整数据
+        const receiver = typeof receiveAdsTransferData === 'function'
+            ? receiveAdsTransferData
+            : (typeof window !== 'undefined' && window.receiveAdsTransferData ? window.receiveAdsTransferData : null);
+        if (receiver) {
+            receiver({
+                productName,
+                sellingPoints,
+                region,
+                imageBase64: d.main_image || d.image || null
+            });
+        } else {
+            if (nameEl) {
+                nameEl.value = productName;
+            }
+            const adsRegionSelect = xp_getEl('adsRegionSelect');
+            if (adsRegionSelect) {
+                xp_setSelectValue(adsRegionSelect, region);
+            }
         }
 
-        // 3. 切换标签页
+        // 切换标签页
         if (typeof switchMainTab === 'function') {
             switchMainTab('ads');
         }
         if (typeof showToast === 'function') {
-            showToast(xp_currentLang === 'zh' ? '已将竞品信息带入广告文案模块' : 'Transferred product data to Ads module', 'success');
+            showToast(xp_currentLang === 'zh' ? '已将竞品信息与卖点带入广告文案模块' : 'Transferred product data to Ads module', 'success');
         }
     }
 
@@ -759,14 +810,18 @@
             return;
         }
 
-        // 1. 产品名称
         const nameEl = xp_getEl('productNameInput');
+        const pointsEl = xp_getEl('sellingPointsText');
+        if (!xp_confirmOverwriteIfNotEmpty([nameEl, pointsEl], xp_currentLang === 'zh' ? '商详生成' : 'PDP Generator')) {
+            return;
+        }
+
+        // 1. 产品名称
         if (nameEl) {
             nameEl.value = xp_getI18nText(d.product_name || '').trim().substring(0, 160);
         }
 
         // 2. 核心卖点与痛点突破
-        const pointsEl = xp_getEl('sellingPointsText');
         if (pointsEl) {
             const sections = [];
             if (d.brand_positioning?.tagline) {
@@ -1501,6 +1556,14 @@
             return;
         }
 
+        if (xp_analyzeAbortController) {
+            try {
+                xp_analyzeAbortController.abort();
+            } catch (e) { }
+        }
+        const currentAbortController = new AbortController();
+        xp_analyzeAbortController = currentAbortController;
+
         xp_hideError(errorMsg);
         const hasExistingResult = !!xp_currentResponse;
         if (!hasExistingResult) {
@@ -1548,23 +1611,33 @@
             const response = await fetch(XP_API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ urls: rawUrls, force_refresh: true, mode: xp_currentMode })
+                body: JSON.stringify({ urls: rawUrls, force_refresh: true, mode: xp_currentMode }),
+                signal: currentAbortController.signal
             });
             const resData = await response.json();
             if (resData.status === 'success') {
                 xp_currentResponse = resData;
                 try {
-                    localStorage.setItem(XP_STORAGE_KEY, JSON.stringify(xp_currentResponse));
-                    localStorage.setItem(XP_STORAGE_URLS_KEY, JSON.stringify(rawUrls));
+                    const setter = (typeof safeLocalStorageSet === 'function') ? safeLocalStorageSet : ((k, v) => localStorage.setItem(k, v));
+                    setter(XP_STORAGE_KEY, JSON.stringify(xp_currentResponse));
+                    setter(XP_STORAGE_URLS_KEY, JSON.stringify(rawUrls));
                 } catch (e) { console.warn('localStorage save failed:', e); }
                 xp_renderResults(xp_currentResponse);
             } else {
                 xp_showError(errorMsg, resData.message || '分析过程中发生错误。');
             }
         } catch (error) {
-            console.error('API Error:', error);
-            xp_showError(errorMsg, '无法连接到服务器，请确保后端服务在 http://localhost:9503 运行。');
+            if (error && (error.name === 'AbortError' || currentAbortController.signal.aborted)) {
+                console.warn('Analysis aborted by user.');
+                xp_showError(errorMsg, '分析流程已由用户手动取消。');
+            } else {
+                console.error('API Error:', error);
+                xp_showError(errorMsg, '无法连接到服务器，请确保后端服务在 http://localhost:9503 运行。');
+            }
         } finally {
+            if (xp_analyzeAbortController === currentAbortController) {
+                xp_analyzeAbortController = null;
+            }
             if (timerInterval && typeof clearInterval === 'function') {
                 clearInterval(timerInterval);
             }
@@ -1575,6 +1648,24 @@
             analyzeBtn.disabled = false;
             analyzeBtn.innerHTML = '<span>分析对比</span> <span>→</span>';
         }
+    }
+
+    function xp_abortAnalyze() {
+        if (xp_analyzeAbortController) {
+            try {
+                xp_analyzeAbortController.abort();
+            } catch (e) {
+                console.warn('Error aborting analyze:', e);
+            }
+            xp_analyzeAbortController = null;
+            return true;
+        }
+        return false;
+    }
+
+    if (typeof window !== 'undefined') {
+        window.xp_abortAnalyze = xp_abortAnalyze;
+        window.xp_handleAnalyze = xp_handleAnalyze;
     }
 
     // ─── 渲染路由 ─────────────────────────────────────────────────────────────

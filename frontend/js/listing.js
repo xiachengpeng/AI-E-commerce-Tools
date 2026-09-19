@@ -34,6 +34,7 @@ const LISTING_REGION_LANGUAGE_MAP = {
 let currentComplianceSuggestions = [];
 let currentListingDataText = null;
 let currentListingViewMode = 'bilingual';
+let currentListingUploadedBase64 = null;
 
 function getCurrentComplianceSuggestions() {
     return currentComplianceSuggestions;
@@ -357,9 +358,16 @@ async function aiFillListingInputs() {
 
     const btn = document.getElementById('aiListingExtractBtn');
     const origHtml = btn ? btn.innerHTML : '';
+    const promptBtn = document.getElementById('aiListingExtractPromptBtn');
+    const origPromptHtml = promptBtn ? promptBtn.innerHTML : '';
+
     if (btn) {
         btn.innerHTML = '<span class="loader w-3 h-3 border-2 border-indigo-500 border-t-transparent mr-1"></span> 提取中...';
         btn.disabled = true;
+    }
+    if (promptBtn) {
+        promptBtn.innerHTML = '<span class="loader w-3.5 h-3.5 border-2 border-indigo-500 border-t-transparent mr-1"></span> 正在解析图片特征...';
+        promptBtn.disabled = true;
     }
 
     try {
@@ -392,6 +400,10 @@ async function aiFillListingInputs() {
         if (btn) {
             btn.innerHTML = origHtml;
             btn.disabled = false;
+        }
+        if (promptBtn) {
+            promptBtn.innerHTML = origPromptHtml;
+            promptBtn.disabled = false;
         }
     }
 }
@@ -983,8 +995,27 @@ function transferListingToDetails() {
                 });
             }
         }
+        if (Array.isArray(d.qa) && d.qa.length) {
+            const qaLines = d.qa.map(item => {
+                const qPair = listingTextPair(item.q || item.question);
+                const aPair = listingTextPair(item.a || item.answer);
+                const q = (qPair.zh || qPair.target || '').trim();
+                const a = (aPair.zh || aPair.target || '').trim();
+                return q && a ? `问: ${q} 答: ${a}` : '';
+            }).filter(Boolean);
+            if (qaLines.length) {
+                facts.push(`买家常见疑问:\n${qaLines.join('\n')}`);
+            }
+        }
         if (facts.length > 0) {
             factsEl.value = facts.join('\n');
+        }
+    }
+
+    if (typeof document !== 'undefined') {
+        const syncBanner = document.getElementById('detailListingSyncBanner');
+        if (syncBanner && syncBanner.classList) {
+            syncBanner.classList.remove('hidden');
         }
     }
 
@@ -1001,7 +1032,7 @@ function transferListingToDetails() {
 
     const toast = typeof showToast === 'function' ? showToast : (typeof window !== 'undefined' && window.showToast ? window.showToast : null);
     if (toast) {
-        toast('已将 Listing 核心数据带入详情页策划', 'success');
+        toast('已将 Listing 核心文案与买点一键同步至详情页生图策划', 'success');
     }
 }
 
@@ -1026,8 +1057,37 @@ function transferListingToAds() {
 
     const titlePair = listingTextPair(d.title);
     const chosenTitle = (titlePair.zh || titlePair.target || '').trim();
+
+    // 提取五点核心卖点作为广告参考背景
+    const bullets = Array.isArray(d.bullets) ? d.bullets : [];
+    const sellingPoints = bullets.slice(0, 4).map(b => {
+        const pair = listingTextPair(b);
+        return pair.zh || pair.target || '';
+    }).filter(Boolean).join('\n');
+
+    // 提取目标区域
+    const regionSelect = document.getElementById('listingRegionSelect');
+    const region = regionSelect ? regionSelect.value : '';
+
+    // 提取已上传商品图
+    const imageBase64 = typeof getCurrentListingUploadedBase64 === 'function'
+        ? getCurrentListingUploadedBase64()
+        : (typeof currentListingUploadedBase64 !== 'undefined' ? currentListingUploadedBase64 : null);
+
     if (nameEl && chosenTitle) {
         nameEl.value = chosenTitle.substring(0, 200);
+    }
+
+    const receiver = typeof receiveAdsTransferData === 'function'
+        ? receiveAdsTransferData
+        : (typeof window !== 'undefined' && window.receiveAdsTransferData ? window.receiveAdsTransferData : null);
+    if (receiver) {
+        receiver({
+            productName: chosenTitle,
+            sellingPoints,
+            region,
+            imageBase64: imageBase64 || null
+        });
     }
 
     const tabSwitcher = typeof switchMainTab === 'function'
@@ -1043,7 +1103,7 @@ function transferListingToAds() {
 
     const toast = typeof showToast === 'function' ? showToast : (typeof window !== 'undefined' && window.showToast ? window.showToast : null);
     if (toast) {
-        toast('已将 Listing 标题带入广告文案模块', 'success');
+        toast('已将 Listing 标题与卖点带入广告文案模块', 'success');
     }
 }
 
@@ -1171,6 +1231,10 @@ function exportListingToFile(format = 'txt') {
             `- **Core Keywords:** ${(d.keywords?.core || []).map(k => listingTextPair(k).target).join(', ')}\n` +
             `- **Long-tail Keywords:** ${(d.keywords?.longTail || []).map(k => listingTextPair(k).target).join(', ')}\n` +
             `- **PPC/Ads Keywords:** ${(d.keywords?.ads || []).map(k => listingTextPair(k).target).join(', ')}\n`;
+    } else if (format === 'html') {
+        filename = `${safeProdName}_dtc_listing_${timestamp}.html`;
+        mimeType = 'text/html;charset=utf-8';
+        content = buildListingDtcHtml(d, (typeof currentDtcHtmlLangMode !== 'undefined' && currentDtcHtmlLangMode) || 'target');
     } else {
         filename = `${safeProdName}_listing_${timestamp}.txt`;
         content = `=====================================================\n` +
@@ -1191,6 +1255,7 @@ function exportListingToFile(format = 'txt') {
 
 function renderListingData(data) {
     currentListingDataText = data || null;
+    if (typeof document === 'undefined') return;
     const emptyEl = document.getElementById('listingEmpty');
     if (emptyEl) emptyEl.classList.add('hidden');
 
@@ -1246,6 +1311,14 @@ function renderListingData(data) {
 
             const copyBtns = document.createElement('div');
             copyBtns.className = 'flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity';
+            const regenBtn = document.createElement('button');
+            regenBtn.className = 'text-[10px] bg-indigo-50 border border-indigo-200 text-indigo-600 hover:bg-indigo-100 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer flex items-center gap-0.5';
+            regenBtn.title = 'AI 针对此条五点单独重新润色';
+            regenBtn.innerHTML = '<i class="ph ph-arrows-clockwise"></i> 换一换';
+            regenBtn.onclick = (e) => {
+                if (e && e.stopPropagation) e.stopPropagation();
+                triggerBulletRegeneration(index);
+            };
             const cpTarget = document.createElement('button');
             cpTarget.className = 'text-[10px] bg-white border border-gray-200 hover:bg-indigo-50 hover:text-indigo-600 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer';
             cpTarget.textContent = '复制外文';
@@ -1254,7 +1327,7 @@ function renderListingData(data) {
             cpZh.className = 'text-[10px] bg-white border border-gray-200 hover:bg-indigo-50 hover:text-indigo-600 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer';
             cpZh.textContent = '复制中文';
             cpZh.onclick = () => copySingleBullet(index, 'zh');
-            copyBtns.append(cpTarget, cpZh);
+            copyBtns.append(regenBtn, cpTarget, cpZh);
             header.appendChild(copyBtns);
 
             li.appendChild(header);
@@ -1400,6 +1473,8 @@ async function generateListing() {
         btn.disabled = true;
     }
 
+    const includeEmoji = !!document.getElementById('listingIncludeEmojiToggle')?.checked;
+
     try {
         const data = await postListingApi('/api/listing/generate', {
             name,
@@ -1409,7 +1484,8 @@ async function generateListing() {
             region,
             target_language: targetLanguage,
             marketing_theme: themeVal,
-            marketing_theme_label: themeLabel
+            marketing_theme_label: themeLabel,
+            include_emoji: includeEmoji
         });
         renderListingData(data);
 
@@ -1423,6 +1499,7 @@ async function generateListing() {
             target_language: targetLanguage,
             marketing_theme: themeVal,
             marketing_theme_label: themeLabel,
+            include_emoji: includeEmoji,
             image_preview: currentListingUploadedBase64 || ''
         };
 
@@ -1490,6 +1567,12 @@ function restoreListingFullState(dataObj) {
         if (preview) preview.src = inputs.image_preview;
         const container = document.getElementById('listingImagePreviewContainer');
         if (container) container.classList.remove('hidden');
+        const promptBtn = document.getElementById('aiListingExtractPromptBtn');
+        if (promptBtn) promptBtn.classList.remove('hidden');
+    }
+
+    if (typeof inputs.include_emoji !== 'undefined') {
+        onListingEmojiToggleChange(Boolean(inputs.include_emoji));
     }
 
     const resData = dataObj.result || dataObj.data || dataObj;
@@ -1846,6 +1929,8 @@ function ingestListingImageFile(file) {
         if (preview) preview.src = currentListingUploadedBase64;
         const container = document.getElementById('listingImagePreviewContainer');
         if (container) container.classList.remove('hidden');
+        const promptBtn = document.getElementById('aiListingExtractPromptBtn');
+        if (promptBtn) promptBtn.classList.remove('hidden');
         showToast('参考产品图已添加', 'success');
     };
     reader.readAsDataURL(file);
@@ -1881,6 +1966,957 @@ function removeListingImage() {
     if (input) input.value = '';
     const container = document.getElementById('listingImagePreviewContainer');
     if (container) container.classList.add('hidden');
+    const promptBtn = document.getElementById('aiListingExtractPromptBtn');
+    if (promptBtn) promptBtn.classList.add('hidden');
+}
+
+function insertListingFactSlot(slotType) {
+    const pointsInput = document.getElementById('listingPoints');
+    if (!pointsInput) return;
+    const slots = {
+        material: '【材质工艺】: ',
+        specs: '【规格参数】: ',
+        audience: '【适用受众与场景】: ',
+        pain_point: '【解决核心痛点】: ',
+        package: '【包装与配件清单】: '
+    };
+    const prefix = slots[slotType] || `【${slotType}】: `;
+    const currentVal = pointsInput.value || '';
+    if (currentVal.includes(prefix)) {
+        if (typeof showToast === 'function') showToast(`已包含${prefix}，请在已有内容后补充`, 'info');
+        pointsInput.focus();
+        return;
+    }
+    const separator = currentVal && !currentVal.endsWith('\n') ? '\n' : '';
+    pointsInput.value = currentVal + separator + prefix;
+    pointsInput.focus();
+    const newLen = pointsInput.value.length;
+    pointsInput.setSelectionRange(newLen, newLen);
+    if (typeof saveListingDraft === 'function') saveListingDraft();
+}
+
+function toggleListingAdvancedConfig() {
+    const container = document.getElementById('listingAdvancedConfigContainer');
+    const text = document.getElementById('listingAdvancedConfigToggleText');
+    const icon = document.getElementById('listingAdvancedConfigToggleIcon');
+    if (!container) return;
+    const isHidden = container.classList.contains('hidden');
+    if (isHidden) {
+        container.classList.remove('hidden');
+        if (text) text.textContent = '收起';
+        if (icon) icon.className = 'ph ph-caret-up text-xs transition-transform';
+    } else {
+        container.classList.add('hidden');
+        if (text) text.textContent = '展开';
+        if (icon) icon.className = 'ph ph-caret-down text-xs transition-transform';
+    }
+}
+
+function toggleListingTitleRegenMenu(event) {
+    if (event && event.stopPropagation) event.stopPropagation();
+    const menu = document.getElementById('listingTitleRegenMenu');
+    if (!menu) return;
+    menu.classList.toggle('hidden');
+}
+
+function hideAllSectionRegenMenus() {
+    const menu = document.getElementById('listingTitleRegenMenu');
+    if (menu) menu.classList.add('hidden');
+}
+
+function triggerSectionRegeneration(section, bulletIndex, instruction) {
+    regenerateListingSection(section, bulletIndex, instruction);
+}
+
+function triggerBulletRegeneration(bulletIndex) {
+    regenerateListingSection('bullet', bulletIndex, 'benefit_heavy');
+}
+
+async function regenerateListingSection(section, bulletIndex, instruction) {
+    if (!currentListingDataText) {
+        if (typeof showToast === 'function') showToast('请先生成 Listing 结果，再进行局部精修', 'error');
+        return;
+    }
+    const name = document.getElementById('listingName')?.value.trim() || currentListingDataText.title?.target || '';
+    const points = document.getElementById('listingPoints')?.value.trim() || '';
+    const keywords = document.getElementById('listingKeywords')?.value.trim() || '';
+    const styleOpt = document.getElementById('listingStyleSelect');
+    const platform = styleOpt?.options[styleOpt.selectedIndex]?.value || styleOpt?.value || '';
+    const regionOpt = document.getElementById('listingRegionSelect');
+    const region = regionOpt?.options[regionOpt.selectedIndex]?.value || regionOpt?.value || '';
+    const languageOpt = document.getElementById('listingLanguageSelect');
+    const targetLanguage = languageOpt?.options[languageOpt.selectedIndex]?.value || languageOpt?.value || '';
+
+    let currentContent = null;
+    if (section === 'title') {
+        currentContent = currentListingDataText.title;
+    } else if (section === 'bullet' && typeof bulletIndex === 'number' && currentListingDataText.bullets?.[bulletIndex]) {
+        currentContent = currentListingDataText.bullets[bulletIndex];
+    } else if (section === 'description') {
+        currentContent = currentListingDataText.description;
+    } else if (section === 'search_terms') {
+        currentContent = currentListingDataText.searchTerms;
+    }
+
+    if (typeof showToast === 'function') showToast('AI 正在定向精修，请稍候...', 'info');
+
+    const includeEmoji = !!document.getElementById('listingIncludeEmojiToggle')?.checked;
+
+    try {
+        const res = await postListingApi('/api/listing/regenerate-section', {
+            section,
+            current_content: currentContent,
+            instruction: instruction || 'more_concise',
+            product_name: name,
+            core_selling_points: points || name,
+            keywords,
+            platform,
+            region,
+            target_language: targetLanguage,
+            bullet_index: bulletIndex,
+            include_emoji: includeEmoji
+        });
+
+        if (res && res.data) {
+            applyRegeneratedSection(section, bulletIndex, res.data);
+            if (typeof showToast === 'function') showToast('局部润色完成！', 'success');
+        }
+    } catch (err) {
+        console.error(err);
+        if (typeof showToast === 'function') showToast('局部优化失败: ' + err.message, 'error');
+    }
+}
+
+function applyRegeneratedSection(section, bulletIndex, sectionData) {
+    if (!currentListingDataText) return;
+    if (section === 'title') {
+        if (sectionData.title) {
+            currentListingDataText.title = sectionData.title;
+        }
+        if (sectionData.titleAlternatives && sectionData.titleAlternatives.length) {
+            currentListingDataText.titleAlternatives = sectionData.titleAlternatives;
+        }
+    } else if (section === 'bullet' && typeof bulletIndex === 'number') {
+        if (!Array.isArray(currentListingDataText.bullets)) {
+            currentListingDataText.bullets = [];
+        }
+        if (sectionData.bullet) {
+            currentListingDataText.bullets[bulletIndex] = sectionData.bullet;
+        }
+    } else if (section === 'description') {
+        if (sectionData.description) {
+            currentListingDataText.description = sectionData.description;
+        }
+    } else if (section === 'search_terms') {
+        if (sectionData.searchTerms) {
+            currentListingDataText.searchTerms = sectionData.searchTerms;
+        }
+    }
+
+    renderListingData(currentListingDataText);
+    saveCurrentListingToHistory();
+}
+
+function saveCurrentListingToHistory() {
+    if (!currentListingDataText) return;
+    if (typeof document === 'undefined') return;
+    const name = document.getElementById('listingName')?.value.trim() || currentListingDataText.title?.target || '';
+    const points = document.getElementById('listingPoints')?.value.trim() || '';
+    const keywords = document.getElementById('listingKeywords')?.value.trim() || '';
+    const styleOpt = document.getElementById('listingStyleSelect');
+    const style = styleOpt?.options[styleOpt.selectedIndex]?.value || styleOpt?.value || '';
+    const regionOpt = document.getElementById('listingRegionSelect');
+    const region = regionOpt?.options[regionOpt.selectedIndex]?.value || regionOpt?.value || '';
+    const languageOpt = document.getElementById('listingLanguageSelect');
+    const targetLanguage = languageOpt?.options[languageOpt.selectedIndex]?.value || languageOpt?.value || '';
+    const themeOpt = document.getElementById('listingMarketingThemeSelect');
+
+    const inputSnapshot = {
+        name,
+        points,
+        keywords,
+        platform: style,
+        platformLabel: styleOpt?.options[styleOpt.selectedIndex]?.text || style,
+        region,
+        target_language: targetLanguage,
+        marketing_theme: themeOpt?.value || '',
+        marketing_theme_label: themeOpt?.options[themeOpt.selectedIndex]?.text || '',
+        image_preview: currentListingUploadedBase64 || ''
+    };
+
+    if (typeof saveToHistory === 'function') {
+        saveToHistory('listing', {
+            name,
+            platform: inputSnapshot.platformLabel,
+            target_lang: targetLanguage,
+            inputs: inputSnapshot,
+            result: {
+                ...currentListingDataText,
+                _inputs: inputSnapshot
+            }
+        });
+        updateListingHistoryBadge();
+    }
+}
+
+async function updateListingHistoryBadge() {
+    if (typeof fetch === 'undefined') return;
+    try {
+        const apiBase = (typeof API_BASE !== 'undefined' ? API_BASE : '') || (typeof window !== 'undefined' && window.API_BASE ? window.API_BASE : '');
+        const res = await fetch(`${apiBase}/api/history/listing?_t=${Date.now()}`);
+        if (!res.ok) return;
+        const items = await res.json();
+        const count = Array.isArray(items) ? items.length : 0;
+        const badge = document.getElementById('listingHistoryCountBadge');
+        if (badge) {
+            badge.textContent = count;
+            if (count > 0) {
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+    } catch (e) {}
+}
+
+function onListingEmojiToggleChange(checked) {
+    if (typeof document === 'undefined') return;
+    const isChecked = Boolean(checked);
+    const hint = document.getElementById('listingEmojiStatusHint');
+    if (hint) {
+        if (isChecked) {
+            hint.textContent = '✨ 开启 (生动吸睛)';
+            hint.className = 'text-[10px] text-indigo-600 font-semibold';
+        } else {
+            hint.textContent = '关闭 (纯文本)';
+            hint.className = 'text-[10px] text-slate-400 font-normal';
+        }
+    }
+    const toggle = document.getElementById('listingIncludeEmojiToggle');
+    if (toggle && toggle.checked !== isChecked) {
+        toggle.checked = isChecked;
+    }
+    try {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('listing_include_emoji', isChecked ? 'true' : 'false');
+        }
+    } catch (e) {}
+}
+
+async function loadListingHistoryDrawerList() {
+    const listEl = document.getElementById('listingHistoryList');
+    if (!listEl) return;
+    listEl.innerHTML = '<div class="flex items-center justify-center py-8 text-indigo-600 text-xs gap-2"><span class="loader w-3.5 h-3.5 border-2 border-indigo-500 border-t-transparent"></span> 加载快照中...</div>';
+
+    try {
+        const apiBase = (typeof API_BASE !== 'undefined' ? API_BASE : '') || (typeof window !== 'undefined' && window.API_BASE ? window.API_BASE : '');
+        const res = await fetch(`${apiBase}/api/history/listing?_t=${Date.now()}`);
+        if (!res.ok) throw new Error('网络请求失败');
+        const items = await res.json();
+        const badge = document.getElementById('listingHistoryCountBadge');
+        if (badge) {
+            badge.textContent = items.length;
+            if (items.length > 0) badge.classList.remove('hidden');
+        }
+
+        if (!Array.isArray(items) || items.length === 0) {
+            listEl.innerHTML = '<div class="text-xs text-gray-400 text-center py-10">暂无历史快照</div>';
+            return;
+        }
+
+        listEl.innerHTML = '';
+        items.forEach((item) => {
+            if (!item) return;
+            let dataObj = item;
+            if (item.data) {
+                try {
+                    dataObj = typeof item.data === 'string' ? JSON.parse(item.data) : item.data;
+                } catch (e) {
+                    dataObj = item;
+                }
+            }
+            if (!dataObj || typeof dataObj !== 'object') {
+                dataObj = item || {};
+            }
+
+            if (typeof dataObj.result === 'string') {
+                try {
+                    dataObj.result = JSON.parse(dataObj.result);
+                } catch (e) {}
+            }
+
+            const card = document.createElement('div');
+            card.className = 'bg-slate-50/80 hover:bg-indigo-50/40 p-3 rounded-xl border border-slate-200/80 transition-all flex flex-col gap-2 group shadow-2xs';
+
+            const topRow = document.createElement('div');
+            topRow.className = 'flex items-center justify-between';
+
+            const tag = document.createElement('span');
+            tag.className = 'text-[10px] font-mono font-bold text-indigo-600 bg-white border border-indigo-100 px-1.5 py-0.5 rounded';
+            tag.textContent = dataObj.platform || dataObj.result?._inputs?.platformLabel || dataObj.inputs?.platformLabel || item.platform || 'Listing';
+
+            const rawTime = item.timestamp || item.created_at || dataObj.timestamp;
+            const timeStr = rawTime ? new Date(rawTime).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+            const timeEl = document.createElement('span');
+            timeEl.className = 'text-[10px] text-gray-400';
+            timeEl.textContent = timeStr;
+
+            topRow.append(tag, timeEl);
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'text-xs font-bold text-gray-800 line-clamp-2 leading-snug';
+            const resTitle = dataObj.result?.title?.target || dataObj.product_name || dataObj.name || '未命名产品';
+            titleEl.textContent = resTitle;
+
+            const btmRow = document.createElement('div');
+            btmRow.className = 'flex items-center justify-between pt-1 border-t border-slate-200/60 mt-0.5';
+
+            const restoreBtn = document.createElement('button');
+            restoreBtn.className = 'text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 cursor-pointer';
+            restoreBtn.innerHTML = '<i class="ph ph-arrow-counter-clockwise"></i> 恢复此快照';
+            restoreBtn.onclick = () => {
+                restoreListingFullState(dataObj);
+                toggleListingHistoryDrawer(false);
+                if (typeof showToast === 'function') showToast('已恢复所选 Listing 快照', 'success');
+            };
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'text-[11px] text-slate-400 hover:text-rose-600 transition-colors p-1 cursor-pointer';
+            delBtn.title = '删除此记录';
+            delBtn.innerHTML = '<i class="ph ph-trash"></i>';
+            delBtn.onclick = async (e) => {
+                e.stopPropagation();
+                if (typeof window !== 'undefined' && typeof window.confirm === 'function' && !window.confirm('确定删除该条快照记录吗？')) {
+                    return;
+                }
+                try {
+                    const apiBase = (typeof API_BASE !== 'undefined' ? API_BASE : '') || (typeof window !== 'undefined' && window.API_BASE ? window.API_BASE : '');
+                    const delRes = await fetch(`${apiBase}/api/history/listing/${item.id}`, { method: 'DELETE' });
+                    if (delRes.ok) {
+                        card.remove();
+                        updateListingHistoryBadge();
+                        if (typeof showToast === 'function') showToast('已删除快照记录', 'info');
+                    }
+                } catch (delErr) {
+                    console.error('Delete failed', delErr);
+                }
+            };
+
+            btmRow.append(restoreBtn, delBtn);
+
+            card.append(topRow, titleEl, btmRow);
+            listEl.appendChild(card);
+        });
+    } catch (err) {
+        listEl.innerHTML = `<div class="text-xs text-rose-500 text-center py-6">加载失败: ${err.message}</div>`;
+    }
+}
+
+function toggleListingHistoryDrawer(forceState) {
+    const drawer = document.getElementById('listingHistoryDrawer');
+    if (!drawer) return;
+    const shouldOpen = typeof forceState === 'boolean' ? forceState : drawer.classList.contains('hidden');
+    if (shouldOpen) {
+        drawer.classList.remove('hidden');
+        loadListingHistoryDrawerList();
+    } else {
+        drawer.classList.add('hidden');
+    }
+}
+
+let currentDtcHtmlLangMode = 'target';
+let currentDtcHtmlViewport = 'desktop';
+let currentDtcHtmlTab = 'preview';
+
+function escapeListingHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function buildListingDtcHtml(data, langMode = 'target') {
+    if (!data) return '';
+    const titlePair = listingTextPair(data.title);
+    const descPair = listingTextPair(data.description);
+    const bullets = Array.isArray(data.bullets) ? data.bullets.map(b => listingTextPair(b)) : [];
+    const faqs = Array.isArray(data.faq) ? data.faq : [];
+
+    const effectiveMode = langMode === 'zh' ? 'zh' : (langMode === 'bilingual' ? 'bilingual' : 'target');
+
+    const titleText = effectiveMode === 'zh' ? (titlePair.zh || titlePair.target) : titlePair.target;
+    const zhTitleText = (effectiveMode === 'bilingual' && titlePair.zh && titlePair.zh !== titlePair.target) ? titlePair.zh : '';
+
+    const bulletsHtml = bullets.map((b) => {
+        let text = effectiveMode === 'zh' ? (b.zh || b.target) : b.target;
+        let tag = '';
+        let prefixEmoji = '';
+        const match = text.match(/^(\s*[^\[]*?\[([^\]]+)\])(.*)$/s);
+        if (match) {
+            prefixEmoji = match[1].replace(/\[[^\]]+\]/, '').trim();
+            tag = match[2].trim();
+            const rest = match[3].trim();
+            text = (prefixEmoji ? `<span class="dtc-feature-emoji">${escapeListingHtml(prefixEmoji)}</span> ` : '') +
+                   `<span class="dtc-feature-tag">${escapeListingHtml(tag)}</span>` +
+                   `<span class="dtc-feature-body">${escapeListingHtml(rest)}</span>`;
+        } else {
+            text = `<span class="dtc-feature-body">${escapeListingHtml(text)}</span>`;
+        }
+
+        let zhSub = '';
+        if (effectiveMode === 'bilingual' && b.zh && b.zh !== b.target) {
+            zhSub = `<div class="dtc-feature-zh">${escapeListingHtml(b.zh)}</div>`;
+        }
+
+        return `<div class="dtc-feature-card">
+  <div class="dtc-feature-content">
+    ${text}
+  </div>
+  ${zhSub}
+</div>`;
+    }).join('\n');
+
+    const descText = effectiveMode === 'zh' ? (descPair.zh || descPair.target) : descPair.target;
+    const paragraphs = (descText || '').split(/\n+/).filter(p => p.trim());
+    const descParagraphsHtml = paragraphs.map(p => `<p>${escapeListingHtml(p.trim())}</p>`).join('\n');
+    let descZhHtml = '';
+    if (effectiveMode === 'bilingual' && descPair.zh && descPair.zh !== descPair.target) {
+        const zhParas = descPair.zh.split(/\n+/).filter(p => p.trim());
+        descZhHtml = `<div class="dtc-desc-zh-box">
+  <div class="dtc-desc-zh-title">🇨🇳 中文对照参考</div>
+  ${zhParas.map(p => `<p>${escapeListingHtml(p.trim())}</p>`).join('\n')}
+</div>`;
+    }
+
+    const heroImgSrc = (typeof currentListingUploadedBase64 !== 'undefined' && currentListingUploadedBase64) || data._inputs?.image_preview || '';
+    const heroImgHtml = heroImgSrc ? `<div class="dtc-hero-image-wrap"><img src="${heroImgSrc}" alt="${escapeListingHtml(titleText)}" class="dtc-hero-image" loading="lazy" /></div>` : '';
+
+    let faqSectionHtml = '';
+    if (faqs.length > 0) {
+        const faqCardsHtml = faqs.map((f) => {
+            const qPair = listingTextPair(f.q || f.question);
+            const aPair = listingTextPair(f.a || f.answer);
+            const q = effectiveMode === 'zh' ? (qPair.zh || qPair.target) : qPair.target;
+            const a = effectiveMode === 'zh' ? (aPair.zh || aPair.target) : aPair.target;
+            const zhQ = (effectiveMode === 'bilingual' && qPair.zh && qPair.zh !== qPair.target) ? `<div class="dtc-faq-zh-sub">${escapeListingHtml(qPair.zh)}</div>` : '';
+            const zhA = (effectiveMode === 'bilingual' && aPair.zh && aPair.zh !== aPair.target) ? `<div class="dtc-faq-zh-sub">${escapeListingHtml(aPair.zh)}</div>` : '';
+            return `<div class="dtc-faq-item">
+  <details>
+    <summary><span class="dtc-faq-q-text">${escapeListingHtml(q)}</span>${zhQ}</summary>
+    <div class="dtc-faq-answer"><p>${escapeListingHtml(a)}</p>${zhA}</div>
+  </details>
+</div>`;
+        }).join('\n');
+
+        faqSectionHtml = `<section class="dtc-section dtc-faq-section">
+  <h3 class="dtc-section-heading"><span class="dtc-heading-icon">❓</span> Frequently Asked Questions</h3>
+  <div class="dtc-faq-list">
+${faqCardsHtml}
+  </div>
+</section>`;
+    }
+
+    const jsonLd = `<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": ${JSON.stringify(titleText || 'Product')},
+  "description": ${JSON.stringify((descText || '').substring(0, 300))}
+}
+<\/script>`;
+
+    const scopedCss = `<style>
+.dtc-listing-wrapper {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+  color: #1e293b !important;
+  line-height: 1.65 !important;
+  max-width: 880px !important;
+  margin: 0 auto !important;
+  padding: 24px 16px !important;
+  box-sizing: border-box !important;
+}
+.dtc-listing-wrapper * {
+  box-sizing: border-box !important;
+}
+.dtc-pill-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 4px 12px !important;
+  background: #eef2ff !important;
+  color: #4f46e5 !important;
+  border-radius: 9999px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  margin-bottom: 12px !important;
+  border: 1px solid #c7d2fe !important;
+}
+.dtc-title {
+  font-size: 24px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  line-height: 1.35 !important;
+  margin: 0 0 10px 0 !important;
+  letter-spacing: -0.02em !important;
+}
+.dtc-zh-title {
+  font-size: 14px !important;
+  color: #64748b !important;
+  margin: 0 0 16px 0 !important;
+  font-weight: 500 !important;
+}
+.dtc-hero-image-wrap {
+  width: 100% !important;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  margin: 16px 0 24px 0 !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05) !important;
+  background: #f8fafc !important;
+}
+.dtc-hero-image {
+  width: 100% !important;
+  height: auto !important;
+  max-height: 460px !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+.dtc-trust-bar {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 12px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 14px !important;
+  padding: 16px !important;
+  margin: 20px 0 28px 0 !important;
+}
+.dtc-trust-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+.dtc-trust-icon {
+  font-size: 22px !important;
+  line-height: 1 !important;
+  flex-shrink: 0 !important;
+}
+.dtc-trust-title {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  line-height: 1.2 !important;
+}
+.dtc-trust-desc {
+  font-size: 10px !important;
+  color: #64748b !important;
+  line-height: 1.2 !important;
+  margin-top: 2px !important;
+}
+.dtc-section {
+  margin-bottom: 28px !important;
+}
+.dtc-section-heading {
+  font-size: 17px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  margin: 0 0 16px 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  border-bottom: 2px solid #f1f5f9 !important;
+  padding-bottom: 8px !important;
+}
+.dtc-heading-icon {
+  font-size: 18px !important;
+  line-height: 1 !important;
+}
+.dtc-features-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+}
+.dtc-feature-card {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  padding: 14px 16px !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
+}
+.dtc-feature-content {
+  line-height: 1.6 !important;
+}
+.dtc-feature-tag {
+  display: inline-block !important;
+  background: #eef2ff !important;
+  color: #4f46e5 !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.04em !important;
+  padding: 3px 8px !important;
+  border-radius: 6px !important;
+  margin-right: 8px !important;
+  border: 1px solid #c7d2fe !important;
+  text-transform: uppercase !important;
+}
+.dtc-feature-body {
+  font-size: 13.5px !important;
+  color: #334155 !important;
+  line-height: 1.6 !important;
+}
+.dtc-feature-zh {
+  font-size: 12px !important;
+  color: #64748b !important;
+  margin-top: 6px !important;
+  padding-left: 8px !important;
+  border-left: 2px solid #cbd5e1 !important;
+}
+.dtc-desc-card {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 14px !important;
+  padding: 20px 22px !important;
+}
+.dtc-desc-body {
+  font-size: 14px !important;
+  color: #334155 !important;
+  line-height: 1.75 !important;
+}
+.dtc-desc-body p {
+  margin: 0 0 12px 0 !important;
+}
+.dtc-desc-body p:last-child {
+  margin-bottom: 0 !important;
+}
+.dtc-desc-zh-box {
+  margin-top: 16px !important;
+  padding-top: 14px !important;
+  border-top: 1px dashed #cbd5e1 !important;
+  font-size: 12px !important;
+  color: #64748b !important;
+}
+.dtc-desc-zh-title {
+  font-weight: 700 !important;
+  color: #475569 !important;
+  margin-bottom: 6px !important;
+}
+.dtc-faq-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+.dtc-faq-item {
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  overflow: hidden !important;
+}
+.dtc-faq-item details summary {
+  padding: 14px 16px !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #1e293b !important;
+  cursor: pointer !important;
+  list-style: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  user-select: none !important;
+}
+.dtc-faq-item details summary::-webkit-details-marker {
+  display: none !important;
+}
+.dtc-faq-item details summary::after {
+  content: "▾" !important;
+  font-size: 15px !important;
+  color: #64748b !important;
+  transition: transform 0.2s !important;
+}
+.dtc-faq-item details[open] summary::after {
+  transform: rotate(180deg) !important;
+}
+.dtc-faq-answer {
+  padding: 0 16px 14px 16px !important;
+  font-size: 13px !important;
+  color: #475569 !important;
+  line-height: 1.6 !important;
+}
+.dtc-faq-zh-sub {
+  font-size: 12px !important;
+  color: #94a3b8 !important;
+  font-weight: 400 !important;
+  margin-top: 2px !important;
+}
+@media (max-width: 640px) {
+  .dtc-title { font-size: 19px !important; }
+  .dtc-trust-bar { grid-template-columns: 1fr !important; gap: 8px !important; }
+}
+</style>`;
+
+    const bodyHtml = `<div class="dtc-listing-wrapper">
+  <div class="dtc-listing-header">
+    <div class="dtc-pill-badge">✨ Official Product Spotlight</div>
+    <h2 class="dtc-title">${escapeListingHtml(titleText)}</h2>
+    ${zhTitleText ? `<div class="dtc-zh-title">${escapeListingHtml(zhTitleText)}</div>` : ''}
+  </div>
+
+  ${heroImgHtml}
+
+  <div class="dtc-trust-bar">
+    <div class="dtc-trust-item">
+      <span class="dtc-trust-icon">🚚</span>
+      <div>
+        <div class="dtc-trust-title">Fast Global Shipping</div>
+        <div class="dtc-trust-desc">Tracked door-to-door delivery</div>
+      </div>
+    </div>
+    <div class="dtc-trust-item">
+      <span class="dtc-trust-icon">🛡️</span>
+      <div>
+        <div class="dtc-trust-title">30-Day Guarantee</div>
+        <div class="dtc-trust-desc">Hassle-free returns & refunds</div>
+      </div>
+    </div>
+    <div class="dtc-trust-item">
+      <span class="dtc-trust-icon">🎧</span>
+      <div>
+        <div class="dtc-trust-title">24/7 Dedicated Support</div>
+        <div class="dtc-trust-desc">Always here to help you</div>
+      </div>
+    </div>
+  </div>
+
+  ${bulletsHtml ? `<section class="dtc-section">
+    <h3 class="dtc-section-heading"><span class="dtc-heading-icon">✨</span> Key Features & Benefits</h3>
+    <div class="dtc-features-list">
+${bulletsHtml}
+    </div>
+  </section>` : ''}
+
+  ${descParagraphsHtml ? `<section class="dtc-section">
+    <h3 class="dtc-section-heading"><span class="dtc-heading-icon">📖</span> Product Story & Overview</h3>
+    <div class="dtc-desc-card">
+      <div class="dtc-desc-body">
+${descParagraphsHtml}
+      </div>
+      ${descZhHtml}
+    </div>
+  </section>` : ''}
+
+  ${faqSectionHtml}
+</div>
+${jsonLd}`;
+
+    let fullHtml = `${scopedCss.trim()}\n${bodyHtml.trim()}`;
+    fullHtml = fullHtml.replace(/>\s*[\r\n]+\s*</g, '>\n<').trim();
+    return fullHtml;
+}
+
+function openListingDtcHtmlModal() {
+    if (typeof document === 'undefined') return;
+    if (typeof window !== 'undefined') window.activeDtcHtmlModalSource = 'listing';
+    if (typeof globalThis !== 'undefined') globalThis.activeDtcHtmlModalSource = 'listing';
+    const d = currentListingDataText || collectCurrentListingDataFromDom();
+    if (!d || !d.title) {
+        if (typeof showToast === 'function') showToast('请先生成 Listing 结果，再预览独立站 HTML', 'warning');
+        return;
+    }
+    const modal = document.getElementById('listingDtcHtmlModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        updateListingDtcHtmlModalContent();
+    }
+}
+
+function closeListingDtcHtmlModal() {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('listingDtcHtmlModal');
+    if (modal) modal.classList.add('hidden');
+    if (typeof window !== 'undefined') window.activeDtcHtmlModalSource = null;
+    if (typeof globalThis !== 'undefined') globalThis.activeDtcHtmlModalSource = null;
+}
+
+function setListingDtcHtmlViewport(mode) {
+    if (typeof document === 'undefined') return;
+    currentDtcHtmlViewport = mode;
+    const btnDesktop = document.getElementById('btnDtcHtmlViewportDesktop');
+    const btnMobile = document.getElementById('btnDtcHtmlViewportMobile');
+    const wrapper = document.getElementById('listingDtcHtmlPreviewWrapper');
+
+    if (mode === 'mobile') {
+        if (wrapper) {
+            wrapper.style.maxWidth = '375px';
+            wrapper.style.margin = '0 auto';
+        }
+        if (btnMobile) {
+            btnMobile.className = 'px-2 py-1 rounded-md text-[11px] font-bold bg-white text-indigo-600 shadow-2xs cursor-pointer flex items-center gap-1';
+        }
+        if (btnDesktop) {
+            btnDesktop.className = 'px-2 py-1 rounded-md text-[11px] font-medium text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1';
+        }
+    } else {
+        if (wrapper) {
+            wrapper.style.maxWidth = '100%';
+            wrapper.style.margin = '0';
+        }
+        if (btnDesktop) {
+            btnDesktop.className = 'px-2 py-1 rounded-md text-[11px] font-bold bg-white text-indigo-600 shadow-2xs cursor-pointer flex items-center gap-1';
+        }
+        if (btnMobile) {
+            btnMobile.className = 'px-2 py-1 rounded-md text-[11px] font-medium text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1';
+        }
+    }
+}
+
+function setListingDtcHtmlTab(tab) {
+    if (typeof document === 'undefined') return;
+    currentDtcHtmlTab = tab;
+    const previewWrap = document.getElementById('listingDtcHtmlPreviewWrapper');
+    const codeWrap = document.getElementById('listingDtcHtmlCodeWrapper');
+    const btnPreview = document.getElementById('btnDtcHtmlTabPreview');
+    const btnCode = document.getElementById('btnDtcHtmlTabCode');
+
+    if (tab === 'code') {
+        if (previewWrap?.classList) previewWrap.classList.add('hidden');
+        if (codeWrap?.classList) codeWrap.classList.remove('hidden');
+        if (btnCode) {
+            btnCode.className = 'px-2.5 py-1 rounded-md text-[11px] font-bold bg-white text-indigo-600 shadow-2xs cursor-pointer flex items-center gap-1';
+        }
+        if (btnPreview) {
+            btnPreview.className = 'px-2.5 py-1 rounded-md text-[11px] font-medium text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1';
+        }
+    } else {
+        if (codeWrap?.classList) codeWrap.classList.add('hidden');
+        if (previewWrap?.classList) previewWrap.classList.remove('hidden');
+        if (btnPreview) {
+            btnPreview.className = 'px-2.5 py-1 rounded-md text-[11px] font-bold bg-white text-indigo-600 shadow-2xs cursor-pointer flex items-center gap-1';
+        }
+        if (btnCode) {
+            btnCode.className = 'px-2.5 py-1 rounded-md text-[11px] font-medium text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1';
+        }
+    }
+}
+
+function setListingDtcHtmlLangMode(mode) {
+    currentDtcHtmlLangMode = mode;
+    if (typeof window !== 'undefined') window.currentDtcHtmlLangMode = mode;
+    if (typeof globalThis !== 'undefined') globalThis.currentDtcHtmlLangMode = mode;
+    updateListingDtcHtmlModalContent();
+}
+
+function updateListingDtcHtmlModalContent() {
+    if (typeof document === 'undefined') return;
+    let d = null;
+    const isDetailsSource = (typeof window !== 'undefined' && window.activeDtcHtmlModalSource === 'details') ||
+        (typeof globalThis !== 'undefined' && globalThis.activeDtcHtmlModalSource === 'details');
+
+    if (isDetailsSource) {
+        if (typeof window !== 'undefined' && typeof window.getDetailDtcHtmlData === 'function') {
+            d = window.getDetailDtcHtmlData();
+        } else if (typeof globalThis !== 'undefined' && typeof globalThis.getDetailDtcHtmlData === 'function') {
+            d = globalThis.getDetailDtcHtmlData();
+        }
+    } else {
+        d = currentListingDataText || collectCurrentListingDataFromDom();
+        if (!d) {
+            if (typeof window !== 'undefined' && typeof window.getDetailDtcHtmlData === 'function') {
+                d = window.getDetailDtcHtmlData();
+            } else if (typeof globalThis !== 'undefined' && typeof globalThis.getDetailDtcHtmlData === 'function') {
+                d = globalThis.getDetailDtcHtmlData();
+            }
+        }
+    }
+    if (!d) return;
+
+    const html = buildListingDtcHtml(d, currentDtcHtmlLangMode);
+
+    const codeArea = document.getElementById('listingDtcHtmlCodeArea');
+    if (codeArea) codeArea.value = html;
+
+    const iframe = document.getElementById('listingDtcHtmlPreviewFrame');
+    if (iframe) {
+        iframe.srcdoc = html;
+    }
+}
+
+async function copyListingDtcHtml() {
+    let d = null;
+    const isDetailsSource = (typeof window !== 'undefined' && window.activeDtcHtmlModalSource === 'details') ||
+        (typeof globalThis !== 'undefined' && globalThis.activeDtcHtmlModalSource === 'details');
+
+    if (isDetailsSource) {
+        if (typeof window !== 'undefined' && typeof window.getDetailDtcHtmlData === 'function') {
+            d = window.getDetailDtcHtmlData();
+        } else if (typeof globalThis !== 'undefined' && typeof globalThis.getDetailDtcHtmlData === 'function') {
+            d = globalThis.getDetailDtcHtmlData();
+        }
+    } else {
+        d = currentListingDataText || collectCurrentListingDataFromDom();
+        if (!d) {
+            if (typeof window !== 'undefined' && typeof window.getDetailDtcHtmlData === 'function') {
+                d = window.getDetailDtcHtmlData();
+            } else if (typeof globalThis !== 'undefined' && typeof globalThis.getDetailDtcHtmlData === 'function') {
+                d = globalThis.getDetailDtcHtmlData();
+            }
+        }
+    }
+    if (!d) {
+        if (typeof showToast === 'function') showToast('暂无内容可复制', 'error');
+        return;
+    }
+    const html = buildListingDtcHtml(d, currentDtcHtmlLangMode);
+    await copyTextToClipboard(html, '已复制独立站 HTML 代码！可直接粘贴至 Shopify / WordPress HTML 块');
+}
+
+async function copyListingDtcHtmlQuick() {
+    const d = currentListingDataText || collectCurrentListingDataFromDom();
+    if (!d) {
+        if (typeof showToast === 'function') showToast('请先生成 Listing 结果再复制独立站 HTML', 'warning');
+        return;
+    }
+    const html = buildListingDtcHtml(d, 'target');
+    await copyTextToClipboard(html, '已复制独立站 HTML 代码 (纯外文)！可直接粘贴至独立站 HTML 块');
+}
+
+function exportListingDtcHtmlFile() {
+    let d = null;
+    const isDetailsSource = (typeof window !== 'undefined' && window.activeDtcHtmlModalSource === 'details') ||
+        (typeof globalThis !== 'undefined' && globalThis.activeDtcHtmlModalSource === 'details');
+
+    if (isDetailsSource) {
+        if (typeof window !== 'undefined' && typeof window.getDetailDtcHtmlData === 'function') {
+            d = window.getDetailDtcHtmlData();
+        } else if (typeof globalThis !== 'undefined' && typeof globalThis.getDetailDtcHtmlData === 'function') {
+            d = globalThis.getDetailDtcHtmlData();
+        }
+    } else {
+        d = currentListingDataText || collectCurrentListingDataFromDom();
+        if (!d) {
+            if (typeof window !== 'undefined' && typeof window.getDetailDtcHtmlData === 'function') {
+                d = window.getDetailDtcHtmlData();
+            } else if (typeof globalThis !== 'undefined' && typeof globalThis.getDetailDtcHtmlData === 'function') {
+                d = globalThis.getDetailDtcHtmlData();
+            }
+        }
+    }
+
+    if (!d) {
+        if (typeof showToast === 'function') showToast('暂无内容可导出', 'warning');
+        return;
+    }
+
+    const titlePair = listingTextPair(d.title);
+    const rawProdName = (titlePair.zh || titlePair.target || 'dtc_product').replace(/[/\\?%*:|"<>]/g, '_').trim().slice(0, 50);
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `${rawProdName}_dtc_description_${timestamp}.html`;
+    const html = buildListingDtcHtml(d, currentDtcHtmlLangMode);
+    downloadTextFile(filename, html, 'text/html;charset=utf-8');
+    if (typeof showToast === 'function') showToast(`已导出 ${filename}`, 'success');
 }
 
 if (typeof window !== 'undefined') {
@@ -1919,6 +2955,18 @@ if (typeof window !== 'undefined') {
     window.hideListingDropdowns = hideListingDropdowns;
     window.transferListingToDetails = transferListingToDetails;
     window.transferListingToAds = transferListingToAds;
+    window.insertListingFactSlot = insertListingFactSlot;
+    window.toggleListingAdvancedConfig = toggleListingAdvancedConfig;
+    window.toggleListingTitleRegenMenu = toggleListingTitleRegenMenu;
+    window.hideAllSectionRegenMenus = hideAllSectionRegenMenus;
+    window.triggerSectionRegeneration = triggerSectionRegeneration;
+    window.triggerBulletRegeneration = triggerBulletRegeneration;
+    window.regenerateListingSection = regenerateListingSection;
+    window.applyRegeneratedSection = applyRegeneratedSection;
+    window.saveCurrentListingToHistory = saveCurrentListingToHistory;
+    window.updateListingHistoryBadge = updateListingHistoryBadge;
+    window.loadListingHistoryDrawerList = loadListingHistoryDrawerList;
+    window.toggleListingHistoryDrawer = toggleListingHistoryDrawer;
 }
 if (typeof globalThis !== 'undefined') {
     globalThis.ingestListingImageFile = ingestListingImageFile;
@@ -1938,6 +2986,18 @@ if (typeof globalThis !== 'undefined') {
     globalThis.restoreListingDraft = restoreListingDraft;
     globalThis.transferListingToDetails = transferListingToDetails;
     globalThis.transferListingToAds = transferListingToAds;
+    globalThis.insertListingFactSlot = insertListingFactSlot;
+    globalThis.toggleListingAdvancedConfig = toggleListingAdvancedConfig;
+    globalThis.toggleListingTitleRegenMenu = toggleListingTitleRegenMenu;
+    globalThis.hideAllSectionRegenMenus = hideAllSectionRegenMenus;
+    globalThis.triggerSectionRegeneration = triggerSectionRegeneration;
+    globalThis.triggerBulletRegeneration = triggerBulletRegeneration;
+    globalThis.regenerateListingSection = regenerateListingSection;
+    globalThis.applyRegeneratedSection = applyRegeneratedSection;
+    globalThis.saveCurrentListingToHistory = saveCurrentListingToHistory;
+    globalThis.updateListingHistoryBadge = updateListingHistoryBadge;
+    globalThis.loadListingHistoryDrawerList = loadListingHistoryDrawerList;
+    globalThis.toggleListingHistoryDrawer = toggleListingHistoryDrawer;
 }
 
 const LISTING_DRAFT_KEY = 'ai_ecommerce_listing_draft_v1';
@@ -2005,16 +3065,26 @@ function initListingDraftSync() {
     });
 }
 
-if (typeof document !== 'undefined') {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            restoreListingDraft();
-            initListingDraftSync();
-        });
-    } else {
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    const initListingFeatures = () => {
         restoreListingDraft();
         initListingDraftSync();
+        updateListingHistoryBadge();
+        const savedEmoji = typeof localStorage !== 'undefined' && localStorage.getItem('listing_include_emoji') === 'true';
+        onListingEmojiToggleChange(savedEmoji);
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initListingFeatures);
+    } else {
+        initListingFeatures();
     }
+    document.addEventListener('click', (e) => {
+        const container = document.getElementById('listingTitleRegenMenuContainer');
+        if (container && typeof container.contains === 'function' && !container.contains(e.target)) {
+            hideAllSectionRegenMenus();
+        }
+    });
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -2054,7 +3124,30 @@ if (typeof module !== 'undefined' && module.exports) {
         LISTING_AMAZON_RISK_TERMS,
         clearListingDraft,
         transferListingToDetails,
-        transferListingToAds
+        transferListingToAds,
+        insertListingFactSlot,
+        toggleListingAdvancedConfig,
+        toggleListingTitleRegenMenu,
+        hideAllSectionRegenMenus,
+        triggerSectionRegeneration,
+        triggerBulletRegeneration,
+        regenerateListingSection,
+        applyRegeneratedSection,
+        saveCurrentListingToHistory,
+        updateListingHistoryBadge,
+        loadListingHistoryDrawerList,
+        toggleListingHistoryDrawer,
+        onListingEmojiToggleChange,
+        buildListingDtcHtml,
+        openListingDtcHtmlModal,
+        closeListingDtcHtmlModal,
+        setListingDtcHtmlViewport,
+        setListingDtcHtmlTab,
+        setListingDtcHtmlLangMode,
+        copyListingDtcHtml,
+        copyListingDtcHtmlQuick,
+        exportListingDtcHtmlFile,
+        escapeListingHtml
     };
 }
 if (typeof window !== 'undefined') {
@@ -2064,4 +3157,14 @@ if (typeof window !== 'undefined') {
     window.clearListingDraft = clearListingDraft;
     window.transferListingToDetails = transferListingToDetails;
     window.transferListingToAds = transferListingToAds;
+    window.onListingEmojiToggleChange = onListingEmojiToggleChange;
+    window.buildListingDtcHtml = buildListingDtcHtml;
+    window.openListingDtcHtmlModal = openListingDtcHtmlModal;
+    window.closeListingDtcHtmlModal = closeListingDtcHtmlModal;
+    window.setListingDtcHtmlViewport = setListingDtcHtmlViewport;
+    window.setListingDtcHtmlTab = setListingDtcHtmlTab;
+    window.setListingDtcHtmlLangMode = setListingDtcHtmlLangMode;
+    window.copyListingDtcHtml = copyListingDtcHtml;
+    window.copyListingDtcHtmlQuick = copyListingDtcHtmlQuick;
+    window.exportListingDtcHtmlFile = exportListingDtcHtmlFile;
 }
