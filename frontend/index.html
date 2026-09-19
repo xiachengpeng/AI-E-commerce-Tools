@@ -259,6 +259,9 @@
                             <i class="ph ph-clock"></i>
                             <span id="xp-elapsedTimer">已耗时: 0s</span>
                         </div>
+                        <button id="xp-cancelAnalyzeBtn" type="button" onclick="window.xp_abortAnalyze && window.xp_abortAnalyze()" class="mt-2 text-xs text-slate-400 hover:text-red-500 font-medium transition-colors cursor-pointer inline-flex items-center gap-1">
+                            <i class="ph ph-x"></i> 取消分析
+                        </button>
                     </section>
 
                     <section id="xp-resultSection" class="xp-result-section xp-hidden">
@@ -504,6 +507,17 @@
             <div
                 class="w-[340px] bg-white border-r border-gray-200 flex flex-col h-full z-10 flex-shrink-0 relative shadow-sm">
                 <div class="flex-1 overflow-y-auto custom-scrollbar p-5 pb-24">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <div class="bg-indigo-100 p-1.5 rounded-lg text-indigo-600"><i
+                                    class="ph-bold ph-squares-four text-lg"></i></div>
+                            <div>
+                                <h2 class="text-base font-black text-gray-800 tracking-tight">独立站详情页与生图</h2>
+                                <div class="text-[10px] text-indigo-600 font-semibold">DTC Studio (Shopify / WordPress / 自建站)</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-4">
                         <div class="flex items-center justify-between mb-2">
                             <div class="flex items-center text-xs font-bold text-gray-700">
@@ -750,6 +764,21 @@
                                 <option value="" disabled selected>⚡ 载入营销画像档案 ▾</option>
                             </select>
                         </div>
+                        <!-- Listing 同步状态横幅 -->
+                        <div id="detailListingSyncBanner" class="hidden mb-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-800">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 text-xs font-bold shrink-0">✓</span>
+                                <div class="min-w-0">
+                                    <div class="font-bold text-emerald-900 text-xs truncate">已成功载入 Listing 核心文案与买点</div>
+                                    <div class="text-[10px] text-emerald-700 leading-tight">AI 图像规划与 DTC 排版将优先依据已提炼的买点与事实参数，确保口径一致</div>
+                                </div>
+                            </div>
+                            <button type="button" onclick="document.getElementById('detailListingSyncBanner').classList.add('hidden')" class="text-emerald-500 hover:text-emerald-800 text-xs px-1.5 py-0.5 rounded cursor-pointer" title="关闭提示">✕</button>
+                        </div>
+                        <div id="detailWorkflowSyncHint" class="text-[10px] text-slate-500 mb-2 flex items-center gap-1.5 px-1">
+                            <i class="ph-bold ph-lightbulb text-indigo-500 shrink-0"></i>
+                            <span class="truncate">提示：可先前往【Listing 生成】提炼高转化买点，点击「一键同步至详情页」自动带入</span>
+                        </div>
                         <input type="text" id="productNameInput" name="product_name_title" autocomplete="off" readonly onfocus="this.removeAttribute('readonly');"
                             class="w-full text-xs text-gray-600 border border-gray-200 rounded-lg px-3 py-2 focus:border-blue-500 outline-none bg-white mb-2"
                             placeholder="产品名称（选填），例如：Compact Under-Desk Walking Pad">
@@ -983,6 +1012,14 @@
 
                                 <!-- 右侧：聚合下拉菜单与主交付 CTA -->
                                 <div id="dtcExportActions" class="flex items-center gap-2">
+                                    <!-- 独立站富文本 HTML 描述与双端预览 (DTC Description HTML) -->
+                                    <button id="btnOpenDetailDtcHtmlModal" onclick="openDetailDtcHtmlModal()" type="button"
+                                        class="h-8 flex items-center gap-1.5 text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 transition-colors text-xs font-bold px-3 rounded-lg shadow-2xs cursor-pointer whitespace-nowrap"
+                                        title="预览并复制适用于 Shopify / WooCommerce 独立站的轻量自包含 HTML 描述代码（带桌面/375px移动端实时预览与一键复制）">
+                                        <i class="ph-bold ph-browsers text-sm"></i>
+                                        <span>独立站 HTML 描述</span>
+                                    </button>
+
                                     <!-- 下拉菜单 1：素材与切图导出 -->
                                     <div class="relative" id="mediaExportDropdownContainer">
                                         <button type="button" onclick="toggleMediaDropdown(event)"
@@ -1032,6 +1069,13 @@
                                             <i class="ph-bold ph-caret-down text-[10px] text-slate-400"></i>
                                         </button>
                                         <div id="codeExportDropdownMenu" class="hidden absolute right-0 top-full mt-1.5 w-60 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-1.5 text-xs text-slate-700">
+                                            <button onclick="openDetailDtcHtmlModal(); hideAllToolbarDropdowns();" class="w-full px-3 py-2 text-left hover:bg-violet-50/60 flex items-center gap-2 font-medium transition-colors cursor-pointer border-b border-slate-100 pb-2">
+                                                <i class="ph-bold ph-browsers text-violet-600 text-sm"></i>
+                                                <div>
+                                                    <div class="font-bold text-violet-900">独立站 HTML 描述 (双端预览)</div>
+                                                    <div class="text-[10px] text-violet-700/70">电脑/手机双端预览，复制到 Shopify 描述</div>
+                                                </div>
+                                            </button>
                                             <button onclick="copyShopifyHtml(); hideAllToolbarDropdowns();" class="w-full px-3 py-2 text-left hover:bg-indigo-50/60 flex items-center gap-2 font-medium transition-colors cursor-pointer">
                                                 <i class="ph-bold ph-copy text-indigo-600 text-sm"></i>
                                                 <div>
@@ -1104,24 +1148,39 @@
         <!-- ============================================== -->
         <!-- 视图：LISTING 生成 (VIEW: LISTING) -->
         <!-- ============================================== -->
-        <div id="view-listing" class="hidden flex-1 overflow-hidden flex bg-[#f8fafc]">
+        <div id="view-listing" class="hidden flex-1 overflow-hidden flex bg-[#f8fafc] relative">
             <!-- 左侧输入配置 -->
             <div
                 class="w-[340px] bg-white border-r border-gray-200 flex flex-col h-full z-10 flex-shrink-0 relative shadow-sm">
-                <div class="flex-1 overflow-y-auto custom-scrollbar p-6 pb-24">
-                    <div class="flex items-center justify-between mb-6">
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-6 pb-32">
+                    <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-2">
                             <div class="bg-indigo-100 p-1.5 rounded-lg text-indigo-600"><i
                                     class="ph ph-text-aa text-lg"></i></div>
-                            <h2 class="text-base font-black text-gray-800 tracking-tight">Listing 智能编撰</h2>
+                            <div>
+                                <h2 class="text-base font-black text-gray-800 tracking-tight">Listing 智能编撰</h2>
+                                <div class="text-[10px] text-amber-700 font-bold">第三方平台刊登 (Amazon / TikTok / eBay / Etsy)</div>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="mb-5">
-                        <div class="flex items-center text-xs font-bold text-gray-700 mb-2">参考产品图 (非必填)</div>
-                        <div class="flex gap-3">
+                    <!-- 独立站引导提示 -->
+                    <div class="mb-4 p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-xl text-[11px] text-indigo-900 flex items-start gap-2">
+                        <i class="ph-bold ph-info text-indigo-600 text-sm mt-0.5 shrink-0"></i>
+                        <div class="leading-relaxed">
+                            专为各大货架电商平台设计。如需为 Shopify / WooCommerce 独立站制作图文描述、SEO 及整站代码，请前往
+                            <button type="button" onclick="switchMainTab('generate')" class="font-bold underline text-indigo-700 hover:text-indigo-900 cursor-pointer">【详情页】一站式完成 →</button>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="flex items-center justify-between text-xs font-bold text-gray-700 mb-2">
+                            <span>参考产品图 (非必填)</span>
+                            <span class="text-[10px] text-gray-400 font-normal">支持拖拽/粘贴</span>
+                        </div>
+                        <div class="flex items-center gap-3">
                             <div id="listingImagePreviewContainer"
-                                class="w-[72px] h-[72px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group hidden shadow-inner">
+                                class="w-[72px] h-[72px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group hidden shadow-inner flex-shrink-0">
                                 <img id="listingUploadedImagePreview" src="" class="w-full h-full object-cover">
                                 <button onclick="removeListingImage()"
                                     class="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"><i
@@ -1130,11 +1189,17 @@
                             <label for="listingImageUpload"
                                 title="支持点击上传、拖拽或 ⌘V / Ctrl+V 粘贴"
                                 ondragover="event.preventDefault()" ondrop="handleListingImageDrop(event)"
-                                class="w-[72px] h-[72px] rounded-lg border border-dashed border-gray-300 bg-gray-50 flex items-center justify-center cursor-pointer hover:bg-gray-100 hover:border-indigo-400 transition-all">
+                                class="w-[72px] h-[72px] rounded-lg border border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 hover:border-indigo-400 transition-all flex-shrink-0">
                                 <i class="ph ph-image text-gray-400 text-xl"></i>
+                                <span class="text-[9px] text-gray-400 mt-1">上传图片</span>
                                 <input type="file" id="listingImageUpload" class="hidden" accept="image/*"
                                     onchange="handleListingImageUpload(event)">
                             </label>
+                            <button id="aiListingExtractPromptBtn" onclick="aiFillListingInputs()"
+                                class="hidden flex-1 text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 p-2 rounded-lg font-bold transition-all flex flex-col items-center justify-center gap-0.5 shadow-2xs cursor-pointer">
+                                <div class="flex items-center gap-1 text-indigo-600 font-black"><i class="ph ph-sparkle text-sm"></i> 一键视觉解析</div>
+                                <div class="text-[9px] text-indigo-500 font-normal text-center">从产品图提取规格与卖点</div>
+                            </button>
                         </div>
                         <div class="text-[10px] text-gray-400 mt-1.5">支持点击上传、拖拽或 ⌘V / Ctrl+V 粘贴图片</div>
                     </div>
@@ -1151,46 +1216,89 @@
                             <button type="button" onclick="clearListingDraft()"
                                 class="text-[10px] text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors font-medium cursor-pointer" title="清空 Listing 输入草稿，恢复干净状态">清空输入</button>
                             <button id="aiListingExtractBtn" onclick="aiFillListingInputs()"
-                                class="text-[10px] text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors flex items-center gap-1 font-bold">
+                                class="text-[10px] text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded transition-colors flex items-center gap-1 font-bold cursor-pointer">
                                 <i class="ph ph-sparkle"></i> 视觉提取
                             </button>
                         </div>
                     </div>
                     <input type="text" id="listingName" name="listing_product_name" autocomplete="off" readonly onfocus="this.removeAttribute('readonly');"
-                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 mb-5 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-gray-50"
+                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 mb-4 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-gray-50"
                         placeholder="例如：天然藤编半球形复古吊灯">
 
-                    <label class="block text-xs font-bold text-gray-700 mb-1.5">核心卖点与优势 <span
-                            class="text-red-500">*</span></label>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-xs font-bold text-gray-700">核心卖点与优势 <span
+                                class="text-red-500">*</span></label>
+                        <span class="text-[9px] text-gray-400">点击标签插入事实要素</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1 mb-2">
+                        <button type="button" onclick="insertListingFactSlot('material')"
+                            class="text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 px-2 py-0.5 rounded border border-slate-200 transition-colors font-medium cursor-pointer" title="插入材质与工艺描述">+ 材质工艺</button>
+                        <button type="button" onclick="insertListingFactSlot('specs')"
+                            class="text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 px-2 py-0.5 rounded border border-slate-200 transition-colors font-medium cursor-pointer" title="插入规格尺寸参数">+ 规格参数</button>
+                        <button type="button" onclick="insertListingFactSlot('audience')"
+                            class="text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 px-2 py-0.5 rounded border border-slate-200 transition-colors font-medium cursor-pointer" title="插入适用人群与场景">+ 适用受众</button>
+                        <button type="button" onclick="insertListingFactSlot('pain_point')"
+                            class="text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 px-2 py-0.5 rounded border border-slate-200 transition-colors font-medium cursor-pointer" title="插入解决核心痛点">+ 解决痛点</button>
+                        <button type="button" onclick="insertListingFactSlot('package')"
+                            class="text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 px-2 py-0.5 rounded border border-slate-200 transition-colors font-medium cursor-pointer" title="插入包装清单与配件">+ 包装配件</button>
+                    </div>
                     <textarea id="listingPoints" rows="5"
-                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 mb-5 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all resize-none bg-gray-50 leading-relaxed"
-                        placeholder="描述产品的材质、适用场景、痛点解决方案等..."></textarea>
+                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 mb-4 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all resize-none bg-gray-50 leading-relaxed"
+                        placeholder="清晰描述产品的材质、规格、适用场景与痛点。AI 将严格基于此事实编撰，杜绝捏造参数..."></textarea>
 
                     <label class="block text-xs font-bold text-gray-700 mb-1.5">主打关键词 (可选)</label>
                     <input type="text" id="listingKeywords"
-                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 mb-5 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-gray-50"
+                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 mb-4 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all bg-gray-50"
                         placeholder="逗号分隔，如：藤编, 吊灯, 北欧风">
 
-                    <div class="mb-5 pt-4 border-t border-gray-100">
-                        <div class="text-xs font-bold text-gray-800 mb-3 flex items-center gap-1.5"><i
-                                class="ph-fill ph-target text-orange-500"></i> 场景与营销配置</div>
-                        <label class="block text-[10px] font-bold text-gray-500 mb-1">营销节点/主题 (自动融入促销文案)</label>
-                        <select id="listingMarketingThemeSelect"
-                            class="w-full text-xs border border-orange-200 rounded-lg p-2.5 outline-none focus:border-orange-500 bg-orange-50 text-orange-700 font-medium mb-3 shadow-sm"></select>
-                        <label class="block text-[10px] font-bold text-gray-500 mb-1">目标市场 (启用超本地化语境)</label>
-                        <select id="listingRegionSelect"
-                            class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-gray-50 mb-3"></select>
-                        <label class="block text-[10px] font-bold text-gray-500 mb-1">目标语言</label>
-                        <select id="listingLanguageSelect"
-                            class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-gray-50 mb-3"></select>
-                        <label class="block text-[10px] font-bold text-gray-500 mb-1">目标平台与调性</label>
-                        <select id="listingStyleSelect"
-                            class="w-full text-xs border border-indigo-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-indigo-50/50 text-indigo-900 font-medium mb-2 shadow-sm"></select>
+                    <div class="mb-5 pt-3 border-t border-gray-100">
+                        <div class="flex items-center justify-between cursor-pointer mb-2.5 select-none" onclick="toggleListingAdvancedConfig()">
+                            <div class="text-xs font-bold text-gray-800 flex items-center gap-1.5"><i
+                                    class="ph-fill ph-target text-orange-500"></i> 场景与营销配置</div>
+                            <div class="flex items-center gap-1 text-[10px] text-gray-400 hover:text-indigo-600">
+                                <span id="listingAdvancedConfigToggleText">收起</span>
+                                <i id="listingAdvancedConfigToggleIcon" class="ph ph-caret-up text-xs transition-transform"></i>
+                            </div>
+                        </div>
+                        <div id="listingAdvancedConfigContainer" class="space-y-3 transition-all">
+                            <div>
+                                <label class="block text-[10px] font-bold text-gray-500 mb-1">营销节点/主题 (自动融入促销文案)</label>
+                                <select id="listingMarketingThemeSelect"
+                                    class="w-full text-xs border border-orange-200 rounded-lg p-2.5 outline-none focus:border-orange-500 bg-orange-50 text-orange-700 font-medium shadow-sm"></select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-gray-500 mb-1">目标市场 (启用超本地化语境)</label>
+                                <select id="listingRegionSelect"
+                                    class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-gray-50"></select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-gray-500 mb-1">目标语言</label>
+                                <select id="listingLanguageSelect"
+                                    class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-gray-50"></select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-gray-500 mb-1">目标平台与调性</label>
+                                <select id="listingStyleSelect"
+                                    class="w-full text-xs border border-indigo-200 rounded-lg p-2.5 outline-none focus:border-indigo-500 bg-indigo-50/50 text-indigo-900 font-medium shadow-sm"></select>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div
-                    class="absolute bottom-0 left-0 w-full p-4 bg-white border-t border-gray-200 shadow-[0_-4px_10px_rgba(0,0,0,0.02)]">
+                    class="absolute bottom-0 left-0 w-full p-3.5 bg-white border-t border-gray-200 shadow-[0_-4px_10px_rgba(0,0,0,0.03)] space-y-2">
+                    <div class="flex items-center justify-between px-0.5">
+                        <label for="listingIncludeEmojiToggle" class="text-xs font-semibold text-slate-700 flex items-center gap-1.5 cursor-pointer select-none">
+                            <span class="text-sm">✨</span> 包含 Emoji 表情修饰
+                        </label>
+                        <div class="flex items-center gap-2">
+                            <span id="listingEmojiStatusHint" class="text-[10px] text-slate-400">关闭 (纯文本)</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="listingIncludeEmojiToggle" onchange="onListingEmojiToggleChange(this.checked)" class="sr-only peer">
+                                <div class="w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                            </label>
+                        </div>
+                    </div>
                     <button id="btnGenerateListing" onclick="generateListing()"
                         class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 shadow-md">
                         <i class="ph ph-magic-wand text-lg"></i> 一键生成 Listing
@@ -1292,9 +1400,9 @@
 
                             <!-- 跨模块流转快捷动作 (P0) -->
                             <button id="btnTransferListingToDetails" onclick="transferListingToDetails()"
-                                title="将标题、核心卖点与关键词一键带入详情页策划"
-                                class="flex items-center gap-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-3 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer">
-                                <i class="ph ph-image text-sm"></i> 带入详情页
+                                title="将标题、核心卖点与事实参数一键同步至详情页生图策划"
+                                class="flex items-center gap-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-3 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer">
+                                <i class="ph-bold ph-arrow-fat-lines-right text-sm"></i> <span>🚀 一键同步至详情页</span>
                             </button>
                             <button id="btnTransferListingToAds" onclick="transferListingToAds()"
                                 title="将标题与产品信息一键带入广告文案生成"
@@ -1306,6 +1414,14 @@
                         <button id="btnRiskCheck" onclick="checkListingCompliance()"
                             class="hidden flex items-center gap-1.5 text-[11px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-100 px-3 py-1.5 rounded-lg transition-colors shadow-sm cursor-pointer">
                             <i class="ph ph-shield-warning text-sm"></i> 合规审查
+                        </button>
+
+                        <button id="btnListingHistoryDrawer" onclick="toggleListingHistoryDrawer()"
+                            class="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg transition-colors shadow-2xs cursor-pointer"
+                            title="查看最近生成的 Listing 历史快照">
+                            <i class="ph ph-clock-counter-clockwise text-sm text-indigo-600"></i>
+                            <span>历史快照</span>
+                            <span id="listingHistoryCountBadge" class="hidden px-1.5 py-0.2 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-mono">0</span>
                         </button>
                     </div>
                 </div>
@@ -1332,6 +1448,18 @@
                                 </span>
                             </div>
                             <div class="flex items-center gap-2">
+                                <div class="relative inline-block" id="listingTitleRegenMenuContainer">
+                                    <button id="btnRegenTitleMenu" onclick="toggleListingTitleRegenMenu(event)"
+                                        class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1 cursor-pointer" title="AI 润色标题">
+                                        <i class="ph ph-arrows-clockwise"></i> <span>换一换</span>
+                                    </button>
+                                    <div id="listingTitleRegenMenu" class="absolute right-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-xl py-1 text-xs hidden z-50">
+                                        <button onclick="triggerSectionRegeneration('title', null, 'more_concise'); hideAllSectionRegenMenus();" class="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 cursor-pointer">⚡ 更加精炼紧凑</button>
+                                        <button onclick="triggerSectionRegeneration('title', null, 'benefit_heavy'); hideAllSectionRegenMenus();" class="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 cursor-pointer">🎯 突出买家收益</button>
+                                        <button onclick="triggerSectionRegeneration('title', null, 'seo_heavy'); hideAllSectionRegenMenus();" class="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 cursor-pointer">🔍 强化SEO词权</button>
+                                        <button onclick="triggerSectionRegeneration('title', null, 'punchy_hook'); hideAllSectionRegenMenus();" class="w-full text-left px-3 py-1.5 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 cursor-pointer">🔥 爆款吸引力</button>
+                                    </div>
+                                </div>
                                 <button id="btnToggleTitleAlternatives" onclick="toggleTitleAlternatives()"
                                     class="hidden text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2.5 py-1 rounded-lg font-bold transition-colors items-center gap-1 cursor-pointer">
                                     <i class="ph ph-sparkle"></i> 备选标题 (<span id="titleAltCount">0</span>)
@@ -1407,6 +1535,10 @@
                                 <span id="listingDescCharCount" class="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">0 字符</span>
                             </div>
                             <div class="flex items-center gap-2">
+                                <button onclick="triggerSectionRegeneration('description', null, 'benefit_heavy')"
+                                    class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1 cursor-pointer" title="AI 润色优化长描述">
+                                    <i class="ph ph-arrows-clockwise"></i> <span>AI 润色</span>
+                                </button>
                                 <button id="btnEditDesc" onclick="toggleEditListingDesc()"
                                     class="text-xs bg-gray-100 hover:bg-indigo-100 text-gray-600 hover:text-indigo-600 px-2 py-1 rounded font-bold transition-colors flex items-center gap-1 cursor-pointer">
                                     <i class="ph ph-pencil-simple"></i> <span id="btnEditDescText">编辑</span>
@@ -1557,8 +1689,48 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- 结果底部跨模块协同流转栏 (Listing -> Details) -->
+                    <div id="listingWorkflowHandoffCard" class="bg-gradient-to-r from-amber-50/90 via-indigo-50/70 to-slate-50 border border-amber-200/90 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-2xs">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800 text-xl shrink-0">
+                                <i class="ph-bold ph-lightning"></i>
+                            </div>
+                            <div>
+                                <div class="font-bold text-slate-800 text-sm">文案已准备就绪，下一步生成视觉长图与 DTC 页面</div>
+                                <div class="text-xs text-slate-500 mt-0.5">将上方提炼出的核心买点、产品名与事实参数一键同步至详情页生图策划</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2.5 shrink-0 w-full sm:w-auto justify-end">
+                            <button type="button" onclick="transferListingToDetails()" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer flex items-center gap-1.5">
+                                <i class="ph-bold ph-arrow-fat-lines-right text-sm"></i> 🚀 一键同步至详情页生图
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            <!-- Listing 专属历史快照侧滑抽屉 -->
+            <div id="listingHistoryDrawer" class="hidden absolute top-0 right-0 h-full w-84 bg-white shadow-2xl border-l border-gray-200 z-50 flex flex-col transition-all duration-300">
+                <div class="p-4 border-b border-gray-100 flex items-center justify-between bg-slate-50/80">
+                    <div class="flex items-center gap-2">
+                        <div class="bg-indigo-100 p-1.5 rounded-lg text-indigo-600">
+                            <i class="ph ph-clock-counter-clockwise text-base"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-black text-gray-800">Listing 历史快照</div>
+                            <div class="text-[10px] text-gray-400">点击任意快照即可一键恢复</div>
+                        </div>
+                    </div>
+                    <button onclick="toggleListingHistoryDrawer(false)" class="text-gray-400 hover:text-gray-700 text-sm p-1 rounded-md hover:bg-gray-100 transition-colors cursor-pointer" title="关闭历史抽屉">
+                        <i class="ph ph-x"></i>
+                    </button>
+                </div>
+                <div id="listingHistoryList" class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                    <div class="text-xs text-gray-400 text-center py-10">暂无历史快照</div>
+                </div>
+            </div>
+
         </div>
 
         <!-- ============================================== -->
@@ -1575,7 +1747,7 @@
                 </div>
                 <div class="flex-1 overflow-y-auto p-5 custom-scrollbar">
                     <div class="flex items-center text-xs font-bold text-gray-700 mb-2">商品图片 <span
-                            class="text-red-500 ml-1">*</span></div>
+                            class="text-[10px] text-gray-400 font-normal ml-1">(可选，未传图则按商品名生成)</span></div>
                     <div class="flex gap-3 mb-2">
                         <div id="adsImagePreviewContainer"
                             class="w-[72px] h-[72px] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden relative group hidden shadow-inner">
@@ -1593,7 +1765,7 @@
                                 onchange="handleAdsImageUpload(event)">
                         </label>
                     </div>
-                    <div class="text-[10px] text-gray-400 mb-4">支持点击上传、拖拽或 ⌘V / Ctrl+V 粘贴图片</div>
+                    <div class="text-[10px] text-gray-400 mb-4">支持上传实拍图 (可选，上传可分析细节材质；未上传则基于商品名称与卖点生成)</div>
 
                     <div class="mb-3">
                         <select class="brand-profile-quick-select w-full text-xs font-bold text-orange-700 bg-orange-50/70 border border-orange-200 rounded-lg px-2.5 py-1.5 outline-none hover:bg-orange-100/70 transition-colors cursor-pointer" data-module-target="ads">
@@ -1603,13 +1775,13 @@
 
                     <div class="flex items-center justify-between mb-1">
                         <label for="adsProductNameInput" class="block text-[10px] font-bold text-gray-500">
-                            产品名称
+                            产品名称 <span class="text-orange-600 font-normal">(未传图时必填)</span>
                         </label>
                         <button type="button" onclick="clearAdsDraft()"
                             class="text-[10px] text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-1.5 py-0.5 rounded transition-colors font-medium cursor-pointer" title="清空广告输入草稿，恢复干净状态">清空输入</button>
                     </div>
                     <input id="adsProductNameInput" name="ads_product_name" type="text" maxlength="200" autocomplete="off" readonly onfocus="this.removeAttribute('readonly');"
-                        placeholder="选填，填写后将结合图片识别"
+                        placeholder="输入产品名称（未传图时必填，传图时选填辅助识别）"
                         class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-orange-500 bg-gray-50 mb-5">
 
                     <label class="block text-xs font-bold text-gray-700 mb-2">广告类型</label>
@@ -2522,6 +2694,100 @@
                         <button type="button" onclick="window.brandContextHub.applyFromModal()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-1 cursor-pointer">
                             <i class="ph-bold ph-lightning"></i> 载入到当前模块
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- 模态框：独立站 HTML 描述与代码块预览 (DTC HTML PREVIEW MODAL) -->
+        <!-- ============================================== -->
+        <div id="listingDtcHtmlModal" class="hidden fixed inset-0 z-[280] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl h-[88vh] max-h-[820px] flex flex-col overflow-hidden animate-fade-in">
+                <!-- 弹窗顶栏 -->
+                <div class="px-5 py-3.5 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between shrink-0">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                            <i class="ph-bold ph-browsers"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-bold text-slate-800">独立站产品富文本 HTML 描述与落地代码</h3>
+                            <p class="text-[10px] text-slate-500">自包含响应式样式，可直接粘贴至 Shopify / WooCommerce / WordPress 产品描述框或自建站页面</p>
+                        </div>
+                    </div>
+
+                    <!-- 控制工具条 -->
+                    <div class="flex items-center gap-2">
+                        <!-- 视口切换 -->
+                        <div class="inline-flex bg-slate-200/70 p-0.5 rounded-lg text-xs font-semibold text-slate-600">
+                            <button type="button" id="btnDtcHtmlViewportDesktop" onclick="setListingDtcHtmlViewport('desktop')"
+                                class="px-2 py-1 rounded-md text-[11px] font-bold bg-white text-indigo-600 shadow-2xs cursor-pointer flex items-center gap-1">
+                                <i class="ph ph-desktop"></i> 电脑端
+                            </button>
+                            <button type="button" id="btnDtcHtmlViewportMobile" onclick="setListingDtcHtmlViewport('mobile')"
+                                class="px-2 py-1 rounded-md text-[11px] font-medium text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1">
+                                <i class="ph ph-device-mobile"></i> 手机端 (375px)
+                            </button>
+                        </div>
+
+                        <!-- 语言版本 -->
+                        <select id="dtcHtmlLangSelect" onchange="setListingDtcHtmlLangMode(this.value)"
+                            class="text-xs border border-slate-200 rounded-lg px-2.5 py-1 bg-white font-medium text-slate-700 outline-none focus:border-indigo-500 cursor-pointer shadow-2xs">
+                            <option value="target">🌐 纯外文 (推荐独立站)</option>
+                            <option value="bilingual">🔤 双语对照</option>
+                            <option value="zh">🇨🇳 纯中文</option>
+                        </select>
+
+                        <!-- 视图切换：预览 vs 代码 -->
+                        <div class="inline-flex bg-slate-200/70 p-0.5 rounded-lg text-xs font-semibold text-slate-600">
+                            <button type="button" id="btnDtcHtmlTabPreview" onclick="setListingDtcHtmlTab('preview')"
+                                class="px-2.5 py-1 rounded-md text-[11px] font-bold bg-white text-indigo-600 shadow-2xs cursor-pointer flex items-center gap-1">
+                                <i class="ph ph-eye"></i> 实时预览
+                            </button>
+                            <button type="button" id="btnDtcHtmlTabCode" onclick="setListingDtcHtmlTab('code')"
+                                class="px-2.5 py-1 rounded-md text-[11px] font-medium text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1">
+                                <i class="ph ph-code"></i> 查看代码
+                            </button>
+                        </div>
+
+                        <div class="h-4 w-px bg-slate-300 mx-0.5"></div>
+
+                        <!-- 复制与下载 -->
+                        <button type="button" onclick="copyListingDtcHtml()"
+                            class="text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer">
+                            <i class="ph-bold ph-copy"></i> 复制代码
+                        </button>
+                        <button type="button" onclick="exportListingDtcHtmlFile()"
+                            class="text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-lg shadow-2xs flex items-center gap-1 transition-colors cursor-pointer"
+                            title="下载为 .html 文件">
+                            <i class="ph ph-download-simple"></i>
+                        </button>
+
+                        <!-- 关闭按钮 -->
+                        <button type="button" onclick="closeListingDtcHtmlModal()"
+                            class="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                            title="关闭弹窗">
+                            <i class="ph ph-x text-base"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 弹窗内容区域 -->
+                <div class="flex-1 bg-slate-100/70 overflow-hidden relative flex items-center justify-center p-4">
+                    <!-- 实时渲染视图 -->
+                    <div id="listingDtcHtmlPreviewWrapper" class="w-full h-full flex items-center justify-center transition-all">
+                        <iframe id="listingDtcHtmlPreviewFrame" sandbox="allow-same-origin" class="bg-white rounded-xl shadow-md border border-slate-200 w-full h-full transition-all duration-300"></iframe>
+                    </div>
+
+                    <!-- 源代码查看视图 -->
+                    <div id="listingDtcHtmlCodeWrapper" class="hidden w-full h-full flex flex-col bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-md">
+                        <div class="px-4 py-2 bg-slate-950 text-slate-400 text-[11px] font-mono flex items-center justify-between border-b border-slate-800">
+                            <span>standalone-dtc-description.html</span>
+                            <button type="button" onclick="copyListingDtcHtml()" class="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer">
+                                <i class="ph ph-copy"></i> 复制代码
+                            </button>
+                        </div>
+                        <textarea id="listingDtcHtmlCodeArea" readonly class="flex-1 p-4 bg-slate-900 text-slate-200 font-mono text-xs leading-relaxed outline-none resize-none custom-scrollbar select-all"></textarea>
                     </div>
                 </div>
             </div>

@@ -14,6 +14,8 @@ const ADS_REGION_LANGUAGE_MAP = {
 };
 
 let currentAdsUploadedBase64 = null;
+let currentAdsSellingPoints = '';
+let currentAdsKeywords = '';
 let currentAdsData = null;
 let currentAdsPlatformFilter = 'all';
 let currentAdsStyleFilter = 'all';
@@ -666,9 +668,43 @@ function renderFilteredAdsResults() {
     if (scrollPane) scrollPane.scrollTop = previousScrollTop;
 }
 
+function receiveAdsTransferData(data) {
+    if (!data) return;
+    if (typeof data.productName === 'string') {
+        const nameEl = document.getElementById('adsProductNameInput');
+        if (nameEl) {
+            nameEl.value = data.productName.substring(0, 200);
+        }
+    }
+    if (typeof data.sellingPoints === 'string') {
+        currentAdsSellingPoints = data.sellingPoints;
+    }
+    if (typeof data.keywords === 'string') {
+        currentAdsKeywords = data.keywords;
+    }
+    if (data.region) {
+        const regionEl = document.getElementById('adsRegionSelect');
+        if (regionEl) {
+            if (typeof xp_setSelectValue === 'function') {
+                xp_setSelectValue(regionEl, data.region);
+            } else {
+                regionEl.value = data.region;
+            }
+        }
+    }
+    if (data.imageBase64) {
+        currentAdsUploadedBase64 = data.imageBase64;
+        const preview = document.getElementById('adsUploadedImagePreview');
+        if (preview) preview.src = data.imageBase64;
+        const container = document.getElementById('adsImagePreviewContainer');
+        if (container) container.classList.remove('hidden');
+    }
+}
+
 async function generateAdsCopy() {
-    if (!currentAdsUploadedBase64) {
-        showToast('请先上传商品图片', 'error');
+    const productName = document.getElementById('adsProductNameInput')?.value.trim() || '';
+    if (!currentAdsUploadedBase64 && !productName) {
+        showToast('请上传商品图片或输入商品名称', 'warning');
         return;
     }
     const platforms = selectedAdsPlatforms();
@@ -680,7 +716,6 @@ async function generateAdsCopy() {
     const regionOpt = document.getElementById('adsRegionSelect');
     const languageOpt = document.getElementById('adsLanguageSelect');
     const themeOpt = document.getElementById('adsMarketingThemeSelect');
-    const productName = document.getElementById('adsProductNameInput')?.value.trim() || '';
     const btn = document.getElementById('btnGenerateAds');
     const origHtml = btn.innerHTML;
     btn.innerHTML = '<span class="loader w-4 h-4 mr-2 border-2 border-white border-t-transparent"></span> 生成中...';
@@ -688,7 +723,7 @@ async function generateAdsCopy() {
 
     try {
         const payload = {
-            image_data: currentAdsUploadedBase64,
+            image_data: currentAdsUploadedBase64 || null,
             platforms,
             region: regionOpt.options[regionOpt.selectedIndex].value,
             target_language: languageOpt.options[languageOpt.selectedIndex].value,
@@ -696,6 +731,8 @@ async function generateAdsCopy() {
             marketing_theme_label: themeOpt.options[themeOpt.selectedIndex].text
         };
         if (productName) payload.product_name = productName;
+        if (currentAdsSellingPoints) payload.selling_points = currentAdsSellingPoints;
+        if (currentAdsKeywords) payload.keywords = currentAdsKeywords;
         const data = await postAdsApi(payload);
         renderAdsData(data);
         showToast('广告文案已生成', 'success');
@@ -785,6 +822,7 @@ if (typeof window !== 'undefined') {
     window.clearAdsDraft = clearAdsDraft;
     window.getCurrentAdsData = getCurrentAdsData;
     window.setCurrentAdsData = setCurrentAdsData;
+    window.receiveAdsTransferData = receiveAdsTransferData;
 }
 
 if (typeof globalThis !== 'undefined') {
@@ -793,6 +831,7 @@ if (typeof globalThis !== 'undefined') {
     globalThis.clearAdsDraft = clearAdsDraft;
     globalThis.getCurrentAdsData = getCurrentAdsData;
     globalThis.setCurrentAdsData = setCurrentAdsData;
+    globalThis.receiveAdsTransferData = receiveAdsTransferData;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -801,6 +840,7 @@ if (typeof module !== 'undefined' && module.exports) {
         restoreAdsDraft,
         clearAdsDraft,
         getCurrentAdsData,
-        setCurrentAdsData
+        setCurrentAdsData,
+        receiveAdsTransferData
     };
 }
