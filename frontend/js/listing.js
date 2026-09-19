@@ -34,7 +34,6 @@ const LISTING_REGION_LANGUAGE_MAP = {
 let currentComplianceSuggestions = [];
 let currentListingDataText = null;
 let currentListingViewMode = 'bilingual';
-let currentListingUploadedBase64 = null;
 
 function getCurrentComplianceSuggestions() {
     return currentComplianceSuggestions;
