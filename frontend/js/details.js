@@ -4054,46 +4054,56 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
     };
 
     try {
-        const promises = [callAI("image", payload, { signal })];
+        // 1. 优先调用核心且昂贵的生图服务，与次要的文案/SEO任务解耦
+        const imgRes = await callAI("image", payload, { signal });
+        const imagePart = imgRes.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+        if (!imagePart?.inlineData) {
+            throw new Error("No image data in response");
+        }
+
+        let generatedSrc = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+
+        // 检查是否开启自动 WebP 压缩
+        const shouldCompress = typeof document !== 'undefined'
+            ? (document.getElementById('detailAutoCompressWebp')?.checked ?? true)
+            : true;
+
+        if (shouldCompress && typeof compressImageToWebp === 'function') {
+            try {
+                const compRes = await compressImageToWebp(generatedSrc, { quality: 0.90 });
+                if (compRes && compRes.changed && compRes.dataUrl) {
+                    generatedSrc = compRes.dataUrl;
+                    task.compressedStats = compRes;
+                }
+            } catch (cErr) {
+                console.warn('[WebP] Module auto compression fallback to raw:', cErr);
+            }
+        }
+
+        contentDiv.innerHTML = `<img src="${generatedSrc}" class="w-full h-full object-cover cursor-zoom-in" onclick="openImageLightbox('${generatedSrc}', '${detailEscapeHtml(task.displayTitle || task.title)}')" title="点击放大预览">`;
+        contentDiv.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
+        contentDiv.style.padding = '0';
+        task.imageSrc = generatedSrc;
+        task.status = 'success';
+        task.isFallback = false;
+        setModuleStatus(uniqueId, 'success');
+
+        // 2. 辅助文本与 SEO 元数据渐进增强，使用 Promise.allSettled 隔离失败，确保生图产物绝不回滚
+        const auxPromises = [];
         if (!skipSEO) {
-            promises.push(generateSEOMetadata(task, sellingPoints, { signal }));
+            auxPromises.push(generateSEOMetadata(task, sellingPoints, { signal }));
         }
         if (currentDetailPresentationMode === 'hybrid') {
-            promises.push(generateDtcSectionCopy(task, sellingPoints, config, { signal }));
+            auxPromises.push(generateDtcSectionCopy(task, sellingPoints, config, { signal }));
         }
-
-        const results = await Promise.all(promises);
-        const imgRes = results[0];
-
-        const imagePart = imgRes.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-        if (imagePart?.inlineData) {
-            let generatedSrc = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
-
-            // 检查是否开启自动 WebP 压缩
-            const shouldCompress = typeof document !== 'undefined'
-                ? (document.getElementById('detailAutoCompressWebp')?.checked ?? true)
-                : true;
-
-            if (shouldCompress && typeof compressImageToWebp === 'function') {
-                try {
-                    const compRes = await compressImageToWebp(generatedSrc, { quality: 0.90 });
-                    if (compRes && compRes.changed && compRes.dataUrl) {
-                        generatedSrc = compRes.dataUrl;
-                        task.compressedStats = compRes;
-                    }
-                } catch (cErr) {
-                    console.warn('[WebP] Module auto compression fallback to raw:', cErr);
+        if (auxPromises.length > 0) {
+            const auxResults = await Promise.allSettled(auxPromises);
+            auxResults.forEach((res) => {
+                if (res.status === 'rejected') {
+                    console.warn(`[Module ${task.title}] Auxiliary text/SEO task non-fatal rejection:`, res.reason);
                 }
-            }
-
-            contentDiv.innerHTML = `<img src="${generatedSrc}" class="w-full h-full object-cover cursor-zoom-in" onclick="openImageLightbox('${generatedSrc}', '${detailEscapeHtml(task.displayTitle || task.title)}')" title="点击放大预览">`;
-            contentDiv.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
-            contentDiv.style.padding = '0';
-            task.imageSrc = generatedSrc;
-            task.status = 'success';
-            task.isFallback = false;
-            setModuleStatus(uniqueId, 'success');
-        } else throw new Error("No image data in response");
+            });
+        }
 
     } catch (error) {
         if (error.name === 'AbortError' || signal?.aborted) {
@@ -4746,6 +4756,27 @@ ${guardrails ? `产品事实与禁用约束：\n${guardrails}\n` : ''}
     finally { btn.innerHTML = origHtml; btn.disabled = false; }
 }
 
+/**
+ * 计算长图导出的安全渲染缩放比例，防止 Canvas 高度超出硬件纹理上限（16384px）导致崩溃或黑屏
+ * @param {number} elementHeight DOM 元素像素高度
+ * @param {number} preferredScale 用户或格式偏好缩放（如 PNG: 2.0, JPG: 1.5）
+ * @param {number} maxDimension 硬件/浏览器安全阈值（默认 16384）
+ * @returns {number} 安全渲染缩放比例（>= 1.0）
+ */
+function calculateSafeLongImageScale(elementHeight, preferredScale = 2, maxDimension = 16384) {
+    const height = Math.max(1, Number(elementHeight) || 1000);
+    const expectedHeight = height * preferredScale;
+    if (expectedHeight <= maxDimension) {
+        return preferredScale;
+    }
+    const safeScale = Math.floor((maxDimension / height) * 100) / 100;
+    return Math.max(1.0, safeScale);
+}
+
+if (typeof window !== 'undefined') {
+    window.calculateSafeLongImageScale = calculateSafeLongImageScale;
+}
+
 // 将长图排版台中的预览画布导出为 PNG/JPG，并保存到历史记录。
 async function executeLongImageDownload() {
     const canvasEl = document.getElementById('longImageCanvas');
@@ -4763,7 +4794,21 @@ async function executeLongImageDownload() {
 
     try {
         await new Promise(r => setTimeout(r, 300));
-        const finalCanvas = await html2canvas(canvasEl, { useCORS: true, scale: format === 'png' ? 2 : 1.5, backgroundColor: currentLongImageBgColor || '#ffffff', logging: false });
+        const elHeight = canvasEl.offsetHeight || canvasEl.scrollHeight || 1000;
+        const preferredScale = format === 'png' ? 2 : 1.5;
+        const safeScale = calculateSafeLongImageScale(elHeight, preferredScale, 16384);
+        if (safeScale < preferredScale) {
+            console.warn(`[长图导出] 画布高度超出限制，自动下调渲染缩放: ${preferredScale} -> ${safeScale}`);
+        }
+        const finalCanvas = await html2canvas(canvasEl, {
+            useCORS: true,
+            scale: safeScale,
+            backgroundColor: currentLongImageBgColor || '#ffffff',
+            logging: false
+        });
+        if (!finalCanvas || finalCanvas.width === 0 || finalCanvas.height === 0) {
+            throw new Error('Canvas 渲染结果异常，尺寸为 0');
+        }
         const link = document.createElement('a');
         const ts = Date.now();
 
@@ -4790,7 +4835,11 @@ async function executeLongImageDownload() {
             image: finalImage,
             metadata: project || { count: globalGenContext?.longImageOrder?.length || 0 }
         });
-    } catch (e) { showToast('导出失败', 'error'); }
+    } catch (e) {
+        console.error('Long image export failed:', e);
+        const isCanvasSizeError = e && e.message && (e.message.includes('Canvas') || e.message.includes('尺寸'));
+        showToast(isCanvasSizeError ? '长图尺寸超出浏览器限制，请减少模块或切换 JPG 格式重试' : '导出失败: ' + (e?.message || '未知错误'), 'error');
+    }
     finally { btn.innerHTML = origHTML; btn.disabled = false; }
 }
 
@@ -6036,19 +6085,33 @@ function renderTechnicalLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, 
 // 渲染 DTC 独立站图文穿插高转化详情页预览（风格路由分发）
 function renderDtcHybridPreview() {
     const container = document.getElementById('dtcHybridContainer');
-    if (!container || !globalGenContext) return;
+    if (!container) return;
 
-    const tasks = globalGenContext.tasks || {};
+    const tasks = globalGenContext?.tasks || {};
     const taskIds = Object.keys(tasks);
     const currentLang = globalGenContext?.config?.language || document.getElementById('languageSelect')?.value || 'English';
     const isZh = currentLang === 'Chinese' || currentLang === '中文';
 
-    if (!taskIds.length) {
+    if (!globalGenContext || !taskIds.length) {
         container.innerHTML = `
-            <div class="p-12 text-center text-slate-400 bg-white rounded-2xl border border-dashed border-slate-200 w-full max-w-2xl mx-auto">
-                <i class="ph ph-shopping-bag-open text-4xl mb-2 text-slate-300"></i>
-                <p class="text-sm font-medium">${isZh ? '尚未生成任何详情页模块内容' : 'No detail page modules generated yet'}</p>
-                <p class="text-xs text-slate-400 mt-1">${isZh ? '请先选择模块并点击“开始生成详情页”' : 'Please select modules and start generation'}</p>
+            <div class="p-8 md:p-12 text-center text-slate-500 bg-white rounded-2xl border border-slate-200/90 w-full max-w-2xl mx-auto shadow-sm">
+                <div class="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center mx-auto mb-4 text-indigo-600">
+                    <i class="ph ph-shopping-bag-open text-3xl"></i>
+                </div>
+                <h3 class="text-base font-bold text-slate-800 mb-1">${isZh ? '尚未生成独立站图文详情页' : 'No DTC hybrid page generated yet'}</h3>
+                <p class="text-xs text-slate-400 mb-6 max-w-md mx-auto">${isZh ? '请在左侧挑选模块或一键套用高转化预设组合，然后点击“开始生成详情页”' : 'Please select modules or apply a preset from the left panel, then start generation.'}</p>
+                <div class="flex items-center justify-center gap-3 flex-wrap">
+                    <button type="button" onclick="applyModulePreset('amazon_seven')"
+                        class="px-3.5 py-2 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer">
+                        <i class="ph-bold ph-package text-amber-600"></i>
+                        <span>${isZh ? '选用 Amazon 7图' : 'Use Amazon 7-Pack'}</span>
+                    </button>
+                    <button type="button" onclick="applyModulePreset('shopify_dtc')"
+                        class="px-3.5 py-2 text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer">
+                        <i class="ph-bold ph-shopping-bag text-indigo-600"></i>
+                        <span>${isZh ? '选用独立站视觉流' : 'Use DTC Visual Flow'}</span>
+                    </button>
+                </div>
             </div>
         `;
         return;
@@ -7237,6 +7300,130 @@ async function copyShopifyHtml() {
     } catch (err) {
         console.error('Copy HTML failed:', err);
         showToast('复制失败，请手动选择并复制', 'error');
+    }
+}
+
+// 解析并获取适用于独立站 HTML 描述的数据对象 (优先提取 Details 输入/DTC切片/上下文)
+function getDetailDtcHtmlData() {
+    const productNameEl = typeof document !== 'undefined' ? document.getElementById('productNameInput') : null;
+    const sellingPointsEl = typeof document !== 'undefined' ? document.getElementById('sellingPointsText') : null;
+    const factsEl = typeof document !== 'undefined' ? document.getElementById('productFactsText') : null;
+
+    const name = (productNameEl?.value || (typeof globalGenContext !== 'undefined' && globalGenContext?.product_name) || (typeof globalGenContext !== 'undefined' && globalGenContext?.config?.productName) || '').trim();
+    const points = (sellingPointsEl?.value || (typeof globalGenContext !== 'undefined' && globalGenContext?.selling_points) || '').trim();
+    const facts = (factsEl?.value || '').trim();
+
+    // 检查是否有生成的 DTC 切片或模块
+    const sections = (typeof window !== 'undefined' && window.currentDtcSections) || (typeof globalGenContext !== 'undefined' && globalGenContext?.sections) || [];
+
+    let bullets = [];
+    if (Array.isArray(sections) && sections.length > 0) {
+        bullets = sections.slice(0, 5).map(s => {
+            const headline = s.headline || s.title || '';
+            const body = s.body || s.desc || '';
+            const badge = s.badge || 'FEATURE';
+            return {
+                target: headline ? `[${badge}] ${headline}: ${body}` : (body || headline),
+                zh: `[${badge}] ${s.title || headline}`
+            };
+        });
+    } else if (points) {
+        const lines = points.split('\n').map(l => l.replace(/^[-*•\d.]+\s*/, '').trim()).filter(Boolean);
+        bullets = lines.slice(0, 5).map(l => {
+            return {
+                target: l,
+                zh: l
+            };
+        });
+    }
+
+    if (bullets.length === 0) {
+        bullets = [
+            { target: '✨ [PREMIUM CRAFTSMANSHIP] Built with high-grade durable materials for longevity', zh: '✨ [精湛工艺] 选用优质耐久材质，结构稳固经久耐用' },
+            { target: '⚡ [SEAMLESS EXPERIENCE] Ergonomic and intuitive design for effortless everyday use', zh: '⚡ [流畅体验] 符合人体工学的人性化设计，提升日常体验' },
+            { target: '🛡️ [SATISFACTION GUARANTEED] Dedicated 24/7 customer care and 30-day money-back policy', zh: '🛡️ [安心保障] 24/7 专属客服支持与 30 天无忧退换货保证' }
+        ];
+    }
+
+    const descText = facts || points || 'Engineered for exceptional quality and performance. Designed to elevate your daily routine with premium materials and thoughtful craftsmanship.';
+
+    let heroImg = '';
+    if (typeof uploadedImages !== 'undefined' && Array.isArray(uploadedImages) && uploadedImages.length > 0) {
+        heroImg = uploadedImages[0];
+    } else if (typeof window !== 'undefined' && window.currentGeneratedModules && window.currentGeneratedModules.length > 0) {
+        const firstWithImg = window.currentGeneratedModules.find(m => m && m.image);
+        if (firstWithImg) heroImg = firstWithImg.image;
+    }
+
+    return {
+        title: {
+            target: name || 'Premium DTC Product',
+            zh: name || '独立站精选产品'
+        },
+        bullets,
+        description: {
+            target: descText,
+            zh: descText
+        },
+        faq: [
+            {
+                q: { target: 'How fast is worldwide shipping?', zh: '全球物流需要多长时间？' },
+                a: { target: 'Orders are processed within 24 hours. Standard express shipping arrives in 5-10 business days with full tracking.', zh: '订单在24小时内处理完毕，标准特快专线5-10个工作日即可送达并支持全程追踪。' }
+            },
+            {
+                q: { target: 'What is your return & refund policy?', zh: '退换货政策是怎样的？' },
+                a: { target: 'We offer a 30-day no-questions-asked money-back guarantee. If you are not 100% satisfied, simply contact our support team.', zh: '我们提供30天无理由退换退款保证，如有任何不满意可随时联系售后客服。' }
+            }
+        ],
+        image: heroImg
+    };
+}
+
+function resolveBuildListingDtcHtml() {
+    if (typeof buildListingDtcHtml === 'function') return buildListingDtcHtml;
+    if (typeof window !== 'undefined' && typeof window.buildListingDtcHtml === 'function') return window.buildListingDtcHtml;
+    if (typeof globalThis !== 'undefined' && typeof globalThis.buildListingDtcHtml === 'function') return globalThis.buildListingDtcHtml;
+    try {
+        const listingMod = require('./listing.js');
+        if (listingMod && typeof listingMod.buildListingDtcHtml === 'function') return listingMod.buildListingDtcHtml;
+    } catch (_) {}
+    return null;
+}
+
+// 打开独立站自包含 HTML 描述双端预览弹窗
+function openDetailDtcHtmlModal() {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('listingDtcHtmlModal');
+    if (!modal) {
+        if (typeof showToast === 'function') showToast('未找到独立站 HTML 预览弹窗', 'error');
+        return;
+    }
+
+    if (typeof window !== 'undefined') {
+        window.activeDtcHtmlModalSource = 'details';
+    }
+    if (typeof globalThis !== 'undefined') {
+        globalThis.activeDtcHtmlModalSource = 'details';
+    }
+
+    modal.classList.remove('hidden');
+    updateDetailDtcHtmlModalContent();
+}
+
+function updateDetailDtcHtmlModalContent() {
+    if (typeof document === 'undefined') return;
+    const data = getDetailDtcHtmlData();
+    const langMode = (typeof window !== 'undefined' && window.currentDtcHtmlLangMode) || (typeof globalThis !== 'undefined' && globalThis.currentDtcHtmlLangMode) || 'target';
+
+    const fn = resolveBuildListingDtcHtml();
+    const html = fn ? fn(data, langMode) : '';
+
+    const codeArea = document.getElementById('listingDtcHtmlCodeArea');
+    if (codeArea) codeArea.value = html;
+
+    const iframe = document.getElementById('listingDtcHtmlPreviewFrame');
+    if (iframe) {
+        iframe.srcdoc = html;
     }
 }
 
@@ -8581,7 +8768,7 @@ function applyRemoteUrlsToPdpHtml() {
     return appliedCount;
 }
 
-// 还原为本地图片/Base64
+// 还原为本地图片/Base64（纯视图与HTML导出切换，保留已上传的云端资产映射）
 function revertToLocalPdpImages() {
     let revertedCount = 0;
     const destKey = getPdpCurrentStorageDestinationKey();
@@ -8589,13 +8776,8 @@ function revertToLocalPdpImages() {
         const task = globalGenContext.tasks[id];
         if (task && task.originalImageSrc) {
             task.imageSrc = task.originalImageSrc;
-            task.remoteImageUrl = '';
             delete task.remoteImageUrl;
             delete task.activeStorageTarget;
-            if (task.remoteImageUrls) {
-                delete task.remoteImageUrls[destKey];
-                delete task.remoteImageUrls[currentStorageTarget];
-            }
             revertedCount++;
 
             const modImg = document.getElementById(`content-mod-${id}`)?.querySelector('img');
@@ -8605,16 +8787,8 @@ function revertToLocalPdpImages() {
         }
     });
 
-    pdpAssetQueue.forEach(item => {
-        item.remoteUrl = '';
-        item.status = 'pending';
-        item.progress = 0;
-        item.error = '';
-        if (item.targetUploads) {
-            delete item.targetUploads[destKey];
-            delete item.targetUploads[currentStorageTarget];
-        }
-    });
+    // 保持资产队列与云端上传记录，同步当前选中目标的展示状态
+    syncPdpQueueStateToCurrentTarget();
 
     if (typeof renderDtcHybridPreview === 'function') {
         renderDtcHybridPreview();
@@ -8894,6 +9068,9 @@ if (typeof globalThis !== 'undefined') {
     globalThis.updateDetailFailureUI = updateDetailFailureUI;
     globalThis.dismissDetailFailureAlert = dismissDetailFailureAlert;
     globalThis.retryFailedModuleImages = retryFailedModuleImages;
+    globalThis.openDetailDtcHtmlModal = openDetailDtcHtmlModal;
+    globalThis.getDetailDtcHtmlData = getDetailDtcHtmlData;
+    globalThis.updateDetailDtcHtmlModalContent = updateDetailDtcHtmlModalContent;
 }
 if (typeof window !== 'undefined') {
     window.setDetailProductImage = setDetailProductImage;
@@ -8919,6 +9096,9 @@ if (typeof window !== 'undefined') {
     window.updateDetailFailureUI = updateDetailFailureUI;
     window.dismissDetailFailureAlert = dismissDetailFailureAlert;
     window.retryFailedModuleImages = retryFailedModuleImages;
+    window.openDetailDtcHtmlModal = openDetailDtcHtmlModal;
+    window.getDetailDtcHtmlData = getDetailDtcHtmlData;
+    window.updateDetailDtcHtmlModalContent = updateDetailDtcHtmlModalContent;
 }
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
@@ -8939,6 +9119,9 @@ if (typeof module !== 'undefined' && module.exports) {
         getFailedModuleTasks,
         updateDetailFailureUI,
         dismissDetailFailureAlert,
-        retryFailedModuleImages
+        retryFailedModuleImages,
+        openDetailDtcHtmlModal,
+        getDetailDtcHtmlData,
+        updateDetailDtcHtmlModalContent
     };
 }
