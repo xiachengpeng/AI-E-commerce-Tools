@@ -279,6 +279,7 @@ class ListingGenerateRequest(BaseModel):
     marketing_theme: str | None = None
     marketing_theme_label: str | None = None
     target_language: str | None = None
+    include_emoji: bool = False
 
     @field_validator('name', 'points', 'platform', 'region')
     @classmethod
@@ -322,24 +323,61 @@ class ListingComplianceRequest(BaseModel):
     region: str | None = None
 
 
+class ListingRegenerateSectionRequest(BaseModel):
+    section: str
+    current_content: Any = None
+    instruction: str | None = None
+    product_name: str
+    core_selling_points: str
+    keywords: str | None = None
+    platform: str | None = None
+    region: str | None = None
+    target_language: str | None = None
+    bullet_index: int | None = None
+    include_emoji: bool = False
+
+    @field_validator('section', 'product_name', 'core_selling_points')
+    @classmethod
+    def strip_required_section_text(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator('instruction', 'keywords', 'platform', 'region', 'target_language', mode='before')
+    @classmethod
+    def strip_optional_section_text(cls, v: Any) -> Any:
+        return v.strip() if isinstance(v, str) else v
+
+
+
 class AdCopyGenerateRequest(BaseModel):
-    image_data: str
+    image_data: str | None = None
     platforms: List[str]
     region: str
     target_language: str | None = None
     marketing_theme: str | None = None
     marketing_theme_label: str | None = None
     product_name: str | None = None
+    selling_points: str | None = None
+    keywords: str | None = None
 
-    @field_validator("image_data", "region")
+    @field_validator("region")
     @classmethod
     def strip_required_text(cls, v: str) -> str:
         return v.strip()
+
+    @field_validator("image_data", mode="before")
+    @classmethod
+    def normalize_image_data(cls, v: Any) -> Any:
+        if not isinstance(v, str):
+            return v
+        value = v.strip()
+        return value or None
 
     @field_validator(
         "target_language",
         "marketing_theme",
         "marketing_theme_label",
+        "selling_points",
+        "keywords",
         mode="before",
     )
     @classmethod
@@ -360,6 +398,14 @@ class AdCopyGenerateRequest(BaseModel):
         if v is not None and len(v) > 200:
             raise ValueError("产品名称不能超过 200 个字符")
         return v
+
+    @model_validator(mode="after")
+    def validate_has_image_or_name(self) -> "AdCopyGenerateRequest":
+        has_image = bool(self.image_data and self.image_data.strip())
+        has_name = bool(self.product_name and self.product_name.strip())
+        if not has_image and not has_name:
+            raise ValueError("必须提供商品图片或商品名称")
+        return self
 
     @field_validator("platforms")
     @classmethod
