@@ -272,6 +272,10 @@ function renderSquareRedrawList() {
                     class="square-redraw-preview-btn text-blue-600 hover:text-blue-700 hover:bg-blue-50" title="上传至云存储图床">
                     <i class="ph ph-cloud-arrow-up text-base"></i>
                 </button>
+                <button type="button" onclick="sendSquareRedrawToTranslate('${item.id}')"
+                    class="square-redraw-preview-btn text-teal-600 hover:text-teal-700 hover:bg-teal-50" title="流转至图片翻译">
+                    <i class="ph ph-translate text-base"></i>
+                </button>
                 <button type="button" onclick="sendSquareRedrawToDetails('${item.id}')"
                     class="square-redraw-preview-btn text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50" title="一键设为详情页主图">
                     <i class="ph ph-arrow-square-out text-base"></i>
@@ -306,6 +310,12 @@ function openSquareRedrawPreview(itemId) {
     title.textContent = item.filename;
     sourceImg.src = item.source_url;
 
+    const translateBtn = document.getElementById('squareRedrawSendToTranslateBtn');
+    if (translateBtn) {
+        translateBtn.onclick = () => sendSquareRedrawToTranslate(itemId);
+        translateBtn.disabled = !(item.status === 'done' && item.output_url);
+    }
+
     const sendBtn = document.getElementById('squareRedrawSendToDetailsBtn');
     if (sendBtn) {
         sendBtn.onclick = () => sendSquareRedrawToDetails(itemId);
@@ -331,7 +341,7 @@ function openSquareRedrawPreview(itemId) {
             <div class="h-full min-h-[260px] flex flex-col items-center justify-center gap-2 text-center px-6 text-red-400">
                 <i class="ph ph-warning-circle text-4xl"></i>
                 <div class="text-sm font-black">生成失败</div>
-                <div class="text-xs text-red-300">${escapeSquareRedrawHtml(item.error_message || '请重跑失败项')}</div>
+                <div class="text-xs text-red-300">${escapeSquareRedrawHtml(item.error_message || '请点击顶部【重试失败项】或检查 AI 设置')}</div>
             </div>
         `;
     } else {
@@ -386,6 +396,45 @@ async function sendSquareRedrawToDetails(itemId) {
         if (typeof showToast === 'function') {
             showToast('传递图片失败: ' + e.message, 'error');
         }
+    }
+}
+
+function sendSquareRedrawToTranslate(itemId) {
+    const item = getSquareRedrawItem(itemId);
+    if (!item || item.status !== 'done' || !item.output_url) {
+        if (typeof showToast === 'function') {
+            showToast('尺寸重绘尚未生成完成，无法流转至图片翻译', 'warning');
+        }
+        return;
+    }
+
+    const targetUrl = typeof formatSquareRedrawUrl === 'function' ? formatSquareRedrawUrl(item.output_url) : item.output_url;
+    const transItem = {
+        id: 'ti_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+        name: item.filename || 'resized_image.png',
+        base64: targetUrl,
+        mimeType: 'image/png',
+        status: 'waiting'
+    };
+
+    if (typeof transImages !== 'undefined' && Array.isArray(transImages)) {
+        transImages.push(transItem);
+    } else if (typeof window !== 'undefined' && Array.isArray(window.transImages)) {
+        window.transImages.push(transItem);
+    } else if (typeof globalThis !== 'undefined' && Array.isArray(globalThis.transImages)) {
+        globalThis.transImages.push(transItem);
+    }
+
+    if (typeof renderTransCards === 'function') renderTransCards();
+    if (typeof updateTransStartBtn === 'function') updateTransStartBtn();
+
+    const tabSwitcher = typeof switchMainTab === 'function' ? switchMainTab : (typeof window !== 'undefined' && window.switchMainTab ? window.switchMainTab : (typeof globalThis !== 'undefined' ? globalThis.switchMainTab : null));
+    if (tabSwitcher) {
+        tabSwitcher('translate');
+    }
+
+    if (typeof showToast === 'function') {
+        showToast('已成功流转至【图片翻译】队列！', 'success');
     }
 }
 
@@ -461,7 +510,8 @@ function escapeSquareRedrawHtml(value) {
 function formatSquareRedrawUrl(url) {
     if (!url) return '';
     if (url.startsWith('data:image') || url.startsWith('http')) return url;
-    if (url.startsWith('/static')) return API_BASE + url;
+    const base = typeof API_BASE !== 'undefined' ? API_BASE : '';
+    if (url.startsWith('/static')) return base + url;
     return url;
 }
 
@@ -705,7 +755,7 @@ async function retrySquareRedrawFailed() {
     const response = await fetch(`${API_BASE}/api/square-redraw/batches/${squareRedrawBatchId}/retry-failed`, { method: 'POST' });
     const data = await response.json();
     if (data.status !== 'success') {
-        showToast(data.message || '重跑失败项失败', 'error');
+        showToast(data.message || '重试失败项失败', 'error');
         return;
     }
     applySquareRedrawBatch(data.data);
@@ -721,6 +771,7 @@ if (typeof window !== 'undefined') {
     window.handleSquareRedrawImagePaste = handleSquareRedrawImagePaste;
     window.handleSquareRedrawPaste = handleSquareRedrawPaste;
     window.sendSquareRedrawToDetails = sendSquareRedrawToDetails;
+    window.sendSquareRedrawToTranslate = sendSquareRedrawToTranslate;
     window.uploadSquareRedrawItemToCloud = uploadSquareRedrawItemToCloud;
     window.batchUploadSquareRedrawToCloud = batchUploadSquareRedrawToCloud;
     window.uploadCurrentSquareRedrawPreviewToCloud = uploadCurrentSquareRedrawPreviewToCloud;
@@ -731,6 +782,7 @@ if (typeof globalThis !== 'undefined') {
     globalThis.handleSquareRedrawImagePaste = handleSquareRedrawImagePaste;
     globalThis.handleSquareRedrawPaste = handleSquareRedrawPaste;
     globalThis.sendSquareRedrawToDetails = sendSquareRedrawToDetails;
+    globalThis.sendSquareRedrawToTranslate = sendSquareRedrawToTranslate;
     globalThis.uploadSquareRedrawItemToCloud = uploadSquareRedrawItemToCloud;
     globalThis.batchUploadSquareRedrawToCloud = batchUploadSquareRedrawToCloud;
     globalThis.uploadCurrentSquareRedrawPreviewToCloud = uploadCurrentSquareRedrawPreviewToCloud;
@@ -743,6 +795,7 @@ if (typeof module !== 'undefined' && module.exports) {
         handleSquareRedrawImagePaste,
         handleSquareRedrawPaste,
         sendSquareRedrawToDetails,
+        sendSquareRedrawToTranslate,
         uploadSquareRedrawItemToCloud,
         batchUploadSquareRedrawToCloud,
         uploadCurrentSquareRedrawPreviewToCloud,

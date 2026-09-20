@@ -2094,15 +2094,15 @@
                     <span class="text-[10px] font-black text-slate-400 whitespace-nowrap">目标尺寸</span>
                     <select id="squareRedrawAspectSelect" onchange="setSquareRedrawAspectRatio(this.value)"
                         class="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-600 outline-none">
-                        <option value="1:1">1:1</option>
-                        <option value="4:5">4:5</option>
-                        <option value="3:4">3:4</option>
-                        <option value="2:3">2:3</option>
+                        <option value="1:1">1:1 (Amazon / 独立站正方形主图)</option>
+                        <option value="4:5">4:5 (Shopify / Instagram 推荐竖图)</option>
+                        <option value="3:4">3:4 (速卖通 / Shopee / 平台辅图)</option>
+                        <option value="2:3">2:3 (Pinterest / 服饰落地页)</option>
                         <option value="5:4">5:4</option>
                         <option value="4:3">4:3</option>
                         <option value="3:2">3:2</option>
-                        <option value="9:16">9:16</option>
-                        <option value="16:9">16:9</option>
+                        <option value="9:16">9:16 (TikTok / Reels 竖屏视频)</option>
+                        <option value="16:9">16:9 (PC 端宽屏头图 / 横幅)</option>
                         <option value="21:9">21:9</option>
                     </select>
                     <input id="squareRedrawTargetWidth" type="number" min="1" value="1"
@@ -2120,7 +2120,7 @@
                 </button>
                 <button id="squareRedrawRetryBtn" onclick="retrySquareRedrawFailed()" disabled
                     class="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-700 text-xs font-black px-4 py-2 rounded-xl transition-colors border border-amber-100">
-                    <i class="ph ph-arrows-clockwise text-sm"></i> 重跑失败
+                    <i class="ph ph-arrows-clockwise text-sm"></i> 重试失败项
                 </button>
                 <button id="squareRedrawBatchUploadBtn" onclick="batchUploadSquareRedrawToCloud()" disabled
                     class="flex items-center gap-2 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 text-blue-700 text-xs font-black px-4 py-2 rounded-xl transition-colors border border-blue-200">
@@ -2548,6 +2548,12 @@
                             class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
                             <i class="ph ph-cloud-arrow-up"></i>
                             <span>上传到云图床</span>
+                        </button>
+                        <button id="squareRedrawSendToTranslateBtn" type="button"
+                            class="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title="一键将重绘后的图片推入图片翻译队列">
+                            <i class="ph ph-translate"></i>
+                            <span>流转至图片翻译</span>
                         </button>
                         <button id="squareRedrawSendToDetailsBtn" type="button"
                             class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
