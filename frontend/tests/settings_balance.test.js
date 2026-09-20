@@ -53,7 +53,7 @@ test("settings.js exports providerBalanceActionMarkup and renders wallet button 
 test("index.html contains overview KPI balance elements and cache-busting version", () => {
     assert.match(indexHtml, /id="settingsKpiTextBalance"/);
     assert.match(indexHtml, /id="settingsKpiImageBalance"/);
-    assert.match(indexHtml, /js\/settings\.js\?v=20260920-balance-v3/);
+    assert.match(indexHtml, /js\/settings\.js\?v=20260920-(?:balance-v3|ccswitch-v1)/);
 });
 
 test("index.html contains balance test connection button and message container", () => {
