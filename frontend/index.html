@@ -1255,6 +1255,75 @@
                     <div id="modulesResultContainer" class="w-full max-w-3xl flex flex-col gap-6 pt-6 pb-20 px-4"></div>
                     <!-- 独立站图文穿插响应式容器 -->
                     <div id="dtcHybridContainer" class="hidden w-full flex flex-col items-center pt-6 pb-20 px-4"></div>
+
+                    <!-- 商详全案生成后一键交付中心与跨模块流转 -->
+                    <div id="detailDeliveryHandoffCard" class="hidden w-full max-w-4xl mx-auto mb-16 px-4">
+                        <div class="bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 rounded-2xl p-6 text-white shadow-xl border border-indigo-500/30 relative overflow-hidden">
+                            <div class="absolute -right-10 -bottom-10 w-48 h-48 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                            <div class="flex items-center justify-between flex-wrap gap-4 pb-5 border-b border-white/10 relative z-10">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-md text-xl">
+                                        <i class="ph-bold ph-seal-check"></i>
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <h3 class="text-base font-bold tracking-tight text-white">🎉 视觉全案企划已就绪 · 一键交付中心</h3>
+                                            <span id="detailDeliveryStatsBadge" class="text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full">已完成 0 个模块</span>
+                                        </div>
+                                        <p class="text-xs text-slate-300/80 mt-0.5">模块视觉渲染与多语言文案已就绪，请选择发布交付渠道或继续流转至其他营销模块：</p>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="exportFullLaunchKit()" class="h-9 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95">
+                                    <i class="ph-bold ph-package text-sm"></i>
+                                    <span>一键打包全套上架物料 (ZIP)</span>
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5 relative z-10">
+                                <div class="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col justify-between">
+                                    <div>
+                                        <div class="flex items-center gap-2 text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2">
+                                            <i class="ph-bold ph-storefront"></i>
+                                            <span>独立站与视觉资产交付</span>
+                                        </div>
+                                        <p class="text-xs text-slate-300 leading-relaxed mb-3">直接获取自包含 DTC HTML 描述代码，或将图片托管至 WordPress / R2 / Shopify 云图床。</p>
+                                    </div>
+                                    <div class="flex items-center gap-2 flex-wrap pt-2 border-t border-white/10">
+                                        <button type="button" onclick="openDetailDtcHtmlModal()" class="h-8 px-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-code text-indigo-400"></i>
+                                            <span>复制独立站 HTML 代码</span>
+                                        </button>
+                                        <button type="button" onclick="openLongImageBuilder()" class="h-8 px-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-kanban text-amber-400"></i>
+                                            <span>拼接高清长图</span>
+                                        </button>
+                                        <button type="button" onclick="openPdpAssetHostingModal()" class="h-8 px-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-cloud-arrow-up text-emerald-400"></i>
+                                            <span>云图床托管 / 替换链接</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col justify-between">
+                                    <div>
+                                        <div class="flex items-center gap-2 text-xs font-bold text-amber-300 uppercase tracking-wider mb-2">
+                                            <i class="ph-bold ph-arrows-split-up-and-left"></i>
+                                            <span>联动其他电商业务模块</span>
+                                        </div>
+                                        <p class="text-xs text-slate-300 leading-relaxed mb-3">将当前商品名称、提炼卖点与视觉设定一键导入 Listing 编撰或广告文案创作，趁热打铁起量。</p>
+                                    </div>
+                                    <div class="flex items-center gap-2 flex-wrap pt-2 border-t border-white/10">
+                                        <button type="button" onclick="transferDetailToListing()" class="h-8 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-article"></i>
+                                            <span>带入编撰 Listing (五点/标题)</span>
+                                        </button>
+                                        <button type="button" onclick="transferDetailToAds()" class="h-8 px-3 bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/30 font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-megaphone"></i>
+                                            <span>带入创作广告 (Meta/TikTok)</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

@@ -3985,6 +3985,7 @@ async function generateAIPage() {
         const abortedMsg = `生成已终止（已完成 ${successCount}，降级 ${fallbackCount}，终止 ${taskQueue.length - successCount - fallbackCount}）`;
         showToast(abortedMsg, 'info');
         remoteLog(`详情页生成已终止 | ${abortedMsg}`);
+        renderDetailDeliveryHub(successCount, taskQueue.length);
     } else {
         const summary = `生成完成：成功 ${successCount}，降级 ${fallbackCount}，失败 ${errorCount}`;
         showToast(summary, errorCount ? 'warning' : (fallbackCount ? 'warning' : 'success'));
@@ -3992,11 +3993,96 @@ async function generateAIPage() {
         if (successCount > 0 || fallbackCount > 0) {
             saveDetailProjectToHistory();
         }
+        renderDetailDeliveryHub(successCount, taskQueue.length);
     }
 
     if (currentDetailPresentationMode === 'hybrid') {
         renderDtcHybridPreview();
         switchDetailResultView('hybrid');
+    }
+}
+
+// 渲染商详全案生成后一键交付中心
+function renderDetailDeliveryHub(successCount = 0, totalCount = 0) {
+    const card = document.getElementById('detailDeliveryHandoffCard');
+    if (!card) return;
+
+    if (successCount <= 0) {
+        card.classList.add('hidden');
+        return;
+    }
+
+    const badge = document.getElementById('detailDeliveryStatsBadge');
+    if (badge) {
+        badge.textContent = `已就绪 ${successCount} 个视觉模块${totalCount > successCount ? ` (共 ${totalCount} 个)` : ''}`;
+    }
+
+    card.classList.remove('hidden');
+}
+
+// 跨模块流转：将当前详情页信息带入 Listing 智能编撰模块
+function transferDetailToListing() {
+    const productName = document.getElementById('productName')?.value?.trim() || globalGenContext?.productName || '';
+    const sellingPoints = document.getElementById('sellingPoints')?.value?.trim() || globalGenContext?.sellingPoints || '';
+    const language = document.getElementById('copyLanguage')?.value || 'English';
+
+    if (typeof window !== 'undefined') {
+        window.listingDraftState = {
+            productName: productName,
+            features: sellingPoints,
+            targetLanguage: language,
+            sourceModule: 'details'
+        };
+    }
+
+    const listingProdInput = document.getElementById('listingProductName');
+    if (listingProdInput && productName) {
+        listingProdInput.value = productName;
+    }
+    const listingFeatInput = document.getElementById('listingFeatures');
+    if (listingFeatInput && sellingPoints) {
+        listingFeatInput.value = sellingPoints;
+    }
+
+    if (typeof switchMainTab === 'function') {
+        switchMainTab('listing');
+    }
+
+    if (typeof showToast === 'function') {
+        showToast(productName ? `已成功将商品【${productName}】带入 Listing 编撰！` : '已成功将商详卖点信息带入 Listing 编撰！', 'success');
+    }
+}
+
+// 跨模块流转：将当前详情页信息带入广告文案创作模块
+function transferDetailToAds() {
+    const productName = document.getElementById('productName')?.value?.trim() || globalGenContext?.productName || '';
+    const sellingPoints = document.getElementById('sellingPoints')?.value?.trim() || globalGenContext?.sellingPoints || '';
+    const language = document.getElementById('copyLanguage')?.value || 'English';
+
+    if (typeof window !== 'undefined') {
+        window.adsDraftState = {
+            productName: productName,
+            sellingPoints: sellingPoints,
+            targetLanguage: language,
+            sourceModule: 'details'
+        };
+    }
+
+    const adsProdInput = document.getElementById('adProductName');
+    if (adsProdInput && productName) {
+        adsProdInput.value = productName;
+    }
+    const adsSellingInput = document.getElementById('adSellingPoints');
+    if (adsSellingInput && sellingPoints) {
+        adsSellingInput.value = sellingPoints;
+    }
+
+    if (typeof switchMainTab === 'function') {
+        switchMainTab('ads');
+    }
+
+    if (typeof showToast === 'function') {
+        showToast(productName ? `已成功将商品【${productName}】带入广告文案创作！` : '已成功将商详卖点信息带入广告文案创作！', 'success');
     }
 }
 
@@ -4230,6 +4316,7 @@ function renderMultiAngleFallback(container, task, points, config, images) {
 function resetView() {
     dismissDetailFailureAlert();
     updateDetailFailureUI();
+    renderDetailDeliveryHub(0, 0);
     document.getElementById('resultArea').classList.add('hidden');
     document.getElementById('resultArea').classList.remove('flex');
     document.getElementById('showcaseArea').classList.remove('hidden');
@@ -4530,6 +4617,7 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
         renderDtcHybridPreview();
     }
     updateDetailFailureUI();
+    renderDetailDeliveryHub(project.modules?.length || 0, project.modules?.length || 0);
     return true;
 }
 
@@ -9077,6 +9165,9 @@ if (typeof globalThis !== 'undefined') {
     globalThis.openDetailDtcHtmlModal = openDetailDtcHtmlModal;
     globalThis.getDetailDtcHtmlData = getDetailDtcHtmlData;
     globalThis.updateDetailDtcHtmlModalContent = updateDetailDtcHtmlModalContent;
+    globalThis.renderDetailDeliveryHub = renderDetailDeliveryHub;
+    globalThis.transferDetailToListing = transferDetailToListing;
+    globalThis.transferDetailToAds = transferDetailToAds;
 }
 if (typeof window !== 'undefined') {
     window.setDetailProductImage = setDetailProductImage;
@@ -9105,6 +9196,9 @@ if (typeof window !== 'undefined') {
     window.openDetailDtcHtmlModal = openDetailDtcHtmlModal;
     window.getDetailDtcHtmlData = getDetailDtcHtmlData;
     window.updateDetailDtcHtmlModalContent = updateDetailDtcHtmlModalContent;
+    window.renderDetailDeliveryHub = renderDetailDeliveryHub;
+    window.transferDetailToListing = transferDetailToListing;
+    window.transferDetailToAds = transferDetailToAds;
 }
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
@@ -9128,6 +9222,9 @@ if (typeof module !== 'undefined' && module.exports) {
         retryFailedModuleImages,
         openDetailDtcHtmlModal,
         getDetailDtcHtmlData,
-        updateDetailDtcHtmlModalContent
+        updateDetailDtcHtmlModalContent,
+        renderDetailDeliveryHub,
+        transferDetailToListing,
+        transferDetailToAds
     };
 }
