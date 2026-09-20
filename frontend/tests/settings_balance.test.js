@@ -53,7 +53,7 @@ test("settings.js exports providerBalanceActionMarkup and renders wallet button 
 test("index.html contains overview KPI balance elements and cache-busting version", () => {
     assert.match(indexHtml, /id="settingsKpiTextBalance"/);
     assert.match(indexHtml, /id="settingsKpiImageBalance"/);
-    assert.match(indexHtml, /js\/settings\.js\?v=20260920-(?:balance-v3|ccswitch-v1|ccswitch-v2|ccswitch-v3|ccswitch-v4)/);
+    assert.match(indexHtml, /js\/settings\.js\?v=20260920-(?:balance-v3|ccswitch-v1|ccswitch-v2|ccswitch-v3|ccswitch-v4|ccswitch-v5)/);
 });
 
 test("index.html contains balance test connection button and message container", () => {
@@ -65,4 +65,11 @@ test("index.html contains balance test connection button and message container",
 test("settings.js exports testBalanceQueryConnection function", () => {
     const { testBalanceQueryConnection } = require("../js/settings.js");
     assert.equal(typeof testBalanceQueryConnection, "function");
+});
+
+test("queryProviderBalance checks usage-query endpoint and records balance", () => {
+    const jsPath = path.join(frontendRoot, "js", "settings.js");
+    const code = fs.readFileSync(jsPath, "utf8");
+    assert.match(code, /usage-query/);
+    assert.match(code, /balance\/record/);
 });

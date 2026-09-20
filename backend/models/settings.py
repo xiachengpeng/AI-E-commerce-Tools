@@ -78,6 +78,11 @@ class ProviderBalanceTestRequest(BaseModel):
     balance_user_id: str | None = None
 
 
+class ProviderBalanceRecordRequest(BaseModel):
+    balance_text: str = Field(min_length=1, max_length=80)
+
+
+
 class UsageQueryConfigWrite(BaseModel):
     balance_template: str | None = "general"
     balance_script: str | None = None

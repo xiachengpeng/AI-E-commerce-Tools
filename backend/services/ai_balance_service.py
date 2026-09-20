@@ -238,6 +238,18 @@ class AIBalanceService:
                     except Exception:
                         pass
 
+                    if hard_limit >= 10_000_000:
+                        rem_text = f"无限额度 (已用 ${total_usage:.2f})" if total_usage > 0 else "不限额度"
+                        return ProviderBalanceResult(
+                            status="success",
+                            balance_text=rem_text,
+                            currency="USD",
+                            total_balance=hard_limit,
+                            used_balance=total_usage,
+                            remaining_balance=None,
+                            message="One-API 不限额度令牌",
+                        )
+
                     rem = round(max(0.0, hard_limit - total_usage), 2)
                     return ProviderBalanceResult(
                         status="success",

@@ -1454,6 +1454,72 @@ async function queryProviderBalance(providerId, button) {
     if (button) setSettingsButtonBusy(button, true);
 
     try {
+        // 1. First, check if this provider has a configured usage-query script (CC-Switch style)
+        let usageConfig = null;
+        try {
+            usageConfig = await settingsRequest(`${API_BASE}/api/settings/ai/providers/${providerId}/usage-query`);
+        } catch (_) {}
+
+        const engine = getUsageQueryEngine();
+        if (usageConfig && usageConfig.balance_script && usageConfig.balance_script.trim() && engine) {
+            let parsed = null;
+            try {
+                parsed = engine.parseUsageScript(usageConfig.balance_script);
+            } catch (_) {}
+
+            if (parsed && parsed.request) {
+                const reqObj = parsed.request || {};
+                const timeoutSeconds = usageConfig.balance_timeout || 10;
+                const proxyPayload = {
+                    provider_id: Number(providerId),
+                    url: reqObj.url || "",
+                    method: (reqObj.method || "GET").toUpperCase(),
+                    headers: reqObj.headers || {},
+                    body: reqObj.body || null,
+                    timeout_seconds: timeoutSeconds
+                };
+
+                const proxyResp = await settingsRequest(`${API_BASE}/api/settings/ai/providers/usage-query/proxy`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(proxyPayload)
+                });
+
+                const extractResult = engine.executeUsageExtractor(usageConfig.balance_script, proxyResp.data);
+                if (extractResult && extractResult.isValid !== false && extractResult.remaining !== undefined && extractResult.remaining !== null) {
+                    const unit = extractResult.unit || "USD";
+                    const remNum = Number(extractResult.remaining);
+                    const balText = Number.isFinite(remNum)
+                        ? `${unit === "USD" ? "$" : ""}${remNum.toFixed(2)}${unit !== "USD" ? " " + unit : ""}`
+                        : `${extractResult.remaining} ${unit}`;
+
+                    // Persist to backend so it stays on page refresh
+                    await settingsRequest(`${API_BASE}/api/settings/ai/providers/${providerId}/balance/record`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ balance_text: balText })
+                    }).catch(() => {});
+
+                    const provider = settingsState.providers.find(p => Number(p.id) === Number(providerId));
+                    if (provider) {
+                        provider.last_balance_text = balText;
+                        provider.last_balance_at = new Date().toISOString();
+                        renderProviderList();
+                        if (typeof updateSettingsOverviewKpis === "function") {
+                            updateSettingsOverviewKpis();
+                        }
+                    }
+
+                    settingsToast(`中转站余额: ${balText}`, "success");
+                    return;
+                } else if (extractResult && extractResult.invalidMessage) {
+                    settingsToast(`用量提取未通过: ${extractResult.invalidMessage}`, "warning");
+                    return;
+                }
+            }
+        }
+
+        // 2. Default fallback to backend balance endpoint
         const data = await settingsRequest(`${API_BASE}/api/settings/ai/providers/${providerId}/balance`, {
             method: "POST",
             headers: { "Content-Type": "application/json" }
@@ -1466,6 +1532,9 @@ async function queryProviderBalance(providerId, button) {
                 provider.last_balance_text = data.balance_text;
                 provider.last_balance_at = new Date().toISOString();
                 renderProviderList();
+                if (typeof updateSettingsOverviewKpis === "function") {
+                    updateSettingsOverviewKpis();
+                }
             }
         } else if (data.status === "unsupported") {
             settingsToast(data.message || "该协议不支持远程查询余额", "info");
@@ -1548,6 +1617,7 @@ async function testBalanceQueryConnection(button) {
 
 let currentUsageQueryProviderId = null;
 let currentUsageQueryTemplateKey = "general";
+let lastUsageQueryExtractResult = null;
 
 const USAGE_TEMPLATE_PILL_MAP = {
     custom: "settingsUsageTemplateCustom",
@@ -1835,6 +1905,10 @@ async function testUsageQueryScript(button) {
 
         const isOverallSuccess = Boolean(proxyResp && proxyResp.ok) && (extractResult.isValid !== false);
         if (isOverallSuccess) {
+            lastUsageQueryExtractResult = {
+                providerId: currentUsageQueryProviderId,
+                result: extractResult
+            };
             settingsToast("测试执行成功", "success");
         } else {
             const warnMsg = !proxyResp.ok
@@ -2015,6 +2089,23 @@ async function saveUsageQueryConfig(button) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
+
+        // If a valid extraction result exists from test execution, record it immediately to the provider
+        if (lastUsageQueryExtractResult && Number(lastUsageQueryExtractResult.providerId) === Number(currentUsageQueryProviderId)) {
+            const extract = lastUsageQueryExtractResult.result;
+            if (extract && extract.remaining !== undefined && extract.remaining !== null) {
+                const unit = extract.unit || "USD";
+                const remNum = Number(extract.remaining);
+                const balText = Number.isFinite(remNum)
+                    ? `${unit === "USD" ? "$" : ""}${remNum.toFixed(2)}${unit !== "USD" ? " " + unit : ""}`
+                    : `${extract.remaining} ${unit}`;
+                await settingsRequest(`${API_BASE}/api/settings/ai/providers/${currentUsageQueryProviderId}/balance/record`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ balance_text: balText })
+                }).catch(() => {});
+            }
+        }
 
         settingsToast("用量查询配置已保存", "success");
         closeUsageQueryModal();

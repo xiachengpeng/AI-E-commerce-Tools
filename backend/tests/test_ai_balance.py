@@ -313,3 +313,78 @@ def test_api_provider_balance_test_saved_inheritance():
             assert headers.get("Authorization") == "Bearer token-saved-inherited-secret"
     finally:
         test_client.delete(f"/api/settings/ai/providers/{provider_id}")
+
+
+def test_one_api_unlimited_quota_token():
+    service = AIBalanceService()
+
+    def mock_get_dispatch(url, *args, **kwargs):
+        resp = MagicMock()
+        if "/api/user/self" in str(url):
+            resp.status_code = 404
+            return resp
+        if "subscription" in str(url):
+            resp.status_code = 200
+            resp.json.return_value = {
+                "hard_limit_usd": 100000000.0,
+                "has_payment_method": True
+            }
+            return resp
+        if "usage" in str(url):
+            resp.status_code = 200
+            resp.json.return_value = {
+                "total_usage": 3.12
+            }
+            return resp
+        resp.status_code = 404
+        return resp
+
+    with patch("httpx.AsyncClient.get", side_effect=mock_get_dispatch):
+        result = pytest.importorskip("asyncio").run(
+            service.query_balance(
+                protocol="openai_compatible",
+                base_url="https://api.standard-oneapi.com/v1",
+                api_key="sk-unlimited-token",
+            )
+        )
+
+        assert result.status == "success"
+        # Must not display $99999996.88
+        assert "99999" not in str(result.balance_text)
+        assert "无限" in str(result.balance_text) or "不限" in str(result.balance_text)
+
+
+def test_api_record_provider_balance():
+    test_client = TestClient(app)
+    create_payload = {
+        "name": "Record Balance Test Provider",
+        "protocol": "openai_compatible",
+        "base_url": "https://api.record-test.com/v1",
+        "api_key": "sk-record-secret",
+        "text_model": "gpt-4o",
+        "supports_text": 1,
+        "supports_image": 0,
+    }
+    create_res = test_client.post("/api/settings/ai/providers", json=create_payload)
+    assert create_res.status_code in (200, 201)
+    provider_id = create_res.json()["id"]
+
+    try:
+        rec_res = test_client.post(
+            f"/api/settings/ai/providers/{provider_id}/balance/record",
+            json={"balance_text": "$15.80 USD"}
+        )
+        assert rec_res.status_code == 200
+        data = rec_res.json()
+        assert data["ok"] is True
+        assert data["balance_text"] == "$15.80 USD"
+
+        # Check provider read
+        get_res = test_client.get(f"/api/settings/ai/providers")
+        providers_data = get_res.json()
+        providers_list = providers_data.get("items", []) if isinstance(providers_data, dict) else providers_data
+        target = next((p for p in providers_list if p["id"] == provider_id), None)
+        assert target is not None
+        assert target["last_balance_text"] == "$15.80 USD"
+    finally:
+        test_client.delete(f"/api/settings/ai/providers/{provider_id}")

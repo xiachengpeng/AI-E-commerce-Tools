@@ -45,6 +45,7 @@ from models.settings import (
     SavedProviderConnectionTest,
     ProviderBalanceResult,
     ProviderBalanceTestRequest,
+    ProviderBalanceRecordRequest,
     UsageQueryConfigRead,
     UsageQueryConfigWrite,
     UsageQueryProxyRequest,
@@ -1604,6 +1605,22 @@ async def api_query_provider_balance(
         db.commit()
 
     return result
+
+
+@app.post("/api/settings/ai/providers/{provider_id}/balance/record")
+def api_record_provider_balance(
+    provider_id: int,
+    data: ProviderBalanceRecordRequest,
+    db: Session = Depends(get_db),
+):
+    provider = db.get(AIProviderConfig, provider_id)
+    if not provider:
+        raise HTTPException(status_code=404, detail="AI 提供商不存在")
+    provider.last_balance_text = data.balance_text.strip()[:80]
+    provider.last_balance_at = datetime.datetime.now()
+    db.commit()
+    return {"ok": True, "balance_text": provider.last_balance_text}
+
 
 
 @app.get(
