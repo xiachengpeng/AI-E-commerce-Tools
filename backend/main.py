@@ -42,7 +42,9 @@ from models.settings import (
     ProviderConnectionTest,
     ProviderConnectionTestResult,
     SavedProviderConnectionTest,
+    ProviderBalanceResult,
 )
+from services.ai_balance_service import AIBalanceService
 from services.firecrawl import (
     close_client as close_firecrawl_client,
     fetch_markdown,
@@ -56,14 +58,20 @@ from services.ai_single import analyze_single_extract, analyze_single_deep, anal
 from services.ai_compare import compare_products
 from services.scoring import calculate_score
 from services.ai_service import AIService
+from services.json_utils import safe_extract_and_parse_json
+from services.security_utils import validate_outbound_url
 from services.listing_service import (
     generate_listing,
     extract_listing_inputs,
     check_listing_compliance,
+    regenerate_listing_section,
 )
 from services.ads_service import generate_ad_copy
 from services.watermark_removal_service import remove_watermark
-from services.storage_cleanup_service import cleanup_history_associated_files
+from services.storage_cleanup_service import (
+    cleanup_history_associated_files,
+    cleanup_expired_static_files,
+)
 from services.square_redraw_service import (
     build_square_redraw_zip,
     create_square_redraw_batch,
@@ -211,6 +219,12 @@ initialize_firecrawl_settings()
 
 @asynccontextmanager
 async def app_lifespan(_app):
+    try:
+        cleaned_count, freed_bytes = cleanup_expired_static_files(max_age_seconds=86400)
+        if cleaned_count > 0:
+            logger.info("系统启动：已轮转清理 %d 个过期静态文件，释放 %.2f MB", cleaned_count, freed_bytes / 1024 / 1024)
+    except Exception as ex:
+        logger.warning("系统启动静态文件自动清理失败: %s", ex)
     try:
         yield
     finally:
@@ -516,7 +530,7 @@ async def process_single_url(url: str, markdown_content: str = None, force_refre
             structured_data = parse_general(markdown_content, url=url)
 
         ai_result_json_str = await analyze_single_extract(structured_data)
-        parsed_data = normalize_ai_json_object(json.loads(ai_result_json_str))
+        parsed_data = normalize_ai_json_object(safe_extract_and_parse_json(ai_result_json_str))
         parsed_data["source_url"] = url
         
         p_data = structured_data.get("product_data", {})
@@ -547,7 +561,7 @@ async def process_single_url_deep(url: str, markdown_content: str = None, force_
             ai_result_json_str = await analyze_single_quick(structured_data)
         else:
             ai_result_json_str = await analyze_single_deep(structured_data)
-        result = normalize_ai_json_object(json.loads(ai_result_json_str))
+        result = normalize_ai_json_object(safe_extract_and_parse_json(ai_result_json_str))
         result["source_url"] = url
         return result
     except Exception as e:
@@ -676,8 +690,8 @@ async def compare(request: CompareRequest):
         if len(unique_urls) == 1:
             url = unique_urls[0]
             markdown_content = await _safe_fetch_markdown(url, max_age=0 if force_refresh else 3600)
-            basic_data = await process_single_url(url, markdown_content=markdown_content)
-            score_res = await calculate_score(basic_data)
+            single_data = await process_single_url_deep(url, markdown_content=markdown_content, mode=mode)
+            score_res = await calculate_score(single_data)
             
             # 补全 ScoreCard 所需字段
             if not score_res.get("decision_details"):
@@ -685,24 +699,26 @@ async def compare(request: CompareRequest):
             score_res.setdefault("opportunity_score", 0)
             score_res.setdefault("difficulty_score", 0)
             score_res.setdefault("final_decision", "Pending")
-            score_res.setdefault("product", basic_data.get("product_name", "Product"))
+            score_res.setdefault("product", single_data.get("product_name", "Product"))
             
             scores = [ScoreCard(**score_res)]
-            single_data = await process_single_url_deep(url, markdown_content=markdown_content, mode=mode)
             response_data = CompareResponseData(
                 single_data=single_data,
                 scores=scores,
-                url_statuses=[{"url": url, "status": "success", "product_name": basic_data.get("product_name", "")}],
+                url_statuses=[{"url": url, "status": "success", "product_name": single_data.get("product_name", "")}],
             )
             template_type = "single"
             msg = "分析完成"
         else:
+            sem = asyncio.Semaphore(3)
+
             async def _process_multi_item(u: str) -> dict:
-                try:
-                    return await process_single_url_deep(u, force_refresh=force_refresh, mode=mode)
-                except Exception as ex:
-                    logger.warning(f"process_single_url_deep failed for {u}, falling back to process_single_url: {ex}")
-                    return await process_single_url(u, force_refresh=force_refresh)
+                async with sem:
+                    try:
+                        return await process_single_url_deep(u, force_refresh=force_refresh, mode=mode)
+                    except Exception as ex:
+                        logger.warning(f"process_single_url_deep failed for {u}, falling back to process_single_url: {ex}")
+                        return await process_single_url(u, force_refresh=force_refresh)
 
             tasks = [_process_multi_item(url) for url in unique_urls]
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -717,7 +733,11 @@ async def compare(request: CompareRequest):
             if not valid_products:
                 return CompareResponse(status="error", message="所有 URL 均处理失败", data=CompareResponseData(url_statuses=url_statuses))
 
-            score_tasks = [calculate_score(p) for p in valid_products]
+            async def _score_with_sem(p: dict) -> dict:
+                async with sem:
+                    return await calculate_score(p)
+
+            score_tasks = [_score_with_sem(p) for p in valid_products]
             score_results = await asyncio.gather(*score_tasks, return_exceptions=True)
             scores = []
             score_dicts = []
@@ -838,6 +858,12 @@ def serialize_provider(row) -> dict:
         "timeout_seconds": row.timeout_seconds,
         "max_retries": row.max_retries,
         "enabled": bool(row.enabled),
+        "custom_balance_url": getattr(row, "custom_balance_url", None),
+        "has_balance_access_token": bool(getattr(row, "balance_access_token", None)),
+        "balance_access_token_masked": mask_secret(getattr(row, "balance_access_token", None)),
+        "balance_user_id": getattr(row, "balance_user_id", None),
+        "last_balance_text": getattr(row, "last_balance_text", None),
+        "last_balance_at": getattr(row, "last_balance_at", None),
         "last_test_status": row.last_test_status,
         "last_test_message": row.last_test_message,
         "last_tested_at": row.last_tested_at,
@@ -1407,6 +1433,37 @@ async def api_test_saved_ai_provider(
     )
 
 
+@app.post(
+    "/api/settings/ai/providers/{provider_id}/balance",
+    response_model=ProviderBalanceResult,
+)
+async def api_query_provider_balance(
+    provider_id: int,
+    db: Session = Depends(get_db),
+):
+    provider = db.get(AIProviderConfig, provider_id)
+    if not provider:
+        raise HTTPException(status_code=404, detail="AI 提供商不存在")
+
+    service = AIBalanceService()
+    result = await service.query_balance(
+        protocol=provider.protocol,
+        base_url=provider.base_url,
+        api_key=provider.api_key,
+        custom_balance_url=provider.custom_balance_url,
+        balance_access_token=provider.balance_access_token,
+        balance_user_id=provider.balance_user_id,
+        timeout_seconds=provider.timeout_seconds or 15,
+    )
+
+    if result.status == "success" and result.balance_text:
+        provider.last_balance_text = result.balance_text
+        provider.last_balance_at = datetime.datetime.now()
+        db.commit()
+
+    return result
+
+
 @app.get("/api/settings/crawler", response_model=FirecrawlConfigRead)
 def api_get_crawler_settings(db: Session = Depends(get_db)):
     cfg = db.query(FirecrawlConfig).first()
@@ -1446,7 +1503,14 @@ def api_update_crawler_settings(
         db.add(cfg)
 
     if data.api_url is not None and data.api_url.strip():
-        cfg.api_url = data.api_url.strip()
+        candidate_url = data.api_url.strip()
+        safe, ssrf_err = validate_outbound_url(candidate_url, allow_local=True, require_http=True)
+        if not safe:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"非法的爬虫服务器地址: {ssrf_err}",
+            )
+        cfg.api_url = candidate_url
 
     if data.api_key is not None:
         raw_key = data.api_key.strip()

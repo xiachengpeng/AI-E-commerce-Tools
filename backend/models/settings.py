@@ -22,6 +22,9 @@ class AIProviderWrite(BaseModel):
     timeout_seconds: int = Field(default=60, ge=1, le=600)
     max_retries: int = Field(default=2, ge=0, le=10)
     enabled: bool = True
+    custom_balance_url: str | None = None
+    balance_access_token: str | None = None
+    balance_user_id: str | None = None
 
 
 class AIProviderRead(BaseModel):
@@ -42,11 +45,27 @@ class AIProviderRead(BaseModel):
     timeout_seconds: int
     max_retries: int
     enabled: bool
+    custom_balance_url: str | None = None
+    has_balance_access_token: bool = False
+    balance_access_token_masked: str | None = None
+    balance_user_id: str | None = None
+    last_balance_text: str | None = None
+    last_balance_at: datetime | None = None
     last_test_status: str | None
     last_test_message: str | None
     last_tested_at: datetime | None
     last_test_capability: Literal["text", "image"] | None
     config_version: int
+
+
+class ProviderBalanceResult(BaseModel):
+    status: Literal["success", "unsupported", "error"]
+    balance_text: str | None = None
+    currency: str | None = "USD"
+    total_balance: float | None = None
+    used_balance: float | None = None
+    remaining_balance: float | None = None
+    message: str
 
 
 class AIProviderList(BaseModel):

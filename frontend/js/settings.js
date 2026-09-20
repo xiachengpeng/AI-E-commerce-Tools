@@ -61,7 +61,10 @@ function buildProviderPayload(values) {
         "vertex_location",
         "vertex_key_path",
         "text_model",
-        "image_model"
+        "image_model",
+        "custom_balance_url",
+        "balance_access_token",
+        "balance_user_id"
     ].forEach(field => {
         if (Object.prototype.hasOwnProperty.call(values, field)) {
             payload[field] = String(values[field] || "").trim() || null;
@@ -1345,12 +1348,75 @@ function renderProviderList() {
                 </div>
                 <div class="settings-provider-meta">
                     <div class="settings-provider-badges">${capabilityBadges}</div>
+                    ${providerBalanceMarkup(provider)}
                     ${providerTestStatusMarkup(provider)}
                 </div>
             </article>
         `;
     }).join("");
     updateSettingsOverviewKpis();
+}
+
+function providerBalanceMarkup(provider) {
+    if (provider.protocol !== "openai_compatible") return "";
+    const balanceText = provider.last_balance_text;
+    const balanceTime = provider.last_balance_at
+        ? new Date(provider.last_balance_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : "";
+    if (balanceText) {
+        return `
+            <div class="settings-balance-badge" id="providerBalanceBadge-${Number(provider.id)}">
+                <i class="ph ph-wallet"></i>
+                <span class="settings-balance-amount">余额: ${escapeSettingsHtml(balanceText)}</span>
+                ${balanceTime ? `<span class="settings-balance-time" title="更新时间">${balanceTime}</span>` : ""}
+                <button type="button" class="settings-balance-refresh-btn"
+                    title="刷新中转站余额" aria-label="刷新余额"
+                    onclick="queryProviderBalance(${Number(provider.id)}, this)">
+                    <i class="ph ph-arrows-clockwise"></i>
+                </button>
+            </div>
+        `;
+    }
+    return `
+        <div class="settings-balance-badge is-empty" id="providerBalanceBadge-${Number(provider.id)}">
+            <button type="button" class="settings-balance-query-btn"
+                title="查询该中转站可用额度" aria-label="查询余额"
+                onclick="queryProviderBalance(${Number(provider.id)}, this)">
+                <i class="ph ph-wallet"></i>
+                <span>查余额</span>
+            </button>
+        </div>
+    `;
+}
+
+async function queryProviderBalance(providerId, button) {
+    if (!providerId) return;
+    if (button) setSettingsButtonBusy(button, true);
+
+    try {
+        const data = await settingsRequest(`${API_BASE}/api/settings/ai/providers/${providerId}/balance`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+        });
+
+        if (data.status === "success" && data.balance_text) {
+            settingsToast(`中转站余额: ${data.balance_text}`, "success");
+            const provider = settingsState.providers.find(p => Number(p.id) === Number(providerId));
+            if (provider) {
+                provider.last_balance_text = data.balance_text;
+                provider.last_balance_at = new Date().toISOString();
+                renderProviderList();
+            }
+        } else if (data.status === "unsupported") {
+            settingsToast(data.message || "该协议不支持远程查询余额", "info");
+        } else {
+            settingsToast(data.message || "查询余额失败", "error");
+        }
+    } catch (error) {
+        settingsToast(`查询余额失败: ${error.message}`, "error");
+    } finally {
+        if (button) setSettingsButtonBusy(button, false);
+    }
 }
 
 function openProviderEditor(id) {
@@ -1401,6 +1467,18 @@ function openProviderEditor(id) {
     settingsElement("settingsTimeoutSeconds").value = provider?.timeout_seconds ?? 60;
     settingsElement("settingsMaxRetries").value = provider?.max_retries ?? 2;
     settingsElement("settingsProviderEnabled").checked = provider?.enabled ?? true;
+
+    const customBalanceUrlEl = settingsElement("settingsProviderCustomBalanceUrl");
+    if (customBalanceUrlEl) customBalanceUrlEl.value = provider?.custom_balance_url || "";
+    const balanceUserIdEl = settingsElement("settingsProviderBalanceUserId");
+    if (balanceUserIdEl) balanceUserIdEl.value = provider?.balance_user_id || "";
+    const balanceTokenEl = settingsElement("settingsProviderBalanceAccessToken");
+    if (balanceTokenEl) {
+        balanceTokenEl.value = "";
+        balanceTokenEl.placeholder = provider?.has_balance_access_token
+            ? (provider.balance_access_token_masked || "已保存访问令牌，留空表示保留")
+            : "留空则复用上方 API Key";
+    }
 
     const result = settingsElement("settingsTestResult");
     result.textContent = "";
@@ -1455,30 +1533,29 @@ const QUICK_RECOMMENDED_MODELS = {
 function renderProviderQuickModelPills(protocol = "gemini") {
     const textWrap = settingsElement("settingsTextModelQuickPills");
     const imageWrap = settingsElement("settingsImageModelQuickPills");
+    if (!textWrap || !imageWrap) return;
+
     const models = QUICK_RECOMMENDED_MODELS[protocol] || QUICK_RECOMMENDED_MODELS.gemini;
 
-    if (textWrap) {
-        textWrap.innerHTML = (models.text || []).map(m => `
-            <button type="button" onclick="applyQuickModelPill('text', '${m.id}')"
-                class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors cursor-pointer border border-indigo-100"
-                title="点击一键填入模型代码: ${m.id}">
-                ${m.label}
-            </button>
-        `).join("");
-    }
+    textWrap.innerHTML = (models.text || []).map(m => `
+        <button type="button" onclick="applyQuickModelPill('text', '${m.id}')"
+            class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors cursor-pointer border border-indigo-100"
+            title="点击一键填入模型代码: ${m.id}">
+            ${m.label}
+        </button>
+    `).join("");
 
-    if (imageWrap) {
-        imageWrap.innerHTML = (models.image || []).map(m => `
-            <button type="button" onclick="applyQuickModelPill('image', '${m.id}')"
-                class="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-50 hover:bg-violet-100 text-violet-700 transition-colors cursor-pointer border border-violet-100"
-                title="点击一键填入模型代码: ${m.id}">
-                ${m.label}
-            </button>
-        `).join("");
-    }
+    imageWrap.innerHTML = (models.image || []).map(m => `
+        <button type="button" onclick="applyQuickModelPill('image', '${m.id}')"
+            class="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-50 hover:bg-violet-100 text-violet-700 transition-colors cursor-pointer border border-violet-100"
+            title="点击一键填入模型代码: ${m.id}">
+            ${m.label}
+        </button>
+    `).join("");
 }
 
 function applyQuickModelPill(capability, modelName) {
+    if (!modelName) return;
     if (capability === "text") {
         const textInput = settingsElement("settingsTextModel");
         if (textInput) {
@@ -1501,6 +1578,7 @@ function updateProviderProtocolFields() {
 
     settingsElement("settingsApiKeyFields")?.classList.toggle("hidden", isVertex);
     settingsElement("settingsOpenAiFields")?.classList.toggle("hidden", !isOpenAI);
+    settingsElement("settingsBalanceFields")?.classList.toggle("hidden", !isOpenAI);
     settingsElement("settingsVertexFields")?.classList.toggle("hidden", !isVertex);
 
     const baseUrl = settingsElement("settingsProviderBaseUrl");
@@ -1567,7 +1645,10 @@ function providerFormValues() {
         supports_image: settingsElement("settingsSupportsImage").checked,
         timeout_seconds: settingsElement("settingsTimeoutSeconds").value,
         max_retries: settingsElement("settingsMaxRetries").value,
-        enabled: settingsElement("settingsProviderEnabled").checked
+        enabled: settingsElement("settingsProviderEnabled").checked,
+        custom_balance_url: settingsElement("settingsProviderCustomBalanceUrl")?.value || "",
+        balance_access_token: settingsElement("settingsProviderBalanceAccessToken")?.value || "",
+        balance_user_id: settingsElement("settingsProviderBalanceUserId")?.value || ""
     };
 }
 
@@ -1577,6 +1658,9 @@ function providerFormPayload() {
 
     if (payload.protocol !== "openai_compatible") {
         payload.base_url = null;
+        payload.custom_balance_url = null;
+        payload.balance_access_token = null;
+        payload.balance_user_id = null;
     }
     if (payload.protocol !== "vertex") {
         payload.vertex_project_id = null;
@@ -1610,6 +1694,7 @@ function preserveBlankSecretsOnEdit(payload) {
     if (settingsState.editingProviderId === null) return payload;
     [
         "api_key",
+        "balance_access_token",
         "vertex_project_id",
         "vertex_location",
         "vertex_key_path"
@@ -2747,6 +2832,8 @@ if (typeof module !== "undefined") {
         settingsLogDetails,
         settingsLogId,
         settingsLogKey,
-        mergeSettingsLogSnapshot
+        mergeSettingsLogSnapshot,
+        providerBalanceMarkup,
+        queryProviderBalance
     };
 }

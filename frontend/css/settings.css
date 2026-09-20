@@ -1086,6 +1086,77 @@
     border-color: #c7d2fe;
 }
 
+.settings-balance-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #047857;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+}
+
+.settings-balance-badge.is-empty {
+    padding: 0;
+    background: transparent;
+    border: none;
+}
+
+.settings-balance-amount {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-weight: 800;
+}
+
+.settings-balance-time {
+    font-size: 10px;
+    color: #059669;
+    opacity: 0.75;
+}
+
+.settings-balance-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #059669;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.2s, background 0.15s;
+}
+
+.settings-balance-refresh-btn:hover {
+    background: #d1fae5;
+    transform: rotate(45deg);
+}
+
+.settings-balance-query-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #475569;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    cursor: pointer;
+    transition: color 0.16s, background 0.16s, border-color 0.16s;
+}
+
+.settings-balance-query-btn:hover {
+    color: #047857;
+    background: #ecfdf5;
+    border-color: #6ee7b7;
+}
+
 /* ==========================================================================
    多目标云存储图床托管 (Storage Integrations)
    ========================================================================== */

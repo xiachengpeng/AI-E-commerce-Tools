@@ -26,6 +26,9 @@ PROVIDER_FIELDS = (
     "timeout_seconds",
     "max_retries",
     "enabled",
+    "custom_balance_url",
+    "balance_access_token",
+    "balance_user_id",
 )
 STRING_FIELDS = {
     "name",
@@ -38,12 +41,16 @@ STRING_FIELDS = {
     "text_model",
     "image_model",
     "image_generation_mode",
+    "custom_balance_url",
+    "balance_access_token",
+    "balance_user_id",
 }
 BLANK_INHERITS_ON_UPDATE = {
     "api_key",
     "vertex_project_id",
     "vertex_location",
     "vertex_key_path",
+    "balance_access_token",
 }
 PROVIDER_DEFAULTS = {
     "base_url": None,
@@ -59,6 +66,9 @@ PROVIDER_DEFAULTS = {
     "timeout_seconds": 60,
     "max_retries": 2,
     "enabled": True,
+    "custom_balance_url": None,
+    "balance_access_token": None,
+    "balance_user_id": None,
 }
 CONNECTION_TEST_RELEVANT_FIELDS = (
     "protocol",

@@ -176,6 +176,11 @@ class AIProviderConfig(Base):
     timeout_seconds = Column(Integer, nullable=False, default=60)
     max_retries = Column(Integer, nullable=False, default=2)
     enabled = Column(Integer, nullable=False, default=1)
+    custom_balance_url = Column(Text, nullable=True)
+    balance_access_token = Column(Text, nullable=True)
+    balance_user_id = Column(String(80), nullable=True)
+    last_balance_text = Column(String(80), nullable=True)
+    last_balance_at = Column(DateTime, nullable=True)
     last_test_status = Column(String(30), nullable=True)
     last_test_message = Column(Text, nullable=True)
     last_tested_at = Column(DateTime, nullable=True)
@@ -357,6 +362,46 @@ def migrate_ai_settings_tables():
                     "ALTER TABLE ai_provider_configs "
                     "ADD COLUMN image_generation_mode VARCHAR(32) "
                     "NOT NULL DEFAULT 'image_to_image'"
+                )
+            )
+    if "custom_balance_url" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN custom_balance_url TEXT"
+                )
+            )
+    if "balance_access_token" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN balance_access_token TEXT"
+                )
+            )
+    if "balance_user_id" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN balance_user_id VARCHAR(80)"
+                )
+            )
+    if "last_balance_text" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN last_balance_text VARCHAR(80)"
+                )
+            )
+    if "last_balance_at" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN last_balance_at DATETIME"
                 )
             )
 
