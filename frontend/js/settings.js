@@ -1453,6 +1453,17 @@ async function queryProviderBalance(providerId, button) {
     if (!providerId) return;
     if (button) setSettingsButtonBusy(button, true);
 
+    const badgeEl = settingsElement(`providerBalanceBadge-${Number(providerId)}`);
+    const originalBadgeHtml = badgeEl ? badgeEl.innerHTML : "";
+    if (badgeEl) {
+        badgeEl.innerHTML = `
+            <span class="settings-balance-loading">
+                <i class="ph ph-spinner animate-spin"></i>
+                <span>正在查询...</span>
+            </span>
+        `;
+    }
+
     try {
         // 1. First, check if this provider has a configured usage-query script (CC-Switch style)
         let usageConfig = null;
@@ -1479,11 +1490,25 @@ async function queryProviderBalance(providerId, button) {
                     timeout_seconds: timeoutSeconds
                 };
 
-                const proxyResp = await settingsRequest(`${API_BASE}/api/settings/ai/providers/usage-query/proxy`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(proxyPayload)
-                });
+                let proxyResp = null;
+                try {
+                    proxyResp = await settingsRequest(`${API_BASE}/api/settings/ai/providers/usage-query/proxy`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(proxyPayload)
+                    });
+                } catch (reqErr) {
+                    settingsToast(`代理请求异常: ${reqErr.message}`, "error");
+                    if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
+                    return;
+                }
+
+                if (!proxyResp || !proxyResp.ok) {
+                    const errorMsg = (proxyResp && (proxyResp.message || `HTTP ${proxyResp.status_code}`)) || "中转站接口请求失败";
+                    settingsToast(`中转站查询失败: ${errorMsg}`, "error");
+                    if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
+                    return;
+                }
 
                 const extractResult = engine.executeUsageExtractor(usageConfig.balance_script, proxyResp.data);
                 if (extractResult && extractResult.isValid !== false && extractResult.remaining !== undefined && extractResult.remaining !== null) {
@@ -1512,8 +1537,10 @@ async function queryProviderBalance(providerId, button) {
 
                     settingsToast(`中转站余额: ${balText}`, "success");
                     return;
-                } else if (extractResult && extractResult.invalidMessage) {
-                    settingsToast(`用量提取未通过: ${extractResult.invalidMessage}`, "warning");
+                } else {
+                    const reason = (extractResult && extractResult.invalidMessage) || "返回数据未提取到有效余额";
+                    settingsToast(`用量提取未通过: ${reason}`, "warning");
+                    if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
                     return;
                 }
             }
@@ -1538,11 +1565,14 @@ async function queryProviderBalance(providerId, button) {
             }
         } else if (data.status === "unsupported") {
             settingsToast(data.message || "该协议不支持远程查询余额", "info");
+            if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
         } else {
             settingsToast(data.message || "查询余额失败", "error");
+            if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
         }
     } catch (error) {
         settingsToast(`查询余额失败: ${error.message}`, "error");
+        if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
     } finally {
         if (button) setSettingsButtonBusy(button, false);
     }
@@ -3484,6 +3514,7 @@ if (typeof window !== "undefined") {
     window.renderProviderQuickModelPills = renderProviderQuickModelPills;
     window.applyQuickModelPill = applyQuickModelPill;
     window.providerBalanceActionMarkup = providerBalanceActionMarkup;
+    window.queryProviderBalance = queryProviderBalance;
     window.testBalanceQueryConnection = testBalanceQueryConnection;
     window.providerUsageActionMarkup = providerUsageActionMarkup;
     window.openUsageQueryModal = openUsageQueryModal;
