@@ -970,6 +970,7 @@ function updateSettingsOverviewKpis() {
     );
     const textValEl = settingsElement("settingsKpiTextVal");
     const textDotEl = settingsElement("settingsKpiTextDot");
+    const textBalanceEl = settingsElement("settingsKpiTextBalance");
     if (textValEl) {
         if (textProvider && textProvider.enabled) {
             textValEl.textContent = textProvider.name || "已就绪";
@@ -978,12 +979,29 @@ function updateSettingsOverviewKpis() {
                 textDotEl.className = "settings-overview-status is-active";
                 textDotEl.title = "正常运行";
             }
+            if (textBalanceEl) {
+                if (textProvider.protocol === "openai_compatible") {
+                    textBalanceEl.classList.remove("hidden");
+                    if (textProvider.last_balance_text) {
+                        textBalanceEl.innerHTML = `<span class="settings-kpi-balance-pill" title="当前中转站剩余额度"><i class="ph-bold ph-wallet"></i> ${escapeSettingsHtml(textProvider.last_balance_text)}</span>`;
+                    } else {
+                        textBalanceEl.innerHTML = `<button type="button" class="settings-kpi-balance-btn" onclick="event.stopPropagation(); queryProviderBalance(${Number(textProvider.id)}, this)" title="点击查询当前绑定中转站余额"><i class="ph ph-wallet"></i> 查余额</button>`;
+                    }
+                } else {
+                    textBalanceEl.classList.add("hidden");
+                    textBalanceEl.innerHTML = "";
+                }
+            }
         } else {
             textValEl.textContent = "未绑定线路";
             textValEl.title = "请选择并绑定文本 AI 线路";
             if (textDotEl) {
                 textDotEl.className = "settings-overview-status is-unbound";
                 textDotEl.title = "未绑定";
+            }
+            if (textBalanceEl) {
+                textBalanceEl.classList.add("hidden");
+                textBalanceEl.innerHTML = "";
             }
         }
     }
@@ -995,6 +1013,7 @@ function updateSettingsOverviewKpis() {
     );
     const imageValEl = settingsElement("settingsKpiImageVal");
     const imageDotEl = settingsElement("settingsKpiImageDot");
+    const imageBalanceEl = settingsElement("settingsKpiImageBalance");
     if (imageValEl) {
         if (imageProvider && imageProvider.enabled) {
             imageValEl.textContent = imageProvider.name || "已就绪";
@@ -1003,12 +1022,29 @@ function updateSettingsOverviewKpis() {
                 imageDotEl.className = "settings-overview-status is-active";
                 imageDotEl.title = "正常运行";
             }
+            if (imageBalanceEl) {
+                if (imageProvider.protocol === "openai_compatible") {
+                    imageBalanceEl.classList.remove("hidden");
+                    if (imageProvider.last_balance_text) {
+                        imageBalanceEl.innerHTML = `<span class="settings-kpi-balance-pill" title="当前中转站剩余额度"><i class="ph-bold ph-wallet"></i> ${escapeSettingsHtml(imageProvider.last_balance_text)}</span>`;
+                    } else {
+                        imageBalanceEl.innerHTML = `<button type="button" class="settings-kpi-balance-btn" onclick="event.stopPropagation(); queryProviderBalance(${Number(imageProvider.id)}, this)" title="点击查询当前绑定中转站余额"><i class="ph ph-wallet"></i> 查余额</button>`;
+                    }
+                } else {
+                    imageBalanceEl.classList.add("hidden");
+                    imageBalanceEl.innerHTML = "";
+                }
+            }
         } else {
             imageValEl.textContent = "未绑定线路";
             imageValEl.title = "请选择并绑定图片 AI 线路";
             if (imageDotEl) {
                 imageDotEl.className = "settings-overview-status is-unbound";
                 imageDotEl.title = "未绑定";
+            }
+            if (imageBalanceEl) {
+                imageBalanceEl.classList.add("hidden");
+                imageBalanceEl.innerHTML = "";
             }
         }
     }
@@ -1329,6 +1365,7 @@ function renderProviderList() {
                             onclick="openProviderEditor(${Number(provider.id)})">
                             <i class="ph ph-pencil-simple"></i>
                         </button>
+                        ${providerBalanceActionMarkup(provider)}
                         ${providerTestActionsMarkup(provider)}
                         <button type="button" class="settings-provider-action"
                             title="${escapeSettingsHtml(conflictTitle || (provider.enabled ? "停用线路" : "启用线路"))}"
@@ -1357,6 +1394,17 @@ function renderProviderList() {
     updateSettingsOverviewKpis();
 }
 
+function providerBalanceActionMarkup(provider) {
+    if (provider.protocol !== "openai_compatible") return "";
+    return `
+        <button type="button" class="settings-provider-action settings-provider-balance-action"
+            title="查询中转站可用余额与额度" aria-label="查询余额 ${escapeSettingsHtml(provider.name)}"
+            onclick="queryProviderBalance(${Number(provider.id)}, this)">
+            <i class="ph ph-wallet"></i>
+        </button>
+    `;
+}
+
 function providerBalanceMarkup(provider) {
     if (provider.protocol !== "openai_compatible") return "";
     const balanceText = provider.last_balance_text;
@@ -1366,7 +1414,7 @@ function providerBalanceMarkup(provider) {
     if (balanceText) {
         return `
             <div class="settings-balance-badge" id="providerBalanceBadge-${Number(provider.id)}">
-                <i class="ph ph-wallet"></i>
+                <i class="ph-bold ph-wallet"></i>
                 <span class="settings-balance-amount">余额: ${escapeSettingsHtml(balanceText)}</span>
                 ${balanceTime ? `<span class="settings-balance-time" title="更新时间">${balanceTime}</span>` : ""}
                 <button type="button" class="settings-balance-refresh-btn"
@@ -1382,8 +1430,8 @@ function providerBalanceMarkup(provider) {
             <button type="button" class="settings-balance-query-btn"
                 title="查询该中转站可用额度" aria-label="查询余额"
                 onclick="queryProviderBalance(${Number(provider.id)}, this)">
-                <i class="ph ph-wallet"></i>
-                <span>查余额</span>
+                <i class="ph-bold ph-wallet"></i>
+                <span>查中转站余额</span>
             </button>
         </div>
     `;
@@ -2775,6 +2823,7 @@ if (typeof window !== "undefined") {
     window.formatStorageDisplayLabel = formatStorageDisplayLabel;
     window.renderProviderQuickModelPills = renderProviderQuickModelPills;
     window.applyQuickModelPill = applyQuickModelPill;
+    window.providerBalanceActionMarkup = providerBalanceActionMarkup;
 }
 
 if (typeof module !== "undefined") {
@@ -2785,6 +2834,7 @@ if (typeof module !== "undefined") {
         shouldShowImageGenerationMode,
         providerTestCapabilities,
         providerTestActionsMarkup,
+        providerBalanceActionMarkup,
         providerTestStatusMarkup,
         providerImageModeBadgeMarkup,
         buildProviderPayload,

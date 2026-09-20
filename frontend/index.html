@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="css/style.css?v=20260917-sidebar-v1">
     <link rel="stylesheet" href="css/square_redraw.css?v=20260917-reset-v1">
     <link rel="stylesheet" href="css/analysis.css?v=20260917-reset-v1">
-    <link rel="stylesheet" href="css/settings.css?v=20260917-reset-v1">
+    <link rel="stylesheet" href="css/settings.css?v=20260920-balance-v2">
     <link rel="stylesheet" href="css/watermark_removal.css?v=20260917-reset-v1">
 
     <!-- 基础配置与工具 (必须优先加载) -->
@@ -3840,7 +3840,10 @@
                             </div>
                             <div class="settings-overview-info">
                                 <span class="settings-overview-label">文本 AI 线路</span>
-                                <strong class="settings-overview-value" id="settingsKpiTextVal">加载中…</strong>
+                                <div class="settings-overview-val-row">
+                                    <strong class="settings-overview-value" id="settingsKpiTextVal">加载中…</strong>
+                                    <span class="settings-kpi-balance hidden" id="settingsKpiTextBalance"></span>
+                                </div>
                             </div>
                             <span class="settings-overview-status" id="settingsKpiTextDot" title="状态"></span>
                         </div>
@@ -3850,7 +3853,10 @@
                             </div>
                             <div class="settings-overview-info">
                                 <span class="settings-overview-label">图片 AI 线路</span>
-                                <strong class="settings-overview-value" id="settingsKpiImageVal">加载中…</strong>
+                                <div class="settings-overview-val-row">
+                                    <strong class="settings-overview-value" id="settingsKpiImageVal">加载中…</strong>
+                                    <span class="settings-kpi-balance hidden" id="settingsKpiImageBalance"></span>
+                                </div>
                             </div>
                             <span class="settings-overview-status" id="settingsKpiImageDot" title="状态"></span>
                         </div>
@@ -3972,8 +3978,11 @@
                                         <i class="ph ph-plugs-connected"></i>
                                     </span>
                                     <div>
-                                        <h2 id="settingsProvidersTitle">API 线路</h2>
-                                        <p>管理协议、模型、凭据和连接状态。</p>
+                                        <div class="flex items-center gap-2">
+                                            <h2 id="settingsProvidersTitle">API 线路</h2>
+                                            <span class="settings-balance-support-chip" title="支持 One-API / New-API / 硅基流动等中转站余额查询"><i class="ph ph-wallet"></i> 支持查余额</span>
+                                        </div>
+                                        <p>管理协议、模型、凭据、连接状态与中转站可用额度。</p>
                                     </div>
                                 </div>
                                 <div class="settings-provider-header-tools">
@@ -4783,7 +4792,7 @@
     <script>
         console.log("%c[System] DOM fully loaded, starting app.js...", "color: #4f46e5; font-weight: bold;");
     </script>
-    <script src="js/settings.js?v=20260917-reset-v1"></script>
+    <script src="js/settings.js?v=20260920-balance-v2"></script>
     <script src="js/app.js?v=20260917-sidebar-v1"></script>
     <script src="js/universal_uploader.js"></script>
     <script src="js/details.js?v=20260917-reset-v1"></script>

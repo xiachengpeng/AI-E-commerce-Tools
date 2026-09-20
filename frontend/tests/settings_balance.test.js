@@ -34,3 +34,24 @@ test("settings.js renders balance badge and query button for openai_compatible p
     assert.match(code, /settings-balance-badge/);
     assert.match(code, /queryProviderBalance/);
 });
+
+test("settings.js exports providerBalanceActionMarkup and renders wallet button for openai_compatible", () => {
+    const { providerBalanceActionMarkup } = require("../js/settings.js");
+    assert.equal(typeof providerBalanceActionMarkup, "function");
+
+    const openaiProvider = { id: 9, protocol: "openai_compatible", name: "My Relay" };
+    const vertexProvider = { id: 1, protocol: "vertex", name: "Google Vertex" };
+
+    const markup = providerBalanceActionMarkup(openaiProvider);
+    assert.match(markup, /settings-provider-balance-action/);
+    assert.match(markup, /queryProviderBalance\(9/);
+    assert.match(markup, /ph-wallet/);
+
+    assert.equal(providerBalanceActionMarkup(vertexProvider), "");
+});
+
+test("index.html contains overview KPI balance elements and cache-busting version", () => {
+    assert.match(indexHtml, /id="settingsKpiTextBalance"/);
+    assert.match(indexHtml, /id="settingsKpiImageBalance"/);
+    assert.match(indexHtml, /js\/settings\.js\?v=20260920-balance-v2/);
+});
