@@ -179,6 +179,12 @@ class AIProviderConfig(Base):
     custom_balance_url = Column(Text, nullable=True)
     balance_access_token = Column(Text, nullable=True)
     balance_user_id = Column(String(80), nullable=True)
+    balance_template = Column(String(32), nullable=True, default="general")
+    balance_script = Column(Text, nullable=True)
+    balance_custom_key = Column(Text, nullable=True)
+    balance_custom_url = Column(Text, nullable=True)
+    balance_timeout = Column(Integer, nullable=True, default=10)
+    balance_auto_interval = Column(Integer, nullable=True, default=30)
     last_balance_text = Column(String(80), nullable=True)
     last_balance_at = Column(DateTime, nullable=True)
     last_test_status = Column(String(30), nullable=True)
@@ -402,6 +408,54 @@ def migrate_ai_settings_tables():
                 text(
                     "ALTER TABLE ai_provider_configs "
                     "ADD COLUMN last_balance_at DATETIME"
+                )
+            )
+    if "balance_template" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN balance_template VARCHAR(32)"
+                )
+            )
+    if "balance_script" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN balance_script TEXT"
+                )
+            )
+    if "balance_custom_key" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN balance_custom_key TEXT"
+                )
+            )
+    if "balance_custom_url" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN balance_custom_url TEXT"
+                )
+            )
+    if "balance_timeout" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN balance_timeout INTEGER DEFAULT 10"
+                )
+            )
+    if "balance_auto_interval" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE ai_provider_configs "
+                    "ADD COLUMN balance_auto_interval INTEGER DEFAULT 30"
                 )
             )
 

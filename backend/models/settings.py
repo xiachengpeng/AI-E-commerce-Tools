@@ -78,6 +78,37 @@ class ProviderBalanceTestRequest(BaseModel):
     balance_user_id: str | None = None
 
 
+class UsageQueryConfigWrite(BaseModel):
+    balance_template: str | None = "general"
+    balance_script: str | None = None
+    balance_custom_key: str | None = None
+    balance_custom_url: str | None = None
+    balance_timeout: int | None = 10
+    balance_auto_interval: int | None = 30
+
+
+class UsageQueryConfigRead(UsageQueryConfigWrite):
+    has_custom_key: bool = False
+    custom_key_masked: str | None = None
+
+
+class UsageQueryProxyRequest(BaseModel):
+    provider_id: int | None = None
+    url: str
+    method: str = "GET"
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str | None = None
+    timeout_seconds: int = 10
+
+
+class UsageQueryProxyResponse(BaseModel):
+    ok: bool
+    status_code: int
+    data: dict | list | str | None = None
+    message: str | None = None
+    duration_ms: int = 0
+
+
 class AIProviderList(BaseModel):
     items: list[AIProviderRead]
 
