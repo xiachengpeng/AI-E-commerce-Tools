@@ -1416,6 +1416,84 @@ function closeProviderEditor() {
     settingsElement("settingsProviderEditor")?.classList.add("hidden");
 }
 
+const QUICK_RECOMMENDED_MODELS = {
+    gemini: {
+        text: [
+            { id: "gemini-2.5-flash", label: "2.5-Flash (推荐)" },
+            { id: "gemini-2.5-pro", label: "2.5-Pro (深度)" },
+            { id: "gemini-2.0-flash", label: "2.0-Flash" }
+        ],
+        image: [
+            { id: "gemini-2.5-flash-image", label: "Flash-Image (推荐)" },
+            { id: "imagen-3.0-generate-002", label: "Imagen 3" }
+        ]
+    },
+    openai_compatible: {
+        text: [
+            { id: "gpt-4o", label: "GPT-4o (全能旗舰)" },
+            { id: "gpt-4o-mini", label: "GPT-4o-mini (推荐轻量)" },
+            { id: "claude-3-5-sonnet", label: "Claude-3.5-Sonnet" },
+            { id: "deepseek-chat", label: "DeepSeek-V3" }
+        ],
+        image: [
+            { id: "dall-e-3", label: "DALL-E 3 (推荐)" },
+            { id: "dall-e-2", label: "DALL-E 2" },
+            { id: "flux-1-schnell", label: "FLUX.1-schnell" }
+        ]
+    },
+    vertex: {
+        text: [
+            { id: "gemini-2.5-flash", label: "2.5-Flash (推荐)" },
+            { id: "gemini-2.5-pro", label: "2.5-Pro" }
+        ],
+        image: [
+            { id: "imagen-3.0-generate-002", label: "Imagen 3 (推荐)" }
+        ]
+    }
+};
+
+function renderProviderQuickModelPills(protocol = "gemini") {
+    const textWrap = settingsElement("settingsTextModelQuickPills");
+    const imageWrap = settingsElement("settingsImageModelQuickPills");
+    const models = QUICK_RECOMMENDED_MODELS[protocol] || QUICK_RECOMMENDED_MODELS.gemini;
+
+    if (textWrap) {
+        textWrap.innerHTML = (models.text || []).map(m => `
+            <button type="button" onclick="applyQuickModelPill('text', '${m.id}')"
+                class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors cursor-pointer border border-indigo-100"
+                title="点击一键填入模型代码: ${m.id}">
+                ${m.label}
+            </button>
+        `).join("");
+    }
+
+    if (imageWrap) {
+        imageWrap.innerHTML = (models.image || []).map(m => `
+            <button type="button" onclick="applyQuickModelPill('image', '${m.id}')"
+                class="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-50 hover:bg-violet-100 text-violet-700 transition-colors cursor-pointer border border-violet-100"
+                title="点击一键填入模型代码: ${m.id}">
+                ${m.label}
+            </button>
+        `).join("");
+    }
+}
+
+function applyQuickModelPill(capability, modelName) {
+    if (capability === "text") {
+        const textInput = settingsElement("settingsTextModel");
+        if (textInput) {
+            textInput.value = modelName;
+            try { textInput.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+        }
+    } else if (capability === "image") {
+        const imgInput = settingsElement("settingsImageModel");
+        if (imgInput) {
+            imgInput.value = modelName;
+            try { imgInput.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+        }
+    }
+}
+
 function updateProviderProtocolFields() {
     const protocol = settingsElement("settingsProviderProtocol")?.value || "gemini";
     const isVertex = protocol === "vertex";
@@ -1428,6 +1506,7 @@ function updateProviderProtocolFields() {
     const baseUrl = settingsElement("settingsProviderBaseUrl");
     if (baseUrl) baseUrl.required = isOpenAI;
     updateProviderImageGenerationModeField();
+    renderProviderQuickModelPills(protocol);
 }
 
 function updateProviderImageGenerationModeField() {
@@ -2609,10 +2688,14 @@ if (typeof window !== "undefined") {
     window.testSettingsStorageConnection = testSettingsStorageConnection;
     window.saveSettingsStorageConfig = saveSettingsStorageConfig;
     window.formatStorageDisplayLabel = formatStorageDisplayLabel;
+    window.renderProviderQuickModelPills = renderProviderQuickModelPills;
+    window.applyQuickModelPill = applyQuickModelPill;
 }
 
 if (typeof module !== "undefined") {
     module.exports = {
+        renderProviderQuickModelPills,
+        applyQuickModelPill,
         providerSupportsCapability,
         shouldShowImageGenerationMode,
         providerTestCapabilities,
