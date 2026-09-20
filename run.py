@@ -58,7 +58,7 @@ def run_app():
         cwd=backend_dir,
         env={**os.environ, "PYTHONPATH": backend_dir}
     )
-    print(f"✅ 竞品分析后端已启动: http://localhost:{BACKEND_PORT}")
+    print(f"✅ 竞品分析后端已启动: http://127.0.0.1:{BACKEND_PORT}")
 
     # 2. 启动前端 HTTP Server - 端口 9502
     frontend_script = f"""
@@ -87,11 +87,11 @@ with socketserver.TCPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) as httpd:
         [sys.executable, "-c", frontend_script],
         cwd=frontend_dir
     )
-    print(f"✅ 前端服务已启动: http://localhost:{FRONTEND_PORT}")
+    print(f"✅ 前端服务已启动: http://127.0.0.1:{FRONTEND_PORT}")
 
     # 3. 等待启动后打开浏览器
     time.sleep(1.5)
-    url = f"http://localhost:{FRONTEND_PORT}/index.html"
+    url = f"http://127.0.0.1:{FRONTEND_PORT}/index.html"
     print(f"🌐 正在打开浏览器: {url}")
     try:
         webbrowser.open(url)
@@ -99,8 +99,8 @@ with socketserver.TCPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) as httpd:
         pass
 
     print("\n💡 提示:")
-    print(f"   - 前端页面: http://localhost:{FRONTEND_PORT}/index.html")
-    print(f"   - 后端服务: http://localhost:{BACKEND_PORT}")
+    print(f"   - 前端页面: http://127.0.0.1:{FRONTEND_PORT}/index.html")
+    print(f"   - 后端服务: http://127.0.0.1:{BACKEND_PORT}")
     print("   - 按 Ctrl+C 同时停止所有服务\n")
 
     try:

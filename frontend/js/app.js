@@ -28,10 +28,33 @@ if (typeof globalThis !== 'undefined') {
 async function refreshPublicAIRoutes() {
     console.log("[System] Loading config from backend...");
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     try {
-        const res = await fetch(`${API_BASE}/config`, { signal: controller.signal });
+        let res;
+        try {
+            res = await fetch(`${API_BASE}/config`, { signal: controller.signal });
+        } catch (fetchErr) {
+            const isNetworkOrAbort = fetchErr?.name === "AbortError"
+                || fetchErr?.name === "TypeError"
+                || String(fetchErr?.message || "").includes("fetch");
+            const altBase = (isNetworkOrAbort && typeof API_BASE === "string")
+                ? (API_BASE.includes("localhost")
+                    ? API_BASE.replace("localhost", "127.0.0.1")
+                    : (API_BASE.includes("127.0.0.1") ? API_BASE.replace("127.0.0.1", "localhost") : null))
+                : null;
+            if (altBase) {
+                const altController = new AbortController();
+                const altTimeout = setTimeout(() => altController.abort(), 5000);
+                try {
+                    res = await fetch(`${altBase}/config`, { signal: altController.signal });
+                } finally {
+                    clearTimeout(altTimeout);
+                }
+            } else {
+                throw fetchErr;
+            }
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const cfg = await res.json();
         TEXT_ROUTE = cfg?.TEXT_ROUTE || null;
