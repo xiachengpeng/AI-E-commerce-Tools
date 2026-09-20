@@ -2174,8 +2174,7 @@
                         </div>
                         <div class="flex items-center gap-1.5 mt-0.5">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block"></span>
-                            <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Gemini
-                                Active</span>
+                            <span id="transEngineStatus" class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">AI 翻译引擎就绪</span>
                         </div>
                     </div>
                 </div>
@@ -2200,17 +2199,24 @@
                             <button onclick="clearLangSelection()"
                                 class="text-[10px] text-gray-400 hover:text-red-500 transition-colors">清空</button>
                         </div>
+                        <!-- 常用地域预设包 -->
+                        <div class="flex items-center gap-1 mb-2.5 pb-2 border-b border-gray-100 flex-wrap">
+                            <span class="text-[10px] text-slate-400 font-bold mr-1">快捷预设:</span>
+                            <button type="button" onclick="applyQuickLangPreset('western')" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors cursor-pointer">欧美 5 国</button>
+                            <button type="button" onclick="applyQuickLangPreset('sea')" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors cursor-pointer">东南亚/日韩</button>
+                            <button type="button" onclick="applyQuickLangPreset('east_asia')" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors cursor-pointer">日韩常用</button>
+                        </div>
                         <div id="transLangTags" class="grid grid-cols-2 gap-0.5"></div>
                     </div>
                 </div>
 
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2" title="风格保真度：控制对原图排版、字号及文字背景纹理的复原严格程度。推荐使用【高】，兼顾美观排版与原图质感。">
                     <span class="text-xs text-slate-500 whitespace-nowrap">风格保真度</span>
                     <select id="styleStrength"
                         class="text-xs border border-slate-200 rounded-xl px-3 py-1.5 bg-slate-50 focus:outline-none focus:border-blue-400 focus:bg-white transition-colors cursor-pointer font-medium">
-                        <option value="strict">极高 · 完全复原</option>
-                        <option value="high" selected>高 · 推荐</option>
-                        <option value="medium">中 · 允许优化</option>
+                        <option value="strict">极高 · 完全复原原版式</option>
+                        <option value="high" selected>高 · 推荐 (平衡美观与版式)</option>
+                        <option value="medium">中 · 允许微调长文排版</option>
                     </select>
                     <button id="transStartBtn" onclick="startTranslation()" disabled
                         class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white text-xs font-black px-5 py-2 rounded-xl transition-colors shadow-md shadow-blue-200">
@@ -2231,7 +2237,7 @@
                 <div id="transEmptyState" class="flex items-center justify-center p-8"
                     style="min-height:calc(100vh - 120px)">
                     <div id="transDropZone"
-                        class="w-full max-w-3xl border-2 border-dashed border-slate-300 rounded-[2.5rem] p-28 flex flex-col items-center justify-center bg-white hover:border-blue-400 hover:shadow-xl hover:shadow-blue-50 transition-all cursor-pointer group"
+                        class="w-full max-w-3xl border-2 border-dashed border-slate-300 rounded-[2.5rem] p-24 flex flex-col items-center justify-center bg-white hover:border-blue-400 hover:shadow-xl hover:shadow-blue-50 transition-all cursor-pointer group"
                         title="支持点击上传、拖拽或 ⌘V / Ctrl+V 粘贴"
                         onclick="document.getElementById('transImageUpload').click()"
                         ondragover="event.preventDefault();this.classList.add('drop-zone-active')"
@@ -2239,12 +2245,19 @@
                         onpaste="handleTransPaste(event)">
                         <div
                             class="bg-blue-50 p-8 rounded-full mb-8 group-hover:scale-110 transition-transform duration-500 shadow-inner">
-                            <i class="ph ph-images text-blue-500 text-5xl"></i>
+                            <i class="ph ph-translate text-blue-500 text-5xl"></i>
                         </div>
-                        <h2 class="text-2xl font-black mb-3 text-slate-800">拖拽或粘贴上传图片</h2>
-                        <p class="text-slate-400 mb-8 max-w-sm text-center leading-relaxed font-medium text-sm">
-                            支持点击选择、拖拽或 ⌘V / Ctrl+V 粘贴图片。AI 自动识别原图文字，无损擦除并按背景纹理填充。
+                        <h2 class="text-2xl font-black mb-3 text-slate-800">拖拽或粘贴上传待翻译图片</h2>
+                        <p class="text-slate-400 mb-6 max-w-md text-center leading-relaxed font-medium text-sm">
+                            支持点击选择、拖拽或 ⌘V / Ctrl+V 粘贴。AI 智能识别外语/中文文字，无损擦除并按目标语言排版无损回填，严格保留原图商品材质、光影背景与品牌质感。
                         </p>
+                        <div class="flex items-center gap-2 text-xs font-bold text-slate-400 bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
+                            <span class="flex items-center gap-1"><i class="ph-bold ph-tag text-blue-500"></i> 包装标签本地化</span>
+                            <span class="text-slate-200">·</span>
+                            <span class="flex items-center gap-1"><i class="ph-bold ph-globe text-indigo-500"></i> 跨国多语言主图</span>
+                            <span class="text-slate-200">·</span>
+                            <span class="flex items-center gap-1"><i class="ph-bold ph-book-open text-emerald-500"></i> 说明书图文化</span>
+                        </div>
                     </div>
                 </div>
                 <div id="transTaskList" class="hidden px-8 py-6 max-w-5xl mx-auto w-full">

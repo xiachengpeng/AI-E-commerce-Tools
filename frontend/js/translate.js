@@ -56,6 +56,22 @@ function clearLangSelection() {
     updateTransStartBtn();
 }
 
+function applyQuickLangPreset(presetKey) {
+    const presets = {
+        western: ['English', 'German', 'French', 'Spanish', 'Italian'],
+        sea: ['Thai', 'English', 'Japanese'],
+        east_asia: ['Japanese', 'Korean']
+    };
+
+    const targetLangs = presets[presetKey] || [];
+    document.querySelectorAll('#transLangTags input[type=checkbox]').forEach(el => {
+        el.checked = targetLangs.includes(el.value);
+    });
+
+    updateLangDropdownLabel();
+    updateTransStartBtn();
+}
+
 function getSelectedTransLangs() {
     return [...document.querySelectorAll('#transLangTags input[type=checkbox]:checked')].map(el => el.value);
 }
@@ -696,6 +712,7 @@ if (typeof window !== 'undefined') {
     window.uploadTransSlotToCloud = uploadTransSlotToCloud;
     window.uploadTransCardToCloud = uploadTransCardToCloud;
     window.uploadSelectedTransToCloud = uploadSelectedTransToCloud;
+    window.applyQuickLangPreset = applyQuickLangPreset;
 }
 if (typeof globalThis !== 'undefined') {
     globalThis.loadTransFiles = loadTransFiles;
@@ -704,6 +721,7 @@ if (typeof globalThis !== 'undefined') {
     globalThis.uploadTransSlotToCloud = uploadTransSlotToCloud;
     globalThis.uploadTransCardToCloud = uploadTransCardToCloud;
     globalThis.uploadSelectedTransToCloud = uploadSelectedTransToCloud;
+    globalThis.applyQuickLangPreset = applyQuickLangPreset;
 }
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
@@ -713,6 +731,7 @@ if (typeof module !== 'undefined' && module.exports) {
         handleTransPaste,
         uploadTransSlotToCloud,
         uploadTransCardToCloud,
-        uploadSelectedTransToCloud
+        uploadSelectedTransToCloud,
+        applyQuickLangPreset
     };
 }
