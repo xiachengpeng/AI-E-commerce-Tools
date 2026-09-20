@@ -260,7 +260,7 @@ function copyAdsStyleText(style, platformFilter = 'all') {
     }
     navigator.clipboard.writeText(lines.join('\n')).then(
         () => showToast('已复制该风格文案', 'success'),
-        () => showToast('复制失败', 'error')
+        () => showToast('复制失败：请检查浏览器剪贴板权限，或手动长按/选中文本复制', 'error')
     );
 }
 
@@ -362,7 +362,7 @@ function copyAdsText(text, successMsg = '已复制到剪贴板') {
     if (navigator?.clipboard?.writeText) {
         navigator.clipboard.writeText(text).then(
             () => showToast(successMsg, 'success'),
-            () => showToast('复制失败', 'error')
+            () => showToast('复制失败：请检查浏览器剪贴板权限，或手动长按/选中文本复制', 'error')
         );
     } else {
         const ta = document.createElement('textarea');
@@ -704,7 +704,7 @@ function receiveAdsTransferData(data) {
 async function generateAdsCopy() {
     const productName = document.getElementById('adsProductNameInput')?.value.trim() || '';
     if (!currentAdsUploadedBase64 && !productName) {
-        showToast('请上传商品图片或输入商品名称', 'warning');
+        showToast('请至少提供商品名称或上传 1 张商品白底图，以便 AI 解析卖点并撰写广告', 'warning');
         return;
     }
     const platforms = selectedAdsPlatforms();

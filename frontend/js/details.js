@@ -2421,7 +2421,7 @@ async function regenerateModuleWithPrompt(uniqueId) {
         showToast('已按提示重绘', 'success');
     } catch (error) {
         console.error(error);
-        showToast('重绘失败', 'error');
+        showToast('模块重绘失败：生图服务未正常响应，请检查生图渠道状态或稍后重试', 'error');
     } finally {
         setPromptControlsBusy(uniqueId, false);
     }
@@ -2978,7 +2978,7 @@ async function ingestDetailImageFiles(files) {
         return true;
     } catch (e) {
         console.error(e);
-        showToast('图片读取失败', 'error');
+        showToast('图片读取失败：文件可能损坏或格式不兼容，请重新上传 JPG/PNG/WebP 格式图片', 'error');
         return false;
     }
 }
@@ -3098,7 +3098,8 @@ async function generateSellingPoints() {
                 : '卖点提取成功，已保留现有产品名称'
         );
     } catch (err) {
-        console.error(err); showToast('生成失败', 'error');
+        console.error(err);
+        showToast('卖点提炼失败：请检查网络连接，或前往【AI设置】确认已配置并启用文本大模型', 'error');
         remoteLog(`卖点提取失败: ${err.message}`);
     } finally {
         btn.innerHTML = origHtml; btn.disabled = false;
@@ -4625,7 +4626,7 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
 // 打开长图排版台，并在打开前刷新模块排序列表和预览画布。
 function openLongImageBuilder() {
     if (!globalGenContext || !globalGenContext.longImageOrder.length) {
-        showToast('尚未生成任何模块', 'error'); return;
+        showToast('尚未生成任何视觉模块：请先在左侧勾选所需模块并点击【一键生成详情页】', 'error'); return;
     }
     renderSortableList();
     document.getElementById('longImageBuilderModal').classList.remove('hidden');
@@ -4791,7 +4792,7 @@ function renderExportChecklist() {
 function exportCurrentProjectJson() {
     const project = collectCurrentRenderProject('');
     if (!project) {
-        showToast('没有可导出的详情页项目', 'error');
+        showToast('没有可导出的详情页：请先生成视觉模块后再打包物料', 'error');
         return;
     }
     const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });

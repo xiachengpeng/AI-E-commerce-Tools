@@ -185,7 +185,7 @@ function refreshSquareRedrawLocalSkipStatuses() {
 
 function setSquareRedrawAspectRatio(ratio) {
     if (squareRedrawBatchId) {
-        showToast('当前批次已创建，如需改尺寸请重新上传一批图片', 'error');
+        showToast('当前批次已锁定尺寸：如需更换目标宽高比，请先清空当前图片列表后重新添加', 'error');
         syncSquareRedrawTargetControls();
         return;
     }
@@ -199,7 +199,7 @@ function setSquareRedrawAspectRatio(ratio) {
 
 function applySquareRedrawCustomSize() {
     if (squareRedrawBatchId) {
-        showToast('当前批次已创建，如需改尺寸请重新上传一批图片', 'error');
+        showToast('当前批次已锁定尺寸：如需更换目标宽高比，请先清空当前图片列表后重新添加', 'error');
         syncSquareRedrawTargetControls();
         return;
     }

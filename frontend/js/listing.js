@@ -146,7 +146,7 @@ function setListingViewMode(mode) {
 
 function copyTextToClipboard(text, successMsg = '已复制到剪贴板') {
     if (!text) {
-        if (typeof showToast === 'function') showToast('暂无文本可复制', 'info');
+        if (typeof showToast === 'function') showToast('当前暂无已生成的 Listing 内容，请先生成后再复制', 'info');
         return;
     }
     if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
@@ -630,7 +630,7 @@ function saveEditListingTitle() {
     if (!input || !currentListingDataText) return;
     const newVal = input.value.trim();
     if (!newVal) {
-        if (typeof showToast === 'function') showToast('标题不能为空', 'error');
+        if (typeof showToast === 'function') showToast('标题内容不能为空，请输入至少一个有效词语', 'error');
         return;
     }
     const currentPair = listingTextPair(currentListingDataText.title);
@@ -1507,7 +1507,7 @@ async function generateListing() {
     const themeLabel = themeOpt?.options[themeOpt.selectedIndex]?.text || '';
 
     if (!name || !points) {
-        if (typeof showToast === 'function') showToast('请填写必填项：产品名称与核心卖点', 'error');
+        if (typeof showToast === 'function') showToast('请补充商品信息：产品名称与核心卖点均为必填项，有助于 AI 精准创作', 'error');
         return;
     }
 
