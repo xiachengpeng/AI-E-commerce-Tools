@@ -54,6 +54,51 @@ function formatStorageDisplayLabel(name, targetUrlOrDomain, fallback = "未命�
 }
 
 /**
+ * 安全写入 localStorage，捕获并处理 QuotaExceededError，防止超出 5MB 配额崩溃
+ * @param {string} key 键名
+ * @param {string} value 待存数据
+ * @param {string[]} [customPurgeKeys] 可选的淘汰清除键列表
+ * @returns {boolean} 是否写入成功
+ */
+function safeLocalStorageSet(key, value, customPurgeKeys = []) {
+    try {
+        localStorage.setItem(key, value);
+        return true;
+    } catch (e) {
+        const isQuotaError = e && (
+            e.name === 'QuotaExceededError' ||
+            e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+            e.code === 22 ||
+            e.code === 1014
+        );
+        if (isQuotaError) {
+            console.warn(`[Storage] localStorage 配额超限，尝试清理临时缓存: key=${key}`);
+            const defaultPurgeKeys = [
+                'xuanpin_last_result_v26',
+                'xuanpin_last_result_v25',
+                'xp_temp_preview',
+                'dtc_typography_preview_cache'
+            ];
+            const allPurgeKeys = [...new Set([...(Array.isArray(customPurgeKeys) ? customPurgeKeys : []), ...defaultPurgeKeys])];
+            try {
+                for (const pk of allPurgeKeys) {
+                    if (typeof localStorage.removeItem === 'function') {
+                        localStorage.removeItem(pk);
+                    }
+                }
+                localStorage.setItem(key, value);
+                return true;
+            } catch (retryErr) {
+                console.error(`[Storage] 淘汰旧缓存后仍无法写入 localStorage: key=${key}`, retryErr);
+                return false;
+            }
+        }
+        console.warn(`[Storage] localStorage 写入失败: key=${key}`, e);
+        return false;
+    }
+}
+
+/**
  * 从 AI 原始文本中健壮提取并容错解析 JSON 对象
  */
 function safeExtractAndParseJson(text) {
@@ -664,9 +709,11 @@ function resetAllAppDraftsAndState(options = {}) {
 }
 
 if (typeof globalThis !== 'undefined') {
+    globalThis.safeLocalStorageSet = safeLocalStorageSet;
     globalThis.debounce = debounce;
     globalThis.resetAllAppDraftsAndState = resetAllAppDraftsAndState;
 }
 if (typeof window !== 'undefined') {
+    window.safeLocalStorageSet = safeLocalStorageSet;
     window.resetAllAppDraftsAndState = resetAllAppDraftsAndState;
 }

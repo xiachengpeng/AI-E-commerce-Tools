@@ -495,3 +495,398 @@ test("toggleListingCopyDropdown, toggleListingExportDropdown, and hideListingDro
         globalThis.document = origDoc;
     }
 });
+
+test("insertListingFactSlot inserts factual slot tag into listingPoints textarea", () => {
+    let focusCalled = false;
+    let rangeSet = null;
+    const mockTextarea = {
+        value: "天然藤编吊灯",
+        focus: () => { focusCalled = true; },
+        setSelectionRange: (s, e) => { rangeSet = [s, e]; }
+    };
+    const origDoc = globalThis.document;
+    globalThis.document = {
+        getElementById: (id) => id === "listingPoints" ? mockTextarea : null
+    };
+    try {
+        const { insertListingFactSlot } = require("../js/listing.js");
+        insertListingFactSlot("material");
+        assert.ok(mockTextarea.value.includes("【材质工艺】: "));
+        assert.ok(focusCalled);
+        assert.ok(rangeSet !== null);
+    } finally {
+        globalThis.document = origDoc;
+    }
+});
+
+test("toggleListingAdvancedConfig toggles hidden class and text", () => {
+    const container = {
+        classes: new Set(["hidden"]),
+        classList: {
+            contains: (c) => container.classes.has(c),
+            add: (c) => container.classes.add(c),
+            remove: (c) => container.classes.delete(c)
+        }
+    };
+    const text = { textContent: "展开" };
+    const icon = { className: "ph ph-caret-down" };
+    const origDoc = globalThis.document;
+    globalThis.document = {
+        getElementById: (id) => {
+            if (id === "listingAdvancedConfigContainer") return container;
+            if (id === "listingAdvancedConfigToggleText") return text;
+            if (id === "listingAdvancedConfigToggleIcon") return icon;
+            return null;
+        }
+    };
+    try {
+        const { toggleListingAdvancedConfig } = require("../js/listing.js");
+        toggleListingAdvancedConfig();
+        assert.equal(container.classes.has("hidden"), false);
+        assert.equal(text.textContent, "收起");
+
+        toggleListingAdvancedConfig();
+        assert.equal(container.classes.has("hidden"), true);
+        assert.equal(text.textContent, "展开");
+    } finally {
+        globalThis.document = origDoc;
+    }
+});
+
+test("applyRegeneratedSection updates in-memory listing data accurately", () => {
+    const {
+        applyRegeneratedSection,
+        getCurrentListingData,
+        setCurrentListingData
+    } = require("../js/listing.js");
+
+    const initialData = {
+        title: { target: "Old Title", zh: "旧标题" },
+        bullets: [{ target: "Old Bullet 1", zh: "旧卖点1" }, { target: "Old Bullet 2", zh: "旧卖点2" }],
+        description: { target: "Old Desc", zh: "旧描述" },
+        searchTerms: { target: "old terms", zh: "旧搜索词" }
+    };
+    setCurrentListingData(initialData);
+
+    // Test title regeneration update
+    applyRegeneratedSection("title", null, {
+        title: { target: "New Crisp Title", zh: "新精炼标题" },
+        titleAlternatives: [{ target: "Alt 1", zh: "备选1" }]
+    });
+    const afterTitle = getCurrentListingData();
+    assert.equal(afterTitle.title.target, "New Crisp Title");
+    assert.equal(afterTitle.titleAlternatives.length, 1);
+
+    // Test single bullet regeneration update (index 1)
+    applyRegeneratedSection("bullet", 1, {
+        bullet: { target: "[QUICK SETUP] Takes 30 seconds...", zh: "30秒快速安装" }
+    });
+    const afterBullet = getCurrentListingData();
+    assert.equal(afterBullet.bullets[0].target, "Old Bullet 1");
+    assert.equal(afterBullet.bullets[1].target, "[QUICK SETUP] Takes 30 seconds...");
+});
+
+test("toggleListingHistoryDrawer toggles hidden class", () => {
+    const drawer = {
+        classes: new Set(["hidden"]),
+        classList: {
+            contains: (c) => drawer.classes.has(c),
+            add: (c) => drawer.classes.add(c),
+            remove: (c) => drawer.classes.delete(c)
+        }
+    };
+    const origDoc = globalThis.document;
+    globalThis.document = {
+        getElementById: (id) => id === "listingHistoryDrawer" ? drawer : null
+    };
+    try {
+        const { toggleListingHistoryDrawer } = require("../js/listing.js");
+        toggleListingHistoryDrawer(true);
+        assert.equal(drawer.classes.has("hidden"), false);
+
+        toggleListingHistoryDrawer(false);
+        assert.equal(drawer.classes.has("hidden"), true);
+    } finally {
+        globalThis.document = origDoc;
+    }
+});
+
+test("loadListingHistoryDrawerList renders DB records without throwing Cannot read properties of undefined", async () => {
+    const mockList = {
+        children: [],
+        innerHTML: "",
+        appendChild: (el) => mockList.children.push(el)
+    };
+    const mockBadge = {
+        textContent: "0",
+        classes: new Set(["hidden"]),
+        classList: {
+            remove: (c) => mockBadge.classes.delete(c),
+            add: (c) => mockBadge.classes.add(c)
+        }
+    };
+    const origDoc = globalThis.document;
+    const origFetch = globalThis.fetch;
+
+    const mockHistoryData = [
+        {
+            id: 101,
+            product_name: "Smart Watch",
+            platform: "Amazon",
+            timestamp: "2026-09-18T10:00:00.000Z",
+            result: {
+                title: { target: "Smart Fitness Watch", zh: "智能手表" },
+                bullets: [{ target: "[BATTERY] 10 days runtime", zh: "续航10天" }]
+            }
+        },
+        {
+            id: 102,
+            product_name: "Coffee Tumbler",
+            platform: "TikTok",
+            timestamp: "2026-09-18T11:00:00.000Z",
+            result: JSON.stringify({
+                title: { target: "Insulated Tumbler", zh: "保温杯" }
+            })
+        }
+    ];
+
+    globalThis.fetch = async () => ({
+        ok: true,
+        json: async () => mockHistoryData
+    });
+
+    globalThis.document = {
+        getElementById: (id) => {
+            if (id === "listingHistoryList") return mockList;
+            if (id === "listingHistoryCountBadge") return mockBadge;
+            return null;
+        },
+        createElement: (tag) => {
+            const el = {
+                tag,
+                className: "",
+                textContent: "",
+                innerHTML: "",
+                children: [],
+                append: (...items) => el.children.push(...items),
+                appendChild: (child) => el.children.push(child)
+            };
+            return el;
+        }
+    };
+
+    try {
+        const { loadListingHistoryDrawerList } = require("../js/listing.js");
+        await loadListingHistoryDrawerList();
+        assert.equal(mockList.children.length, 2);
+        assert.equal(mockBadge.textContent, 2);
+        assert.equal(mockBadge.classes.has("hidden"), false);
+    } finally {
+        globalThis.document = origDoc;
+        globalThis.fetch = origFetch;
+    }
+});
+
+test("onListingEmojiToggleChange updates hint and localStorage", () => {
+    const hint = { textContent: "", className: "" };
+    const toggle = { checked: false };
+    const origDoc = globalThis.document;
+    const origStorage = globalThis.localStorage;
+
+    const storageMap = new Map();
+    globalThis.localStorage = {
+        getItem: (k) => storageMap.get(k) || null,
+        setItem: (k, v) => storageMap.set(k, String(v))
+    };
+
+    globalThis.document = {
+        getElementById: (id) => {
+            if (id === "listingEmojiStatusHint") return hint;
+            if (id === "listingIncludeEmojiToggle") return toggle;
+            return null;
+        }
+    };
+
+    try {
+        const { onListingEmojiToggleChange } = require("../js/listing.js");
+        onListingEmojiToggleChange(true);
+        assert.equal(hint.textContent.includes("开启"), true);
+        assert.equal(toggle.checked, true);
+        assert.equal(globalThis.localStorage.getItem("listing_include_emoji"), "true");
+
+        onListingEmojiToggleChange(false);
+        assert.equal(hint.textContent.includes("关闭"), true);
+        assert.equal(toggle.checked, false);
+        assert.equal(globalThis.localStorage.getItem("listing_include_emoji"), "false");
+    } finally {
+        globalThis.document = origDoc;
+        globalThis.localStorage = origStorage;
+    }
+});
+
+test("index.html contains listingIncludeEmojiToggle switch", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    assert.equal(html.includes('id="listingIncludeEmojiToggle"'), true);
+    assert.equal(html.includes('id="listingEmojiStatusHint"'), true);
+});
+
+test("buildListingDtcHtml produces self-contained HTML with scoped CSS, features and trust bar", () => {
+    const { buildListingDtcHtml } = require("../js/listing.js");
+    const mockData = {
+        title: { target: "Ergonomic Office Chair with 3D Armrests", zh: "人体工学电脑椅" },
+        bullets: [
+            { target: "[LUMBAR SUPPORT] Dynamic 3D self-adjusting cushion protects spine", zh: "自适应腰靠" },
+            { target: "⚡ [FAST SETUP] Complete assembly in under 10 minutes", zh: "10分钟快捷安装" }
+        ],
+        description: { target: "Engineered for maximum posture health and comfort.\nBuilt to last all day.", zh: "专为健康坐姿设计。" },
+        faq: [
+            { q: { target: "What is the weight capacity?", zh: "承重是多少？" }, a: { target: "Up to 330 lbs.", zh: "最高330磅。" } }
+        ]
+    };
+
+    // 1. Target mode (Foreign DTC Store)
+    const htmlTarget = buildListingDtcHtml(mockData, "target");
+    assert.equal(htmlTarget.includes("<style>"), true);
+    assert.equal(htmlTarget.includes(".dtc-listing-wrapper"), true);
+    assert.equal(htmlTarget.includes("Ergonomic Office Chair with 3D Armrests"), true);
+    assert.equal(htmlTarget.includes("LUMBAR SUPPORT"), true);
+    assert.equal(htmlTarget.includes("FAST SETUP"), true);
+    assert.equal(htmlTarget.includes("Fast Global Shipping"), true);
+    assert.equal(htmlTarget.includes("<details>"), true);
+    assert.equal(htmlTarget.includes("application/ld+json"), true);
+    // Should NOT have bilingual Chinese sub lines in target mode
+    assert.equal(htmlTarget.includes('<div class="dtc-feature-zh">'), false);
+
+    // 2. Bilingual mode
+    const htmlBilingual = buildListingDtcHtml(mockData, "bilingual");
+    assert.equal(htmlBilingual.includes("人体工学电脑椅"), true);
+    assert.equal(htmlBilingual.includes("自适应腰靠"), true);
+    assert.equal(htmlBilingual.includes("dtc-feature-zh"), true);
+});
+
+test("index.html contains DTC HTML modal and toolbar button in Details studio", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
+    // Listing toolbar should NOT contain the DTC button (purified for marketplaces)
+    assert.equal(html.includes('id="btnOpenListingDtcHtmlModal"'), false);
+    // Details studio toolbar contains the DTC HTML description modal trigger
+    assert.equal(html.includes('id="btnOpenDetailDtcHtmlModal"'), true);
+    // Global DTC HTML preview modal and components exist
+    assert.equal(html.includes('id="listingDtcHtmlModal"'), true);
+    assert.equal(html.includes('id="listingDtcHtmlPreviewFrame"'), true);
+    assert.equal(html.includes('id="listingDtcHtmlCodeArea"'), true);
+    assert.equal(html.includes('id="btnDtcHtmlViewportDesktop"'), true);
+    assert.equal(html.includes('id="btnDtcHtmlViewportMobile"'), true);
+    // Listing sidebar indicates marketplace platforms
+    assert.equal(html.includes("第三方平台刊登 (Amazon / TikTok / eBay / Etsy)"), true);
+});
+
+test("setListingDtcHtmlViewport and setListingDtcHtmlTab manage modal DOM states", () => {
+    const {
+        setListingDtcHtmlViewport,
+        setListingDtcHtmlTab
+    } = require("../js/listing.js");
+
+    const previewWrap = {
+        style: {},
+        classes: new Set(),
+        classList: {
+            add: (c) => previewWrap.classes.add(c),
+            remove: (c) => previewWrap.classes.delete(c)
+        }
+    };
+    const btnDesktop = { className: "" };
+    const btnMobile = { className: "" };
+    const codeWrap = {
+        classes: new Set(["hidden"]),
+        classList: {
+            add: (c) => codeWrap.classes.add(c),
+            remove: (c) => codeWrap.classes.delete(c)
+        }
+    };
+    const btnPreview = { className: "" };
+    const btnCode = { className: "" };
+
+    const origDoc = globalThis.document;
+    globalThis.document = {
+        getElementById: (id) => {
+            if (id === "listingDtcHtmlPreviewWrapper") return previewWrap;
+            if (id === "btnDtcHtmlViewportDesktop") return btnDesktop;
+            if (id === "btnDtcHtmlViewportMobile") return btnMobile;
+            if (id === "listingDtcHtmlCodeWrapper") return codeWrap;
+            if (id === "btnDtcHtmlTabPreview") return btnPreview;
+            if (id === "btnDtcHtmlTabCode") return btnCode;
+            return null;
+        }
+    };
+
+    try {
+        // Test mobile viewport
+        setListingDtcHtmlViewport("mobile");
+        assert.equal(previewWrap.style.maxWidth, "375px");
+
+        // Test desktop viewport
+        setListingDtcHtmlViewport("desktop");
+        assert.equal(previewWrap.style.maxWidth, "100%");
+
+        // Test code tab
+        setListingDtcHtmlTab("code");
+        assert.equal(codeWrap.classes.has("hidden"), false);
+
+        // Test preview tab
+        setListingDtcHtmlTab("preview");
+        assert.equal(codeWrap.classes.has("hidden"), true);
+    } finally {
+        globalThis.document = origDoc;
+    }
+});
+
+test("openDetailDtcHtmlModal and getDetailDtcHtmlData populate modal from details inputs", () => {
+    const { getDetailDtcHtmlData, openDetailDtcHtmlModal } = require("../js/details.js");
+
+    const modal = {
+        classes: new Set(["hidden"]),
+        classList: {
+            remove: (c) => modal.classes.delete(c),
+            add: (c) => modal.classes.add(c)
+        }
+    };
+    const codeArea = { value: "" };
+    const iframe = { srcdoc: "" };
+
+    const prodNameInput = { value: "Minimalist Ceramic Mug" };
+    const sellingPointsText = { value: "- Handcrafted stoneware clay\n- Ergonomic matte handle\n- 350ml capacity" };
+    const productFactsText = { value: "Fired at 1280°C for superior chip resistance. Microwave & dishwasher safe." };
+
+    const origDoc = globalThis.document;
+    globalThis.document = {
+        getElementById: (id) => {
+            if (id === "listingDtcHtmlModal") return modal;
+            if (id === "listingDtcHtmlCodeArea") return codeArea;
+            if (id === "listingDtcHtmlPreviewFrame") return iframe;
+            if (id === "productNameInput") return prodNameInput;
+            if (id === "sellingPointsText") return sellingPointsText;
+            if (id === "productFactsText") return productFactsText;
+            return null;
+        }
+    };
+
+    try {
+        const data = getDetailDtcHtmlData();
+        assert.equal(data.title.target, "Minimalist Ceramic Mug");
+        assert.equal(data.bullets.length, 3);
+        assert.equal(data.bullets[0].target, "Handcrafted stoneware clay");
+        assert.equal(data.description.target.includes("1280°C"), true);
+
+        openDetailDtcHtmlModal();
+        assert.equal(modal.classes.has("hidden"), false);
+        assert.equal(codeArea.value.includes("Minimalist Ceramic Mug"), true);
+        assert.equal(codeArea.value.includes(".dtc-listing-wrapper"), true);
+        assert.equal(iframe.srcdoc.includes("Minimalist Ceramic Mug"), true);
+    } finally {
+        globalThis.document = origDoc;
+    }
+});

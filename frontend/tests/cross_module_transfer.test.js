@@ -45,6 +45,11 @@ test('index.html contains Listing transfer buttons and Analysis progress element
     assert.match(html, /onclick="transferListingToDetails\(\)"/);
     assert.match(html, /onclick="transferListingToAds\(\)"/);
 
+    // Cross-module synergy banners
+    assert.match(html, /id="detailListingSyncBanner"/);
+    assert.match(html, /id="detailWorkflowSyncHint"/);
+    assert.match(html, /id="listingWorkflowHandoffCard"/);
+
     // Staged progress in analysis
     assert.match(html, /id="xp-loadingStageLabel"/);
     assert.match(html, /id="xp-progressBar"/);
@@ -55,6 +60,8 @@ test('transferListingToDetails transfers title, bullets, description, and keywor
     const productNameInput = createMockElement('productNameInput', '');
     const sellingPointsText = createMockElement('sellingPointsText', '');
     const productFactsText = createMockElement('productFactsText', '');
+    const detailListingSyncBanner = createMockElement('detailListingSyncBanner', '');
+    detailListingSyncBanner.classList.add('hidden');
 
     let switchedTab = null;
     let toastMessage = null;
@@ -64,6 +71,7 @@ test('transferListingToDetails transfers title, bullets, description, and keywor
             if (id === 'productNameInput') return productNameInput;
             if (id === 'sellingPointsText') return sellingPointsText;
             if (id === 'productFactsText') return productFactsText;
+            if (id === 'detailListingSyncBanner') return detailListingSyncBanner;
             return null;
         }
     };
@@ -93,6 +101,7 @@ test('transferListingToDetails transfers title, bullets, description, and keywor
     assert.match(sellingPointsText.value, /高强度防爆钢制底盘/);
     assert.match(productFactsText.value, /核心搜索词: office chair ergonomic lumbar support desk chair/);
     assert.match(productFactsText.value, /关键词库: mesh chair, computer chair, desk chair/);
+    assert.equal(detailListingSyncBanner.classList.contains('hidden'), false);
     assert.equal(toastMessage?.type, 'success');
 });
 

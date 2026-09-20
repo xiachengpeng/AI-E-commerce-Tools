@@ -249,6 +249,139 @@ def test_listing_prompt_contains_anti_fluff_and_outcome_bracket_guidelines():
     )
     prompt = _listing_prompt(request)
     assert "Strict Anti-Fluff & Voice of Customer" in prompt
+    assert "STRICT FACTUAL INVARIANT MANDATE (ZERO SPECIFICATION MORPHING)" in prompt
     assert "revolutionary" in prompt
     assert "game-changing" in prompt
     assert "uppercase bracketed outcome/benefit tag" in prompt
+
+
+@pytest.mark.asyncio
+async def test_regenerate_listing_section_title_and_bullet():
+    from models.request import ListingRegenerateSectionRequest
+    from services.listing_service import regenerate_listing_section
+
+    # Test title
+    req_title = ListingRegenerateSectionRequest(
+        section="title",
+        product_name="Bamboo Desktop Organizer",
+        core_selling_points="3 drawers, natural bamboo, compact size",
+        platform="Amazon",
+        region="US Market",
+        instruction="more_concise",
+    )
+    with patch(
+        "services.listing_service.AIService.call_ai",
+        new=AsyncMock(return_value='{"title": {"target": "Compact Bamboo Desk Organizer", "zh": "竹制桌面收纳盒"}, "titleAlternatives": []}'),
+    ):
+        res_title = await regenerate_listing_section(req_title)
+    assert res_title["section"] == "title"
+    assert res_title["data"]["title"]["target"] == "Compact Bamboo Desk Organizer"
+
+    # Test bullet
+    req_bullet = ListingRegenerateSectionRequest(
+        section="bullet",
+        bullet_index=1,
+        product_name="Bamboo Desktop Organizer",
+        core_selling_points="3 drawers, natural bamboo",
+        platform="Amazon",
+        instruction="benefit_heavy",
+    )
+    with patch(
+        "services.listing_service.AIService.call_ai",
+        new=AsyncMock(return_value='{"bullet": {"target": "[CLUTTER-FREE DESK] 3 smooth-sliding drawers...", "zh": "3个抽屉"}, "alternatives": []}'),
+    ):
+        res_bullet = await regenerate_listing_section(req_bullet)
+    assert res_bullet["section"] == "bullet"
+    assert res_bullet["bullet_index"] == 1
+    assert "[CLUTTER-FREE DESK]" in res_bullet["data"]["bullet"]["target"]
+
+
+@pytest.mark.asyncio
+async def test_extract_listing_inputs_exception_no_unbound_local_error():
+    # Valid base64 header
+    fake_img = "data:image/png;base64," + base64.b64encode(b"fake image data").decode("utf-8")
+    req = ListingImageExtractRequest(image_data=fake_img)
+
+    with patch(
+        "services.listing_service.AIService.generate_content",
+        new=AsyncMock(side_effect=RuntimeError("multimodal vision model error")),
+    ):
+        with pytest.raises(ValueError, match="当前配置的 AI 文本模型不支持图片视觉识别"):
+            await extract_listing_inputs(req)
+
+    with patch(
+        "services.listing_service.AIService.generate_content",
+        new=AsyncMock(side_effect=RuntimeError("random connection error")),
+    ):
+        with pytest.raises(RuntimeError, match="random connection error"):
+            await extract_listing_inputs(req)
+
+
+def test_listing_prompt_emoji_toggle():
+    from models.request import ListingRegenerateSectionRequest
+    from services.listing_service import _listing_prompt, _regenerate_section_prompt
+    req_no_emoji = ListingGenerateRequest(
+        name="Wireless Earbuds",
+        points="ANC, 36h runtime",
+        platform="Amazon",
+        region="US Market",
+        include_emoji=False,
+    )
+    prompt_no = _listing_prompt(req_no_emoji)
+    assert "14. NO EMOJIS" in prompt_no
+    assert "EMOJI STYLING MANDATE" not in prompt_no
+
+    req_with_emoji = ListingGenerateRequest(
+        name="Wireless Earbuds",
+        points="ANC, 36h runtime",
+        platform="TikTok Shop",
+        region="US Market",
+        include_emoji=True,
+    )
+    prompt_with = _listing_prompt(req_with_emoji)
+    assert "14. EMOJI STYLING MANDATE" in prompt_with
+    assert "NO EMOJIS" not in prompt_with
+
+    # Test regenerate prompt
+    regen_no = ListingRegenerateSectionRequest(
+        section="title",
+        product_name="Wireless Earbuds",
+        core_selling_points="ANC",
+        include_emoji=False,
+    )
+    assert "NO EMOJIS" in _regenerate_section_prompt(regen_no)
+
+    regen_with = ListingRegenerateSectionRequest(
+        section="title",
+        product_name="Wireless Earbuds",
+        core_selling_points="ANC",
+        include_emoji=True,
+    )
+    assert "EMOJI STYLING" in _regenerate_section_prompt(regen_with)
+
+
+def test_listing_prompt_anti_cliche_and_benefit_rules():
+    from models.request import ListingGenerateRequest, ListingRegenerateSectionRequest
+    from services.listing_service import _listing_prompt, _regenerate_section_prompt
+
+    req = ListingGenerateRequest(
+        name="Ergonomic Desk Chair",
+        points="Adjustable lumbar support",
+        platform="Shopify",
+        region="US Market",
+    )
+    prompt = _listing_prompt(req)
+    assert "ABSOLUTE BAN ON AI CLICHÉS" in prompt
+    assert "Experience the perfect blend of..." in prompt
+    assert "Elevate your lifestyle/routine..." in prompt
+    assert "BENEFIT > FEATURE CONVERSION FORMULA" in prompt
+    assert "STRICTLY AVOID large monolithic walls of text" in prompt
+
+    regen_req = ListingRegenerateSectionRequest(
+        section="description",
+        product_name="Ergonomic Desk Chair",
+        core_selling_points="Adjustable lumbar support",
+    )
+    regen_prompt = _regenerate_section_prompt(regen_req)
+    assert "Strict Anti-Fluff & Anti-Cliché" in regen_prompt
+    assert "Benefit > Feature" in regen_prompt

@@ -4393,6 +4393,15 @@
                                     placeholder="留空自动探测，例如：https://api.example.com/api/user/self">
                                 <small>若中转站查询路径特殊或非标准，可在此手动填入完整的余额查询 API 地址。</small>
                             </label>
+                            <div class="settings-balance-test-row mt-3">
+                                <button id="settingsTestBalanceBtn" type="button"
+                                    class="settings-btn-secondary settings-btn-sm"
+                                    onclick="testBalanceQueryConnection(this)">
+                                    <i class="ph ph-plugs-connected"></i>
+                                    <span>测试余额连接</span>
+                                </button>
+                                <span id="settingsBalanceTestMsg" class="settings-balance-test-msg"></span>
+                            </div>
                         </div>
 
                         <div id="settingsVertexFields" class="settings-form-section hidden">

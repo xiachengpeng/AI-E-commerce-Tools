@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Optional
 
 from services.ai_router import AIRouter
 from services.json_utils import safe_extract_and_parse_json
@@ -16,7 +17,8 @@ def first_text_from_normalized_response(response: dict) -> str:
     parts = candidates[0].get("content", {}).get("parts", [])
     if not parts:
         raise ValueError("AI 响应候选结果中没有内容")
-    return parts[0].get("text", "")
+    text_parts = [p.get("text", "") for p in parts if p.get("text")]
+    return "".join(text_parts)
 
 
 class AIService:
@@ -26,8 +28,15 @@ class AIService:
         prompt: str,
         capability: str = "text",
         response_mime_type: str = "application/json",
+        max_output_tokens: Optional[int] = None,
     ) -> str:
-        """Route a prompt by capability and return its first text part."""
+        """Route a prompt by capability and return its text part."""
+        gen_config = {
+            "responseMimeType": response_mime_type,
+        }
+        if max_output_tokens is not None:
+            gen_config["maxOutputTokens"] = max_output_tokens
+
         response = await ai_router.generate(
             capability,
             {
@@ -37,9 +46,7 @@ class AIService:
                         "parts": [{"text": prompt}],
                     }
                 ],
-                "generationConfig": {
-                    "responseMimeType": response_mime_type
-                },
+                "generationConfig": gen_config,
             },
         )
         return first_text_from_normalized_response(response)

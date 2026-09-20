@@ -55,3 +55,14 @@ test("index.html contains overview KPI balance elements and cache-busting versio
     assert.match(indexHtml, /id="settingsKpiImageBalance"/);
     assert.match(indexHtml, /js\/settings\.js\?v=20260920-balance-v2/);
 });
+
+test("index.html contains balance test connection button and message container", () => {
+    assert.match(indexHtml, /id="settingsTestBalanceBtn"/);
+    assert.match(indexHtml, /id="settingsBalanceTestMsg"/);
+    assert.match(indexHtml, /测试余额连接/);
+});
+
+test("settings.js exports testBalanceQueryConnection function", () => {
+    const { testBalanceQueryConnection } = require("../js/settings.js");
+    assert.equal(typeof testBalanceQueryConnection, "function");
+});

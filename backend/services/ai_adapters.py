@@ -76,16 +76,34 @@ def convert_google_config(config: dict):
             ),
         )
 
-    return types.GenerateContentConfig(
-        response_mime_type=(
+    kwargs = {
+        "response_mime_type": (
             config.get("responseMimeType") or config.get("response_mime_type")
         ),
-        response_modalities=(
+        "response_modalities": (
             config.get("responseModalities")
             or config.get("response_modalities")
         ),
-        image_config=converted_image_config,
+        "image_config": converted_image_config,
+    }
+    max_output_tokens = (
+        config.get("maxOutputTokens")
+        or config.get("max_output_tokens")
+        or config.get("max_tokens")
     )
+    if max_output_tokens is not None:
+        try:
+            kwargs["max_output_tokens"] = int(max_output_tokens)
+        except (ValueError, TypeError):
+            pass
+    temperature = config.get("temperature")
+    if temperature is not None:
+        try:
+            kwargs["temperature"] = float(temperature)
+        except (ValueError, TypeError):
+            pass
+
+    return types.GenerateContentConfig(**kwargs)
 
 
 def google_response_to_dict(response) -> dict:
@@ -572,9 +590,10 @@ class OpenAICompatibleAdapter(AIAdapter):
                         ("mask", ("mask.png", mask.data, mask.mime_type)),
                     ]
                 else:
+                    field_name = "image" if len(images) == 1 else "image[]"
                     files = [
                         (
-                            "image[]",
+                            field_name,
                             (
                                 f"reference-{index}.{_image_extension(image)}",
                                 image.data,
@@ -618,6 +637,16 @@ class OpenAICompatibleAdapter(AIAdapter):
         )
         if response_mime_type == "application/json":
             body["response_format"] = {"type": "json_object"}
+        max_tokens = (
+            generation_config.get("maxOutputTokens")
+            or generation_config.get("max_output_tokens")
+            or generation_config.get("max_tokens")
+        )
+        if max_tokens is not None:
+            try:
+                body["max_tokens"] = int(max_tokens)
+            except (ValueError, TypeError):
+                pass
         response = await self.client.post(
             f"{base_url}/v1/chat/completions",
             headers=headers,

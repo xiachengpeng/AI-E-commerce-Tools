@@ -2326,3 +2326,32 @@
         align-items: stretch;
     }
 }
+
+/* Balance test connection row */
+.settings-balance-test-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0 2px;
+}
+
+.settings-balance-test-msg {
+    font-size: 12px;
+    color: #64748b;
+    transition: color 0.2s;
+}
+
+.settings-balance-test-msg.is-success {
+    color: #059669;
+    font-weight: 600;
+}
+
+.settings-balance-test-msg.is-error {
+    color: #dc2626;
+    font-weight: 600;
+}
+
+.settings-balance-test-msg.is-warning {
+    color: #d97706;
+    font-weight: 600;
+}

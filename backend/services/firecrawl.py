@@ -73,6 +73,10 @@ async def test_firecrawl_connection(
     current_url, current_key = get_firecrawl_config(db=db)
     target_url = (api_url or "").strip() or current_url or "https://api.firecrawl.dev/v1/scrape"
 
+    safe, ssrf_err = validate_outbound_url(target_url, allow_local=True, require_http=True)
+    if not safe:
+        return False, 0, f"非法的爬虫服务器地址: {ssrf_err}"
+
     if api_key is not None and not is_masked_or_empty(api_key):
         target_key = api_key.strip()
     else:

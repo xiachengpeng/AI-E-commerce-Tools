@@ -1467,6 +1467,71 @@ async function queryProviderBalance(providerId, button) {
     }
 }
 
+async function testBalanceQueryConnection(button) {
+    const msgEl = settingsElement("settingsBalanceTestMsg");
+    const providerId = settingsElement("settingsProviderId")?.value || "";
+    const baseUrl = settingsElement("settingsProviderBaseUrl")?.value?.trim() || "";
+    const apiKey = settingsElement("settingsProviderApiKey")?.value?.trim() || "";
+    const balanceAccessToken = settingsElement("settingsProviderBalanceAccessToken")?.value?.trim() || "";
+    const balanceUserId = settingsElement("settingsProviderBalanceUserId")?.value?.trim() || "";
+    const customBalanceUrl = settingsElement("settingsProviderCustomBalanceUrl")?.value?.trim() || "";
+
+    const payload = {
+        protocol: "openai_compatible",
+        base_url: baseUrl || null,
+        api_key: apiKey || null,
+        custom_balance_url: customBalanceUrl || null,
+        balance_access_token: balanceAccessToken || null,
+        balance_user_id: balanceUserId || null
+    };
+    if (providerId) payload.provider_id = Number(providerId);
+
+    setSettingsButtonBusy(button, true);
+    if (msgEl) {
+        msgEl.textContent = "正在测试余额连接…";
+        msgEl.className = "settings-balance-test-msg";
+    }
+
+    let result;
+    try {
+        result = await settingsRequest(`${API_BASE}/api/settings/ai/providers/balance/test`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+    } catch (error) {
+        if (msgEl) {
+            msgEl.textContent = `✗ ${error.message}`;
+            msgEl.className = "settings-balance-test-msg is-error";
+        }
+        settingsToast(error.message, "error");
+        setSettingsButtonBusy(button, false);
+        return;
+    }
+
+    if (result.status === "success" && result.balance_text) {
+        if (msgEl) {
+            msgEl.textContent = `✓ 连接成功，余额: ${result.balance_text}`;
+            msgEl.className = "settings-balance-test-msg is-success";
+        }
+        settingsToast(`测试成功 · 余额: ${result.balance_text}`, "success");
+    } else if (result.status === "unsupported") {
+        if (msgEl) {
+            msgEl.textContent = `⚠ ${result.message || "该协议不支持余额查询"}`;
+            msgEl.className = "settings-balance-test-msg is-warning";
+        }
+        settingsToast(result.message || "该协议不支持余额查询", "info");
+    } else {
+        if (msgEl) {
+            msgEl.textContent = `✗ ${result.message || "查询失败"}`;
+            msgEl.className = "settings-balance-test-msg is-error";
+        }
+        settingsToast(result.message || "测试余额查询失败", "error");
+    }
+
+    setSettingsButtonBusy(button, false);
+}
+
 function openProviderEditor(id) {
     const numericId = id === undefined || id === null || id === ""
         ? null
@@ -1531,6 +1596,12 @@ function openProviderEditor(id) {
     const result = settingsElement("settingsTestResult");
     result.textContent = "";
     result.className = "settings-test-result";
+
+    const balanceTestMsg = settingsElement("settingsBalanceTestMsg");
+    if (balanceTestMsg) {
+        balanceTestMsg.textContent = "";
+        balanceTestMsg.className = "settings-balance-test-msg";
+    }
 
     updateProviderProtocolFields();
     updateProviderCapabilityFields();
@@ -2824,6 +2895,7 @@ if (typeof window !== "undefined") {
     window.renderProviderQuickModelPills = renderProviderQuickModelPills;
     window.applyQuickModelPill = applyQuickModelPill;
     window.providerBalanceActionMarkup = providerBalanceActionMarkup;
+    window.testBalanceQueryConnection = testBalanceQueryConnection;
 }
 
 if (typeof module !== "undefined") {
@@ -2884,6 +2956,7 @@ if (typeof module !== "undefined") {
         settingsLogKey,
         mergeSettingsLogSnapshot,
         providerBalanceMarkup,
-        queryProviderBalance
+        queryProviderBalance,
+        testBalanceQueryConnection
     };
 }

@@ -43,6 +43,7 @@ from models.settings import (
     ProviderConnectionTestResult,
     SavedProviderConnectionTest,
     ProviderBalanceResult,
+    ProviderBalanceTestRequest,
 )
 from services.ai_balance_service import AIBalanceService
 from services.firecrawl import (
@@ -1413,6 +1414,51 @@ async def api_test_ai_provider(
     db: Session = Depends(get_db),
 ):
     return await _run_ai_provider_connection_test(data, db)
+
+
+@app.post(
+    "/api/settings/ai/providers/balance/test",
+    response_model=ProviderBalanceResult,
+)
+async def api_test_provider_balance(
+    data: ProviderBalanceTestRequest,
+    db: Session = Depends(get_db),
+):
+    protocol = data.protocol
+    base_url = data.base_url
+    api_key = data.api_key
+    custom_balance_url = data.custom_balance_url
+    balance_access_token = data.balance_access_token
+    balance_user_id = data.balance_user_id
+    timeout_seconds = 15
+
+    if data.provider_id:
+        provider = db.get(AIProviderConfig, data.provider_id)
+        if not provider:
+            raise HTTPException(status_code=404, detail="AI 提供商不存在")
+        if not base_url:
+            base_url = provider.base_url
+        if not api_key:
+            api_key = provider.api_key
+        if not custom_balance_url:
+            custom_balance_url = provider.custom_balance_url
+        if not balance_access_token:
+            balance_access_token = provider.balance_access_token
+        if not balance_user_id:
+            balance_user_id = provider.balance_user_id
+        protocol = provider.protocol
+        timeout_seconds = provider.timeout_seconds or 15
+
+    service = AIBalanceService()
+    return await service.query_balance(
+        protocol=protocol,
+        base_url=base_url,
+        api_key=api_key,
+        custom_balance_url=custom_balance_url,
+        balance_access_token=balance_access_token,
+        balance_user_id=balance_user_id,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 @app.post(

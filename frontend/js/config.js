@@ -117,9 +117,10 @@ const MARKETING_THEMES = [
 ];
 
 const LISTING_STYLE_OPTIONS = [
-    { value: "Amazon风 (注重核心大词SEO布局，规格严谨，信息密度极高)", label: "Amazon风 (注重SEO)" },
-    { value: "Shopify独立站风 (注重品牌故事，排版优雅，营销导向，强调生活方式)", label: "独立站风 (营销导向)" },
-    { value: "TikTok短视频带货风 (短促有力，情绪煽动强，多用emoji，网感强)", label: "TikTok风 (短促有力)" }
+    { value: "Amazon风 (注重核心大词SEO布局，A9规则合规，5点卖点密集)", label: "Amazon风 (A9规则/严谨SEO)" },
+    { value: "TikTok短视频带货风 (短促有力，情绪煽动强，多用emoji，网感强)", label: "TikTok Shop风 (爆款短促)" },
+    { value: "eBay零售通用风 (突出成色、技术参数准确度与质价比)", label: "eBay风 (零售/参数导向)" },
+    { value: "Etsy手作精品风 (强调手工质感、材质用料、品牌温度与送礼场景)", label: "Etsy风 (手作/故事导向)" }
 ];
 
 const RETRY_DELAYS = [1000, 2000, 4000, 8000, 16000];

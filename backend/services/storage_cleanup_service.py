@@ -2,6 +2,7 @@
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -122,3 +123,37 @@ def cleanup_history_associated_files(module: str, items: Iterable[Any]) -> int:
             deleted_count += 1
 
     return deleted_count
+
+
+def cleanup_expired_static_files(max_age_seconds: int = 86400) -> tuple[int, int]:
+    """
+    Safely scan `outputs` and `uploads` subdirectories and delete files older than max_age_seconds.
+    Returns (deleted_count, freed_bytes).
+    """
+    now = time.time()
+    deleted_count = 0
+    freed_bytes = 0
+
+    for subdir in ALLOWED_CLEANUP_SUBDIRS:
+        target_dir = os.path.join(STATIC_DIR, subdir)
+        if not os.path.isdir(target_dir):
+            continue
+        for root_path, dirs, files in os.walk(target_dir):
+            for file_name in files:
+                file_path = os.path.join(root_path, file_name)
+                if not any(
+                    file_path.startswith(os.path.abspath(os.path.join(STATIC_DIR, s)) + os.sep)
+                    for s in ALLOWED_CLEANUP_SUBDIRS
+                ):
+                    continue
+                try:
+                    mtime = os.path.getmtime(file_path)
+                    if now - mtime > max_age_seconds:
+                        size = os.path.getsize(file_path)
+                        os.remove(file_path)
+                        deleted_count += 1
+                        freed_bytes += size
+                        logger.info("已轮转清理过期静态文件 (%s 秒): %s", max_age_seconds, file_path)
+                except OSError as err:
+                    logger.warning("清理文件失败 %s: %s", file_path, err)
+    return deleted_count, freed_bytes

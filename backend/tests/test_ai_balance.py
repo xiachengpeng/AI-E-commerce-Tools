@@ -232,3 +232,84 @@ def test_api_provider_balance_endpoint(client: TestClient = None):
 
     # Cleanup
     test_client.delete(f"/api/settings/ai/providers/{provider_id}")
+
+
+def test_api_provider_balance_test_draft():
+    test_client = TestClient(app)
+
+    draft_payload = {
+        "protocol": "openai_compatible",
+        "base_url": "https://api.newapi-test.com/v1",
+        "api_key": "sk-draft-key",
+        "balance_access_token": "token-draft-123",
+        "balance_user_id": "888",
+        "custom_balance_url": "https://api.newapi-test.com/api/user/self",
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "success": True,
+        "data": {
+            "quota": 15000000  # $30.00
+        }
+    }
+
+    with patch("httpx.AsyncClient.get", return_value=mock_resp):
+        res = test_client.post("/api/settings/ai/providers/balance/test", json=draft_payload)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "success"
+        assert data["balance_text"] == "$30.00"
+
+
+def test_api_provider_balance_test_saved_inheritance():
+    test_client = TestClient(app)
+
+    create_payload = {
+        "name": "Inherit Test Provider",
+        "protocol": "openai_compatible",
+        "base_url": "https://api.inherit-test.com/v1",
+        "api_key": "sk-saved-inherited-secret",
+        "balance_access_token": "token-saved-inherited-secret",
+        "text_model": "gpt-4o-mini",
+        "supports_text": 1,
+        "supports_image": 0,
+    }
+    create_res = test_client.post("/api/settings/ai/providers", json=create_payload)
+    assert create_res.status_code in (200, 201)
+    provider_id = create_res.json()["id"]
+
+    try:
+        # Call draft test with provider_id, leaving api_key and balance_access_token empty
+        draft_payload = {
+            "provider_id": provider_id,
+            "protocol": "openai_compatible",
+            "base_url": "https://api.inherit-test.com/v1",
+            "api_key": "",
+            "balance_access_token": "",
+            "balance_user_id": "102",
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "success": True,
+            "data": {
+                "quota": 10000000  # $20.00
+            }
+        }
+
+        with patch("httpx.AsyncClient.get", return_value=mock_resp) as mock_get:
+            res = test_client.post("/api/settings/ai/providers/balance/test", json=draft_payload)
+            assert res.status_code == 200
+            data = res.json()
+            assert data["status"] == "success"
+            assert data["balance_text"] == "$20.00"
+
+            # Check that inherited token was used in Authorization header
+            call_kwargs = mock_get.call_args.kwargs
+            headers = call_kwargs.get("headers", {})
+            assert headers.get("Authorization") == "Bearer token-saved-inherited-secret"
+    finally:
+        test_client.delete(f"/api/settings/ai/providers/{provider_id}")

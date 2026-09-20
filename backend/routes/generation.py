@@ -12,6 +12,7 @@ from models.request import (
     ListingComplianceRequest,
     ListingGenerateRequest,
     ListingImageExtractRequest,
+    ListingRegenerateSectionRequest,
     TranslationRequest,
     WatermarkRemovalRequest,
 )
@@ -83,6 +84,18 @@ async def api_listing_compliance(request: ListingComplianceRequest):
     except Exception as exc:
         main.logger.error(f"❌ [Listing] 合规审查失败: {exc}")
         return {"status": "error", "message": str(exc)}
+
+
+@router.post("/api/listing/regenerate-section")
+async def api_listing_regenerate_section(request: ListingRegenerateSectionRequest):
+    main = _main_module()
+    try:
+        data = await main.regenerate_listing_section(request)
+        return {"status": "success", "data": data}
+    except Exception as exc:
+        main.logger.error(f"❌ [Listing] 局部重绘失败 ({request.section}): {exc}")
+        return {"status": "error", "message": str(exc)}
+
 
 
 @router.post("/api/ads/generate")

@@ -32,13 +32,13 @@ def _is_allowed_address(
     if _is_cloud_metadata(address):
         return False, "禁止访问云元数据或链路本地保留地址"
 
-    if address.is_multicast or address.is_unspecified or address.is_reserved:
-        return False, "禁止访问多播或保留网段地址"
-
     if address.is_loopback:
         if allow_local:
             return True, ""
         return False, "禁止访问本地回环地址"
+
+    if address.is_multicast or address.is_unspecified or address.is_reserved:
+        return False, "禁止访问多播或保留网段地址"
 
     if address.is_global:
         return True, ""

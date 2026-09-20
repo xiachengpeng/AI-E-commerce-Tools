@@ -68,6 +68,16 @@ class ProviderBalanceResult(BaseModel):
     message: str
 
 
+class ProviderBalanceTestRequest(BaseModel):
+    provider_id: int | None = None
+    protocol: str = "openai_compatible"
+    base_url: str | None = None
+    api_key: str | None = None
+    custom_balance_url: str | None = None
+    balance_access_token: str | None = None
+    balance_user_id: str | None = None
+
+
 class AIProviderList(BaseModel):
     items: list[AIProviderRead]
 
