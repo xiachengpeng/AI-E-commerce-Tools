@@ -2457,11 +2457,12 @@
                                     <input id="univUploadTitle" type="text" placeholder="例如: Wireless Noise Canceling Headphones Black" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium">
                                 </div>
                                 <div class="flex flex-col gap-1.5">
-                                    <label class="text-xs font-bold text-slate-700 flex items-center gap-1">
+                                    <label class="text-xs font-bold text-slate-700 flex items-center gap-1" title="给 Google 等搜索引擎爬虫识别的“图片说明书”，准确描述画面有助于在 Google 图片搜索中获得海外自然流量">
                                         <span>图片替代文本 (Alt Text)</span>
                                         <span class="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded font-semibold">无障碍与SEO</span>
                                     </label>
                                     <input id="univUploadAltText" type="text" placeholder="例如: Front angle view of over-ear wireless headphones" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium">
+                                    <span class="text-[10px] text-slate-400">给 Google 等搜索引擎爬虫识别的“图片说明书”，准确描述画面有助于在海外 Google 图片搜索中获得自然流量</span>
                                 </div>
                             </div>
                         </div>
@@ -4490,7 +4491,7 @@
                 <div class="settings-editor-panel settings-storage-modal-panel">
                     <div class="settings-editor-header">
                         <div>
-                            <span class="settings-eyebrow">Storage Integration</span>
+                            <span class="settings-eyebrow">独立站外链图床与媒体库托管</span>
                             <h2 id="settingsStorageEditorTitle">媒体库与云存储配置</h2>
                         </div>
                         <button type="button" class="settings-icon-button"
@@ -4499,7 +4500,18 @@
                         </button>
                     </div>
 
-                    <div class="settings-editor-body custom-scrollbar">
+                    <div class="settings-editor-body custom-scrollbar space-y-4">
+                        <!-- 小白科普提示横幅 -->
+                        <div class="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-2xl flex items-start gap-3">
+                            <i class="ph-fill ph-info text-blue-600 text-lg mt-0.5 shrink-0"></i>
+                            <div class="text-xs text-blue-950 leading-relaxed">
+                                <strong class="font-bold">为什么跨境独立站需要配置外部图床？</strong>
+                                <p class="text-blue-900/80 mt-1">
+                                    将商详高清大图与主图托管至 CDN 云图床（或 Shopify / WordPress 媒体库）并开启 WebP 压缩，能使海外买家秒级打开商品详情页，显著降低跳出率并提升 Google 搜索 SEO 评分。
+                                </p>
+                            </div>
+                        </div>
+
                         <!-- 存储类型切换选项卡 (Segmented control) -->
                         <div class="settings-storage-type-nav">
                             <button type="button" id="btnSettingsStorageTabWp" class="settings-storage-type-btn is-active"
@@ -4632,11 +4644,12 @@
                                 <label class="settings-field">
                                     <span>R2 Access Key ID <b>*</b></span>
                                     <input id="settingsR2AccessKeyId" type="text" placeholder="e45a...">
+                                    <small>在 R2 控制台右侧【管理 R2 API 令牌】中创建并复制</small>
                                 </label>
                                 <label class="settings-field">
                                     <span>R2 Secret Access Key</span>
                                     <input id="settingsR2SecretKey" type="password" placeholder="••••••••" autocomplete="new-password">
-                                    <small>编辑时留空表示保留已保存的 Secret。</small>
+                                    <small>在 R2 控制台右侧【管理 R2 API 令牌】中创建并复制。编辑时留空保留旧值。</small>
                                 </label>
                             </div>
                             <div class="settings-form-grid settings-form-grid-three">
