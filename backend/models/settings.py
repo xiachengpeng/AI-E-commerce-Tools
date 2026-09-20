@@ -83,6 +83,7 @@ class UsageQueryConfigWrite(BaseModel):
     balance_script: str | None = None
     balance_custom_key: str | None = None
     balance_custom_url: str | None = None
+    balance_user_id: str | None = None
     balance_timeout: int | None = 10
     balance_auto_interval: int | None = 30
 

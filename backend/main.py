@@ -1435,7 +1435,7 @@ async def api_proxy_usage_query(
     provider = db.get(AIProviderConfig, data.provider_id) if data.provider_id else None
     base_url = (provider.balance_custom_url or provider.base_url or "").strip().rstrip("/") if provider else ""
     api_key = (provider.balance_custom_key or provider.api_key or "").strip() if provider else ""
-    access_token = (provider.balance_access_token or api_key).strip() if provider else api_key
+    access_token = (provider.balance_custom_key or provider.balance_access_token or api_key).strip() if provider else api_key
     user_id = (provider.balance_user_id or "").strip() if provider else ""
 
     secrets = [api_key, access_token]
@@ -1630,6 +1630,7 @@ def api_get_provider_usage_query_config(
         balance_script=provider.balance_script,
         balance_custom_key=None,
         balance_custom_url=provider.balance_custom_url,
+        balance_user_id=provider.balance_user_id,
         balance_timeout=provider.balance_timeout or 10,
         balance_auto_interval=provider.balance_auto_interval or 30,
         has_custom_key=bool(custom_key),
@@ -1655,6 +1656,8 @@ def api_update_provider_usage_query_config(
     if data.balance_custom_key is not None and data.balance_custom_key.strip():
         provider.balance_custom_key = data.balance_custom_key.strip()
     provider.balance_custom_url = data.balance_custom_url
+    if data.balance_user_id is not None:
+        provider.balance_user_id = data.balance_user_id.strip() if data.balance_user_id.strip() else None
     if data.balance_timeout is not None:
         provider.balance_timeout = data.balance_timeout
     if data.balance_auto_interval is not None:
@@ -1675,6 +1678,7 @@ def api_update_provider_usage_query_config(
         balance_script=provider.balance_script,
         balance_custom_key=None,
         balance_custom_url=provider.balance_custom_url,
+        balance_user_id=provider.balance_user_id,
         balance_timeout=provider.balance_timeout or 10,
         balance_auto_interval=provider.balance_auto_interval or 30,
         has_custom_key=bool(custom_key),

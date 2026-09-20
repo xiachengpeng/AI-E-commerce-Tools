@@ -127,7 +127,7 @@ def test_api_usage_query_proxy_and_crud():
                 "url": "{{baseUrl}}/api/user/self",
                 "method": "GET",
                 "headers": {
-                    "Authorization": "Bearer {{apiKey}}",
+                    "Authorization": "Bearer {{accessToken}}",
                     "New-Api-User": "{{userId}}"
                 },
                 "timeout_seconds": 10
@@ -145,12 +145,13 @@ def test_api_usage_query_proxy_and_crud():
             assert mock_req.call_args.args[1] == "https://api.relay-test.com/v1/api/user/self"
             assert call_kwargs["headers"]["Authorization"] == "Bearer sk-secret-model-key"
 
-        # 3. Test PUT /api/settings/ai/providers/{id}/usage-query
+        # 3. Test PUT /api/settings/ai/providers/{id}/usage-query with balance_user_id
         put_res = client.put(
             f"/api/settings/ai/providers/{provider_id}/usage-query",
             json={
                 "balance_template": "newapi",
                 "balance_script": "({ request: {}, extractor: function() {} })",
+                "balance_user_id": "42",
                 "balance_timeout": 12,
                 "balance_auto_interval": 45,
             },
@@ -158,6 +159,7 @@ def test_api_usage_query_proxy_and_crud():
         assert put_res.status_code == 200
         put_data = put_res.json()
         assert put_data["balance_template"] == "newapi"
+        assert put_data["balance_user_id"] == "42"
         assert put_data["balance_timeout"] == 12
 
         # 4. Test GET /api/settings/ai/providers/{id}/usage-query
@@ -165,6 +167,7 @@ def test_api_usage_query_proxy_and_crud():
         assert get_res.status_code == 200
         get_data = get_res.json()
         assert get_data["balance_template"] == "newapi"
+        assert get_data["balance_user_id"] == "42"
         assert get_data["balance_auto_interval"] == 45
     finally:
         client.delete(f"/api/settings/ai/providers/{provider_id}")

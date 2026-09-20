@@ -15,6 +15,9 @@ test("index.html contains CC Switch usage query modal and elements", () => {
     assert.match(indexHtml, /id="settingsUsageTemplateTokenPlan"/, "token_plan template tab");
     assert.match(indexHtml, /id="settingsUsageTemplateOfficial"/, "official template tab");
     assert.match(indexHtml, /id="settingsUsageApiKey"/, "apiKey input");
+    assert.match(indexHtml, /id="settingsUsageCredentialLabel"/, "credential dynamic label");
+    assert.match(indexHtml, /id="settingsUsageUserId"/, "userId input for newapi");
+    assert.match(indexHtml, /id="settingsUsageUserIdGroup"/, "userId container group");
     assert.match(indexHtml, /id="settingsUsageBaseUrl"/, "baseUrl input");
     assert.match(indexHtml, /id="settingsUsageTimeout"/, "timeout input");
     assert.match(indexHtml, /id="settingsUsageAutoInterval"/, "auto interval input");
@@ -96,4 +99,55 @@ test("formatUsageQueryScript formats raw JS in editor", () => {
     settings.formatUsageQueryScript();
     assert.match(mockElements.settingsUsageScriptEditor.value, /request:\s*\{/);
     assert.match(mockElements.settingsUsageScriptEditor.value, /extractor:\s*function/);
+});
+
+test("selectUsageTemplate dynamically updates credential label to Access Token and shows userId input for newapi", () => {
+    const settings = require("../js/settings.js");
+    const mockElements = {
+        settingsUsageTemplateGeneral: { classes: new Set(["active"]), classList: { add(c) { mockElements.settingsUsageTemplateGeneral.classes.add(c); }, remove(c) { mockElements.settingsUsageTemplateGeneral.classes.delete(c); } } },
+        settingsUsageTemplateNewApi: { classes: new Set(), classList: { add(c) { mockElements.settingsUsageTemplateNewApi.classes.add(c); }, remove(c) { mockElements.settingsUsageTemplateNewApi.classes.delete(c); } } },
+        settingsUsageCredentialLabel: { textContent: "API Key (可选覆盖)" },
+        settingsUsageApiKey: { placeholder: "留空则使用供应商的 API Key", value: "" },
+        settingsUsageUserIdGroup: { classes: new Set(["hidden"]), classList: { add(c) { mockElements.settingsUsageUserIdGroup.classes.add(c); }, remove(c) { mockElements.settingsUsageUserIdGroup.classes.delete(c); } } },
+        settingsUsageScriptEditor: { value: "" }
+    };
+    global.document = {
+        getElementById: (id) => mockElements[id] || null
+    };
+
+    // Switch to newapi
+    settings.selectUsageTemplate("newapi");
+    assert.equal(mockElements.settingsUsageCredentialLabel.textContent, "Access Token (可选覆盖)");
+    assert.match(mockElements.settingsUsageApiKey.placeholder, /Access Token/);
+    assert.equal(mockElements.settingsUsageUserIdGroup.classes.has("hidden"), false, "userId group should be visible for newapi");
+
+    // Switch back to general
+    settings.selectUsageTemplate("general");
+    assert.equal(mockElements.settingsUsageCredentialLabel.textContent, "API Key (可选覆盖)");
+    assert.match(mockElements.settingsUsageApiKey.placeholder, /API Key/);
+    assert.equal(mockElements.settingsUsageUserIdGroup.classes.has("hidden"), true, "userId group should be hidden for general");
+});
+
+test("updateUsageCredentialUI handles custom, token_plan and official templates gracefully", () => {
+    const settings = require("../js/settings.js");
+    const mockElements = {
+        settingsUsageCredentialLabel: { textContent: "" },
+        settingsUsageApiKey: { placeholder: "" },
+        settingsUsageUserIdGroup: { classes: new Set(["hidden"]), classList: { add(c) { mockElements.settingsUsageUserIdGroup.classes.add(c); }, remove(c) { mockElements.settingsUsageUserIdGroup.classes.delete(c); } } }
+    };
+    global.document = {
+        getElementById: (id) => mockElements[id] || null
+    };
+
+    ["custom", "token_plan", "official", "general"].forEach(tpl => {
+        settings.updateUsageCredentialUI(tpl);
+        assert.equal(mockElements.settingsUsageCredentialLabel.textContent, "API Key (可选覆盖)");
+        assert.match(mockElements.settingsUsageApiKey.placeholder, /API Key/);
+        assert.equal(mockElements.settingsUsageUserIdGroup.classes.has("hidden"), true);
+    });
+
+    settings.updateUsageCredentialUI("newapi");
+    assert.equal(mockElements.settingsUsageCredentialLabel.textContent, "Access Token (可选覆盖)");
+    assert.match(mockElements.settingsUsageApiKey.placeholder, /Access Token/);
+    assert.equal(mockElements.settingsUsageUserIdGroup.classes.has("hidden"), false);
 });

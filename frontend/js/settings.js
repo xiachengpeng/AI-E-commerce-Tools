@@ -1588,8 +1588,24 @@ function updateUsageTemplatePillsUI(activeKey) {
     });
 }
 
+function updateUsageCredentialUI(templateKey) {
+    const credLabel = settingsElement("settingsUsageCredentialLabel");
+    const credInput = settingsElement("settingsUsageApiKey");
+    const userIdGroup = settingsElement("settingsUsageUserIdGroup");
+    if (templateKey === "newapi") {
+        if (credLabel) credLabel.textContent = "Access Token (可选覆盖)";
+        if (credInput) credInput.placeholder = "留空则使用供应商配置的 Access Token 或 API Key";
+        if (userIdGroup) userIdGroup.classList.remove("hidden");
+    } else {
+        if (credLabel) credLabel.textContent = "API Key (可选覆盖)";
+        if (credInput) credInput.placeholder = "留空则使用供应商的 API Key";
+        if (userIdGroup) userIdGroup.classList.add("hidden");
+    }
+}
+
 function selectUsageTemplate(templateKey) {
     updateUsageTemplatePillsUI(templateKey);
+    updateUsageCredentialUI(templateKey);
     const engine = getUsageQueryEngine();
     if (templateKey !== "custom" && engine && engine.USAGE_QUERY_TEMPLATES && engine.USAGE_QUERY_TEMPLATES[templateKey]) {
         const editor = settingsElement("settingsUsageScriptEditor");
@@ -1617,12 +1633,14 @@ async function openUsageQueryModal(providerId) {
 
     const apiKeyInput = settingsElement("settingsUsageApiKey");
     const baseUrlInput = settingsElement("settingsUsageBaseUrl");
+    const userIdInput = settingsElement("settingsUsageUserId");
     const timeoutInput = settingsElement("settingsUsageTimeout");
     const intervalInput = settingsElement("settingsUsageAutoInterval");
     const editor = settingsElement("settingsUsageScriptEditor");
 
     if (apiKeyInput) apiKeyInput.value = "";
     if (baseUrlInput) baseUrlInput.value = "";
+    if (userIdInput) userIdInput.value = "";
     if (timeoutInput) timeoutInput.value = "10";
     if (intervalInput) intervalInput.value = "30";
 
@@ -1631,6 +1649,7 @@ async function openUsageQueryModal(providerId) {
     const defaultScript = engine?.USAGE_QUERY_TEMPLATES?.[defaultTemplate] || "";
     if (editor) editor.value = defaultScript.trim();
     updateUsageTemplatePillsUI(defaultTemplate);
+    updateUsageCredentialUI(defaultTemplate);
 
     modal.classList.remove("hidden");
 
@@ -1643,6 +1662,9 @@ async function openUsageQueryModal(providerId) {
             if (baseUrlInput && config.balance_custom_url) {
                 baseUrlInput.value = config.balance_custom_url;
             }
+            if (userIdInput && config.balance_user_id) {
+                userIdInput.value = config.balance_user_id;
+            }
             if (timeoutInput && config.balance_timeout !== undefined && config.balance_timeout !== null) {
                 timeoutInput.value = String(config.balance_timeout);
             }
@@ -1651,6 +1673,7 @@ async function openUsageQueryModal(providerId) {
             }
             const activeTemplate = config.balance_template || "general";
             updateUsageTemplatePillsUI(activeTemplate);
+            updateUsageCredentialUI(activeTemplate);
 
             if (editor) {
                 if (config.balance_script && config.balance_script.trim()) {
@@ -1694,6 +1717,7 @@ async function testUsageQueryScript(button) {
     const resultDetails = settingsElement("settingsUsageResultDetails");
     const apiKeyInput = settingsElement("settingsUsageApiKey");
     const baseUrlInput = settingsElement("settingsUsageBaseUrl");
+    const userIdInput = settingsElement("settingsUsageUserId");
     const timeoutInput = settingsElement("settingsUsageTimeout");
 
     if (!editor || !editor.value.trim()) {
@@ -1740,6 +1764,7 @@ async function testUsageQueryScript(button) {
         const reqObj = parsed.request || {};
         const draftApiKey = apiKeyInput?.value?.trim() || "";
         const draftBaseUrl = baseUrlInput?.value?.trim() || "";
+        const draftUserId = userIdInput?.value?.trim() || "";
         const timeoutSeconds = parseInt(timeoutInput?.value, 10) || 10;
 
         let targetUrl = reqObj.url || "";
@@ -1749,6 +1774,9 @@ async function testUsageQueryScript(button) {
         if (draftApiKey && !draftApiKey.includes("••")) {
             targetUrl = targetUrl.replace("{{apiKey}}", draftApiKey);
             targetUrl = targetUrl.replace("{{accessToken}}", draftApiKey);
+        }
+        if (draftUserId) {
+            targetUrl = targetUrl.replace("{{userId}}", draftUserId);
         }
 
         const headers = Object.assign({}, reqObj.headers || {});
@@ -1760,6 +1788,9 @@ async function testUsageQueryScript(button) {
             }
             if (draftBaseUrl) {
                 val = val.replace("{{baseUrl}}", draftBaseUrl.replace(/\/+$/, ""));
+            }
+            if (draftUserId) {
+                val = val.replace("{{userId}}", draftUserId);
             }
             headers[k] = val;
         });
@@ -1775,6 +1806,9 @@ async function testUsageQueryScript(button) {
             }
             if (draftBaseUrl) {
                 bodyStr = bodyStr.replace("{{baseUrl}}", draftBaseUrl.replace(/\/+$/, ""));
+            }
+            if (draftUserId) {
+                bodyStr = bodyStr.replace("{{userId}}", draftUserId);
             }
         }
 
@@ -1956,6 +1990,7 @@ async function saveUsageQueryConfig(button) {
     const editor = settingsElement("settingsUsageScriptEditor");
     const apiKeyInput = settingsElement("settingsUsageApiKey");
     const baseUrlInput = settingsElement("settingsUsageBaseUrl");
+    const userIdInput = settingsElement("settingsUsageUserId");
     const timeoutInput = settingsElement("settingsUsageTimeout");
     const intervalInput = settingsElement("settingsUsageAutoInterval");
 
@@ -1964,6 +1999,7 @@ async function saveUsageQueryConfig(button) {
         balance_script: editor?.value || "",
         balance_custom_key: apiKeyInput?.value?.trim() || null,
         balance_custom_url: baseUrlInput?.value?.trim() || null,
+        balance_user_id: userIdInput?.value?.trim() || null,
         balance_timeout: parseInt(timeoutInput?.value, 10) || 10,
         balance_auto_interval: parseInt(intervalInput?.value, 10) || 0
     };
@@ -3362,10 +3398,12 @@ if (typeof window !== "undefined") {
     window.testUsageQueryScript = testUsageQueryScript;
     window.formatUsageQueryScript = formatUsageQueryScript;
     window.saveUsageQueryConfig = saveUsageQueryConfig;
+    window.updateUsageCredentialUI = updateUsageCredentialUI;
 }
 
 if (typeof module !== "undefined") {
     module.exports = {
+        updateUsageCredentialUI,
         renderProviderQuickModelPills,
         applyQuickModelPill,
         providerSupportsCapability,
