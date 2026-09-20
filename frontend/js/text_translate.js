@@ -55,6 +55,25 @@ function confirmLangSelection() {
 }
 
 /**
+ * 一键应用大区语言预设
+ */
+function applyTextLangPreset(presetKey) {
+    const presets = {
+        western5: ['English', 'German', 'French', 'Spanish', 'Italian'],
+        sea_latam: ['Thai', 'Spanish', 'Portuguese', 'English'],
+        east_asia: ['Japanese', 'Korean']
+    };
+
+    const targetLangs = presets[presetKey] || [];
+    const checkboxes = document.querySelectorAll('.lang-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = targetLangs.includes(cb.value);
+    });
+
+    confirmLangSelection();
+}
+
+/**
  * 批量翻译主函数 - 现在只发起一次请求
  */
 async function executeBatchTextTranslation() {
@@ -178,9 +197,17 @@ function updateResultCard(id, langName, text) {
     card.innerHTML = `
         <div class="flex justify-between items-center mb-3">
             <span class="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest">${langName}</span>
-            <button onclick="copySingleCard('${id}-content')" class="text-indigo-400 hover:text-indigo-600 transition-colors p-1 rounded-md hover:bg-indigo-50">
-                <i class="ph ph-copy text-lg"></i>
-            </button>
+            <div class="flex items-center gap-1.5">
+                <button onclick="sendTranslatedTextToListing('${id}-content')" class="text-xs text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1 cursor-pointer" title="一键将该语言译文填入 Listing 创作中心">
+                    <i class="ph ph-shopping-cart"></i> <span class="text-[10px]">带入 Listing</span>
+                </button>
+                <button onclick="sendTranslatedTextToAds('${id}-content')" class="text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-50 px-2 py-1 rounded transition-colors font-bold flex items-center gap-1 cursor-pointer" title="一键将该语言译文填入广告文案营销中心">
+                    <i class="ph ph-megaphone"></i> <span class="text-[10px]">带入广告</span>
+                </button>
+                <button onclick="copySingleCard('${id}-content')" class="text-gray-400 hover:text-indigo-600 transition-colors p-1 rounded-md hover:bg-indigo-50 cursor-pointer" title="复制译文">
+                    <i class="ph ph-copy text-base"></i>
+                </button>
+            </div>
         </div>
         <div id="${id}-content" class="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">${text}</div>
     `;
@@ -203,6 +230,40 @@ function updateResultCardError(id, langName, msg) {
         </div>
         <div class="text-red-400 text-xs italic">${msg}</div>
     `;
+}
+
+/**
+ * 将翻译结果带入 Listing 描述与五点
+ */
+function sendTranslatedTextToListing(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const text = el.innerText.trim();
+    if (!text) return;
+    const listingInput = document.getElementById('listingRawInput');
+    if (listingInput) {
+        listingInput.value = text;
+        const tabSwitcher = typeof switchMainTab === 'function' ? switchMainTab : (typeof window !== 'undefined' && window.switchMainTab ? window.switchMainTab : (typeof globalThis !== 'undefined' ? globalThis.switchMainTab : null));
+        if (tabSwitcher) tabSwitcher('listing');
+        if (typeof showToast === 'function') showToast('已将该语言译文填入 Listing 创作中心！', 'success');
+    }
+}
+
+/**
+ * 将翻译结果带入广告文案营销中心
+ */
+function sendTranslatedTextToAds(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const text = el.innerText.trim();
+    if (!text) return;
+    const adsInput = document.getElementById('adsProductDesc');
+    if (adsInput) {
+        adsInput.value = text;
+        const tabSwitcher = typeof switchMainTab === 'function' ? switchMainTab : (typeof window !== 'undefined' && window.switchMainTab ? window.switchMainTab : (typeof globalThis !== 'undefined' ? globalThis.switchMainTab : null));
+        if (tabSwitcher) tabSwitcher('ads');
+        if (typeof showToast === 'function') showToast('已将该语言译文填入广告文案营销中心！', 'success');
+    }
 }
 
 /**
@@ -237,4 +298,27 @@ function copyAllResults() {
     navigator.clipboard.writeText(combinedText.trim()).then(() => {
         showToast('全部结果已按格式复制', 'success');
     });
+}
+
+if (typeof window !== 'undefined') {
+    window.applyTextLangPreset = applyTextLangPreset;
+    window.sendTranslatedTextToListing = sendTranslatedTextToListing;
+    window.sendTranslatedTextToAds = sendTranslatedTextToAds;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.applyTextLangPreset = applyTextLangPreset;
+    globalThis.sendTranslatedTextToListing = sendTranslatedTextToListing;
+    globalThis.sendTranslatedTextToAds = sendTranslatedTextToAds;
+}
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        ...(module.exports || {}),
+        applyTextLangPreset,
+        sendTranslatedTextToListing,
+        sendTranslatedTextToAds,
+        confirmLangSelection,
+        executeBatchTextTranslation,
+        copySingleCard,
+        copyAllResults
+    };
 }
