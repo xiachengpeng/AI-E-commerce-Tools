@@ -1287,6 +1287,7 @@ function renderListingData(data) {
     );
     updateListingTitleCounter(listingTextPair(data?.title).target);
     renderTitleAlternatives(data?.titleAlternatives || data?.title_alternatives);
+    renderListingTitleComparison();
 
     // Bullets
     const bullets = document.getElementById('resListingBullets');
@@ -1332,6 +1333,51 @@ function renderListingData(data) {
             li.appendChild(header);
             appendTextBlock(li, 'target-text font-bold text-gray-700 text-sm leading-relaxed', pair.target);
             appendTextBlock(li, 'zh-text text-xs text-gray-400 mt-2 border-t border-gray-200/60 pt-2', pair.zh);
+
+            // 局部精修待审候选对比面板
+            const pendingBullet = typeof getPendingRegeneratedSection === 'function' ? getPendingRegeneratedSection('bullet', index) : null;
+            if (pendingBullet && pendingBullet.proposed?.bullet) {
+                const propPair = listingTextPair(pendingBullet.proposed.bullet);
+                const compBox = document.createElement('div');
+                compBox.className = 'mt-3 p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl shadow-2xs';
+                compBox.innerHTML = `
+                    <div class="flex items-center justify-between mb-2.5 pb-2 border-b border-indigo-100 flex-wrap gap-2">
+                        <div class="flex items-center gap-1.5 text-xs font-bold text-indigo-900">
+                            <i class="ph-bold ph-sparkle text-indigo-600"></i>
+                            <span>AI 定向润色候选对比</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="acceptRegeneratedSection('bullet', ${index})"
+                                class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] shadow-2xs flex items-center gap-1 transition-all cursor-pointer">
+                                <i class="ph-bold ph-check"></i> 采纳新版
+                            </button>
+                            <button type="button" onclick="dismissRegeneratedSection('bullet', ${index})"
+                                class="px-2 py-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg font-bold text-[11px] shadow-2xs flex items-center gap-1 transition-all cursor-pointer">
+                                <i class="ph-bold ph-x"></i> 保留原版
+                            </button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                        <div class="p-2.5 bg-white/90 rounded-lg border border-slate-200/80">
+                            <div class="text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-1">
+                                <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> 原版本
+                            </div>
+                            <div class="text-slate-600 leading-relaxed">${escapeListingHtml(pair.target)}</div>
+                            ${pair.zh ? `<div class="text-[11px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-100">${escapeListingHtml(pair.zh)}</div>` : ''}
+                        </div>
+                        <div class="p-2.5 bg-emerald-50/60 rounded-lg border border-emerald-200">
+                            <div class="text-[10px] font-bold text-emerald-700 mb-1 flex items-center justify-between">
+                                <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ✨ 精修新版</span>
+                                <span class="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded">新推荐</span>
+                            </div>
+                            <div class="text-slate-800 font-medium leading-relaxed">${escapeListingHtml(propPair.target)}</div>
+                            ${propPair.zh ? `<div class="text-[11px] text-emerald-700/80 mt-1.5 pt-1.5 border-t border-emerald-100">${escapeListingHtml(propPair.zh)}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+                li.appendChild(compBox);
+            }
+
             bullets.appendChild(li);
         });
     }
@@ -2023,6 +2069,130 @@ function hideAllSectionRegenMenus() {
     if (menu) menu.classList.add('hidden');
 }
 
+let pendingListingRegenerations = {};
+
+function getPendingRegenerationKey(section, bulletIndex) {
+    return `${section}_${typeof bulletIndex === 'number' ? bulletIndex : 'main'}`;
+}
+
+function getPendingRegeneratedSection(section, bulletIndex) {
+    const key = getPendingRegenerationKey(section, bulletIndex);
+    return pendingListingRegenerations[key] || null;
+}
+
+function stageRegeneratedSection(section, bulletIndex, sectionData) {
+    if (!currentListingDataText) return;
+    const key = getPendingRegenerationKey(section, bulletIndex);
+
+    let original = null;
+    if (section === 'title') {
+        original = currentListingDataText.title;
+    } else if (section === 'bullet' && typeof bulletIndex === 'number') {
+        original = currentListingDataText.bullets?.[bulletIndex] || null;
+    } else if (section === 'description') {
+        original = currentListingDataText.description;
+    } else if (section === 'search_terms') {
+        original = currentListingDataText.searchTerms;
+    }
+
+    pendingListingRegenerations[key] = {
+        section,
+        bulletIndex,
+        original: original ? JSON.parse(JSON.stringify(original)) : null,
+        proposed: sectionData,
+        timestamp: Date.now()
+    };
+
+    if (typeof renderListingData === 'function') {
+        renderListingData(currentListingDataText);
+    }
+}
+
+function acceptRegeneratedSection(section, bulletIndex) {
+    const key = getPendingRegenerationKey(section, bulletIndex);
+    const pending = pendingListingRegenerations[key];
+    if (!pending) return;
+
+    const proposed = pending.proposed;
+    delete pendingListingRegenerations[key];
+    applyRegeneratedSection(section, bulletIndex, proposed);
+    if (typeof showToast === 'function') {
+        showToast('已采纳 AI 精修版本！', 'success');
+    }
+}
+
+function dismissRegeneratedSection(section, bulletIndex) {
+    const key = getPendingRegenerationKey(section, bulletIndex);
+    if (pendingListingRegenerations[key]) {
+        delete pendingListingRegenerations[key];
+        if (typeof renderListingData === 'function') {
+            renderListingData(currentListingDataText);
+        }
+        if (typeof showToast === 'function') {
+            showToast('已保留原版内容', 'info');
+        }
+    }
+}
+
+function renderListingTitleComparison() {
+    if (typeof document === 'undefined') return;
+    const titleContainer = document.getElementById('resListingTitle');
+    if (!titleContainer) return;
+    const existingComp = document.getElementById('listingTitleComparisonBox');
+    if (existingComp && existingComp.remove) existingComp.remove();
+
+    const pending = typeof getPendingRegeneratedSection === 'function' ? getPendingRegeneratedSection('title') : null;
+    if (!pending || !pending.proposed) return;
+
+    const propTitle = pending.proposed.title;
+    if (!propTitle) return;
+
+    const origPair = listingTextPair(pending.original);
+    const propPair = listingTextPair(propTitle);
+
+    const compBox = document.createElement('div');
+    compBox.id = 'listingTitleComparisonBox';
+    compBox.className = 'mt-3 p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl shadow-2xs';
+    compBox.innerHTML = `
+        <div class="flex items-center justify-between mb-2.5 pb-2 border-b border-indigo-100 flex-wrap gap-2">
+            <div class="flex items-center gap-1.5 text-xs font-bold text-indigo-900">
+                <i class="ph-bold ph-sparkle text-indigo-600"></i>
+                <span>AI 标题精修候选对比</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <button type="button" onclick="acceptRegeneratedSection('title')"
+                    class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] shadow-2xs flex items-center gap-1 transition-all cursor-pointer">
+                    <i class="ph-bold ph-check"></i> 采纳新标题
+                </button>
+                <button type="button" onclick="dismissRegeneratedSection('title')"
+                    class="px-2 py-1 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg font-bold text-[11px] shadow-2xs flex items-center gap-1 transition-all cursor-pointer">
+                    <i class="ph-bold ph-x"></i> 保留原标题
+                </button>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs">
+            <div class="p-2.5 bg-white/90 rounded-lg border border-slate-200/80">
+                <div class="text-[10px] font-bold text-slate-400 mb-1 flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> 原版本
+                </div>
+                <div class="text-slate-600 leading-relaxed font-medium">${escapeListingHtml(origPair.target)}</div>
+                ${origPair.zh ? `<div class="text-[11px] text-slate-400 mt-1.5 pt-1.5 border-t border-slate-100">${escapeListingHtml(origPair.zh)}</div>` : ''}
+            </div>
+            <div class="p-2.5 bg-emerald-50/60 rounded-lg border border-emerald-200">
+                <div class="text-[10px] font-bold text-emerald-700 mb-1 flex items-center justify-between">
+                    <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> ✨ 精修新版</span>
+                    <span class="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded">新推荐</span>
+                </div>
+                <div class="text-slate-800 font-bold leading-relaxed">${escapeListingHtml(propPair.target)}</div>
+                ${propPair.zh ? `<div class="text-[11px] text-emerald-700/80 mt-1.5 pt-1.5 border-t border-emerald-100">${escapeListingHtml(propPair.zh)}</div>` : ''}
+            </div>
+        </div>
+    `;
+    if (titleContainer.parentNode && titleContainer.parentNode.insertBefore) {
+        titleContainer.parentNode.insertBefore(compBox, titleContainer.nextSibling);
+    }
+}
+
 function triggerSectionRegeneration(section, bulletIndex, instruction) {
     regenerateListingSection(section, bulletIndex, instruction);
 }
@@ -2077,8 +2247,8 @@ async function regenerateListingSection(section, bulletIndex, instruction) {
         });
 
         if (res && res.data) {
-            applyRegeneratedSection(section, bulletIndex, res.data);
-            if (typeof showToast === 'function') showToast('局部润色完成！', 'success');
+            stageRegeneratedSection(section, bulletIndex, res.data);
+            if (typeof showToast === 'function') showToast('局部润色完成，请在下方对比并确认！', 'success');
         }
     } catch (err) {
         console.error(err);
@@ -2088,6 +2258,10 @@ async function regenerateListingSection(section, bulletIndex, instruction) {
 
 function applyRegeneratedSection(section, bulletIndex, sectionData) {
     if (!currentListingDataText) return;
+    const key = getPendingRegenerationKey(section, bulletIndex);
+    if (pendingListingRegenerations[key]) {
+        delete pendingListingRegenerations[key];
+    }
     if (section === 'title') {
         if (sectionData.title) {
             currentListingDataText.title = sectionData.title;
@@ -2123,11 +2297,11 @@ function saveCurrentListingToHistory() {
     const points = document.getElementById('listingPoints')?.value.trim() || '';
     const keywords = document.getElementById('listingKeywords')?.value.trim() || '';
     const styleOpt = document.getElementById('listingStyleSelect');
-    const style = styleOpt?.options[styleOpt.selectedIndex]?.value || styleOpt?.value || '';
+    const style = styleOpt?.options?.[styleOpt?.selectedIndex]?.value || styleOpt?.value || '';
     const regionOpt = document.getElementById('listingRegionSelect');
-    const region = regionOpt?.options[regionOpt.selectedIndex]?.value || regionOpt?.value || '';
+    const region = regionOpt?.options?.[regionOpt?.selectedIndex]?.value || regionOpt?.value || '';
     const languageOpt = document.getElementById('listingLanguageSelect');
-    const targetLanguage = languageOpt?.options[languageOpt.selectedIndex]?.value || languageOpt?.value || '';
+    const targetLanguage = languageOpt?.options?.[languageOpt?.selectedIndex]?.value || languageOpt?.value || '';
     const themeOpt = document.getElementById('listingMarketingThemeSelect');
 
     const inputSnapshot = {
@@ -2135,12 +2309,12 @@ function saveCurrentListingToHistory() {
         points,
         keywords,
         platform: style,
-        platformLabel: styleOpt?.options[styleOpt.selectedIndex]?.text || style,
+        platformLabel: styleOpt?.options?.[styleOpt?.selectedIndex]?.text || style,
         region,
         target_language: targetLanguage,
         marketing_theme: themeOpt?.value || '',
-        marketing_theme_label: themeOpt?.options[themeOpt.selectedIndex]?.text || '',
-        image_preview: currentListingUploadedBase64 || ''
+        marketing_theme_label: themeOpt?.options?.[themeOpt?.selectedIndex]?.text || '',
+        image_preview: (typeof currentListingUploadedBase64 !== 'undefined' ? currentListingUploadedBase64 : '') || ''
     };
 
     if (typeof saveToHistory === 'function') {
@@ -2962,6 +3136,14 @@ if (typeof window !== 'undefined') {
     window.triggerBulletRegeneration = triggerBulletRegeneration;
     window.regenerateListingSection = regenerateListingSection;
     window.applyRegeneratedSection = applyRegeneratedSection;
+    window.stageRegeneratedSection = stageRegeneratedSection;
+    window.acceptRegeneratedSection = acceptRegeneratedSection;
+    window.dismissRegeneratedSection = dismissRegeneratedSection;
+    window.getPendingRegeneratedSection = getPendingRegeneratedSection;
+    window.renderListingTitleComparison = renderListingTitleComparison;
+    window.pendingListingRegenerations = pendingListingRegenerations;
+    window.getCurrentListingData = getCurrentListingData;
+    window.setCurrentListingData = setCurrentListingData;
     window.saveCurrentListingToHistory = saveCurrentListingToHistory;
     window.updateListingHistoryBadge = updateListingHistoryBadge;
     window.loadListingHistoryDrawerList = loadListingHistoryDrawerList;
@@ -2993,6 +3175,14 @@ if (typeof globalThis !== 'undefined') {
     globalThis.triggerBulletRegeneration = triggerBulletRegeneration;
     globalThis.regenerateListingSection = regenerateListingSection;
     globalThis.applyRegeneratedSection = applyRegeneratedSection;
+    globalThis.stageRegeneratedSection = stageRegeneratedSection;
+    globalThis.acceptRegeneratedSection = acceptRegeneratedSection;
+    globalThis.dismissRegeneratedSection = dismissRegeneratedSection;
+    globalThis.getPendingRegeneratedSection = getPendingRegeneratedSection;
+    globalThis.renderListingTitleComparison = renderListingTitleComparison;
+    globalThis.pendingListingRegenerations = pendingListingRegenerations;
+    globalThis.getCurrentListingData = getCurrentListingData;
+    globalThis.setCurrentListingData = setCurrentListingData;
     globalThis.saveCurrentListingToHistory = saveCurrentListingToHistory;
     globalThis.updateListingHistoryBadge = updateListingHistoryBadge;
     globalThis.loadListingHistoryDrawerList = loadListingHistoryDrawerList;
@@ -3132,6 +3322,12 @@ if (typeof module !== 'undefined' && module.exports) {
         triggerBulletRegeneration,
         regenerateListingSection,
         applyRegeneratedSection,
+        stageRegeneratedSection,
+        acceptRegeneratedSection,
+        dismissRegeneratedSection,
+        getPendingRegeneratedSection,
+        renderListingTitleComparison,
+        pendingListingRegenerations,
         saveCurrentListingToHistory,
         updateListingHistoryBadge,
         loadListingHistoryDrawerList,
