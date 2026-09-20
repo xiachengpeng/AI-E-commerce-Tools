@@ -1956,7 +1956,10 @@ function renderUsageQueryResult(proxyResp, extractResult) {
                 </div>
                 <div class="text-[11px] text-slate-400 mt-2 flex items-start gap-1.5">
                     <span>💡</span>
-                    <span>排查建议：请核对上方<strong>【凭证配置】</strong>中的 API Key 与请求地址，或切换选择匹配该站点的<strong>预设模板</strong>（如 NewAPI / Token Plan 等）。</span>
+                    <span>排查建议：${errMsg.includes("New-Api-User")
+                        ? "<strong>NewAPI 平台强制校验【用户 ID】(数字)</strong>：请登录该站点查看右上角【个人中心】的数字账号 ID，在上方<strong>【用户 ID】</strong>栏填入；若持有该站点的模型 API Key (<code>sk-...</code>)，切换选用 <strong>Token Plan</strong> 模板可直接免 User ID 查询！"
+                        : "请核对上方<strong>【凭证配置】</strong>中的 API Key 与请求地址，或切换选择匹配该站点的<strong>预设模板</strong>（如 NewAPI / Token Plan 等）。"
+                    }</span>
                 </div>
             </div>
         `;
