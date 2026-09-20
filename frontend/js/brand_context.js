@@ -67,7 +67,8 @@
                 const list = json?.data || json?.profiles;
                 if (json.status === 'success' && Array.isArray(list) && list.length > 0) {
                     if (typeof localStorage !== 'undefined') {
-                        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+                        const setter = (typeof safeLocalStorageSet === 'function') ? safeLocalStorageSet : ((k, v) => localStorage.setItem(k, v));
+                        setter(STORAGE_KEY, JSON.stringify(list));
                     }
                     updateInlineBrandProfileSelectors();
                     return list;
@@ -81,7 +82,8 @@
 
     function saveBrandProfilesToStorage(profiles) {
         try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+            const setter = (typeof safeLocalStorageSet === 'function') ? safeLocalStorageSet : ((k, v) => localStorage.setItem(k, v));
+            setter(STORAGE_KEY, JSON.stringify(profiles));
             updateInlineBrandProfileSelectors();
             syncBrandProfilesToBackend(profiles);
         } catch (e) {
@@ -487,6 +489,25 @@
         renderBrandHubUI(draft);
     }
 
+    function loadOfficialDemoProfile() {
+        const demo = {
+            id: '',
+            name: '自适应人体工学护腰电脑椅 (官方示范)',
+            brandName: 'ErgoPro',
+            category: '办公家具 / 人体工学',
+            icp: '每天在电脑前伏案 8 小时以上的程序员、远程办公白领及慢性腰肌劳损人群',
+            painPoints: '传统座椅腰部缺乏自适应支撑导致腰椎悬空酸痛、夏日背部闷热不透气、调节旋钮繁杂且易松动',
+            differentiators: '双轴仿生自适应动态追腰机构、航天级高弹抗撕裂透气网布、3秒单手联动4D无级调节扶手、135度午休大仰角',
+            vocKeywords: '腰不酸了, 久坐不累, 透气清爽, 支撑力强, 结实耐用, 60秒快装',
+            tone: 'professional',
+            competitorNotes: '竞品腰托多为固定硬塑料且网布半年塌陷；差评集中在滚轮卡头发与气杆异响'
+        };
+        renderBrandHubUI(demo);
+        if (typeof showToast === 'function') {
+            showToast('已载入官方示范范本（人体工学椅），供参考与修改！', 'success');
+        }
+    }
+
     function handleDeleteProfile() {
         const id = document.getElementById('brandHubId')?.value;
         if (!id) return;
@@ -639,6 +660,7 @@
         },
         saveFromModal: handleSaveCurrentProfileFromModal,
         newProfile: handleNewProfile,
+        loadOfficialDemoProfile: loadOfficialDemoProfile,
         deleteFromModal: handleDeleteProfile,
         applyFromModal: handleApplyProfileFromModal,
         exportJson: exportProfilesToJson,
@@ -688,6 +710,7 @@
             saveBrandProfilesToStorage,
             syncBrandProfilesToBackend,
             syncBrandProfilesFromBackend,
+            loadOfficialDemoProfile,
             DEFAULT_PROFILES
         };
     }

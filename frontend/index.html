@@ -2823,6 +2823,9 @@
                             <!-- 由 JS 渲染列表 -->
                         </div>
                         <div class="pt-3 border-t border-gray-200/80 mt-2 space-y-2">
+                            <button type="button" onclick="window.brandContextHub && window.brandContextHub.loadOfficialDemoProfile && window.brandContextHub.loadOfficialDemoProfile()" class="w-full text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2 rounded-xl font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs">
+                                <i class="ph-bold ph-lightbulb"></i> 载入官方示范范本 (人体工学椅)
+                            </button>
                             <button type="button" onclick="const draft = window.brandContextHub && window.brandContextHub.extractFromAnalysis ? window.brandContextHub.extractFromAnalysis() : null; if (draft) { window.brandContextHub.openWithDraft(draft); if (typeof showToast === 'function') showToast('已从最新竞品分析中提取画像数据！', 'success'); }" class="w-full text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 py-2 rounded-xl font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs">
                                 <i class="ph-bold ph-chart-line-up"></i> 从竞品分析一键导入
                             </button>
@@ -2872,7 +2875,7 @@
                         <div>
                             <label class="block text-xs font-bold text-gray-700 mb-1 flex items-center justify-between">
                                 <span>🎯 核心目标受众画像 (ICP / Ideal Customer Profile)</span>
-                                <span class="text-[11px] text-gray-400 font-normal">精确指出谁最需要它</span>
+                                <span class="text-[11px] text-gray-400 font-normal">精确指出谁最需要它（职业、日常习惯与使用人群）</span>
                             </label>
                             <textarea id="brandHubIcp" rows="2" placeholder="例如：每天伏案8小时以上的程序员、远程办公人群及慢性腰肌劳损患者" class="w-full text-xs p-2.5 border border-gray-300 rounded-xl focus:border-indigo-500 focus:outline-hidden resize-none"></textarea>
                         </div>
@@ -2880,7 +2883,7 @@
                         <div>
                             <label class="block text-xs font-bold text-gray-700 mb-1 flex items-center justify-between">
                                 <span>⚠️ 买家核心痛点与焦虑 (Customer Pain Points)</span>
-                                <span class="text-[11px] text-gray-400 font-normal">激发共鸣的关键</span>
+                                <span class="text-[11px] text-gray-400 font-normal">在购买前忍受的糟糕体验（产生购买动力的核心痛点）</span>
                             </label>
                             <textarea id="brandHubPainPoints" rows="2" placeholder="例如：传统椅子腰部缺乏自适应支撑导致腰椎悬空酸痛、夏日背部闷热不透气" class="w-full text-xs p-2.5 border border-gray-300 rounded-xl focus:border-indigo-500 focus:outline-hidden resize-none"></textarea>
                         </div>
@@ -2888,7 +2891,7 @@
                         <div>
                             <label class="block text-xs font-bold text-gray-700 mb-1 flex items-center justify-between">
                                 <span>✨ 核心卖点与差异化破局优势 (Differentiators / Value Prop)</span>
-                                <span class="text-[11px] text-gray-400 font-normal">为什么买我不买竞品</span>
+                                <span class="text-[11px] text-gray-400 font-normal">为什么买你而不买竞品的硬核理由（核心卖点与破局优势）</span>
                             </label>
                             <textarea id="brandHubDifferentiators" rows="2" placeholder="例如：双轴仿生自适应动态追腰机构、航天级高弹抗撕裂透气网布、3秒单手联动4D无级调节扶手" class="w-full text-xs p-2.5 border border-gray-300 rounded-xl focus:border-indigo-500 focus:outline-hidden resize-none"></textarea>
                         </div>
