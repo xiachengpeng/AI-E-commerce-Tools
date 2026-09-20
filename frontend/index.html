@@ -3639,7 +3639,7 @@
             <main id="watermarkRemovalPage" class="watermark-removal-page" tabindex="-1">
                 <header class="watermark-removal-header">
                     <div>
-                        <span class="watermark-removal-eyebrow">AI Object Cleanup</span>
+                        <span class="watermark-removal-eyebrow">智能图像无损消除</span>
                         <h1>AI 水印消除</h1>
                         <p>上传商品图，框选一个或多个水印区域，AI 将智能补全背景。</p>
                     </div>
@@ -3744,10 +3744,18 @@
                                 <p id="watermarkRemovalResultMeta">对比原图与消除结果</p>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap justify-end">
                             <button id="watermarkRemovalUploadCloud" type="button" class="watermark-removal-download bg-blue-600 hover:bg-blue-700 text-white border-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 onclick="uploadWatermarkRemovalResultToCloud()" disabled>
                                 <i class="ph ph-cloud-arrow-up"></i> 上传到云图床
+                            </button>
+                            <button id="watermarkRemovalSendToSquareRedraw" type="button" class="watermark-removal-download bg-slate-700 hover:bg-slate-800 text-white border-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                onclick="sendWatermarkRemovalResultToSquareRedraw()" disabled title="将消除水印后的图片送至尺寸重绘，裁剪调整为 Amazon 1:1 或 Shopify 4:5">
+                                <i class="ph ph-crop"></i> 流转至尺寸重绘
+                            </button>
+                            <button id="watermarkRemovalSendToTranslate" type="button" class="watermark-removal-download bg-violet-600 hover:bg-violet-700 text-white border-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                onclick="sendWatermarkRemovalResultToTranslate()" disabled title="将消除水印后的图片送至图片翻译，替换图中外语文字">
+                                <i class="ph ph-translate"></i> 流转至图片翻译
                             </button>
                             <button id="watermarkRemovalSendToDetails" type="button" class="watermark-removal-download bg-indigo-600 hover:bg-indigo-700 text-white border-transparent cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                 onclick="sendWatermarkRemovalResultToDetails()" disabled>

@@ -762,6 +762,41 @@ async function retrySquareRedrawFailed() {
     await runSquareRedrawQueue();
 }
 
+async function addImageToSquareRedraw(dataUrl, filename = 'image.png') {
+    if (!dataUrl) return false;
+    try {
+        let width = 1000;
+        let height = 1000;
+        if (typeof readImageDimensions === 'function') {
+            try {
+                const size = await readImageDimensions(dataUrl);
+                width = size.width;
+                height = size.height;
+            } catch (_) {}
+        }
+        const item = {
+            id: `sr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            filename: filename,
+            image_data: dataUrl,
+            width: width,
+            height: height,
+            status: (typeof squareRedrawImageMatchesTarget === 'function' && squareRedrawImageMatchesTarget(width, height)) ? 'skipped_square' : 'ready',
+            source_url: dataUrl,
+            output_url: '',
+            error_message: '',
+        };
+        squareRedrawImages.push(item);
+        squareRedrawBatchId = null;
+        squareRedrawRenderSignature = '';
+        if (typeof renderSquareRedrawList === 'function') renderSquareRedrawList();
+        if (typeof updateSquareRedrawActions === 'function') updateSquareRedrawActions();
+        return true;
+    } catch (e) {
+        console.error('Failed to add image to square redraw:', e);
+        return false;
+    }
+}
+
 function downloadSquareRedrawZip() {
     if (!squareRedrawBatchId) return;
     window.location.href = `${API_BASE}/api/square-redraw/batches/${squareRedrawBatchId}/download`;
@@ -772,6 +807,7 @@ if (typeof window !== 'undefined') {
     window.handleSquareRedrawPaste = handleSquareRedrawPaste;
     window.sendSquareRedrawToDetails = sendSquareRedrawToDetails;
     window.sendSquareRedrawToTranslate = sendSquareRedrawToTranslate;
+    window.addImageToSquareRedraw = addImageToSquareRedraw;
     window.uploadSquareRedrawItemToCloud = uploadSquareRedrawItemToCloud;
     window.batchUploadSquareRedrawToCloud = batchUploadSquareRedrawToCloud;
     window.uploadCurrentSquareRedrawPreviewToCloud = uploadCurrentSquareRedrawPreviewToCloud;
@@ -783,6 +819,7 @@ if (typeof globalThis !== 'undefined') {
     globalThis.handleSquareRedrawPaste = handleSquareRedrawPaste;
     globalThis.sendSquareRedrawToDetails = sendSquareRedrawToDetails;
     globalThis.sendSquareRedrawToTranslate = sendSquareRedrawToTranslate;
+    globalThis.addImageToSquareRedraw = addImageToSquareRedraw;
     globalThis.uploadSquareRedrawItemToCloud = uploadSquareRedrawItemToCloud;
     globalThis.batchUploadSquareRedrawToCloud = batchUploadSquareRedrawToCloud;
     globalThis.uploadCurrentSquareRedrawPreviewToCloud = uploadCurrentSquareRedrawPreviewToCloud;
@@ -796,6 +833,7 @@ if (typeof module !== 'undefined' && module.exports) {
         handleSquareRedrawPaste,
         sendSquareRedrawToDetails,
         sendSquareRedrawToTranslate,
+        addImageToSquareRedraw,
         uploadSquareRedrawItemToCloud,
         batchUploadSquareRedrawToCloud,
         uploadCurrentSquareRedrawPreviewToCloud,

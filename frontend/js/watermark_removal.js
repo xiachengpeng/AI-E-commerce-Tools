@@ -50,6 +50,8 @@
             resultImage: byId("watermarkRemovalResult"),
             resultMeta: byId("watermarkRemovalResultMeta"),
             uploadCloud: byId("watermarkRemovalUploadCloud"),
+            sendToSquareRedraw: byId("watermarkRemovalSendToSquareRedraw"),
+            sendToTranslate: byId("watermarkRemovalSendToTranslate"),
             download: byId("watermarkRemovalDownload"),
             sendToDetails: byId("watermarkRemovalSendToDetails"),
             zoomButton: byId("watermarkRemovalZoomButton"),
@@ -554,6 +556,8 @@
         state.result = null;
         if (state.elements.comparison) state.elements.comparison.hidden = true;
         if (state.elements.uploadCloud) state.elements.uploadCloud.disabled = true;
+        if (state.elements.sendToSquareRedraw) state.elements.sendToSquareRedraw.disabled = true;
+        if (state.elements.sendToTranslate) state.elements.sendToTranslate.disabled = true;
         if (state.elements.download) state.elements.download.disabled = true;
         if (state.elements.sendToDetails) state.elements.sendToDetails.disabled = true;
         if (state.elements.original) state.elements.original.removeAttribute("src");
@@ -574,10 +578,9 @@
         state.regions = [];
         state.selectedIndex = -1;
         state.interaction = null;
-
+        state.elements.filename.textContent = filename || "已载入图片";
         state.elements.upload.hidden = true;
         state.elements.workspace.hidden = false;
-        state.elements.filename.textContent = filename;
         setWatermarkRemovalError("");
         resetResult();
         updateWatermarkRemovalControls();
@@ -635,6 +638,8 @@
             : "对比原图与消除结果";
         state.elements.comparison.hidden = false;
         if (state.elements.uploadCloud) state.elements.uploadCloud.disabled = false;
+        if (state.elements.sendToSquareRedraw) state.elements.sendToSquareRedraw.disabled = false;
+        if (state.elements.sendToTranslate) state.elements.sendToTranslate.disabled = false;
         state.elements.download.disabled = false;
         if (state.elements.sendToDetails) state.elements.sendToDetails.disabled = false;
     }
@@ -757,7 +762,11 @@
             if (!response.ok) throw new Error(`获取消除图片失败（HTTP ${response.status}）`);
             const blob = await response.blob();
             const dataUrl = await readBlobAsDataUrl(blob);
-            if (typeof setDetailProductImage === "function") {
+            const setter = (typeof window !== "undefined" && window.setDetailProductImage)
+                || (typeof globalThis !== "undefined" && globalThis.setDetailProductImage)
+                || (typeof setDetailProductImage === "function" ? setDetailProductImage : null);
+            if (typeof setter === "function") {
+                setter(dataUrl, filename, true);
                 const tabSwitcher = typeof switchMainTab === "function" ? switchMainTab : (typeof window !== "undefined" && window.switchMainTab ? window.switchMainTab : (typeof globalThis !== "undefined" ? globalThis.switchMainTab : null));
                 if (tabSwitcher) {
                     tabSwitcher("generate");
@@ -771,6 +780,113 @@
         } catch (error) {
             setWatermarkRemovalError(error.message || "传递到详情页失败");
             if (typeof showToast === "function") showToast("传递到详情页失败", "error");
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function sendWatermarkRemovalResultToSquareRedraw() {
+        if (!state.result?.result_url) return;
+        const resultUrl = assetUrl(state.result.result_url);
+        const filename = state.filename ? state.filename.replace(/\.[^/.]+$/, "") + "-cleaned.png" : "watermark_removed.png";
+        const button = state.elements.sendToSquareRedraw;
+        if (button) button.disabled = true;
+
+        try {
+            const response = await fetch(resultUrl);
+            if (!response.ok) throw new Error(`获取消除图片失败（HTTP ${response.status}）`);
+            const blob = await response.blob();
+            const dataUrl = await readBlobAsDataUrl(blob);
+
+            const adder = (typeof window !== "undefined" && window.addImageToSquareRedraw)
+                || (typeof globalThis !== "undefined" && globalThis.addImageToSquareRedraw)
+                || (typeof addImageToSquareRedraw === "function" ? addImageToSquareRedraw : null);
+
+            let added = false;
+            if (typeof adder === "function") {
+                added = await adder(dataUrl, filename);
+            } else if (typeof window !== "undefined" && Array.isArray(window.squareRedrawImages)) {
+                window.squareRedrawImages.push({
+                    id: `sr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                    filename: filename,
+                    image_data: dataUrl,
+                    width: state.result.width || 1000,
+                    height: state.result.height || 1000,
+                    status: "ready",
+                    source_url: dataUrl,
+                    output_url: "",
+                    error_message: ""
+                });
+                if (typeof renderSquareRedrawList === "function") renderSquareRedrawList();
+                if (typeof updateSquareRedrawActions === "function") updateSquareRedrawActions();
+                added = true;
+            }
+
+            if (added) {
+                const tabSwitcher = typeof switchMainTab === "function" ? switchMainTab : (typeof window !== "undefined" && window.switchMainTab ? window.switchMainTab : (typeof globalThis !== "undefined" ? globalThis.switchMainTab : null));
+                if (tabSwitcher) {
+                    tabSwitcher("square-redraw");
+                }
+                if (typeof showToast === "function") {
+                    showToast("已流转至 AI 尺寸重绘，可按电商平台比例裁切！", "success");
+                }
+            } else {
+                throw new Error("尺寸重绘模块未就绪");
+            }
+        } catch (error) {
+            setWatermarkRemovalError(error.message || "传递到尺寸重绘失败");
+            if (typeof showToast === "function") showToast("传递到尺寸重绘失败", "error");
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function sendWatermarkRemovalResultToTranslate() {
+        if (!state.result?.result_url) return;
+        const resultUrl = assetUrl(state.result.result_url);
+        const filename = state.filename ? state.filename.replace(/\.[^/.]+$/, "") + "-cleaned.png" : "watermark_removed.png";
+        const button = state.elements.sendToTranslate;
+        if (button) button.disabled = true;
+
+        try {
+            const response = await fetch(resultUrl);
+            if (!response.ok) throw new Error(`获取消除图片失败（HTTP ${response.status}）`);
+            const blob = await response.blob();
+            const dataUrl = await readBlobAsDataUrl(blob);
+
+            const transItem = {
+                id: "ti_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+                name: filename,
+                base64: dataUrl,
+                mimeType: blob.type || "image/png",
+                status: "waiting"
+            };
+
+            let transList = null;
+            if (typeof transImages !== "undefined" && Array.isArray(transImages)) {
+                transList = transImages;
+            } else if (typeof window !== "undefined" && Array.isArray(window.transImages)) {
+                transList = window.transImages;
+            } else if (typeof globalThis !== "undefined" && Array.isArray(globalThis.transImages)) {
+                transList = globalThis.transImages;
+            }
+
+            if (transList) {
+                transList.push(transItem);
+                if (typeof renderTransCards === "function") renderTransCards();
+                if (typeof updateTransStartBtn === "function") updateTransStartBtn();
+            }
+
+            const tabSwitcher = typeof switchMainTab === "function" ? switchMainTab : (typeof window !== "undefined" && window.switchMainTab ? window.switchMainTab : (typeof globalThis !== "undefined" ? globalThis.switchMainTab : null));
+            if (tabSwitcher) {
+                tabSwitcher("translate");
+            }
+            if (typeof showToast === "function") {
+                showToast("已流转至 AI 图片翻译，可勾选目标语言进行翻译！", "success");
+            }
+        } catch (error) {
+            setWatermarkRemovalError(error.message || "传递到图片翻译失败");
+            if (typeof showToast === "function") showToast("传递到图片翻译失败", "error");
         } finally {
             if (button) button.disabled = false;
         }
@@ -952,6 +1068,8 @@
     root.submitWatermarkRemoval = submitWatermarkRemoval;
     root.downloadWatermarkRemovalResult = downloadWatermarkRemovalResult;
     root.sendWatermarkRemovalResultToDetails = sendWatermarkRemovalResultToDetails;
+    root.sendWatermarkRemovalResultToSquareRedraw = sendWatermarkRemovalResultToSquareRedraw;
+    root.sendWatermarkRemovalResultToTranslate = sendWatermarkRemovalResultToTranslate;
     root.uploadWatermarkRemovalResultToCloud = uploadWatermarkRemovalResultToCloud;
     root.restoreWatermarkRemovalHistory = restoreWatermarkRemovalHistory;
 })(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
