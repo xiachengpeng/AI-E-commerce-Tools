@@ -18,6 +18,7 @@ from typing import List, Literal, Union, Any, Optional
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer
 from dotenv import load_dotenv
+import httpx
 
 from models.request import (
     CompareRequest, CompareResponse, CompareResponseData, ProductCompareData,
@@ -44,6 +45,10 @@ from models.settings import (
     SavedProviderConnectionTest,
     ProviderBalanceResult,
     ProviderBalanceTestRequest,
+    UsageQueryConfigRead,
+    UsageQueryConfigWrite,
+    UsageQueryProxyRequest,
+    UsageQueryProxyResponse,
 )
 from services.ai_balance_service import AIBalanceService
 from services.firecrawl import (
@@ -1417,6 +1422,97 @@ async def api_test_ai_provider(
 
 
 @app.post(
+    "/api/settings/ai/providers/usage-query/proxy",
+    response_model=UsageQueryProxyResponse,
+)
+async def api_proxy_usage_query(
+    data: UsageQueryProxyRequest,
+    db: Session = Depends(get_db),
+):
+    import time
+    start_time = time.perf_counter()
+
+    provider = db.get(AIProviderConfig, data.provider_id) if data.provider_id else None
+    base_url = (provider.balance_custom_url or provider.base_url or "").strip().rstrip("/") if provider else ""
+    api_key = (provider.balance_custom_key or provider.api_key or "").strip() if provider else ""
+    access_token = (provider.balance_access_token or api_key).strip() if provider else api_key
+    user_id = (provider.balance_user_id or "").strip() if provider else ""
+
+    secrets = [api_key, access_token]
+
+    # Interpolate variables in URL, headers, and body
+    def _interpolate(text: str | None) -> str | None:
+        if not text:
+            return text
+        res = text.replace("{{baseUrl}}", base_url)
+        res = res.replace("{{apiKey}}", api_key)
+        res = res.replace("{{accessToken}}", access_token)
+        res = res.replace("{{userId}}", user_id)
+        return res
+
+    target_url = _interpolate(data.url) or ""
+    if not target_url.startswith(("http://", "https://")):
+        return UsageQueryProxyResponse(
+            ok=False,
+            status_code=400,
+            message=f"无效的请求 URL: {target_url}",
+            duration_ms=0,
+        )
+
+    headers = {}
+    for k, v in data.headers.items():
+        headers[k] = _interpolate(v) or ""
+
+    body = _interpolate(data.body)
+    method = (data.method or "GET").upper()
+    timeout = min(max(data.timeout_seconds, 2), 60)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.request(
+                method,
+                target_url,
+                headers=headers,
+                content=body.encode("utf-8") if body else None,
+            )
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
+
+            content_type = resp.headers.get("content-type", "").lower()
+            try:
+                parsed_data = resp.json()
+            except Exception:
+                parsed_data = resp.text
+
+            return UsageQueryProxyResponse(
+                ok=resp.is_success,
+                status_code=resp.status_code,
+                data=parsed_data,
+                message=None if resp.is_success else f"HTTP {resp.status_code}",
+                duration_ms=duration_ms,
+            )
+    except httpx.TimeoutException:
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        return UsageQueryProxyResponse(
+            ok=False,
+            status_code=504,
+            message="请求中转站超时，请检查网络连接或调大超时时间",
+            duration_ms=duration_ms,
+        )
+    except Exception as exc:
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        clean_msg = str(exc)
+        for sec in secrets:
+            if sec and len(sec) >= 4:
+                clean_msg = clean_msg.replace(sec, "********")
+        return UsageQueryProxyResponse(
+            ok=False,
+            status_code=502,
+            message=f"代理请求失败: {clean_msg}",
+            duration_ms=duration_ms,
+        )
+
+
+@app.post(
     "/api/settings/ai/providers/balance/test",
     response_model=ProviderBalanceResult,
 )
@@ -1508,6 +1604,82 @@ async def api_query_provider_balance(
         db.commit()
 
     return result
+
+
+@app.get(
+    "/api/settings/ai/providers/{provider_id}/usage-query",
+    response_model=UsageQueryConfigRead,
+)
+def api_get_provider_usage_query_config(
+    provider_id: int,
+    db: Session = Depends(get_db),
+):
+    provider = db.get(AIProviderConfig, provider_id)
+    if not provider:
+        raise HTTPException(status_code=404, detail="AI 提供商不存在")
+
+    custom_key = provider.balance_custom_key or ""
+    masked_key = (
+        f"{custom_key[:3]}••••{custom_key[-3:]}"
+        if len(custom_key) >= 7
+        else ("••••••••" if custom_key else None)
+    )
+
+    return UsageQueryConfigRead(
+        balance_template=provider.balance_template or "general",
+        balance_script=provider.balance_script,
+        balance_custom_key=None,
+        balance_custom_url=provider.balance_custom_url,
+        balance_timeout=provider.balance_timeout or 10,
+        balance_auto_interval=provider.balance_auto_interval or 30,
+        has_custom_key=bool(custom_key),
+        custom_key_masked=masked_key,
+    )
+
+
+@app.put(
+    "/api/settings/ai/providers/{provider_id}/usage-query",
+    response_model=UsageQueryConfigRead,
+)
+def api_update_provider_usage_query_config(
+    provider_id: int,
+    data: UsageQueryConfigWrite,
+    db: Session = Depends(get_db),
+):
+    provider = db.get(AIProviderConfig, provider_id)
+    if not provider:
+        raise HTTPException(status_code=404, detail="AI 提供商不存在")
+
+    provider.balance_template = data.balance_template or "general"
+    provider.balance_script = data.balance_script
+    if data.balance_custom_key is not None and data.balance_custom_key.strip():
+        provider.balance_custom_key = data.balance_custom_key.strip()
+    provider.balance_custom_url = data.balance_custom_url
+    if data.balance_timeout is not None:
+        provider.balance_timeout = data.balance_timeout
+    if data.balance_auto_interval is not None:
+        provider.balance_auto_interval = data.balance_auto_interval
+
+    db.commit()
+    db.refresh(provider)
+
+    custom_key = provider.balance_custom_key or ""
+    masked_key = (
+        f"{custom_key[:3]}••••{custom_key[-3:]}"
+        if len(custom_key) >= 7
+        else ("••••••••" if custom_key else None)
+    )
+
+    return UsageQueryConfigRead(
+        balance_template=provider.balance_template or "general",
+        balance_script=provider.balance_script,
+        balance_custom_key=None,
+        balance_custom_url=provider.balance_custom_url,
+        balance_timeout=provider.balance_timeout or 10,
+        balance_auto_interval=provider.balance_auto_interval or 30,
+        has_custom_key=bool(custom_key),
+        custom_key_masked=masked_key,
+    )
 
 
 @app.get("/api/settings/crawler", response_model=FirecrawlConfigRead)
