@@ -1793,22 +1793,30 @@ async function testUsageQueryScript(button) {
             body: JSON.stringify(proxyPayload)
         });
 
-        const extractResult = engine.executeUsageExtractor(parsed.extractor, proxyResp.data);
+        // Run extractor in JS sandbox with full script or parsed object
+        const extractResult = engine.executeUsageExtractor(editor.value, proxyResp.data);
 
+        // Render result in UI
         renderUsageQueryResult(proxyResp, extractResult);
 
-        if (extractResult.isValid !== false && proxyResp.ok) {
+        const isOverallSuccess = Boolean(proxyResp && proxyResp.ok) && (extractResult.isValid !== false);
+        if (isOverallSuccess) {
             settingsToast("测试执行成功", "success");
         } else {
-            settingsToast("测试执行完成，但提取未通过", "warning");
+            const warnMsg = !proxyResp.ok
+                ? `接口响应 HTTP ${proxyResp.status_code || 400}`
+                : (extractResult.invalidMessage || "提取未通过");
+            settingsToast(`测试未通过: ${warnMsg}`, "warning");
         }
     } catch (err) {
         if (resultArea && resultDetails) {
             resultArea.classList.remove("hidden");
             resultDetails.innerHTML = `
-                <div class="p-3 bg-rose-950/40 border border-rose-900/60 rounded-lg text-rose-300 text-xs">
-                    <div class="font-semibold mb-1 flex items-center gap-1.5"><i class="ph ph-warning-circle"></i> 请求或提取异常</div>
-                    <div class="font-mono">${escapeSettingsHtml(err.message)}</div>
+                <div class="settings-usage-status-bar is-error">
+                    <span class="settings-usage-status-badge is-error"><i class="ph-bold ph-warning-circle"></i> 请求或脚本执行异常</span>
+                </div>
+                <div class="settings-usage-error-details mt-2.5">
+                    <div class="text-xs text-rose-200 font-mono">${escapeSettingsHtml(err.message)}</div>
                 </div>
             `;
         }
@@ -1825,8 +1833,10 @@ function renderUsageQueryResult(proxyResp, extractResult) {
 
     resultArea.classList.remove("hidden");
 
-    const isSuccess = extractResult.isValid !== false && proxyResp.ok;
-    const unit = extractResult.unit || "USD";
+    const httpOk = Boolean(proxyResp && proxyResp.ok);
+    const extractOk = Boolean(extractResult && extractResult.isValid !== false);
+    const isOverallSuccess = httpOk && extractOk;
+    const unit = extractResult?.unit || "USD";
 
     const formatAmount = (val) => {
         if (val === undefined || val === null) return "--";
@@ -1837,56 +1847,102 @@ function renderUsageQueryResult(proxyResp, extractResult) {
         return `${val} ${unit}`;
     };
 
-    let metricsHtml = "";
-    if (isSuccess) {
-        metricsHtml = `
-            <div class="settings-usage-result-grid">
+    let contentHtml = "";
+    if (isOverallSuccess) {
+        contentHtml = `
+            <div class="settings-usage-status-bar is-success">
+                <div class="flex items-center gap-2">
+                    <span class="settings-usage-status-badge is-success"><i class="ph-bold ph-check-circle"></i> 查询成功</span>
+                    <span class="text-xs text-emerald-300 font-medium">额度与套餐提取正常</span>
+                </div>
+                <div class="text-[11px] text-slate-400 font-mono flex items-center gap-3">
+                    <span>HTTP ${proxyResp.status_code || 200}</span>
+                    <span>耗时: ${proxyResp.duration_ms || 0}ms</span>
+                </div>
+            </div>
+            <div class="settings-usage-result-grid mt-3">
                 ${extractResult.planName ? `
                     <div class="settings-usage-result-chip">
-                        <span class="chip-label">套餐/分组</span>
-                        <span class="chip-val" style="color: #60a5fa;">${escapeSettingsHtml(extractResult.planName)}</span>
+                        <span class="chip-label"><i class="ph-bold ph-tag text-indigo-400"></i> 套餐/分组</span>
+                        <span class="chip-val" style="color: #818cf8;">${escapeSettingsHtml(extractResult.planName)}</span>
                     </div>
                 ` : ""}
                 <div class="settings-usage-result-chip">
-                    <span class="chip-label">剩余额度</span>
-                    <span class="chip-val">${escapeSettingsHtml(formatAmount(extractResult.remaining))}</span>
+                    <span class="chip-label"><i class="ph-bold ph-wallet text-emerald-400"></i> 剩余额度</span>
+                    <span class="chip-val" style="color: #10b981;">${escapeSettingsHtml(formatAmount(extractResult.remaining))}</span>
                 </div>
-                ${extractResult.used !== undefined ? `
+                ${extractResult.used !== undefined && extractResult.used !== null ? `
                     <div class="settings-usage-result-chip">
-                        <span class="chip-label">已消耗</span>
+                        <span class="chip-label"><i class="ph-bold ph-clock-counter-clockwise text-amber-400"></i> 已消耗</span>
                         <span class="chip-val" style="color: #f59e0b;">${escapeSettingsHtml(formatAmount(extractResult.used))}</span>
                     </div>
                 ` : ""}
-                ${extractResult.total !== undefined ? `
+                ${extractResult.total !== undefined && extractResult.total !== null ? `
                     <div class="settings-usage-result-chip">
-                        <span class="chip-label">总额度</span>
+                        <span class="chip-label"><i class="ph-bold ph-chart-pie-slice text-sky-400"></i> 总额度</span>
                         <span class="chip-val" style="color: #38bdf8;">${escapeSettingsHtml(formatAmount(extractResult.total))}</span>
                     </div>
                 ` : ""}
             </div>
         `;
     } else {
-        metricsHtml = `
-            <div class="p-3 bg-rose-950/40 border border-rose-900/60 rounded-lg text-rose-300 text-xs">
-                <div class="font-semibold mb-1 flex items-center gap-1.5"><i class="ph ph-warning-circle"></i> 提取未通过 / 接口返回错误</div>
-                <div>${escapeSettingsHtml(extractResult.invalidMessage || proxyResp.message || "未能正确提取到额度数据")}</div>
+        let errTitle = "请求或提取未通过";
+        let errMsg = extractResult?.invalidMessage || proxyResp?.message || "未能正确提取到额度数据";
+
+        if (!httpOk) {
+            const statusCode = proxyResp?.status_code || 500;
+            if (statusCode === 401 || statusCode === 403) {
+                errTitle = `HTTP ${statusCode} · 认证未通过 (凭据无效或已过期)`;
+            } else if (statusCode === 404) {
+                errTitle = `HTTP 404 · 目标接口地址不存在`;
+            } else {
+                errTitle = `HTTP ${statusCode} · 上游服务器响应异常`;
+            }
+            if (proxyResp?.data && typeof proxyResp.data === "object") {
+                const apiMsg = proxyResp.data.message || proxyResp.data.error?.message || proxyResp.data.error || proxyResp.data.msg;
+                if (apiMsg) {
+                    errMsg = String(apiMsg);
+                }
+            }
+        }
+
+        contentHtml = `
+            <div class="settings-usage-status-bar is-error">
+                <div class="flex items-center gap-2">
+                    <span class="settings-usage-status-badge is-error"><i class="ph-bold ph-warning-circle"></i> ${escapeSettingsHtml(errTitle)}</span>
+                </div>
+                <div class="text-[11px] text-slate-400 font-mono flex items-center gap-3">
+                    <span>HTTP ${proxyResp?.status_code || "ERR"}</span>
+                    <span>耗时: ${proxyResp?.duration_ms || 0}ms</span>
+                </div>
+            </div>
+            <div class="settings-usage-error-details mt-2.5">
+                <div class="text-xs text-rose-200 leading-relaxed font-mono">
+                    ${escapeSettingsHtml(errMsg)}
+                </div>
+                <div class="text-[11px] text-slate-400 mt-2 flex items-start gap-1.5">
+                    <span>💡</span>
+                    <span>排查建议：请核对上方<strong>【凭证配置】</strong>中的 API Key 与请求地址，或切换选择匹配该站点的<strong>预设模板</strong>（如 NewAPI / Token Plan 等）。</span>
+                </div>
             </div>
         `;
     }
 
-    const rawDataStr = typeof proxyResp.data === "object"
+    const rawDataStr = typeof proxyResp?.data === "object"
         ? JSON.stringify(proxyResp.data, null, 2)
-        : String(proxyResp.data ?? "");
+        : String(proxyResp?.data ?? "");
 
     resultDetails.innerHTML = `
-        ${metricsHtml}
-        <div class="mt-3 text-[11px] text-slate-400 font-mono flex items-center gap-3">
-            <span>耗时: ${proxyResp.duration_ms || 0}ms</span>
-            <span>HTTP 状态: ${proxyResp.status_code || 200}</span>
-        </div>
-        <details class="mt-2 text-xs text-slate-400">
-            <summary class="cursor-pointer hover:text-slate-200">查看原始响应数据</summary>
-            <pre class="mt-1 p-2 bg-[#0d1117] rounded border border-[#21262d] font-mono text-[11px] text-slate-300 overflow-x-auto max-h-48 whitespace-pre">${escapeSettingsHtml(rawDataStr)}</pre>
+        ${contentHtml}
+        <details class="settings-usage-raw-details mt-3">
+            <summary class="settings-usage-raw-summary">
+                <div class="flex items-center gap-1.5">
+                    <i class="ph-bold ph-brackets-curly text-slate-400"></i>
+                    <span>查看接口原始响应数据 (Raw Response)</span>
+                </div>
+                <span class="text-[11px] text-slate-500 font-normal">点击展开/收起</span>
+            </summary>
+            <pre class="settings-usage-raw-pre mt-2">${escapeSettingsHtml(rawDataStr)}</pre>
         </details>
     `;
 }

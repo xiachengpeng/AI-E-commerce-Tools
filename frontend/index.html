@@ -28,7 +28,7 @@
     <link rel="stylesheet" href="css/style.css?v=20260917-sidebar-v1">
     <link rel="stylesheet" href="css/square_redraw.css?v=20260917-reset-v1">
     <link rel="stylesheet" href="css/analysis.css?v=20260917-reset-v1">
-    <link rel="stylesheet" href="css/settings.css?v=20260920-ccswitch-v1">
+    <link rel="stylesheet" href="css/settings.css?v=20260920-ccswitch-v2">
     <link rel="stylesheet" href="css/watermark_removal.css?v=20260917-reset-v1">
 
     <!-- 基础配置与工具 (必须优先加载) -->
@@ -4538,14 +4538,17 @@
                 role="dialog" aria-modal="true" aria-labelledby="settingsUsageQueryModalTitle">
                 <div class="settings-editor-panel settings-usage-modal-panel">
                     <div class="settings-usage-header">
-                        <button type="button" class="settings-usage-back-btn" onclick="closeUsageQueryModal()" aria-label="返回">
-                            <i class="ph ph-arrow-left"></i>
+                        <button type="button" class="settings-usage-icon-btn settings-usage-back-btn" onclick="closeUsageQueryModal()" aria-label="返回" title="返回">
+                            <i class="ph-bold ph-arrow-left"></i>
                         </button>
-                        <h2 id="settingsUsageQueryModalTitle" class="settings-usage-title">
-                            配置用量查询 - <span id="settingsUsageProviderTitle">AIHub</span>
-                        </h2>
-                        <button type="button" class="settings-icon-button ml-auto" onclick="closeUsageQueryModal()" aria-label="关闭">
-                            <i class="ph ph-x"></i>
+                        <div class="settings-usage-title-group">
+                            <h2 id="settingsUsageQueryModalTitle" class="settings-usage-title">
+                                配置用量查询
+                            </h2>
+                            <span id="settingsUsageProviderTitle" class="settings-usage-provider-badge">AIHub</span>
+                        </div>
+                        <button type="button" class="settings-usage-icon-btn settings-usage-close-btn ml-auto" onclick="closeUsageQueryModal()" aria-label="关闭" title="关闭">
+                            <i class="ph-bold ph-x"></i>
                         </button>
                     </div>
 
@@ -4553,39 +4556,48 @@
                         <!-- 卡片一：预设模板与凭证配置 -->
                         <div class="settings-usage-card">
                             <div class="settings-usage-section-head">
-                                <span class="settings-usage-section-title">预设模板</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="settings-usage-section-icon"><i class="ph-bold ph-squares-four"></i></span>
+                                    <span class="settings-usage-section-title">预设模板</span>
+                                </div>
+                                <span class="settings-usage-subhint">选择与当前中转站匹配的查询规范</span>
                             </div>
-                            <div class="settings-usage-pills">
-                                <button type="button" id="settingsUsageTemplateCustom" class="settings-usage-pill" onclick="selectUsageTemplate('custom')">自定义</button>
-                                <button type="button" id="settingsUsageTemplateGeneral" class="settings-usage-pill active" onclick="selectUsageTemplate('general')">通用模板</button>
-                                <button type="button" id="settingsUsageTemplateNewApi" class="settings-usage-pill" onclick="selectUsageTemplate('newapi')">NewAPI</button>
-                                <button type="button" id="settingsUsageTemplateTokenPlan" class="settings-usage-pill" onclick="selectUsageTemplate('token_plan')">Token Plan</button>
-                                <button type="button" id="settingsUsageTemplateOfficial" class="settings-usage-pill" onclick="selectUsageTemplate('official')">官方</button>
+                            <div class="settings-usage-pills-container mt-2">
+                                <div class="settings-usage-pills">
+                                    <button type="button" id="settingsUsageTemplateCustom" class="settings-usage-pill" onclick="selectUsageTemplate('custom')">自定义</button>
+                                    <button type="button" id="settingsUsageTemplateGeneral" class="settings-usage-pill active" onclick="selectUsageTemplate('general')">通用模板</button>
+                                    <button type="button" id="settingsUsageTemplateNewApi" class="settings-usage-pill" onclick="selectUsageTemplate('newapi')">NewAPI</button>
+                                    <button type="button" id="settingsUsageTemplateTokenPlan" class="settings-usage-pill" onclick="selectUsageTemplate('token_plan')">Token Plan</button>
+                                    <button type="button" id="settingsUsageTemplateOfficial" class="settings-usage-pill" onclick="selectUsageTemplate('official')">官方</button>
+                                </div>
                             </div>
 
-                            <div class="settings-usage-subhead mt-4">
-                                <span class="settings-usage-subtitle">凭证配置</span>
-                                <span class="settings-usage-subhint">留空则自动使用供应商配置</span>
+                            <div class="settings-usage-subhead mt-5">
+                                <div class="flex items-center gap-2">
+                                    <span class="settings-usage-section-icon"><i class="ph-bold ph-key"></i></span>
+                                    <span class="settings-usage-subtitle">凭证与查询参数</span>
+                                </div>
+                                <span class="settings-usage-subhint">留空则自动继承供应商自身配置</span>
                             </div>
 
-                            <div class="settings-usage-grid settings-usage-grid-two mt-2">
+                            <div class="settings-usage-grid settings-usage-grid-two mt-3">
                                 <label class="settings-usage-field">
-                                    <span>API Key (可选)</span>
+                                    <span class="settings-usage-label">API Key (可选覆盖)</span>
                                     <input id="settingsUsageApiKey" type="password" autocomplete="off" placeholder="留空则使用供应商的 API Key">
                                 </label>
                                 <label class="settings-usage-field">
-                                    <span>请求地址 (可选)</span>
+                                    <span class="settings-usage-label">请求地址 (可选覆盖)</span>
                                     <input id="settingsUsageBaseUrl" type="text" autocomplete="off" placeholder="留空则使用供应商的请求地址">
                                 </label>
                             </div>
 
                             <div class="settings-usage-grid settings-usage-grid-two mt-3">
                                 <label class="settings-usage-field">
-                                    <span>超时时间 (秒)</span>
+                                    <span class="settings-usage-label">超时时间 (秒)</span>
                                     <input id="settingsUsageTimeout" type="number" min="2" max="60" value="10">
                                 </label>
                                 <label class="settings-usage-field">
-                                    <span>自动查询间隔 (分钟, 0 表示不自动查询)</span>
+                                    <span class="settings-usage-label">自动查询间隔 (分钟, 0 表示不自动查询)</span>
                                     <input id="settingsUsageAutoInterval" type="number" min="0" max="1440" value="30">
                                 </label>
                             </div>
@@ -4594,40 +4606,50 @@
                         <!-- 卡片二：提取器代码区 -->
                         <div class="settings-usage-card mt-4">
                             <div class="settings-usage-section-head">
-                                <span class="settings-usage-section-title">提取器代码</span>
-                                <span class="settings-usage-subhint">返回对象需包含剩余额度等字段</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="settings-usage-section-icon"><i class="ph-bold ph-code"></i></span>
+                                    <span class="settings-usage-section-title">提取器脚本代码</span>
+                                </div>
+                                <span class="settings-usage-subhint">包含 request 请求参数与 extractor 提取逻辑</span>
                             </div>
                             <div class="settings-usage-editor-wrapper mt-2">
-                                <textarea id="settingsUsageScriptEditor" class="settings-usage-editor" spellcheck="false" rows="14"></textarea>
+                                <div class="settings-usage-editor-header">
+                                    <div class="flex items-center gap-2">
+                                        <span class="settings-usage-lang-tag">JS</span>
+                                        <span class="text-xs text-slate-300 font-medium">提取器规范对象 (request + extractor)</span>
+                                    </div>
+                                    <span class="text-[11px] text-slate-400 font-mono hidden sm:inline">变量插值: {{baseUrl}} · {{apiKey}} · {{accessToken}} · {{userId}}</span>
+                                </div>
+                                <textarea id="settingsUsageScriptEditor" class="settings-usage-editor" spellcheck="false" rows="13"></textarea>
                             </div>
                         </div>
 
                         <!-- 结果预览展示区域 -->
                         <div id="settingsUsageResultArea" class="settings-usage-result hidden mt-4">
                             <div class="settings-usage-result-head">
-                                <i class="ph ph-check-circle text-emerald-400"></i>
-                                <span class="font-medium text-slate-200">执行测试结果</span>
+                                <span class="settings-usage-result-head-icon"><i class="ph-bold ph-activity"></i></span>
+                                <span class="font-semibold text-slate-100 text-sm">测试执行结果</span>
                             </div>
-                            <div id="settingsUsageResultDetails" class="settings-usage-result-details"></div>
+                            <div id="settingsUsageResultDetails" class="settings-usage-result-details mt-2"></div>
                         </div>
                     </div>
 
                     <!-- 底部操作工具栏 -->
                     <div class="settings-usage-footer">
                         <div class="settings-usage-footer-left">
-                            <button type="button" id="settingsUsageTestBtn" class="settings-btn-secondary" onclick="testUsageQueryScript(this)">
-                                <i class="ph ph-play"></i>
+                            <button type="button" id="settingsUsageTestBtn" class="settings-usage-btn settings-usage-btn-test settings-btn-secondary" onclick="testUsageQueryScript(this)">
+                                <i class="ph-bold ph-play"></i>
                                 <span>测试脚本</span>
                             </button>
-                            <button type="button" id="settingsUsageFormatBtn" class="settings-btn-ghost" onclick="formatUsageQueryScript()">
-                                <i class="ph ph-magic-wand"></i>
+                            <button type="button" id="settingsUsageFormatBtn" class="settings-usage-btn settings-usage-btn-format settings-btn-ghost" onclick="formatUsageQueryScript()">
+                                <i class="ph-bold ph-magic-wand"></i>
                                 <span>格式化</span>
                             </button>
                         </div>
                         <div class="settings-usage-footer-right">
-                            <button type="button" id="settingsUsageCancelBtn" class="settings-btn-ghost" onclick="closeUsageQueryModal()">取消</button>
-                            <button type="button" id="settingsUsageSaveBtn" class="settings-btn-primary" onclick="saveUsageQueryConfig(this)">
-                                <i class="ph ph-floppy-disk"></i>
+                            <button type="button" id="settingsUsageCancelBtn" class="settings-usage-btn settings-usage-btn-cancel settings-btn-ghost" onclick="closeUsageQueryModal()">取消</button>
+                            <button type="button" id="settingsUsageSaveBtn" class="settings-usage-btn settings-usage-btn-save settings-btn-primary" onclick="saveUsageQueryConfig(this)">
+                                <i class="ph-bold ph-floppy-disk"></i>
                                 <span>保存配置</span>
                             </button>
                         </div>
@@ -4903,8 +4925,8 @@
     <script>
         console.log("%c[System] DOM fully loaded, starting app.js...", "color: #4f46e5; font-weight: bold;");
     </script>
-    <script src="js/usage_query_engine.js?v=20260920-ccswitch-v1"></script>
-    <script src="js/settings.js?v=20260920-ccswitch-v1"></script>
+    <script src="js/usage_query_engine.js?v=20260920-ccswitch-v2"></script>
+    <script src="js/settings.js?v=20260920-ccswitch-v2"></script>
     <script src="js/app.js?v=20260917-sidebar-v1"></script>
     <script src="js/universal_uploader.js"></script>
     <script src="js/details.js?v=20260917-reset-v1"></script>

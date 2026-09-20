@@ -145,10 +145,24 @@
     }
 
     // 4. 沙箱执行提取器
-    function executeUsageExtractor(scriptStr, responseData, context) {
+    function executeUsageExtractor(scriptOrExtractor, responseData, context) {
         try {
-            const parsed = parseUsageScript(scriptStr);
-            const rawResult = parsed.extractor(responseData, context || {});
+            let extractorFn;
+            if (typeof scriptOrExtractor === "function") {
+                extractorFn = scriptOrExtractor;
+            } else if (scriptOrExtractor && typeof scriptOrExtractor.extractor === "function") {
+                extractorFn = scriptOrExtractor.extractor;
+            } else if (typeof scriptOrExtractor === "string") {
+                const parsed = parseUsageScript(scriptOrExtractor);
+                extractorFn = parsed.extractor;
+            } else {
+                return {
+                    isValid: false,
+                    invalidMessage: "无效的提取器脚本或函数",
+                };
+            }
+
+            const rawResult = extractorFn(responseData, context || {});
             if (!rawResult || typeof rawResult !== "object") {
                 return {
                     isValid: false,

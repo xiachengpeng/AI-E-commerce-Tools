@@ -2361,15 +2361,15 @@
    ========================================================================== */
 
 .settings-usage-modal-panel {
-    max-width: 860px;
+    max-width: 880px;
     width: 95%;
-    max-height: 90vh;
+    max-height: 92vh;
     display: flex;
     flex-direction: column;
-    background: #161922;
-    border: 1px solid #282f3d;
+    background: #0f141f;
+    border: 1px solid #222f46;
     border-radius: 16px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
     color: #e2e8f0;
     overflow: hidden;
 }
@@ -2378,121 +2378,174 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 16px 20px;
-    border-bottom: 1px solid #232936;
-    background: #191d28;
+    padding: 16px 22px;
+    border-bottom: 1px solid #1e293b;
+    background: #131926;
 }
 
-.settings-usage-back-btn {
+.settings-usage-icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
     border-radius: 8px;
-    background: transparent;
+    background: #1c2436;
     color: #94a3b8;
-    border: 1px solid transparent;
+    border: 1px solid #2d3b55;
     cursor: pointer;
-    font-size: 18px;
-    transition: all 0.2s;
+    font-size: 16px;
+    transition: all 0.15s ease;
 }
 
-.settings-usage-back-btn:hover {
-    background: #252d3d;
-    color: #f8fafc;
+.settings-usage-icon-btn:hover {
+    background: #28354d;
+    color: #ffffff;
+    border-color: #475569;
+}
+
+.settings-usage-icon-btn:active {
+    transform: scale(0.96);
+}
+
+.settings-usage-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .settings-usage-title {
-    font-size: 16px;
+    font-size: 16.5px;
     font-weight: 600;
-    color: #f1f5f9;
+    color: #ffffff;
     margin: 0;
+    letter-spacing: -0.01em;
+}
+
+.settings-usage-provider-badge {
+    background: #182236;
+    color: #60a5fa;
+    border: 1px solid #2a3d60;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 500;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .settings-usage-body {
-    padding: 20px;
+    padding: 22px;
     overflow-y: auto;
     flex: 1;
-    background: #12141c;
+    background: #0a0e17;
 }
 
 .settings-usage-card {
-    background: #181b26;
-    border: 1px solid #262e3d;
-    border-radius: 12px;
-    padding: 16px 18px;
+    background: #111622;
+    border: 1px solid #1e283c;
+    border-radius: 14px;
+    padding: 18px 20px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 .settings-usage-section-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
+}
+
+.settings-usage-section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: #1c273c;
+    color: #60a5fa;
+    font-size: 13px;
 }
 
 .settings-usage-section-title {
     font-size: 14px;
     font-weight: 600;
-    color: #f1f5f9;
+    color: #f8fafc;
 }
 
 .settings-usage-subhead {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-top: 6px;
-    border-top: 1px solid #232a38;
+    padding-top: 14px;
+    border-top: 1px solid #1e2738;
 }
 
 .settings-usage-subtitle {
-    font-size: 13px;
-    font-weight: 500;
-    color: #cbd5e1;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #e2e8f0;
 }
 
 .settings-usage-subhint {
-    font-size: 11px;
-    color: #64748b;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+/* 预设模板 Segmented Pills */
+.settings-usage-pills-container {
+    background: #080c14;
+    border: 1px solid #1e283c;
+    border-radius: 10px;
+    padding: 4px;
+    display: inline-block;
+    max-width: 100%;
 }
 
 .settings-usage-pills {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 4px;
 }
 
 .settings-usage-pill {
-    padding: 6px 16px;
-    font-size: 12px;
+    padding: 6px 14px;
+    font-size: 12.5px;
     font-weight: 500;
-    border-radius: 9999px;
-    background: #232a38;
+    border-radius: 7px;
+    background: transparent;
     color: #94a3b8;
-    border: 1px solid #2d3748;
+    border: 1px solid transparent;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: all 0.15s ease;
 }
 
-.settings-usage-pill:hover {
-    background: #2b3547;
+.settings-usage-pill:hover:not(.active) {
+    background: #192233;
     color: #f1f5f9;
 }
 
 .settings-usage-pill.active {
     background: #2563eb;
     color: #ffffff;
+    font-weight: 600;
     border-color: #3b82f6;
-    box-shadow: 0 0 12px rgba(37, 99, 235, 0.4);
+    box-shadow: 0 1px 6px rgba(37, 99, 235, 0.45);
 }
 
 .settings-usage-grid {
     display: grid;
-    gap: 12px;
+    gap: 14px;
 }
 
 .settings-usage-grid-two {
     grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 640px) {
+    .settings-usage-grid-two {
+        grid-template-columns: 1fr;
+    }
 }
 
 .settings-usage-field {
@@ -2501,44 +2554,75 @@
     gap: 6px;
 }
 
-.settings-usage-field span {
+.settings-usage-label {
     font-size: 12px;
-    color: #94a3b8;
+    font-weight: 500;
+    color: #cbd5e1;
 }
 
 .settings-usage-field input {
     width: 100%;
-    padding: 8px 12px;
-    background: #0f1219;
-    border: 1px solid #283142;
+    padding: 9px 12px;
+    background: #080c14;
+    border: 1px solid #243044;
     border-radius: 8px;
-    color: #f1f5f9;
+    color: #f8fafc;
     font-size: 13px;
     outline: none;
-    transition: border-color 0.2s;
+    transition: all 0.2s;
+}
+
+.settings-usage-field input::placeholder {
+    color: #55657e;
+    font-size: 12.5px;
 }
 
 .settings-usage-field input:focus {
     border-color: #3b82f6;
+    background: #0b101c;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 
+/* 提取器代码区域 */
 .settings-usage-editor-wrapper {
     position: relative;
-    border-radius: 8px;
+    border-radius: 10px;
     overflow: hidden;
-    border: 1px solid #262f3f;
-    background: #0d1017;
+    border: 1px solid #202b3e;
+    background: #080c14;
+}
+
+.settings-usage-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: #101624;
+    border-bottom: 1px solid #1e283c;
+}
+
+.settings-usage-lang-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
 }
 
 .settings-usage-editor {
     width: 100%;
     min-height: 240px;
-    padding: 12px 16px;
+    padding: 14px 16px;
     background: transparent;
     color: #38bdf8;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    font-size: 12.5px;
-    line-height: 1.6;
+    font-size: 13px;
+    line-height: 1.65;
     border: none;
     outline: none;
     resize: vertical;
@@ -2546,66 +2630,233 @@
     tab-size: 2;
 }
 
+/* 结果预览区域 */
 .settings-usage-result {
-    background: #151922;
-    border: 1px solid #232c3b;
-    border-radius: 12px;
-    padding: 14px 16px;
+    background: #111624;
+    border: 1px solid #222f46;
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 .settings-usage-result-head {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
-    margin-bottom: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #1c2638;
 }
 
-.settings-usage-result-details {
-    font-size: 12.5px;
-    color: #cbd5e1;
+.settings-usage-result-head-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #38bdf8;
+    font-size: 15px;
+}
+
+.settings-usage-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-radius: 8px;
+}
+
+.settings-usage-status-bar.is-success {
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.settings-usage-status-bar.is-error {
+    background: rgba(244, 63, 94, 0.08);
+    border: 1px solid rgba(244, 63, 94, 0.25);
+}
+
+.settings-usage-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+}
+
+.settings-usage-status-badge.is-success {
+    color: #34d399;
+    background: rgba(16, 185, 129, 0.15);
+}
+
+.settings-usage-status-badge.is-error {
+    color: #fb7185;
+    background: rgba(244, 63, 94, 0.15);
+}
+
+.settings-usage-error-details {
+    padding: 10px 12px;
+    background: #080c14;
+    border: 1px solid #2d1d28;
+    border-radius: 8px;
 }
 
 .settings-usage-result-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 8px;
-    margin-top: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
 }
 
 .settings-usage-result-chip {
-    background: #1f2635;
-    border: 1px solid #2c3649;
-    border-radius: 8px;
-    padding: 6px 10px;
+    background: #0d121c;
+    border: 1px solid #202c3e;
+    border-radius: 10px;
+    padding: 8px 12px;
     display: flex;
     flex-direction: column;
 }
 
 .settings-usage-result-chip .chip-label {
     font-size: 11px;
+    font-weight: 500;
     color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 2px;
 }
 
 .settings-usage-result-chip .chip-val {
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 16px;
+    font-weight: 700;
     color: #10b981;
 }
 
+.settings-usage-raw-details {
+    border-top: 1px solid #1c2638;
+    padding-top: 10px;
+}
+
+.settings-usage-raw-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #94a3b8;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s ease;
+}
+
+.settings-usage-raw-summary:hover {
+    color: #f1f5f9;
+}
+
+.settings-usage-raw-pre {
+    padding: 10px 12px;
+    background: #070a10;
+    border: 1px solid #1a2333;
+    border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: #cbd5e1;
+    overflow-x: auto;
+    max-height: 180px;
+    white-space: pre;
+}
+
+/* 底部操作工具栏 (High-Contrast Buttons) */
 .settings-usage-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 20px;
-    background: #191d28;
-    border-top: 1px solid #232936;
+    padding: 16px 24px;
+    background: #111624;
+    border-top: 1px solid #1e283c;
 }
 
 .settings-usage-footer-left,
 .settings-usage-footer-right {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+}
+
+.settings-usage-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-decoration: none;
+}
+
+.settings-usage-btn:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
+.settings-usage-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 运行测试脚本按钮 (翠绿高对比药丸) */
+.settings-usage-btn-test {
+    background: #0d281e;
+    color: #34d399;
+    border: 1px solid #059669;
+    padding: 8px 18px;
+}
+
+.settings-usage-btn-test:hover:not(:disabled) {
+    background: #059669;
+    color: #ffffff;
+    box-shadow: 0 2px 10px rgba(5, 150, 105, 0.4);
+}
+
+/* 格式化代码按钮 */
+.settings-usage-btn-format {
+    background: #1c2536;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    padding: 8px 16px;
+}
+
+.settings-usage-btn-format:hover:not(:disabled) {
+    background: #28354c;
+    color: #ffffff;
+    border-color: #475569;
+}
+
+/* 取消按钮 */
+.settings-usage-btn-cancel {
+    background: transparent;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    padding: 8px 18px;
+}
+
+.settings-usage-btn-cancel:hover:not(:disabled) {
+    background: #1c2536;
+    color: #ffffff;
+    border-color: #475569;
+}
+
+/* 保存配置按钮 (鲜亮科技蓝) */
+.settings-usage-btn-save {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #ffffff;
+    border: 1px solid #3b82f6;
+    padding: 8px 22px;
+    box-shadow: 0 2px 10px rgba(37, 99, 235, 0.45);
+}
+
+.settings-usage-btn-save:hover:not(:disabled) {
+    background: linear-gradient(135deg, #1d4ed8, #1e40af);
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.6);
 }
 
