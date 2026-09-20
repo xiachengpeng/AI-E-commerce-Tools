@@ -2372,6 +2372,8 @@
         } else {
             singleVoc.innerHTML = `<p style="opacity:0.5;">${xp_currentLang === 'zh' ? '暂无评价深度分析数据' : 'No VOC data available'}</p>`;
         }
+
+        xp_renderSingleBottomHandoff(d);
     }
 
     // ─── 矩阵对比模板 ─────────────────────────────────────────────────────────
@@ -2919,6 +2921,8 @@
         } else {
             opportunitiesContainer.classList.add('xp-hidden');
         }
+
+        xp_renderMatrixBottomHandoff(data);
     }
 
     function xp_renderTable(products, tableHeader, tableBody) {
@@ -3035,6 +3039,104 @@
             bodyHtml += `</tr>`;
         });
         tableBody.innerHTML = bodyHtml;
+    }
+
+    // ─── 报告底部落地行动呼吁 (P2) ──────────────────────────────────────────
+    function xp_setLang(lang) {
+        xp_currentLang = lang;
+    }
+
+    function xp_renderSingleBottomHandoff(d, langOverride = null) {
+        const container = xp_getEl('xp-singleBottomHandoff');
+        if (!container) return;
+        if (!d) {
+            container.classList.add('xp-hidden');
+            container.innerHTML = '';
+            return;
+        }
+
+        const isZh = (langOverride || xp_currentLang) === 'zh';
+        const prodName = xp_getI18nText(d.product_name || (isZh ? '本品' : 'Product'));
+
+        container.innerHTML = `
+            <div class="xp-bottom-handoff-card">
+                <div class="xp-bottom-handoff-header">
+                    <div class="xp-bottom-handoff-icon">
+                        <i class="ph-bold ph-rocket-launch"></i>
+                    </div>
+                    <div>
+                        <div class="xp-bottom-handoff-title">${isZh ? '🚀 竞品情报已就绪 · 立即将策略转化为高转化物料' : '🚀 Insights Ready · Transform Strategy into High-Converting Assets'}</div>
+                        <div class="xp-bottom-handoff-subtitle">${isZh ? `已针对【${prodName}】提炼核心卖点与攻防战术，您可以一键注入后续业务模块：` : `Core selling points and battle angles for "${prodName}" are extracted. Transfer them directly:`}</div>
+                    </div>
+                </div>
+                <div class="xp-bottom-handoff-actions">
+                    <button type="button" class="xp-bottom-handoff-btn xp-btn-listing" onclick="xp_transferToListing()" title="${isZh ? '将竞品名称、核心卖点与关键词自动填入 Listing 模块' : 'Transfer insights to Listing module'}">
+                        <i class="ph ph-article"></i>
+                        <span>${isZh ? '✍️ 注入并编撰 Listing (标题/五点)' : '✍️ Generate Listing'}</span>
+                    </button>
+                    <button type="button" class="xp-bottom-handoff-btn xp-btn-ads" onclick="xp_transferToAds()" title="${isZh ? '将核心痛点反差钩子带入广告生成模块' : 'Transfer pain-point hooks to Ads module'}">
+                        <i class="ph ph-megaphone"></i>
+                        <span>${isZh ? '📣 注入并创作投放广告 (Meta/TikTok)' : '📣 Generate Ad Copy'}</span>
+                    </button>
+                    <button type="button" class="xp-bottom-handoff-btn xp-btn-details" onclick="xp_transferToDetails()" title="${isZh ? '将竞品参数与改良卖点带入详情页模块' : 'Transfer product specs to Details module'}">
+                        <i class="ph ph-image"></i>
+                        <span>${isZh ? '🎨 注入并策划视觉详情页' : '🎨 Plan Visual PDP'}</span>
+                    </button>
+                    <button type="button" class="xp-bottom-handoff-btn xp-btn-brand" onclick="xp_transferToBrandProfile()" title="${isZh ? '一键将核心受众画像、痛点与差异化优势转存到营销画像档案库' : 'Save audience and positioning to Brand Profile Hub'}">
+                        <i class="ph-bold ph-identification-card"></i>
+                        <span>${isZh ? '🗂️ 存入营销画像档案库' : '🗂️ Save to Brand Hub'}</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.classList.remove('xp-hidden');
+    }
+
+    function xp_renderMatrixBottomHandoff(data, langOverride = null) {
+        const container = xp_getEl('xp-matrixBottomHandoff');
+        if (!container) return;
+        if (!data) {
+            container.classList.add('xp-hidden');
+            container.innerHTML = '';
+            return;
+        }
+
+        const isZh = (langOverride || xp_currentLang) === 'zh';
+        const winner = xp_getWinnerProduct();
+        const winnerName = winner ? xp_getI18nText(winner.product_name || (isZh ? '标杆竞品' : 'Benchmark Winner')) : (isZh ? '标杆竞品' : 'Benchmark Winner');
+
+        container.innerHTML = `
+            <div class="xp-bottom-handoff-card xp-matrix-handoff-card">
+                <div class="xp-bottom-handoff-header">
+                    <div class="xp-bottom-handoff-icon xp-matrix-icon">
+                        <i class="ph-bold ph-trophy"></i>
+                    </div>
+                    <div>
+                        <div class="xp-bottom-handoff-title">${isZh ? '🏆 多竞品矩阵博弈已就绪 · 一键将赢家打法落地' : '🏆 Matrix Analysis Ready · Deploy Winning Strategy'}</div>
+                        <div class="xp-bottom-handoff-subtitle">${isZh ? `已锚定胜出竞品【${winnerName}】及全矩阵攻防死穴，建议立即启动后续业务链路：` : `Benchmark winner "${winnerName}" identified. Launch downstream assets:`}</div>
+                    </div>
+                </div>
+                <div class="xp-bottom-handoff-actions">
+                    <button type="button" class="xp-bottom-handoff-btn xp-btn-listing" onclick="xp_transferMatrixToListing()" title="${isZh ? '将赢家改良方案带入 Listing 模块' : 'Transfer winner strategy to Listing module'}">
+                        <i class="ph ph-article"></i>
+                        <span>${isZh ? '✍️ 注入赢家优势编撰 Listing' : '✍️ Generate Listing (Winner)'}</span>
+                    </button>
+                    <button type="button" class="xp-bottom-handoff-btn xp-btn-ads" onclick="xp_transferMatrixToAds()" title="${isZh ? '将赢家与攻防脚本带入广告文案生成模块' : 'Transfer winner hooks to Ads module'}">
+                        <i class="ph ph-megaphone"></i>
+                        <span>${isZh ? '📣 注入赢家打法创作广告' : '📣 Generate Ad Copy (Winner)'}</span>
+                    </button>
+                    <button type="button" class="xp-bottom-handoff-btn xp-btn-details" onclick="xp_transferMatrixToDetails()" title="${isZh ? '将赢家竞品与改良卖点带入详情页模块' : 'Transfer winner specs to Details module'}">
+                        <i class="ph ph-image"></i>
+                        <span>${isZh ? '🎨 注入赢家卖点策划商详' : '🎨 Plan Visual PDP (Winner)'}</span>
+                    </button>
+                    <button type="button" class="xp-bottom-handoff-btn xp-btn-brand" onclick="xp_transferToBrandProfile()" title="${isZh ? '将赢家对标破局策略、核心痛点与差异化卖点转存为营销画像' : 'Save winner battle card to Brand Profile Hub'}">
+                        <i class="ph-bold ph-identification-card"></i>
+                        <span>${isZh ? '🗂️ 存入营销画像档案库' : '🗂️ Save to Brand Hub'}</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.classList.remove('xp-hidden');
     }
 
     // ─── 导出报告 ─────────────────────────────────────────────────────────────
@@ -4871,6 +4973,9 @@
         window.xp_renderMatrixCompetitorDrilldown = xp_renderMatrixCompetitorDrilldown;
         window.xp_renderMatrixTemplate = xp_renderMatrixTemplate;
         window.xp_renderTable = xp_renderTable;
+        window.xp_renderSingleBottomHandoff = xp_renderSingleBottomHandoff;
+        window.xp_renderMatrixBottomHandoff = xp_renderMatrixBottomHandoff;
+        window.xp_setLang = xp_setLang;
         window.xp_saveBattleCardToBrandProfile = function() {
             xp_transferToBrandProfile();
         };
@@ -4906,6 +5011,9 @@
             xp_renderMatrixCompetitorDrilldown,
             xp_renderMatrixTemplate,
             xp_renderTable,
+            xp_renderSingleBottomHandoff,
+            xp_renderMatrixBottomHandoff,
+            xp_setLang,
             xp_saveBattleCardToBrandProfile,
             xp_openCrawlerSettings,
             xp_resetAnalysisSession,

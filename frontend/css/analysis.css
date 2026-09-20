@@ -2479,3 +2479,130 @@ strong {
     flex-direction: column;
     gap: 1.25rem;
 }
+
+/* =====================================================
+   P2: 竞品分析底部落地行动卡片 (Bottom Actionable Handoff)
+   ===================================================== */
+.xp-bottom-handoff-section {
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+
+.xp-bottom-handoff-card {
+    background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+    border-radius: 16px;
+    padding: 1.5rem;
+    color: #ffffff;
+    box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.25);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.xp-matrix-handoff-card {
+    background: linear-gradient(135deg, #1e1b4b 0%, #1e293b 100%);
+    border-color: rgba(234, 88, 12, 0.25);
+}
+
+.xp-bottom-handoff-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.xp-bottom-handoff-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    color: #ffffff;
+    box-shadow: 0 4px 8px rgba(79, 70, 229, 0.35);
+    flex-shrink: 0;
+}
+
+.xp-matrix-icon {
+    background: linear-gradient(135deg, #ea580c 0%, #f59e0b 100%);
+    box-shadow: 0 4px 8px rgba(234, 88, 12, 0.35);
+}
+
+.xp-bottom-handoff-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    color: #ffffff;
+}
+
+.xp-bottom-handoff-subtitle {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    margin-top: 0.25rem;
+}
+
+.xp-bottom-handoff-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.xp-bottom-handoff-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem 1.1rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.xp-btn-listing {
+    background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(234, 88, 12, 0.3);
+}
+.xp-btn-listing:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(234, 88, 12, 0.4);
+}
+
+.xp-btn-ads {
+    background: rgba(236, 72, 153, 0.15);
+    border-color: rgba(236, 72, 153, 0.4);
+    color: #fbcfe8;
+}
+.xp-btn-ads:hover {
+    background: rgba(236, 72, 153, 0.25);
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+
+.xp-btn-details {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: rgba(99, 102, 241, 0.4);
+    color: #c7d2fe;
+}
+.xp-btn-details:hover {
+    background: rgba(99, 102, 241, 0.25);
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+
+.xp-btn-brand {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #cbd5e1;
+}
+.xp-btn-brand:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+
