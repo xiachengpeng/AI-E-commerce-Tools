@@ -1366,6 +1366,7 @@ function renderProviderList() {
                             <i class="ph ph-pencil-simple"></i>
                         </button>
                         ${providerBalanceActionMarkup(provider)}
+                        ${providerUsageActionMarkup(provider)}
                         ${providerTestActionsMarkup(provider)}
                         <button type="button" class="settings-provider-action"
                             title="${escapeSettingsHtml(conflictTitle || (provider.enabled ? "停用线路" : "启用线路"))}"
@@ -1401,6 +1402,17 @@ function providerBalanceActionMarkup(provider) {
             title="查询中转站可用余额与额度" aria-label="查询余额 ${escapeSettingsHtml(provider.name)}"
             onclick="queryProviderBalance(${Number(provider.id)}, this)">
             <i class="ph ph-wallet"></i>
+        </button>
+    `;
+}
+
+function providerUsageActionMarkup(provider) {
+    if (provider.protocol !== "openai_compatible") return "";
+    return `
+        <button type="button" class="settings-provider-action settings-provider-usage-action"
+            title="配置用量查询 (CC Switch 规则)" aria-label="配置用量查询 ${escapeSettingsHtml(provider.name)}"
+            onclick="openUsageQueryModal(${Number(provider.id)})">
+            <i class="ph ph-sliders-horizontal"></i>
         </button>
     `;
 }
@@ -1530,6 +1542,397 @@ async function testBalanceQueryConnection(button) {
     }
 
     setSettingsButtonBusy(button, false);
+}
+
+// --- CC Switch 风格用量查询控制器 (Usage Query Controller) ---
+
+let currentUsageQueryProviderId = null;
+let currentUsageQueryTemplateKey = "general";
+
+const USAGE_TEMPLATE_PILL_MAP = {
+    custom: "settingsUsageTemplateCustom",
+    general: "settingsUsageTemplateGeneral",
+    newapi: "settingsUsageTemplateNewApi",
+    token_plan: "settingsUsageTemplateTokenPlan",
+    official: "settingsUsageTemplateOfficial"
+};
+
+function getUsageQueryEngine() {
+    if (typeof UsageQueryEngine !== "undefined") {
+        return UsageQueryEngine;
+    }
+    if (typeof window !== "undefined" && window.UsageQueryEngine) {
+        return window.UsageQueryEngine;
+    }
+    if (typeof require === "function") {
+        try {
+            return require("./usage_query_engine.js");
+        } catch (e) {
+            return null;
+        }
+    }
+    return null;
+}
+
+function updateUsageTemplatePillsUI(activeKey) {
+    currentUsageQueryTemplateKey = activeKey || "custom";
+    Object.entries(USAGE_TEMPLATE_PILL_MAP).forEach(([key, elementId]) => {
+        const el = settingsElement(elementId);
+        if (el) {
+            if (key === activeKey) {
+                el.classList.add("active");
+            } else {
+                el.classList.remove("active");
+            }
+        }
+    });
+}
+
+function selectUsageTemplate(templateKey) {
+    updateUsageTemplatePillsUI(templateKey);
+    const engine = getUsageQueryEngine();
+    if (templateKey !== "custom" && engine && engine.USAGE_QUERY_TEMPLATES && engine.USAGE_QUERY_TEMPLATES[templateKey]) {
+        const editor = settingsElement("settingsUsageScriptEditor");
+        if (editor) {
+            editor.value = engine.USAGE_QUERY_TEMPLATES[templateKey].trim();
+        }
+    }
+}
+
+async function openUsageQueryModal(providerId) {
+    currentUsageQueryProviderId = providerId;
+    const modal = settingsElement("settingsUsageQueryModal");
+    if (!modal) return;
+
+    const provider = (settingsState.providers || []).find(p => Number(p.id) === Number(providerId));
+    const titleEl = settingsElement("settingsUsageProviderTitle");
+    if (titleEl) {
+        titleEl.textContent = provider ? provider.name : `线路 #${providerId}`;
+    }
+
+    const resultArea = settingsElement("settingsUsageResultArea");
+    if (resultArea) {
+        resultArea.classList.add("hidden");
+    }
+
+    const apiKeyInput = settingsElement("settingsUsageApiKey");
+    const baseUrlInput = settingsElement("settingsUsageBaseUrl");
+    const timeoutInput = settingsElement("settingsUsageTimeout");
+    const intervalInput = settingsElement("settingsUsageAutoInterval");
+    const editor = settingsElement("settingsUsageScriptEditor");
+
+    if (apiKeyInput) apiKeyInput.value = "";
+    if (baseUrlInput) baseUrlInput.value = "";
+    if (timeoutInput) timeoutInput.value = "10";
+    if (intervalInput) intervalInput.value = "30";
+
+    const engine = getUsageQueryEngine();
+    const defaultTemplate = "general";
+    const defaultScript = engine?.USAGE_QUERY_TEMPLATES?.[defaultTemplate] || "";
+    if (editor) editor.value = defaultScript.trim();
+    updateUsageTemplatePillsUI(defaultTemplate);
+
+    modal.classList.remove("hidden");
+
+    try {
+        const config = await settingsRequest(`${API_BASE}/api/settings/ai/providers/${providerId}/usage-query`);
+        if (config) {
+            if (apiKeyInput && config.balance_custom_key) {
+                apiKeyInput.value = config.balance_custom_key;
+            }
+            if (baseUrlInput && config.balance_custom_url) {
+                baseUrlInput.value = config.balance_custom_url;
+            }
+            if (timeoutInput && config.balance_timeout !== undefined && config.balance_timeout !== null) {
+                timeoutInput.value = String(config.balance_timeout);
+            }
+            if (intervalInput && config.balance_auto_interval !== undefined && config.balance_auto_interval !== null) {
+                intervalInput.value = String(config.balance_auto_interval);
+            }
+            const activeTemplate = config.balance_template || "general";
+            updateUsageTemplatePillsUI(activeTemplate);
+
+            if (editor) {
+                if (config.balance_script && config.balance_script.trim()) {
+                    editor.value = config.balance_script.trim();
+                } else if (engine?.USAGE_QUERY_TEMPLATES?.[activeTemplate]) {
+                    editor.value = engine.USAGE_QUERY_TEMPLATES[activeTemplate].trim();
+                }
+            }
+        }
+    } catch (err) {
+        console.warn("无法获取用量查询配置:", err);
+    }
+}
+
+function closeUsageQueryModal() {
+    currentUsageQueryProviderId = null;
+    const modal = settingsElement("settingsUsageQueryModal");
+    if (modal) {
+        modal.classList.add("hidden");
+    }
+}
+
+function formatUsageQueryScript() {
+    const editor = settingsElement("settingsUsageScriptEditor");
+    if (!editor || !editor.value.trim()) return;
+    const engine = getUsageQueryEngine();
+    if (!engine) return;
+
+    try {
+        const formatted = engine.formatExtractorScript(editor.value);
+        editor.value = formatted;
+        settingsToast("脚本已格式化", "success");
+    } catch (err) {
+        settingsToast(`格式化失败: ${err.message}`, "error");
+    }
+}
+
+async function testUsageQueryScript(button) {
+    const editor = settingsElement("settingsUsageScriptEditor");
+    const resultArea = settingsElement("settingsUsageResultArea");
+    const resultDetails = settingsElement("settingsUsageResultDetails");
+    const apiKeyInput = settingsElement("settingsUsageApiKey");
+    const baseUrlInput = settingsElement("settingsUsageBaseUrl");
+    const timeoutInput = settingsElement("settingsUsageTimeout");
+
+    if (!editor || !editor.value.trim()) {
+        settingsToast("请输入提取器代码", "warning");
+        return;
+    }
+
+    const engine = getUsageQueryEngine();
+    if (!engine) {
+        settingsToast("提取器引擎未加载", "error");
+        return;
+    }
+
+    let parsed;
+    try {
+        parsed = engine.parseUsageScript(editor.value);
+    } catch (parseErr) {
+        if (resultArea && resultDetails) {
+            resultArea.classList.remove("hidden");
+            resultDetails.innerHTML = `
+                <div class="p-3 bg-rose-950/40 border border-rose-900/60 rounded-lg text-rose-300 text-xs">
+                    <div class="font-semibold mb-1 flex items-center gap-1.5"><i class="ph ph-warning-circle"></i> 脚本语法解析失败</div>
+                    <div class="font-mono">${escapeSettingsHtml(parseErr.message)}</div>
+                </div>
+            `;
+        }
+        settingsToast("脚本语法解析错误", "error");
+        return;
+    }
+
+    if (button) setSettingsButtonBusy(button, true);
+
+    if (resultArea && resultDetails) {
+        resultArea.classList.remove("hidden");
+        resultDetails.innerHTML = `
+            <div class="flex items-center gap-2 text-slate-400 text-xs py-2">
+                <i class="ph ph-spinner animate-spin"></i>
+                <span>正在通过代理执行查询请求并运行沙箱提取...</span>
+            </div>
+        `;
+    }
+
+    try {
+        const reqObj = parsed.request || {};
+        const draftApiKey = apiKeyInput?.value?.trim() || "";
+        const draftBaseUrl = baseUrlInput?.value?.trim() || "";
+        const timeoutSeconds = parseInt(timeoutInput?.value, 10) || 10;
+
+        let targetUrl = reqObj.url || "";
+        if (draftBaseUrl) {
+            targetUrl = targetUrl.replace("{{baseUrl}}", draftBaseUrl.replace(/\/+$/, ""));
+        }
+        if (draftApiKey && !draftApiKey.includes("••")) {
+            targetUrl = targetUrl.replace("{{apiKey}}", draftApiKey);
+            targetUrl = targetUrl.replace("{{accessToken}}", draftApiKey);
+        }
+
+        const headers = Object.assign({}, reqObj.headers || {});
+        Object.keys(headers).forEach(k => {
+            let val = String(headers[k]);
+            if (draftApiKey && !draftApiKey.includes("••")) {
+                val = val.replace("{{apiKey}}", draftApiKey);
+                val = val.replace("{{accessToken}}", draftApiKey);
+            }
+            if (draftBaseUrl) {
+                val = val.replace("{{baseUrl}}", draftBaseUrl.replace(/\/+$/, ""));
+            }
+            headers[k] = val;
+        });
+
+        let bodyStr = reqObj.body;
+        if (typeof bodyStr === "object" && bodyStr !== null) {
+            bodyStr = JSON.stringify(bodyStr);
+        }
+        if (typeof bodyStr === "string") {
+            if (draftApiKey && !draftApiKey.includes("••")) {
+                bodyStr = bodyStr.replace("{{apiKey}}", draftApiKey);
+                bodyStr = bodyStr.replace("{{accessToken}}", draftApiKey);
+            }
+            if (draftBaseUrl) {
+                bodyStr = bodyStr.replace("{{baseUrl}}", draftBaseUrl.replace(/\/+$/, ""));
+            }
+        }
+
+        const proxyPayload = {
+            provider_id: currentUsageQueryProviderId ? Number(currentUsageQueryProviderId) : null,
+            url: targetUrl,
+            method: (reqObj.method || "GET").toUpperCase(),
+            headers: headers,
+            body: bodyStr || null,
+            timeout_seconds: timeoutSeconds
+        };
+
+        const proxyResp = await settingsRequest(`${API_BASE}/api/settings/ai/providers/usage-query/proxy`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(proxyPayload)
+        });
+
+        const extractResult = engine.executeUsageExtractor(parsed.extractor, proxyResp.data);
+
+        renderUsageQueryResult(proxyResp, extractResult);
+
+        if (extractResult.isValid !== false && proxyResp.ok) {
+            settingsToast("测试执行成功", "success");
+        } else {
+            settingsToast("测试执行完成，但提取未通过", "warning");
+        }
+    } catch (err) {
+        if (resultArea && resultDetails) {
+            resultArea.classList.remove("hidden");
+            resultDetails.innerHTML = `
+                <div class="p-3 bg-rose-950/40 border border-rose-900/60 rounded-lg text-rose-300 text-xs">
+                    <div class="font-semibold mb-1 flex items-center gap-1.5"><i class="ph ph-warning-circle"></i> 请求或提取异常</div>
+                    <div class="font-mono">${escapeSettingsHtml(err.message)}</div>
+                </div>
+            `;
+        }
+        settingsToast(`测试失败: ${err.message}`, "error");
+    } finally {
+        if (button) setSettingsButtonBusy(button, false);
+    }
+}
+
+function renderUsageQueryResult(proxyResp, extractResult) {
+    const resultArea = settingsElement("settingsUsageResultArea");
+    const resultDetails = settingsElement("settingsUsageResultDetails");
+    if (!resultArea || !resultDetails) return;
+
+    resultArea.classList.remove("hidden");
+
+    const isSuccess = extractResult.isValid !== false && proxyResp.ok;
+    const unit = extractResult.unit || "USD";
+
+    const formatAmount = (val) => {
+        if (val === undefined || val === null) return "--";
+        const num = Number(val);
+        if (Number.isFinite(num)) {
+            return `${num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} ${unit}`;
+        }
+        return `${val} ${unit}`;
+    };
+
+    let metricsHtml = "";
+    if (isSuccess) {
+        metricsHtml = `
+            <div class="settings-usage-result-grid">
+                ${extractResult.planName ? `
+                    <div class="settings-usage-result-chip">
+                        <span class="chip-label">套餐/分组</span>
+                        <span class="chip-val" style="color: #60a5fa;">${escapeSettingsHtml(extractResult.planName)}</span>
+                    </div>
+                ` : ""}
+                <div class="settings-usage-result-chip">
+                    <span class="chip-label">剩余额度</span>
+                    <span class="chip-val">${escapeSettingsHtml(formatAmount(extractResult.remaining))}</span>
+                </div>
+                ${extractResult.used !== undefined ? `
+                    <div class="settings-usage-result-chip">
+                        <span class="chip-label">已消耗</span>
+                        <span class="chip-val" style="color: #f59e0b;">${escapeSettingsHtml(formatAmount(extractResult.used))}</span>
+                    </div>
+                ` : ""}
+                ${extractResult.total !== undefined ? `
+                    <div class="settings-usage-result-chip">
+                        <span class="chip-label">总额度</span>
+                        <span class="chip-val" style="color: #38bdf8;">${escapeSettingsHtml(formatAmount(extractResult.total))}</span>
+                    </div>
+                ` : ""}
+            </div>
+        `;
+    } else {
+        metricsHtml = `
+            <div class="p-3 bg-rose-950/40 border border-rose-900/60 rounded-lg text-rose-300 text-xs">
+                <div class="font-semibold mb-1 flex items-center gap-1.5"><i class="ph ph-warning-circle"></i> 提取未通过 / 接口返回错误</div>
+                <div>${escapeSettingsHtml(extractResult.invalidMessage || proxyResp.message || "未能正确提取到额度数据")}</div>
+            </div>
+        `;
+    }
+
+    const rawDataStr = typeof proxyResp.data === "object"
+        ? JSON.stringify(proxyResp.data, null, 2)
+        : String(proxyResp.data ?? "");
+
+    resultDetails.innerHTML = `
+        ${metricsHtml}
+        <div class="mt-3 text-[11px] text-slate-400 font-mono flex items-center gap-3">
+            <span>耗时: ${proxyResp.duration_ms || 0}ms</span>
+            <span>HTTP 状态: ${proxyResp.status_code || 200}</span>
+        </div>
+        <details class="mt-2 text-xs text-slate-400">
+            <summary class="cursor-pointer hover:text-slate-200">查看原始响应数据</summary>
+            <pre class="mt-1 p-2 bg-[#0d1117] rounded border border-[#21262d] font-mono text-[11px] text-slate-300 overflow-x-auto max-h-48 whitespace-pre">${escapeSettingsHtml(rawDataStr)}</pre>
+        </details>
+    `;
+}
+
+async function saveUsageQueryConfig(button) {
+    if (!currentUsageQueryProviderId) {
+        settingsToast("未关联供应商", "error");
+        return;
+    }
+
+    const editor = settingsElement("settingsUsageScriptEditor");
+    const apiKeyInput = settingsElement("settingsUsageApiKey");
+    const baseUrlInput = settingsElement("settingsUsageBaseUrl");
+    const timeoutInput = settingsElement("settingsUsageTimeout");
+    const intervalInput = settingsElement("settingsUsageAutoInterval");
+
+    const payload = {
+        balance_template: currentUsageQueryTemplateKey || "general",
+        balance_script: editor?.value || "",
+        balance_custom_key: apiKeyInput?.value?.trim() || null,
+        balance_custom_url: baseUrlInput?.value?.trim() || null,
+        balance_timeout: parseInt(timeoutInput?.value, 10) || 10,
+        balance_auto_interval: parseInt(intervalInput?.value, 10) || 0
+    };
+
+    if (button) setSettingsButtonBusy(button, true);
+
+    try {
+        await settingsRequest(`${API_BASE}/api/settings/ai/providers/${currentUsageQueryProviderId}/usage-query`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        settingsToast("用量查询配置已保存", "success");
+        closeUsageQueryModal();
+        if (typeof loadSettingsData === "function") {
+            await loadSettingsData();
+        } else if (typeof renderProviderList === "function") {
+            renderProviderList();
+        }
+    } catch (err) {
+        settingsToast(`保存失败: ${err.message}`, "error");
+    } finally {
+        if (button) setSettingsButtonBusy(button, false);
+    }
 }
 
 function openProviderEditor(id) {
@@ -2896,6 +3299,13 @@ if (typeof window !== "undefined") {
     window.applyQuickModelPill = applyQuickModelPill;
     window.providerBalanceActionMarkup = providerBalanceActionMarkup;
     window.testBalanceQueryConnection = testBalanceQueryConnection;
+    window.providerUsageActionMarkup = providerUsageActionMarkup;
+    window.openUsageQueryModal = openUsageQueryModal;
+    window.closeUsageQueryModal = closeUsageQueryModal;
+    window.selectUsageTemplate = selectUsageTemplate;
+    window.testUsageQueryScript = testUsageQueryScript;
+    window.formatUsageQueryScript = formatUsageQueryScript;
+    window.saveUsageQueryConfig = saveUsageQueryConfig;
 }
 
 if (typeof module !== "undefined") {
@@ -2957,6 +3367,13 @@ if (typeof module !== "undefined") {
         mergeSettingsLogSnapshot,
         providerBalanceMarkup,
         queryProviderBalance,
-        testBalanceQueryConnection
+        testBalanceQueryConnection,
+        providerUsageActionMarkup,
+        openUsageQueryModal,
+        closeUsageQueryModal,
+        selectUsageTemplate,
+        testUsageQueryScript,
+        formatUsageQueryScript,
+        saveUsageQueryConfig
     };
 }

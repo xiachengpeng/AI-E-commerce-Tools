@@ -31,3 +31,69 @@ test("settings.css contains CC Switch usage query dark-theme and layout classes"
     assert.match(settingsCss, /\.settings-usage-editor/, "editor styling");
     assert.match(settingsCss, /\.settings-usage-result/, "result box styling");
 });
+
+test("settings.js exports providerUsageActionMarkup and returns button for openai_compatible", () => {
+    const settings = require("../js/settings.js");
+    assert.equal(typeof settings.providerUsageActionMarkup, "function");
+
+    const openaiProvider = { id: 10, protocol: "openai_compatible", name: "Relay Hub" };
+    const markup = settings.providerUsageActionMarkup(openaiProvider);
+    assert.match(markup, /openUsageQueryModal\(10\)/);
+    assert.match(markup, /ph-sliders-horizontal|ph-chart-bar|ph-gear-six/);
+
+    const geminiProvider = { id: 11, protocol: "gemini", name: "Gemini Official" };
+    assert.equal(settings.providerUsageActionMarkup(geminiProvider), "");
+});
+
+test("settings.js exports usage query modal controller functions", () => {
+    const settings = require("../js/settings.js");
+    assert.equal(typeof settings.openUsageQueryModal, "function");
+    assert.equal(typeof settings.closeUsageQueryModal, "function");
+    assert.equal(typeof settings.selectUsageTemplate, "function");
+    assert.equal(typeof settings.testUsageQueryScript, "function");
+    assert.equal(typeof settings.formatUsageQueryScript, "function");
+    assert.equal(typeof settings.saveUsageQueryConfig, "function");
+});
+
+test("selectUsageTemplate loads template script into editor and updates active pill", () => {
+    const settings = require("../js/settings.js");
+    const mockElements = {
+        settingsUsageTemplateCustom: { classes: new Set(), classList: { add(c) { mockElements.settingsUsageTemplateCustom.classes.add(c); }, remove(c) { mockElements.settingsUsageTemplateCustom.classes.delete(c); } } },
+        settingsUsageTemplateGeneral: { classes: new Set(["active"]), classList: { add(c) { mockElements.settingsUsageTemplateGeneral.classes.add(c); }, remove(c) { mockElements.settingsUsageTemplateGeneral.classes.delete(c); } } },
+        settingsUsageTemplateNewApi: { classes: new Set(), classList: { add(c) { mockElements.settingsUsageTemplateNewApi.classes.add(c); }, remove(c) { mockElements.settingsUsageTemplateNewApi.classes.delete(c); } } },
+        settingsUsageTemplateTokenPlan: { classes: new Set(), classList: { add(c) { mockElements.settingsUsageTemplateTokenPlan.classes.add(c); }, remove(c) { mockElements.settingsUsageTemplateTokenPlan.classes.delete(c); } } },
+        settingsUsageTemplateOfficial: { classes: new Set(), classList: { add(c) { mockElements.settingsUsageTemplateOfficial.classes.add(c); }, remove(c) { mockElements.settingsUsageTemplateOfficial.classes.delete(c); } } },
+        settingsUsageScriptEditor: { value: "" }
+    };
+
+    global.document = {
+        getElementById: (id) => mockElements[id] || null
+    };
+
+    settings.selectUsageTemplate("newapi");
+    assert.equal(mockElements.settingsUsageTemplateNewApi.classes.has("active"), true);
+    assert.equal(mockElements.settingsUsageTemplateGeneral.classes.has("active"), false);
+    assert.match(mockElements.settingsUsageScriptEditor.value, /api\/user\/self/);
+    assert.match(mockElements.settingsUsageScriptEditor.value, /500000/);
+
+    settings.selectUsageTemplate("token_plan");
+    assert.equal(mockElements.settingsUsageTemplateTokenPlan.classes.has("active"), true);
+    assert.equal(mockElements.settingsUsageTemplateNewApi.classes.has("active"), false);
+    assert.match(mockElements.settingsUsageScriptEditor.value, /dashboard\/billing\/subscription/);
+});
+
+test("formatUsageQueryScript formats raw JS in editor", () => {
+    const settings = require("../js/settings.js");
+    const mockElements = {
+        settingsUsageScriptEditor: {
+            value: "({request:{url:'/v1',method:'GET'},extractor:function(r){return {remaining:10}}})"
+        }
+    };
+    global.document = {
+        getElementById: (id) => mockElements[id] || null
+    };
+
+    settings.formatUsageQueryScript();
+    assert.match(mockElements.settingsUsageScriptEditor.value, /request:\s*\{/);
+    assert.match(mockElements.settingsUsageScriptEditor.value, /extractor:\s*function/);
+});
