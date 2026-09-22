@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import dataclasses
 from datetime import datetime, timezone
 import hashlib
 import hmac
@@ -23,8 +24,12 @@ from models.storage import (
     StorageConfigWrite,
     StorageTestResponse,
 )
-
-
+from services.retry_service import (
+    execute_with_retry,
+    PolicyResolver,
+    AmbiguousOutcomeError,
+    RetryExhaustedError,
+)
 from services.security_utils import validate_outbound_url
 
 
@@ -596,61 +601,92 @@ async def upload_image_to_wordpress(
         "User-Agent": "AIEcommerceTools/1.0",
     }
 
-    try:
+    policy = PolicyResolver.get_policy("wordpress_media_upload")
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        policy = dataclasses.replace(policy, jitter="none")
+
+    async def _post_wp_media():
         async with httpx.AsyncClient(timeout=45.0, follow_redirects=True) as client:
             resp = await client.post(upload_endpoint, headers=headers, content=image_bytes)
+            if resp.status_code in (401, 403, 400, 404):
+                return resp
+            if resp.status_code == 429 or resp.status_code >= 500:
+                resp.raise_for_status()
+            return resp
 
-            if resp.status_code in (200, 201):
-                data = resp.json()
-                media_id = str(data.get("id"))
-                source_url = data.get("source_url")
+    try:
+        resp = await execute_with_retry(
+            _post_wp_media,
+            policy=policy,
+            operation_type="wordpress_media_upload",
+            provider_name="wordpress",
+        )
 
-                # Update metadata if needed
-                if media_id and (title or alt_text):
-                    patch_payload = {}
-                    if title:
-                        patch_payload["title"] = title
-                    if alt_text:
-                        patch_payload["alt_text"] = alt_text
-                    if patch_payload:
-                        try:
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            media_id = str(data.get("id"))
+            source_url = data.get("source_url")
+
+            # Update metadata if needed
+            if media_id and (title or alt_text):
+                patch_payload = {}
+                if title:
+                    patch_payload["title"] = title
+                if alt_text:
+                    patch_payload["alt_text"] = alt_text
+                if patch_payload:
+                    try:
+                        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                             await client.post(
                                 f"{upload_endpoint}/{media_id}",
                                 headers={"Authorization": f"Basic {auth_str}", "Content-Type": "application/json"},
                                 json=patch_payload,
-                                timeout=10.0,
                             )
-                        except Exception:
-                            pass
+                    except Exception:
+                        pass
 
-                return ImageUploadResponse(
-                    success=True,
-                    remote_url=source_url,
-                    storage_type="wordpress",
-                    media_id=media_id,
-                    filename=safe_filename,
-                )
-            elif resp.status_code == 401:
-                return ImageUploadResponse(
-                    success=False,
-                    storage_type="wordpress",
-                    filename=safe_filename,
-                    error="WordPress 401 认证失败：用户名或应用程序密码错误",
-                )
-            elif resp.status_code == 403:
-                return ImageUploadResponse(
-                    success=False,
-                    storage_type="wordpress",
-                    filename=safe_filename,
-                    error="WordPress 403 权限不足：无权在媒体库中上传文件",
-                )
-            else:
-                return ImageUploadResponse(
-                    success=False,
-                    storage_type="wordpress",
-                    filename=safe_filename,
-                    error=f"WordPress 返回错误 {resp.status_code}: {resp.text[:200]}",
-                )
+            return ImageUploadResponse(
+                success=True,
+                remote_url=source_url,
+                storage_type="wordpress",
+                media_id=media_id,
+                filename=safe_filename,
+            )
+        elif resp.status_code == 401:
+            return ImageUploadResponse(
+                success=False,
+                storage_type="wordpress",
+                filename=safe_filename,
+                error="WordPress 401 认证失败：用户名或应用程序密码错误",
+            )
+        elif resp.status_code == 403:
+            return ImageUploadResponse(
+                success=False,
+                storage_type="wordpress",
+                filename=safe_filename,
+                error="WordPress 403 权限不足：无权在媒体库中上传文件",
+            )
+        else:
+            return ImageUploadResponse(
+                success=False,
+                storage_type="wordpress",
+                filename=safe_filename,
+                error=f"WordPress 返回错误 {resp.status_code}: {resp.text[:200]}",
+            )
+    except AmbiguousOutcomeError:
+        return ImageUploadResponse(
+            success=False,
+            storage_type="wordpress",
+            filename=safe_filename,
+            error="上传请求已发送至 WordPress，但等待响应超时。由于 WordPress 媒体库无幂等保护，自动重试可能产生重复副本 (-1.jpg)。请检查 WordPress 媒体库或手动刷新确认，请勿盲目重试。",
+        )
+    except RetryExhaustedError as e:
+        return ImageUploadResponse(
+            success=False,
+            storage_type="wordpress",
+            filename=safe_filename,
+            error=f"无法连接至 WordPress 站点: {clean_url} (重试已耗尽: {str(e.last_exception or e)})",
+        )
     except httpx.ConnectError:
         return ImageUploadResponse(
             success=False,
@@ -732,9 +768,32 @@ async def upload_image_to_shopify(
         ]
     }
 
+    policy = PolicyResolver.get_policy("shopify_mutation")
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        policy = dataclasses.replace(policy, jitter="none")
+
+    staging_policy = PolicyResolver.get_policy("storage_upload")
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        staging_policy = dataclasses.replace(staging_policy, jitter="none")
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(graphql_url, json={"query": staged_mutation, "variables": staged_vars}, headers=headers)
+            # Step 1: stagedUploadsCreate
+            async def _staged_post():
+                resp = await client.post(graphql_url, json={"query": staged_mutation, "variables": staged_vars}, headers=headers)
+                if resp.status_code in (401, 403, 400, 404):
+                    return resp
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    resp.raise_for_status()
+                return resp
+
+            resp = await execute_with_retry(
+                _staged_post,
+                policy=policy,
+                operation_type="shopify_mutation",
+                provider_name="shopify",
+            )
+
             if resp.status_code != 200:
                 return ImageUploadResponse(
                     success=False,
@@ -771,7 +830,20 @@ async def upload_image_to_shopify(
                 form_fields.append((p["name"], (None, p["value"])))
             form_fields.append(("file", (safe_filename, image_bytes, mime_type)))
 
-            upload_resp = await client.post(upload_url, files=form_fields)
+            async def _binary_post():
+                u_resp = await client.post(upload_url, files=form_fields)
+                if u_resp.status_code in (401, 403, 400, 404):
+                    return u_resp
+                if u_resp.status_code == 429 or u_resp.status_code >= 500:
+                    u_resp.raise_for_status()
+                return u_resp
+
+            upload_resp = await execute_with_retry(
+                _binary_post,
+                policy=staging_policy,
+                operation_type="storage_upload",
+                provider_name="shopify_staged",
+            )
             if upload_resp.status_code not in (200, 201, 204):
                 return ImageUploadResponse(
                     success=False,
@@ -811,7 +883,20 @@ async def upload_image_to_shopify(
                 ]
             }
 
-            fc_resp = await client.post(graphql_url, json={"query": file_create_mutation, "variables": file_create_vars}, headers=headers)
+            async def _file_create_post():
+                fc_r = await client.post(graphql_url, json={"query": file_create_mutation, "variables": file_create_vars}, headers=headers)
+                if fc_r.status_code in (401, 403, 400, 404):
+                    return fc_r
+                if fc_r.status_code == 429 or fc_r.status_code >= 500:
+                    fc_r.raise_for_status()
+                return fc_r
+
+            fc_resp = await execute_with_retry(
+                _file_create_post,
+                policy=policy,
+                operation_type="shopify_mutation",
+                provider_name="shopify",
+            )
             if fc_resp.status_code != 200:
                 return ImageUploadResponse(
                     success=False,
@@ -889,6 +974,20 @@ async def upload_image_to_shopify(
                     filename=safe_filename,
                     error="Shopify 文件已提交但在等待时间内未就绪，请稍后重试",
                 )
+    except AmbiguousOutcomeError as e:
+        return ImageUploadResponse(
+            success=False,
+            storage_type="shopify",
+            filename=safe_filename,
+            error=f"Shopify 请求已发送但等待响应超时，状态未决: {str(e)}",
+        )
+    except RetryExhaustedError as e:
+        return ImageUploadResponse(
+            success=False,
+            storage_type="shopify",
+            filename=safe_filename,
+            error=f"Shopify 请求重试已耗尽: {str(e.last_exception or e)}",
+        )
     except Exception as e:
         return ImageUploadResponse(
             success=False,
@@ -928,6 +1027,10 @@ async def upload_image_to_r2(
         "Content-Length": str(len(image_bytes)),
     }
 
+    policy = PolicyResolver.get_policy("r2_upload")
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        policy = dataclasses.replace(policy, jitter="none")
+
     try:
         signed_headers = _sign_s3_request(
             method="PUT",
@@ -940,47 +1043,74 @@ async def upload_image_to_r2(
             service="s3",
         )
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.put(endpoint, headers=signed_headers, content=image_bytes)
+        async def _put_r2():
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.put(endpoint, headers=signed_headers, content=image_bytes)
+                if resp.status_code in (401, 403, 400, 404):
+                    return resp
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    resp.raise_for_status()
+                return resp
 
-            if resp.status_code in (200, 201):
-                # Public URL resolution
-                if config.r2_public_url:
-                    public_base = config.r2_public_url.strip().rstrip("/")
-                    if not public_base.startswith("http://") and not public_base.startswith("https://"):
-                        public_base = "https://" + public_base
-                    remote_url = f"{public_base}/{object_key}"
-                else:
-                    # Fallback to direct R2 path (note: R2 bucket might be private)
-                    remote_url = f"https://{config.r2_bucket_name}.{config.r2_account_id}.r2.dev/{object_key}"
+        resp = await execute_with_retry(
+            _put_r2,
+            policy=policy,
+            operation_type="r2_upload",
+            provider_name="cloudflare_r2",
+        )
 
-                return ImageUploadResponse(
-                    success=True,
-                    remote_url=remote_url,
-                    storage_type="r2",
-                    filename=safe_filename,
-                )
-            elif resp.status_code == 403:
-                return ImageUploadResponse(
-                    success=False,
-                    storage_type="r2",
-                    filename=safe_filename,
-                    error="Cloudflare R2 403 权限拒绝：密钥错误或无写入此存储桶权限",
-                )
-            elif resp.status_code == 404:
-                return ImageUploadResponse(
-                    success=False,
-                    storage_type="r2",
-                    filename=safe_filename,
-                    error=f"Cloudflare R2 404 存储桶未找到: {config.r2_bucket_name}",
-                )
+        if resp.status_code in (200, 201):
+            # Public URL resolution
+            if config.r2_public_url:
+                public_base = config.r2_public_url.strip().rstrip("/")
+                if not public_base.startswith("http://") and not public_base.startswith("https://"):
+                    public_base = "https://" + public_base
+                remote_url = f"{public_base}/{object_key}"
             else:
-                return ImageUploadResponse(
-                    success=False,
-                    storage_type="r2",
-                    filename=safe_filename,
-                    error=f"Cloudflare R2 返回错误 {resp.status_code}: {resp.text[:200]}",
-                )
+                # Fallback to direct R2 path (note: R2 bucket might be private)
+                remote_url = f"https://{config.r2_bucket_name}.{config.r2_account_id}.r2.dev/{object_key}"
+
+            return ImageUploadResponse(
+                success=True,
+                remote_url=remote_url,
+                storage_type="r2",
+                filename=safe_filename,
+            )
+        elif resp.status_code == 403:
+            return ImageUploadResponse(
+                success=False,
+                storage_type="r2",
+                filename=safe_filename,
+                error="Cloudflare R2 403 权限拒绝：密钥错误或无写入此存储桶权限",
+            )
+        elif resp.status_code == 404:
+            return ImageUploadResponse(
+                success=False,
+                storage_type="r2",
+                filename=safe_filename,
+                error=f"Cloudflare R2 404 存储桶未找到: {config.r2_bucket_name}",
+            )
+        else:
+            return ImageUploadResponse(
+                success=False,
+                storage_type="r2",
+                filename=safe_filename,
+                error=f"Cloudflare R2 返回错误 {resp.status_code}: {resp.text[:200]}",
+            )
+    except AmbiguousOutcomeError as e:
+        return ImageUploadResponse(
+            success=False,
+            storage_type="r2",
+            filename=safe_filename,
+            error=f"Cloudflare R2 请求超时，状态未决: {str(e)}",
+        )
+    except RetryExhaustedError as e:
+        return ImageUploadResponse(
+            success=False,
+            storage_type="r2",
+            filename=safe_filename,
+            error=f"Cloudflare R2 上传重试已耗尽: {str(e.last_exception or e)}",
+        )
     except httpx.ConnectError:
         return ImageUploadResponse(
             success=False,
