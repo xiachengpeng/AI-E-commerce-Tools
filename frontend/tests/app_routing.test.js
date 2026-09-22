@@ -110,10 +110,11 @@ async function testCapabilityPayloadAndStatus(capability, route) {
     await context.callAI(capability, payload);
 
     assert.equal(state.aiCalls.length, 1);
-    assert.deepEqual(
-        JSON.parse(state.aiCalls[0].options.body),
-        { capability, payload }
-    );
+    const parsedBody = JSON.parse(state.aiCalls[0].options.body);
+    assert.equal(parsedBody.capability, capability);
+    assert.deepEqual(parsedBody.payload.contents, payload.contents);
+    assert.ok(parsedBody.client_request_id);
+    assert.ok(parsedBody.client_operation_key);
     assert.deepEqual(
         state.logs,
         [`正在调用模型: ${route.model} (${route.name})`]
@@ -236,17 +237,15 @@ async function run() {
     const transientFailure = createContext({
         configs: [publicConfig()],
         aiResponses: [
-            response(503, {}),
-            response(503, {}),
-            response(200, { retried: true })
+            response(503, { detail: "Upstream busy" })
         ]
     });
     await transientFailure.context.refreshPublicAIRoutes();
-    assert.deepEqual(
-        await transientFailure.context.callAI("image", {}),
-        { retried: true }
+    await assert.rejects(
+        transientFailure.context.callAI("image", {}),
+        /Upstream busy/
     );
-    assert.equal(transientFailure.state.aiCalls.length, 3);
+    assert.equal(transientFailure.state.aiCalls.length, 1, "callAI must not retry on 503 to prevent retry storm");
 }
 
 run().catch(error => {

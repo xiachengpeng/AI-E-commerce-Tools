@@ -149,16 +149,34 @@ async function callAI(capability, payload, options = {}) {
     console.log(`%c[AI请求] ${logMsg}`, "color: #0891b2; font-weight: bold;");
     remoteLog(logMsg);
 
+    const clientRequestId = options.clientRequestId || (typeof generateUuid === 'function' ? generateUuid() : String(Date.now()));
+    const clientOperationKey = options.clientOperationKey || options.taskId || clientRequestId;
+
+    const requestPayload = {
+        ...(payload || {}),
+        client_request_id: clientRequestId,
+        client_operation_key: clientOperationKey
+    };
+
     const fetchOptions = {
         method: 'POST',
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ capability, payload })
+        headers: {
+            "Content-Type": "application/json",
+            "X-Client-Request-Id": clientRequestId
+        },
+        body: JSON.stringify({
+            capability,
+            payload: requestPayload,
+            client_request_id: clientRequestId,
+            client_operation_key: clientOperationKey
+        })
     };
     if (options?.signal) {
         fetchOptions.signal = options.signal;
     }
 
-    return await fetchWithRetry(`${API_BASE}/api/ai/generate`, fetchOptions, 5, {
+    return await fetchWithRetry(`${API_BASE}/api/ai/generate`, fetchOptions, 1, {
+        disableRetry: true,
         nonRetryableStatuses: [400, 401, 403, 404, 409, 422],
         createError: response => safeAIRouteConflictError(
             response,

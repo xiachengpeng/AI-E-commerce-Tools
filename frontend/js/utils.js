@@ -188,34 +188,49 @@ function showToast(message, type = 'info') {
 }
 
 /**
+ * 生成符合 RFC4122 v4 规范的唯一标识符 (UUID)
+ */
+function generateUuid() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+/**
  * 带重试机制的 Fetch
  */
 const DEFAULT_NON_RETRYABLE_STATUSES = [400, 401, 403, 404, 409, 422];
 
 async function fetchWithRetry(url, options, retries = 5, retryOptions = {}) {
+    const maxAttempts = (retryOptions.disableRetry || retries <= 1) ? 1 : retries;
     const delays = [1000, 2000, 4000, 8000, 16000];
     const nonRetryableStatuses = new Set([
         ...DEFAULT_NON_RETRYABLE_STATUSES,
         ...(retryOptions.nonRetryableStatuses || [])
     ]);
-    for (let i = 0; i < retries; i++) {
+    for (let i = 0; i < maxAttempts; i++) {
         try {
             const res = await fetch(url, options);
             if (!res.ok) {
-                if (nonRetryableStatuses.has(res.status)) {
-                    let error = new Error(`HTTP ${res.status}`);
-                    if (typeof retryOptions.createError === "function") {
-                        const customError = await retryOptions.createError(res);
-                        if (customError instanceof Error) error = customError;
-                    }
+                let error = new Error(`HTTP ${res.status}`);
+                if (typeof retryOptions.createError === "function") {
+                    const customError = await retryOptions.createError(res);
+                    if (customError instanceof Error) error = customError;
+                }
+                if (nonRetryableStatuses.has(res.status) || maxAttempts === 1) {
                     error.retryable = false;
                     throw error;
                 }
-                throw new Error(`HTTP ${res.status}`);
+                throw error;
             }
             return await res.json();
         } catch (e) {
-            if (e.name === 'AbortError' || options?.signal?.aborted || e.retryable === false || i === retries - 1) throw e;
+            if (e.name === 'AbortError' || options?.signal?.aborted || e.retryable === false || i === maxAttempts - 1) throw e;
             await new Promise(r => setTimeout(r, delays[i]));
         }
     }
@@ -645,12 +660,14 @@ if (typeof globalThis !== 'undefined') {
     globalThis.formatBytes = formatBytes;
     globalThis.estimateBase64Bytes = estimateBase64Bytes;
     globalThis.compressImageToWebp = compressImageToWebp;
+    globalThis.generateUuid = generateUuid;
 }
 
 if (typeof module !== "undefined") {
     module.exports = {
         formatImgSrc,
         appendToastContent,
+        generateUuid,
         fetchWithRetry,
         extractImageFilesFromClipboard,
         shouldIgnoreImagePaste,
@@ -717,12 +734,163 @@ function resetAllAppDraftsAndState(options = {}) {
     }
 }
 
+/**
+ * 解析输入框对应的已保存密钥元数据
+ */
+function resolveSecretMeta(input) {
+    if (!input) return null;
+    if (input.dataset && input.dataset.secretCategory && input.dataset.secretField) {
+        return {
+            category: input.dataset.secretCategory,
+            field: input.dataset.secretField,
+            id: input.dataset.secretId ? parseInt(input.dataset.secretId, 10) : null
+        };
+    }
+    const id = input.id;
+    if (id === "settingsProviderApiKey") {
+        const providerId = (typeof settingsState !== "undefined" && settingsState.editingProviderId) ||
+            parseInt(typeof document !== "undefined" ? document.getElementById("settingsProviderId")?.value : null, 10);
+        return providerId ? { category: "ai_provider", field: "api_key", id: providerId } : null;
+    }
+    if (id === "settingsProviderBalanceAccessToken") {
+        const providerId = (typeof settingsState !== "undefined" && settingsState.editingProviderId) ||
+            parseInt(typeof document !== "undefined" ? document.getElementById("settingsProviderId")?.value : null, 10);
+        return providerId ? { category: "ai_provider", field: "balance_access_token", id: providerId } : null;
+    }
+    if (id === "settingsUsageApiKey") {
+        const providerId = (typeof currentUsageQueryProviderId !== "undefined" && currentUsageQueryProviderId) ||
+            parseInt(typeof document !== "undefined" ? document.getElementById("settingsUsageQueryProviderId")?.value : null, 10) ||
+            (typeof settingsState !== "undefined" && settingsState.editingProviderId);
+        return providerId ? { category: "usage_query", field: "balance_custom_key", id: providerId } : null;
+    }
+    if (id === "settingsFirecrawlApiKey") {
+        return { category: "crawler", field: "api_key", id: null };
+    }
+    if (id === "settingsWpAppPassword") {
+        const cfgId = (typeof settingsState !== "undefined" && settingsState.activeWpConfigId) ||
+            parseInt(typeof document !== "undefined" ? document.getElementById("settingsWpSelect")?.value : null, 10);
+        return cfgId ? { category: "storage", field: "wp_app_password", id: cfgId } : null;
+    }
+    if (id === "settingsShopifyAccessToken") {
+        const cfgId = (typeof settingsState !== "undefined" && settingsState.activeShopifyConfigId) ||
+            parseInt(typeof document !== "undefined" ? document.getElementById("settingsShopifySelect")?.value : null, 10);
+        return cfgId ? { category: "storage", field: "shopify_access_token", id: cfgId } : null;
+    }
+    if (id === "settingsR2SecretKey") {
+        let cfgId = (typeof settingsState !== "undefined" && settingsState.activeR2ConfigId);
+        if (!cfgId && typeof getSettingsStorageConfigs === "function") {
+            const r2 = getSettingsStorageConfigs().find(c => c.storage_type === "r2");
+            cfgId = r2?.id;
+        }
+        return cfgId ? { category: "storage", field: "r2_secret_key", id: cfgId } : null;
+    }
+    if (id === "storageWpAppPassword") {
+        const cfgId = (typeof activeWpConfigId !== "undefined" && activeWpConfigId) ||
+            parseInt(typeof document !== "undefined" ? document.getElementById("wpSiteSelect")?.value : null, 10);
+        return cfgId ? { category: "storage", field: "wp_app_password", id: cfgId } : null;
+    }
+    if (id === "storageShopifyAccessToken") {
+        const cfgId = (typeof activeShopifyConfigId !== "undefined" && activeShopifyConfigId) ||
+            parseInt(typeof document !== "undefined" ? document.getElementById("shopifyStoreSelect")?.value : null, 10);
+        return cfgId ? { category: "storage", field: "shopify_access_token", id: cfgId } : null;
+    }
+    if (id === "storageR2SecretKey") {
+        let cfgId = (typeof activeR2ConfigId !== "undefined" && activeR2ConfigId);
+        if (!cfgId && typeof getStorageConfigs === "function") {
+            const r2 = getStorageConfigs().find(c => c.storage_type === "r2");
+            cfgId = r2?.id;
+        }
+        return cfgId ? { category: "storage", field: "r2_secret_key", id: cfgId } : null;
+    }
+    return null;
+}
+
+/**
+ * 切换密码/密钥输入框明文与掩码状态，若输入框处于留空占位态且存在已保存密钥，则向后端按需拉取真实明文密钥
+ * @param {string|HTMLInputElement} inputIdOrEl - 输入框 ID 或 DOM 元素
+ * @param {HTMLElement} [toggleBtn] - 触发切换的按钮 DOM 元素
+ */
+async function togglePasswordVisibility(inputIdOrEl, toggleBtn) {
+    const input = typeof inputIdOrEl === "string" ? (typeof document !== "undefined" ? document.getElementById(inputIdOrEl) : null) : inputIdOrEl;
+    if (!input) return;
+
+    const isPassword = input.type === "password";
+
+    // 尝试拉取真实密钥：仅当当前是 password 状态（将切为 text）且当前输入框为空（显示已保存 placeholder）
+    if (isPassword && !input.value) {
+        if (input.dataset && input.dataset.cachedSecret) {
+            input.value = input.dataset.cachedSecret;
+            input.dataset.isOriginalRevealed = "true";
+        } else {
+            const meta = resolveSecretMeta(input);
+            if (meta) {
+                const icon = typeof toggleBtn?.querySelector === "function" ? (toggleBtn.querySelector("i") || toggleBtn) : toggleBtn;
+                if (icon) icon.className = "ph ph-spinner animate-spin";
+                if (toggleBtn) toggleBtn.disabled = true;
+
+                try {
+                    const apiBase = (typeof API_BASE !== "undefined" && API_BASE) ? API_BASE : "http://127.0.0.1:9503";
+                    const fetchFn = typeof fetch === "function" ? fetch : (typeof globalThis !== "undefined" ? globalThis.fetch : null);
+                    if (fetchFn) {
+                        const res = await fetchFn(`${apiBase}/api/settings/secrets/reveal`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(meta),
+                        });
+                        if (res && res.ok) {
+                            const data = await res.json();
+                            if (data && data.status === "success" && data.secret) {
+                                input.value = data.secret;
+                                if (input.dataset) {
+                                    input.dataset.cachedSecret = data.secret;
+                                    input.dataset.isOriginalRevealed = "true";
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.warn("Failed to reveal secret:", err);
+                } finally {
+                    if (toggleBtn) toggleBtn.disabled = false;
+                }
+            }
+        }
+    } else if (!isPassword) {
+        // 当前是 text，切回 password
+        // 若当前内容正是未修改过的拉取密钥，切回留空占位态保持干净
+        if (input.dataset && input.dataset.isOriginalRevealed === "true" && input.value === input.dataset.cachedSecret) {
+            input.value = "";
+        }
+    }
+
+    input.type = isPassword ? "text" : "password";
+
+    if (toggleBtn) {
+        const icon = typeof toggleBtn.querySelector === "function" ? (toggleBtn.querySelector("i") || toggleBtn) : toggleBtn;
+        if (icon) {
+            icon.className = isPassword ? "ph ph-eye-slash" : "ph ph-eye";
+        }
+        if (typeof toggleBtn.setAttribute === "function") {
+            toggleBtn.setAttribute("title", isPassword ? "隐藏明文密钥" : "显示明文密钥");
+            toggleBtn.setAttribute("aria-label", isPassword ? "隐藏明文密钥" : "显示明文密钥");
+        }
+    }
+}
+
 if (typeof globalThis !== 'undefined') {
     globalThis.safeLocalStorageSet = safeLocalStorageSet;
     globalThis.debounce = debounce;
     globalThis.resetAllAppDraftsAndState = resetAllAppDraftsAndState;
+    globalThis.togglePasswordVisibility = togglePasswordVisibility;
 }
 if (typeof window !== 'undefined') {
     window.safeLocalStorageSet = safeLocalStorageSet;
     window.resetAllAppDraftsAndState = resetAllAppDraftsAndState;
+    window.togglePasswordVisibility = togglePasswordVisibility;
+}
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        ...(module.exports || {}),
+        togglePasswordVisibility,
+    };
 }

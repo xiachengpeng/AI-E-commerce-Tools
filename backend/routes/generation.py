@@ -128,8 +128,13 @@ async def api_ai_generate(data: dict):
     if capability not in {"text", "image"}:
         raise HTTPException(422, "capability 必须是 text 或 image")
     try:
+        payload = dict(data.get("payload", {}))
+        if "client_request_id" in data and "client_request_id" not in payload:
+            payload["client_request_id"] = data["client_request_id"]
+        if "client_operation_key" in data and "client_operation_key" not in payload:
+            payload["client_operation_key"] = data["client_operation_key"]
         return await main.AIService.generate_content(
-            payload=data.get("payload", {}),
+            payload=payload,
             capability=capability,
         )
     except AIProviderRequestError as exc:
@@ -185,7 +190,7 @@ async def receive_frontend_log(data: FrontendLogEvent):
     main = _main_module()
     main.app_logs.emit(
         level=data.level,
-        source="frontend",
+        source=data.source or "frontend",
         message=data.message,
         capability=data.capability,
         provider=data.provider,
