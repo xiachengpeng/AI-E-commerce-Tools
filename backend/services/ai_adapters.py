@@ -2,6 +2,7 @@ import asyncio
 import base64
 from dataclasses import dataclass
 import inspect
+import json
 import threading
 from abc import ABC, abstractmethod
 
@@ -13,6 +14,7 @@ from google.oauth2 import service_account
 from services.ai_config_service import ProviderSnapshot
 from services.image_response_fetcher import fetch_public_image
 from services.image_validation import validate_image_payload
+from services.provider_capabilities import IdempotencyMode, get_provider_capability
 
 
 class AIAdapter(ABC):
@@ -158,8 +160,19 @@ class GeminiAdapter(AIAdapter):
         self._retired_clients: list[_GoogleClientEntry] = []
         self._client_lock = threading.RLock()
 
-    def _build_client(self, snapshot: ProviderSnapshot):
-        return genai.Client(api_key=snapshot.api_key)
+    def _build_client(
+        self,
+        snapshot: ProviderSnapshot,
+        http_options: types.HttpOptions | None = None,
+    ):
+        if http_options is None:
+            # 显式锁定 SDK 单次尝试，由上层统一 Retry Engine 负责退避调度与预算管理
+            http_options = types.HttpOptions(
+                retry_options=types.HttpRetryOptions(attempts=1)
+            )
+        elif http_options.retry_options is None:
+            http_options.retry_options = types.HttpRetryOptions(attempts=1)
+        return genai.Client(api_key=snapshot.api_key, http_options=http_options)
 
     @staticmethod
     def _close_client(entry):
@@ -309,11 +322,23 @@ class _GoogleClientEntry:
 
 
 class VertexAdapter(GeminiAdapter):
-    def _build_client(self, snapshot: ProviderSnapshot):
+    def _build_client(
+        self,
+        snapshot: ProviderSnapshot,
+        http_options: types.HttpOptions | None = None,
+    ):
+        if http_options is None:
+            # 显式锁定 SDK 单次尝试，由上层统一 Retry Engine 负责退避调度与预算管理
+            http_options = types.HttpOptions(
+                retry_options=types.HttpRetryOptions(attempts=1)
+            )
+        elif http_options.retry_options is None:
+            http_options.retry_options = types.HttpRetryOptions(attempts=1)
         client_options = {
             "vertexai": True,
             "project": snapshot.vertex_project_id,
             "location": snapshot.vertex_location,
+            "http_options": http_options,
         }
         if snapshot.vertex_key_path:
             client_options["credentials"] = (
@@ -427,6 +452,7 @@ def extract_validated_inline_images(payload):
                 validate_image_payload(
                     inline_data.get("data", ""),
                     mime_type,
+                    strict_mime=False,
                 )
             )
     return images
@@ -489,17 +515,10 @@ def _validated_openai_base64(item):
     if not isinstance(encoded, str) or not encoded:
         return None
     declared = item.get("mime_type") or item.get("mimeType")
-    candidates = (
-        [declared]
-        if isinstance(declared, str) and declared
-        else ["image/png", "image/jpeg", "image/webp"]
-    )
-    for mime_type in candidates:
-        try:
-            return validate_image_payload(encoded, mime_type)
-        except ValueError:
-            continue
-    raise ValueError("AI 图片响应内容无效")
+    try:
+        return validate_image_payload(encoded, declared, strict_mime=False)
+    except ValueError:
+        raise ValueError("AI 图片响应内容无效")
 
 
 async def normalize_openai_image_item(item, snapshot, client):
@@ -552,6 +571,18 @@ def normalized_image_response(data, mime_type):
     }
 
 
+def _is_format_url_required_error(response) -> bool:
+    if getattr(response, "status_code", None) != 400:
+        return False
+    try:
+        body = response.json()
+    except Exception:
+        body = getattr(response, "text", "")
+    text = json.dumps(body) if isinstance(body, (dict, list)) else str(body)
+    lower = text.lower()
+    return "response_format" in lower and ("url" in lower or "b64" in lower)
+
+
 class OpenAICompatibleAdapter(AIAdapter):
     def __init__(self, client=None):
         self.client = client or httpx.AsyncClient()
@@ -561,6 +592,17 @@ class OpenAICompatibleAdapter(AIAdapter):
         if snapshot.api_key:
             headers["Authorization"] = f"Bearer {snapshot.api_key}"
         base_url = (snapshot.base_url or "").rstrip("/")
+
+        # Provider Capability 驱动请求头注入
+        cap = get_provider_capability(
+            provider_name=snapshot.name or "",
+            protocol="openai_compatible",
+            operation=snapshot.capability,
+        )
+        if cap.header_name and cap.idempotency_mode == IdempotencyMode.HEADER:
+            client_req_id = payload.get("client_request_id") or payload.get("clientRequestId")
+            if client_req_id:
+                headers[cap.header_name] = str(client_req_id)
 
         if snapshot.capability == "image":
             common = {
@@ -576,6 +618,15 @@ class OpenAICompatibleAdapter(AIAdapter):
                     json=common,
                     timeout=snapshot.timeout_seconds,
                 )
+                if _is_format_url_required_error(response):
+                    retry_common = dict(common)
+                    retry_common["response_format"] = "url"
+                    response = await self.client.post(
+                        f"{base_url}/v1/images/generations",
+                        headers=headers,
+                        json=retry_common,
+                        timeout=snapshot.timeout_seconds,
+                    )
             elif mode == "image_to_image":
                 images, mask = extract_openai_edit_images(payload)
                 if not images:
@@ -609,18 +660,32 @@ class OpenAICompatibleAdapter(AIAdapter):
                     files=files,
                     timeout=snapshot.timeout_seconds,
                 )
+                if _is_format_url_required_error(response):
+                    retry_data = dict(data)
+                    retry_data["response_format"] = "url"
+                    response = await self.client.post(
+                        f"{base_url}/v1/images/edits",
+                        headers=headers,
+                        data=retry_data,
+                        files=files,
+                        timeout=snapshot.timeout_seconds,
+                    )
             else:
                 raise ValueError("图片生成方式无效")
             response.raise_for_status()
+            provider_request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
             try:
                 item = response.json()["data"][0]
             except (AttributeError, IndexError, KeyError, TypeError) as exc:
                 raise ValueError("AI 图片响应格式无效") from exc
-            return await normalize_openai_image_item(
+            result = await normalize_openai_image_item(
                 item,
                 snapshot,
                 self.client,
             )
+            if provider_request_id:
+                result["requestId"] = provider_request_id
+            return result
 
         body = {
             "model": snapshot.model,
@@ -654,8 +719,12 @@ class OpenAICompatibleAdapter(AIAdapter):
             timeout=snapshot.timeout_seconds,
         )
         response.raise_for_status()
+        provider_request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
         content = response.json()["choices"][0]["message"]["content"]
-        return normalized_text_response(content)
+        result = normalized_text_response(content)
+        if provider_request_id:
+            result["requestId"] = provider_request_id
+        return result
 
     async def close(self) -> None:
         close = getattr(self.client, "aclose", None)

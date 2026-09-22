@@ -6,7 +6,9 @@ from types import SimpleNamespace
 import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
+from google.genai import types as genai_types
 
 from services.ai_adapters import (
     GeminiAdapter,
@@ -451,7 +453,8 @@ def test_gemini_client_cache_is_versioned_by_snapshot():
         )
 
     assert client_factory.call_count == 2
-    client_factory.assert_any_call(api_key="gemini-key")
+    assert client_factory.call_args_list[0].kwargs["api_key"] == "gemini-key"
+    assert client_factory.call_args_list[0].kwargs["http_options"].retry_options.attempts == 1
 
 
 def test_gemini_client_cache_isolated_by_provider_incarnation():
@@ -602,12 +605,11 @@ def test_vertex_uses_explicit_credentials_without_mutating_environment(
             assert adapter._client(snapshot) is client
 
     load_credentials.assert_called_once_with("/tmp/vertex-key.json")
-    factory.assert_called_once_with(
-        vertexai=True,
-        project="project-id",
-        location="us-central1",
-        credentials=credentials,
-    )
+    assert factory.call_args.kwargs["vertexai"] is True
+    assert factory.call_args.kwargs["project"] == "project-id"
+    assert factory.call_args.kwargs["location"] == "us-central1"
+    assert factory.call_args.kwargs["credentials"] is credentials
+    assert factory.call_args.kwargs["http_options"].retry_options.attempts == 1
     assert (
         __import__("os").environ["GOOGLE_APPLICATION_CREDENTIALS"]
         == "/existing/adc.json"
@@ -676,11 +678,10 @@ def test_vertex_without_key_path_uses_application_default_credentials():
     with patch("services.ai_adapters.genai.Client") as client_factory:
         adapter._client(snapshot)
 
-    client_factory.assert_called_once_with(
-        vertexai=True,
-        project="project-id",
-        location="us-central1",
-    )
+    assert client_factory.call_args.kwargs["vertexai"] is True
+    assert client_factory.call_args.kwargs["project"] == "project-id"
+    assert client_factory.call_args.kwargs["location"] == "us-central1"
+    assert client_factory.call_args.kwargs["http_options"].retry_options.attempts == 1
 
 
 @pytest.mark.parametrize(
@@ -734,3 +735,201 @@ def test_openai_messages_map_google_model_role_to_assistant():
     )
 
     assert messages[0]["role"] == "assistant"
+
+
+@pytest.mark.asyncio
+async def test_openai_image_to_image_retries_with_url_format_when_b64_rejected(monkeypatch):
+    first_response = MagicMock()
+    first_response.status_code = 400
+    first_response.json.return_value = {
+        "error": {"message": "站点用户 API 目前仅支持 response_format=url", "code": "bad_request"}
+    }
+    first_response.text = '{"error": {"message": "站点用户 API 目前仅支持 response_format=url"}}'
+
+    second_response = MagicMock()
+    second_response.status_code = 200
+    second_response.raise_for_status = MagicMock()
+    second_response.json.return_value = {"data": [{"url": "https://cdn.example.com/result.png"}]}
+
+    transport = MagicMock()
+    transport.post = AsyncMock(side_effect=[first_response, second_response])
+
+    fetched = AsyncMock(
+        return_value=ValidatedImage(
+            data=TINY_PNG_BYTES,
+            mime_type="image/png",
+            image_format="PNG",
+            width=1,
+            height=1,
+        )
+    )
+    monkeypatch.setattr("services.ai_adapters.fetch_public_image", fetched)
+    adapter = OpenAICompatibleAdapter(client=transport)
+
+    result = await adapter.generate(
+        make_snapshot(
+            capability="image",
+            image_generation_mode="image_to_image",
+        ),
+        {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": "Refine image"},
+                        {
+                            "inlineData": {
+                                "mimeType": "image/png",
+                                "data": TINY_PNG_BASE64,
+                            }
+                        },
+                    ]
+                }
+            ]
+        },
+    )
+
+    assert transport.post.await_count == 2
+    first_call_data = transport.post.await_args_list[0].kwargs["data"]
+    second_call_data = transport.post.await_args_list[1].kwargs["data"]
+    assert first_call_data["response_format"] == "b64_json"
+    assert second_call_data["response_format"] == "url"
+    assert result["candidates"][0]["content"]["parts"][0]["inlineData"]["data"] == TINY_PNG_BASE64
+
+
+@pytest.mark.asyncio
+async def test_openai_text_to_image_retries_with_url_format_when_b64_rejected(monkeypatch):
+    first_response = MagicMock()
+    first_response.status_code = 400
+    first_response.json.return_value = {
+        "error": {"message": "站点用户 API 目前仅支持 response_format=url", "code": "bad_request"}
+    }
+    first_response.text = '{"error": {"message": "站点用户 API 目前仅支持 response_format=url"}}'
+
+    second_response = MagicMock()
+    second_response.status_code = 200
+    second_response.raise_for_status = MagicMock()
+    second_response.json.return_value = {"data": [{"url": "https://cdn.example.com/result.png"}]}
+
+    transport = MagicMock()
+    transport.post = AsyncMock(side_effect=[first_response, second_response])
+
+    fetched = AsyncMock(
+        return_value=ValidatedImage(
+            data=TINY_PNG_BYTES,
+            mime_type="image/png",
+            image_format="PNG",
+            width=1,
+            height=1,
+        )
+    )
+    monkeypatch.setattr("services.ai_adapters.fetch_public_image", fetched)
+    adapter = OpenAICompatibleAdapter(client=transport)
+
+    result = await adapter.generate(
+        make_snapshot(
+            capability="image",
+            image_generation_mode="text_to_image",
+        ),
+        {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": "Draw a cat"},
+                    ]
+                }
+            ]
+        },
+    )
+
+    assert transport.post.await_count == 2
+    first_call_json = transport.post.await_args_list[0].kwargs["json"]
+    second_call_json = transport.post.await_args_list[1].kwargs["json"]
+    assert first_call_json["response_format"] == "b64_json"
+    assert second_call_json["response_format"] == "url"
+    assert result["candidates"][0]["content"]["parts"][0]["inlineData"]["data"] == TINY_PNG_BASE64
+
+
+@pytest.mark.asyncio
+async def test_google_sdk_locked_to_single_attempt_on_transport(monkeypatch):
+    calls = 0
+
+    def handler(request: httpx.Request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, text="Service Unavailable", request=request)
+
+    mock_transport = httpx.MockTransport(handler)
+    mock_http_client = httpx.Client(transport=mock_transport)
+
+    adapter = GeminiAdapter()
+
+    # Monkeypatch _build_client to inject mock transport client while retaining HttpRetryOptions(attempts=1)
+    original_build = adapter._build_client
+
+    def mocked_build(snapshot):
+        # 1. Verify default build locks to single attempt
+        default_client = original_build(snapshot)
+        http_opts = getattr(default_client._api_client, "_http_options", None)
+        assert http_opts is not None
+        assert http_opts.retry_options.attempts == 1
+
+        # 2. Return client configured with attempts=1 and mock transport
+        custom_opts = genai_types.HttpOptions(
+            retry_options=genai_types.HttpRetryOptions(attempts=1),
+            httpx_client=mock_http_client,
+        )
+        return original_build(snapshot, http_options=custom_opts)
+
+    monkeypatch.setattr(adapter, "_build_client", mocked_build)
+
+    with pytest.raises(Exception):
+        await adapter.generate(
+            snapshot=make_snapshot(protocol="gemini", capability="text", model="gemini-2.5-flash"),
+            payload={"contents": [{"parts": [{"text": "hello"}]}]},
+        )
+
+    # Crucial assertion: SDK must attempt exactly 1 HTTP call, not retry silently on 503
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_openai_headers_governed_by_capability():
+    # 1. Official OpenAI sends X-Client-Request-Id when client_request_id is provided
+    response_openai = MagicMock()
+    response_openai.status_code = 200
+    response_openai.headers = {"x-request-id": "req-upstream-999"}
+    response_openai.json.return_value = {
+        "choices": [{"message": {"content": "ok"}}]
+    }
+    client_openai = MagicMock()
+    client_openai.post = AsyncMock(return_value=response_openai)
+
+    adapter_openai = OpenAICompatibleAdapter(client=client_openai)
+    res_openai = await adapter_openai.generate(
+        snapshot=make_snapshot(name="openai", protocol="openai_compatible", capability="text"),
+        payload={"contents": [{"parts": [{"text": "hi"}]}], "client_request_id": "client-uuid-1"},
+    )
+    sent_headers_openai = client_openai.post.await_args.kwargs["headers"]
+    assert sent_headers_openai.get("X-Client-Request-Id") == "client-uuid-1"
+    assert "Idempotency-Key" not in sent_headers_openai
+    assert res_openai.get("requestId") == "req-upstream-999"
+
+    # 2. Third-party provider (e.g. deepseek / generic) must NOT send X-Client-Request-Id or Idempotency-Key
+    response_tp = MagicMock()
+    response_tp.status_code = 200
+    response_tp.headers = {}
+    response_tp.json.return_value = {
+        "choices": [{"message": {"content": "ok"}}]
+    }
+    client_tp = MagicMock()
+    client_tp.post = AsyncMock(return_value=response_tp)
+
+    adapter_tp = OpenAICompatibleAdapter(client=client_tp)
+    await adapter_tp.generate(
+        snapshot=make_snapshot(name="deepseek", protocol="openai_compatible", capability="text"),
+        payload={"contents": [{"parts": [{"text": "hi"}]}], "client_request_id": "client-uuid-2"},
+    )
+    sent_headers_tp = client_tp.post.await_args.kwargs["headers"]
+    assert "X-Client-Request-Id" not in sent_headers_tp
+    assert "Idempotency-Key" not in sent_headers_tp
+
