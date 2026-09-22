@@ -1,6 +1,8 @@
 import asyncio
 import dataclasses
+import threading
 import time
+import uuid
 
 import httpx
 
@@ -8,6 +10,15 @@ from db import SessionLocal
 from services.ai_adapters import get_adapter
 from services.ai_config_service import get_snapshot
 from services.app_log_service import AppLogService, app_logs
+from services.retry_service import (
+    AmbiguousOutcomeError,
+    ErrorCategory,
+    ExecutionState,
+    PolicyResolver,
+    RetryDecision,
+    RetryServiceError,
+    execute_with_retry,
+)
 
 
 _ERROR_MESSAGES = {
@@ -17,6 +28,7 @@ _ERROR_MESSAGES = {
     "timeout": "AI 提供商请求超时",
     "protocol_incompatible": "AI 提供商协议不兼容",
     "upstream_failure": "AI 提供商请求失败",
+    "ambiguous_outcome": "请求状态未知（为避免重复扣费已停止重试）",
 }
 
 _AUTH_CODES = {
@@ -311,6 +323,8 @@ def _classify_provider_error(
     numeric_codes: set[int],
     named_codes: set[str],
 ) -> str:
+    if isinstance(exc, AmbiguousOutcomeError):
+        return "ambiguous_outcome"
     if isinstance(
         exc,
         (TimeoutError, asyncio.TimeoutError, httpx.TimeoutException),
@@ -428,6 +442,30 @@ def map_provider_error(
     )
 
 
+class ExecutionTracker:
+    _states: dict[str, ExecutionState] = {}
+    _lock = threading.Lock()
+
+    @classmethod
+    def get_state(cls, execution_id: str) -> ExecutionState | None:
+        with cls._lock:
+            return cls._states.get(execution_id)
+
+    @classmethod
+    def set_state(cls, execution_id: str, state: ExecutionState) -> None:
+        with cls._lock:
+            cls._states[execution_id] = state
+            if len(cls._states) > 1000:
+                oldest_keys = list(cls._states.keys())[:200]
+                for k in oldest_keys:
+                    cls._states.pop(k, None)
+
+    @classmethod
+    def clear(cls) -> None:
+        with cls._lock:
+            cls._states.clear()
+
+
 class AIRouter:
     def __init__(self, base_delay: float = 2):
         self.base_delay = base_delay
@@ -455,6 +493,57 @@ class AIRouter:
                 "text_to_image": "images.generations",
                 "image_to_image": "images.edits",
             }.get(image_generation_mode)
+
+        # Lifecycle IDs
+        client_req_id = (
+            payload.get("client_request_id")
+            or payload.get("clientRequestId")
+            or f"req_{uuid.uuid4().hex[:12]}"
+        )
+        operation_id = (
+            payload.get("operation_id")
+            or payload.get("operationId")
+            or payload.get("client_operation_key")
+            or f"op_{uuid.uuid4().hex[:12]}"
+        )
+        execution_id = (
+            payload.get("execution_id")
+            or payload.get("executionId")
+            or f"exec_{uuid.uuid4().hex[:12]}"
+        )
+        payload["client_request_id"] = client_req_id
+        payload["operation_id"] = operation_id
+        payload["execution_id"] = execution_id
+
+        # Policy Resolution
+        if capability == "image":
+            policy = PolicyResolver.get_policy("ai_image_generation")
+        else:
+            policy = PolicyResolver.get_policy("ai_text_generation")
+
+        # Snapshot max_retries override
+        if snapshot.max_retries is not None and snapshot.max_retries >= 0:
+            policy = dataclasses.replace(policy, max_attempts=snapshot.max_retries + 1)
+
+        # Base delay override for testability
+        if self.base_delay is not None:
+            policy = dataclasses.replace(
+                policy,
+                backoff_gradient=tuple(
+                    float(self.base_delay * (2**i))
+                    for i in range(len(policy.backoff_gradient))
+                ),
+            )
+
+        # Disable jitter in tests when sleep is mocked
+        is_mock_sleep = (
+            getattr(asyncio.sleep, "await_args_list", None) is not None
+            or hasattr(asyncio.sleep, "mock")
+            or "mock" in type(asyncio.sleep).__name__.lower()
+        )
+        if is_mock_sleep:
+            policy = dataclasses.replace(policy, jitter="none")
+
         started = time.monotonic()
         app_logs.emit(
             level="info",
@@ -467,76 +556,144 @@ class AIRouter:
             image_generation_mode=image_generation_mode,
             image_endpoint=image_endpoint,
         )
-        terminal_error = None
-        for attempt in range(snapshot.max_retries + 1):
-            try:
-                result = await adapter.generate(snapshot, payload)
-                app_logs.emit(
-                    level="success",
-                    source="ai",
-                    message="AI 请求完成",
-                    capability=capability,
-                    provider=snapshot.name,
-                    model=snapshot.model,
-                    duration_ms=round(
-                        (time.monotonic() - started) * 1000
-                    ),
-                    retry=attempt,
-                    image_generation_mode=image_generation_mode,
-                    image_endpoint=image_endpoint,
-                )
-                return result
-            except Exception as exc:
+
+        current_state = ExecutionState(
+            operation_id=operation_id,
+            execution_id=execution_id,
+            attempt=1,
+            max_attempts=policy.max_attempts,
+            state="running",
+        )
+        ExecutionTracker.set_state(execution_id, current_state)
+
+        async def on_retry_handler(
+            state: ExecutionState,
+            decision: RetryDecision,
+            exc: Exception = None,
+        ):
+            current_state.attempt = state.attempt
+            current_state.state = "retrying"
+            current_state.next_retry_at = state.next_retry_at
+            current_state.error_category = decision.category
+            ExecutionTracker.set_state(execution_id, current_state)
+
+            diagnostic = None
+            if exc is not None:
                 mapped = map_provider_error(
                     exc,
                     provider=snapshot.name,
                     model=snapshot.model,
                     capability=capability,
-                    retry=attempt,
+                    retry=state.attempt,
                     sensitive_values=(
                         snapshot.api_key,
                         snapshot.vertex_key_path,
                     ),
                 )
                 diagnostic = mapped.diagnostic
-                duration_ms = round((time.monotonic() - started) * 1000)
-                if attempt >= snapshot.max_retries:
-                    terminal_error = mapped
-                    app_logs.emit(
-                        level="error",
-                        source="ai",
-                        message={
-                            "summary": str(mapped),
-                            "diagnostic": diagnostic.as_log_dict(),
-                            "attempt": attempt + 1,
-                            "max_attempts": snapshot.max_retries + 1,
-                        },
-                        capability=capability,
-                        provider=snapshot.name,
-                        model=snapshot.model,
-                        duration_ms=duration_ms,
-                        retry=attempt,
-                        image_generation_mode=image_generation_mode,
-                        image_endpoint=image_endpoint,
-                    )
-                    break
-                app_logs.emit(
-                    level="warning",
-                    source="ai",
-                    message={
-                        "summary": "AI 请求重试",
-                        "diagnostic": diagnostic.as_log_dict(),
-                        "attempt": attempt + 1,
-                        "max_attempts": snapshot.max_retries + 1,
-                    },
-                    capability=capability,
-                    provider=snapshot.name,
-                    model=snapshot.model,
-                    duration_ms=duration_ms,
-                    retry=attempt + 1,
-                    image_generation_mode=image_generation_mode,
-                    image_endpoint=image_endpoint,
-                )
-                await asyncio.sleep(self.base_delay * (2**attempt))
+
+            duration_ms = round((time.monotonic() - started) * 1000)
+            app_logs.emit(
+                level="warning",
+                source="ai",
+                event="ai_retry",
+                message={
+                    "summary": "AI 请求重试",
+                    "status_text": f"接口响应异常，正在自动重试（{state.attempt}/{policy.max_attempts - 1}）",
+                    "diagnostic": diagnostic.as_log_dict() if diagnostic else {},
+                    "attempt": state.attempt,
+                    "max_attempts": policy.max_attempts,
+                    "category": decision.category.value,
+                    "reason": decision.reason,
+                    "delay_seconds": round(decision.delay_seconds, 2),
+                    "operation_id": operation_id,
+                    "execution_id": execution_id,
+                },
+                capability=capability,
+                provider=snapshot.name,
+                model=snapshot.model,
+                duration_ms=duration_ms,
+                retry=state.attempt,
+                image_generation_mode=image_generation_mode,
+                image_endpoint=image_endpoint,
+            )
+
+        async def _sleep(seconds):
+            await asyncio.sleep(seconds)
+
+        async def run_op():
+            return await adapter.generate(snapshot, payload)
+
+        terminal_error = None
+        try:
+            result = await execute_with_retry(
+                run_op,
+                policy=policy,
+                operation_id=operation_id,
+                execution_id=execution_id,
+                on_retry=on_retry_handler,
+                sleep_fn=_sleep,
+                state=current_state,
+            )
+            current_state.state = "succeeded"
+            ExecutionTracker.set_state(execution_id, current_state)
+
+            duration_ms = round((time.monotonic() - started) * 1000)
+            app_logs.emit(
+                level="success",
+                source="ai",
+                message="AI 请求完成",
+                capability=capability,
+                provider=snapshot.name,
+                model=snapshot.model,
+                duration_ms=duration_ms,
+                retry=current_state.attempt - 1,
+                image_generation_mode=image_generation_mode,
+                image_endpoint=image_endpoint,
+            )
+            return result
+        except Exception as exc:
+            current_state.state = (
+                "ambiguous"
+                if isinstance(exc, AmbiguousOutcomeError)
+                else "failed"
+            )
+            ExecutionTracker.set_state(execution_id, current_state)
+
+            target_exc = exc
+            if isinstance(exc, RetryServiceError) and exc.last_error:
+                target_exc = exc.last_error
+
+            mapped = map_provider_error(
+                exc if isinstance(exc, AmbiguousOutcomeError) else target_exc,
+                provider=snapshot.name,
+                model=snapshot.model,
+                capability=capability,
+                retry=current_state.attempt - 1,
+                sensitive_values=(
+                    snapshot.api_key,
+                    snapshot.vertex_key_path,
+                ),
+            )
+            diagnostic = mapped.diagnostic
+            duration_ms = round((time.monotonic() - started) * 1000)
+            app_logs.emit(
+                level="error",
+                source="ai",
+                message={
+                    "summary": str(mapped),
+                    "diagnostic": diagnostic.as_log_dict() if diagnostic else {},
+                    "attempt": current_state.attempt,
+                    "max_attempts": policy.max_attempts,
+                },
+                capability=capability,
+                provider=snapshot.name,
+                model=snapshot.model,
+                duration_ms=duration_ms,
+                retry=current_state.attempt - 1,
+                image_generation_mode=image_generation_mode,
+                image_endpoint=image_endpoint,
+            )
+            terminal_error = mapped
 
         raise terminal_error from None

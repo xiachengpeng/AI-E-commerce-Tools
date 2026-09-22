@@ -97,13 +97,17 @@ class AppLogService:
         "configversion",
         "count",
         "duration",
-        "durationms",
+        "event",
+        "executionid",
+        "execution_id",
         "imagemodel",
         "imageendpoint",
         "imagegenerationmode",
         "mime",
         "mimetype",
         "model",
+        "operationid",
+        "operation_id",
         "provider",
         "retry",
         "status",
@@ -741,6 +745,10 @@ class AppLogService:
         retry: int | str | None = None,
         image_generation_mode: str | None = None,
         image_endpoint: str | None = None,
+        event: str | None = None,
+        operation_id: str | None = None,
+        execution_id: str | None = None,
+        **extra,
     ) -> dict:
         with self._lock:
             entry_id = self._next_id
@@ -766,6 +774,12 @@ class AppLogService:
                 )
             if image_endpoint is not None:
                 entry["image_endpoint"] = self._redact_optional(image_endpoint)
+            if event is not None:
+                entry["event"] = self._redact_optional(event)
+            if operation_id is not None:
+                entry["operation_id"] = self._redact_optional(operation_id)
+            if execution_id is not None:
+                entry["execution_id"] = self._redact_optional(execution_id)
             self._entries.append(copy.deepcopy(entry))
             for queue, subscriber in tuple(self._subscribers.items()):
                 try:

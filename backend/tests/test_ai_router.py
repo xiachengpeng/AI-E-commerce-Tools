@@ -241,7 +241,7 @@ async def test_exhausted_retry_raises_and_logs_safe_domain_error(
 
     get_snapshot.assert_called_once()
     get_adapter.assert_called_once_with("gemini")
-    assert adapter.generate.await_count == 2
+    assert adapter.generate.await_count == 1  # 401 is non-retryable by unified retry policy
     assert raised.value.category == "authentication"
     assert str(raised.value) == "AI 提供商认证失败"
     assert raised.value.__cause__ is None

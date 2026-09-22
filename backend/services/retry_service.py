@@ -146,13 +146,13 @@ def classify_error(exc: Exception) -> Tuple[ErrorCategory, bool]:
     exc_type = type(exc).__name__
     exc_msg = str(exc).lower()
 
-    if "ResourceExhausted" in exc_type or "429" in exc_msg:
+    if "ResourceExhausted" in exc_type or "429" in exc_msg or "rate limit" in exc_msg or "rate_limit" in exc_msg or "too many requests" in exc_msg:
         if "quota" in exc_msg and "exceeded" in exc_msg:
             return ErrorCategory.QUOTA_EXHAUSTED, True
         return ErrorCategory.TEMPORARY_RATE_LIMIT, True
     if "Unavailable" in exc_type or "503" in exc_msg:
         return ErrorCategory.PROVIDER_OVERLOADED, True
-    if "DeadlineExceeded" in exc_type or "504" in exc_msg:
+    if "DeadlineExceeded" in exc_type or "504" in exc_msg or "timed out" in exc_msg:
         return ErrorCategory.NETWORK_TIMEOUT, True
     if "Unauthenticated" in exc_type or "PermissionDenied" in exc_type or "401" in exc_msg or "403" in exc_msg:
         return ErrorCategory.AUTH_ERROR, True
@@ -161,6 +161,10 @@ def classify_error(exc: Exception) -> Tuple[ErrorCategory, bool]:
 
     if isinstance(exc, TimeoutError):
         return ErrorCategory.NETWORK_TIMEOUT, True
+
+    # Generic runtime or network exceptions from providers/adapters
+    if isinstance(exc, RuntimeError) or (isinstance(exc, Exception) and not isinstance(exc, (TypeError, ValueError, KeyError, AttributeError, IndexError, NotImplementedError))):
+        return ErrorCategory.PROVIDER_OVERLOADED, True
 
     return ErrorCategory.UNKNOWN, False
 
@@ -385,20 +389,27 @@ async def execute_with_retry(
     policy: RetryPolicy,
     operation_id: str = "",
     execution_id: str = "",
-    on_retry: Optional[Callable[[ExecutionState, RetryDecision], Any]] = None,
+    on_retry: Optional[Callable[..., Any]] = None,
+    sleep_fn: Optional[Callable[[float], Any]] = None,
+    state: Optional[ExecutionState] = None,
 ) -> Any:
     """Execute an async or sync callable with unified retry policy, budget tracking, and error categorization."""
     start_time = time.monotonic()
     attempt = 1
-    state = ExecutionState(
-        operation_id=operation_id,
-        execution_id=execution_id,
-        attempt=1,
-        max_attempts=policy.max_attempts,
-        state="running",
-    )
+    if state is None:
+        state = ExecutionState(
+            operation_id=operation_id,
+            execution_id=execution_id,
+            attempt=1,
+            max_attempts=policy.max_attempts,
+            state="running",
+        )
+    else:
+        state.max_attempts = policy.max_attempts
+        state.state = "running"
 
     while True:
+        state.attempt = attempt
         try:
             if inspect.iscoroutinefunction(operation) or inspect.iscoroutine(operation):
                 return await operation()
@@ -438,12 +449,20 @@ async def execute_with_retry(
             state.state = "retrying"
             state.next_retry_at = time.time() + decision.delay_seconds
             if on_retry:
-                res = on_retry(state, decision)
+                try:
+                    res = on_retry(state, decision, exc)
+                except TypeError:
+                    res = on_retry(state, decision)
                 if inspect.iscoroutine(res):
                     await res
 
             if decision.delay_seconds > 0:
-                await asyncio.sleep(decision.delay_seconds)
+                if sleep_fn:
+                    res = sleep_fn(decision.delay_seconds)
+                    if inspect.isawaitable(res):
+                        await res
+                else:
+                    await asyncio.sleep(decision.delay_seconds)
 
             attempt += 1
             state.attempt = attempt
