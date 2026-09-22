@@ -6,6 +6,24 @@ const DETAIL_MAX_UPLOAD_IMAGES = 6;
 let currentStrategyPreviewContext = null;
 var globalGenContext = (typeof globalThis !== 'undefined' && globalThis.globalGenContext) ? globalThis.globalGenContext : null;
 
+function ensureGlobalGenContext() {
+    if (!globalGenContext || typeof globalGenContext !== 'object') {
+        globalGenContext = {
+            tasks: {},
+            config: null,
+            productFacts: null,
+            sellingPoints: '',
+            primaryImage: null,
+            angleImages: [],
+            uploadedImages: [],
+            longImageOrder: []
+        };
+    }
+    if (typeof window !== 'undefined') window.globalGenContext = globalGenContext;
+    if (typeof globalThis !== 'undefined') globalThis.globalGenContext = globalGenContext;
+    return globalGenContext;
+}
+
 // 详情页制作模式：'hybrid' (DTC 独立站图文穿插) | 'images' (经典电商图集/长图)
 let currentDetailPresentationMode = 'hybrid';
 let currentDtcViewport = 'desktop'; // 'desktop' | 'mobile'
@@ -34,6 +52,91 @@ let currentDtcTypography = {
 let currentLongImageGap = 0;
 let currentLongImageRadius = 0;
 let currentLongImageBgColor = '#ffffff';
+
+// ====== WCAG 2.1 AA 相对亮度与对比度算法 (Contrast Ratio >= 4.5:1) ======
+function hexToRgb(hex) {
+    if (!hex || typeof hex !== 'string') return { r: 0, g: 0, b: 0 };
+    let clean = hex.trim().replace(/^#/, '');
+    if (clean.length === 3) {
+        clean = clean.split('').map(c => c + c).join('');
+    }
+    const num = parseInt(clean, 16);
+    if (isNaN(num)) return { r: 0, g: 0, b: 0 };
+    return {
+        r: (num >> 16) & 255,
+        g: (num >> 8) & 255,
+        b: num & 255
+    };
+}
+
+function rgbToHex(r, g, b) {
+    const toHex = (c) => Math.max(0, Math.min(255, Math.round(c))).toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function calculateRelativeLuminance(color) {
+    let rgb;
+    if (typeof color === 'string') {
+        const clean = color.trim();
+        if (clean.startsWith('#')) {
+            rgb = hexToRgb(clean);
+        } else if (clean.startsWith('rgb')) {
+            const m = clean.match(/\d+/g);
+            rgb = m ? { r: Number(m[0]), g: Number(m[1]), b: Number(m[2]) } : { r: 0, g: 0, b: 0 };
+        } else {
+            rgb = hexToRgb(clean);
+        }
+    } else {
+        rgb = color || { r: 0, g: 0, b: 0 };
+    }
+
+    const srgb = [rgb.r / 255, rgb.g / 255, rgb.b / 255];
+    const linear = srgb.map(c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function calculateContrastRatio(color1, color2) {
+    const l1 = calculateRelativeLuminance(color1);
+    const l2 = calculateRelativeLuminance(color2);
+    const lighter = Math.max(l1, l2);
+    const darker = Math.min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+}
+
+function getAccessibleContrastColor(bgHex, preferredTextHex, minRatio = 4.5) {
+    let currentRatio = calculateContrastRatio(bgHex, preferredTextHex);
+    if (currentRatio >= minRatio) {
+        return preferredTextHex;
+    }
+
+    const bgLum = calculateRelativeLuminance(bgHex);
+    const isLightBg = bgLum > 0.179;
+    const prefRgb = hexToRgb(preferredTextHex);
+
+    if (isLightBg) {
+        // 浅色背景：按步长逐步加深文本色，直至对比度满足 >= minRatio (WCAG AA)
+        for (let factor = 0.9; factor >= 0; factor -= 0.05) {
+            const candidate = rgbToHex(prefRgb.r * factor, prefRgb.g * factor, prefRgb.b * factor);
+            if (calculateContrastRatio(bgHex, candidate) >= minRatio) {
+                return candidate;
+            }
+        }
+        return '#0f172a';
+    } else {
+        // 深色背景：逐步提亮文本色至白色
+        for (let factor = 0.1; factor <= 1; factor += 0.05) {
+            const candidate = rgbToHex(
+                prefRgb.r + (255 - prefRgb.r) * factor,
+                prefRgb.g + (255 - prefRgb.g) * factor,
+                prefRgb.b + (255 - prefRgb.b) * factor
+            );
+            if (calculateContrastRatio(bgHex, candidate) >= minRatio) {
+                return candidate;
+            }
+        }
+        return '#ffffff';
+    }
+}
 
 // 动态计算自定义品牌主色的色阶系统 (Light 背景、Border 边框、深色 Text)
 function computeCustomBrandColor(hexColor) {
@@ -65,11 +168,11 @@ function computeCustomBrandColor(hexColor) {
     const bBorder = Math.round(b + (255 - b) * 0.75);
     const border = `rgb(${rBorder}, ${gBorder}, ${bBorder})`;
 
-    // Text 高对比文本色：乘以 0.75 提高对比度
-    const rText = Math.max(0, Math.round(r * 0.75));
-    const gText = Math.max(0, Math.round(g * 0.75));
-    const bText = Math.max(0, Math.round(b * 0.75));
-    const text = `rgb(${rText}, ${gText}, ${bText})`;
+    // Text 高对比文本色：基于 WCAG 2.1 AA 标准 (对比度 >= 4.5:1) 动态衍生
+    const lightHex = rgbToHex(rLight, gLight, bLight);
+    const textHex = getAccessibleContrastColor(lightHex, hexColor, 4.5);
+    const textRgb = hexToRgb(textHex);
+    const text = `rgb(${textRgb.r}, ${textRgb.g}, ${textRgb.b})`;
 
     return {
         id: 'custom',
@@ -680,6 +783,8 @@ function setDtcLayoutStyle(style, triggerRerender = true) {
 
 function setDetailPresentationMode(mode) {
     currentDetailPresentationMode = mode === 'images' ? 'images' : 'hybrid';
+    if (typeof globalThis !== 'undefined') globalThis.currentDetailPresentationMode = currentDetailPresentationMode;
+    if (typeof window !== 'undefined') window.currentDetailPresentationMode = currentDetailPresentationMode;
     const isHybrid = currentDetailPresentationMode === 'hybrid';
     const btnHybrid = document.getElementById('modeBtnHybrid');
     const btnImages = document.getElementById('modeBtnImages');
@@ -711,6 +816,10 @@ function setDetailPresentationMode(mode) {
     const brandConfig = document.getElementById('dtcBrandConfigContainer');
     if (brandConfig && brandConfig.parentElement !== styleConfig) {
         brandConfig.classList.toggle('hidden', !isHybrid);
+    }
+
+    if (typeof switchDetailResultView === 'function') {
+        switchDetailResultView(isHybrid ? 'hybrid' : 'gallery');
     }
 }
 
@@ -758,6 +867,9 @@ function switchDetailResultView(view) {
 
     if (isHybrid && typeof renderDtcHybridPreview === 'function') {
         renderDtcHybridPreview();
+    }
+    if (typeof renderSectionTree === 'function') {
+        renderSectionTree();
     }
 }
 
@@ -825,6 +937,7 @@ function setModuleCategoryFilter(catKey) {
 }
 
 function invertModuleSelection() {
+    if (typeof setUserExplicitlyClearedModules === 'function') setUserExplicitlyClearedModules(false); else userExplicitlyClearedModules = false;
     const targetModules = (typeof modules !== 'undefined' && Array.isArray(modules))
         ? modules
         : ((typeof globalThis !== 'undefined' && globalThis.modules) || []);
@@ -993,6 +1106,7 @@ function updatePresetButtonsUI() {
 }
 
 function applyModulePreset(presetKey) {
+    if (typeof setUserExplicitlyClearedModules === 'function') setUserExplicitlyClearedModules(false); else userExplicitlyClearedModules = false;
     const preset = (typeof MODULE_PRESETS !== 'undefined' && MODULE_PRESETS[presetKey]) ? MODULE_PRESETS[presetKey] : null;
     const targetModules = (typeof modules !== 'undefined' && Array.isArray(modules))
         ? modules
@@ -1009,6 +1123,7 @@ function applyModulePreset(presetKey) {
 }
 
 function selectAllModules(selectAll = true) {
+    if (typeof setUserExplicitlyClearedModules === 'function') setUserExplicitlyClearedModules(!selectAll); else userExplicitlyClearedModules = !selectAll;
     const targetModules = (typeof modules !== 'undefined' && Array.isArray(modules))
         ? modules
         : ((typeof globalThis !== 'undefined' && globalThis.modules) || []);
@@ -1375,7 +1490,9 @@ function getDetailConfig() {
         marketingThemeLabel: getSelectedOptionLabel('marketingThemeSelect'),
         productType: currentProductType || 'single',
         productName: document.getElementById('productNameInput')?.value.trim() || '',
-        productFacts: document.getElementById('productFactsText')?.value.trim() || '',
+        productFacts: serializeVerifiedProductFactsForAI() || (document.getElementById('productFactsText')?.value.trim() || ''),
+        rawProductFacts: document.getElementById('productFactsText')?.value.trim() || '',
+        verifiedFacts: getVerifiedProductFacts(),
         forbiddenClaims: document.getElementById('forbiddenClaimsText')?.value.trim() || '',
         strictProductLock: document.getElementById('strictProductLockToggle') ? document.getElementById('strictProductLockToggle').checked : true
     };
@@ -1396,7 +1513,13 @@ function compactDetailText(value, maxLength = 900) {
 // 按需生成产品事实和禁用词上下文，供各类提示词复用。
 function buildProductGuardrails(config = {}) {
     const productName = compactDetailText(config.productName || '', 160);
-    const facts = compactDetailText(config.productFacts || '', 900);
+    let facts = '';
+    if (config.verifiedFacts) {
+        facts = serializeVerifiedProductFactsForAI(config.verifiedFacts);
+    }
+    if (!facts && config.productFacts) {
+        facts = compactDetailText(config.productFacts, 900);
+    }
     const forbidden = compactDetailText(config.forbiddenClaims || '', 700);
     const sections = [];
     if (productName) {
@@ -1468,15 +1591,19 @@ function buildModuleTextPolicy(task = {}, config = {}) {
         m7: 'Use restrained editorial copy, one headline and one support line at most.',
         m8: 'Use measurement labels from confirmed facts when available; if missing, infer plausible visual scale details.',
         m9: 'Use concise comparison row labels and factual feature names.',
-        m10: 'Use specification labels and values from confirmed facts when available; if missing, infer plausible e-commerce specification details.',
-        m11: 'Use trust labels only for supplied support, warranty, shipping, return, maintenance, or package-list facts.',
+        m10: 'Use specification labels and values from confirmed facts when available; if missing, infer plausible specification details.',
+        m11: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'customer_care')
+            ? 'Use minimal neutral brand trust copy (e.g. Brand Care, Customer Care, Dedicated Assistance). STRICT TRUST POLICY: Do not invent warranty duration (such as specific years or lifetime terms), return policy windows (such as specific days or money-back periods), shipping speed claims, or around-the-clock support.'
+            : 'Use trust labels only for supplied support, warranty, shipping, return, maintenance, or package-list facts from confirmed product facts.',
         m12: 'Use short step labels with minimal instruction text.',
         m13: "Use clear numbered callouts ('01', '02', '03') with short item names and exact piece counts (e.g. 'x 1', 'x 4').",
         m14: "Use clear comparison headers: single item total vs bundle special price, with a concise savings callout (e.g. 'Save 35%').",
         m15: "Use short step badges ('STEP 01', 'STEP 02', 'STEP 03') with concise 2-word phase names.",
         m16: "Use focused accessory labels highlighting precision materials, fit, or durable finish.",
         m17: 'Use short technical component callouts based strictly on verified product internal structure and materials, with minimal lines.',
-        m18: "Use an authentic customer quote (1-2 lines), 5-star rating graphic, and a verified buyer badge."
+        m18: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'unboxing_visual')
+            ? 'NO STAR RATINGS OR REVIEWS. Do NOT render star rating graphics, rating badges, fake customer quotes, fake buyer names, or sales claims. Use minimal lifestyle or unboxing captions if any.'
+            : "Use an authentic verified customer quote (1-2 lines), verified rating graphic, and verified buyer badge from confirmed reviews."
     };
     const focalRule = task.focalFeature
         ? `\n- Focal copy requirement: Any visible headline, callout, or annotation in this image MUST directly communicate this module's focal feature: "${task.focalFeature}". Do NOT use generic or unrelated copy.`
@@ -1654,9 +1781,16 @@ function resolveModuleFocalFeature(task = {}, sellingPoints = '', config = {}) {
         visualDirective = `Technical Specification Card: Clean, well-structured parameter card or clean callout layout presenting confirmed physical specifications and factual performance data.`;
         visualOnlyDirective = `Use an organized visual arrangement of the unchanged product and only its visible supplied parts, without specification cards, values, or labels.`;
     } else if (id === 'm11') {
-        focalFeature = 'Package completeness, durable build quality, and customer support confidence';
-        visualDirective = `Buyer Trust & Package Reassurance: Pristine display of packaged components, organized accessories, and high-trust service reassurance cues confirming product authenticity and durability.`;
-        visualOnlyDirective = `Use supplied package contents or a believable support and delivery scene without trust badges, policy text, labels, or symbols.`;
+        const mode = task.mode || evaluateTaskEvidence(task)?.mode || (task.fallbackBehavior === 'downgrade_to_customer_care' ? 'customer_care' : 'after_sales');
+        if (mode === 'customer_care') {
+            focalFeature = 'Brand trust, purchase confidence, and customer care';
+            visualDirective = `Brand Trust & Customer Care: Clean, high-trust presentation focusing on authentic product quality and dedicated customer care. STRICT TRUST POLICY: Do not invent warranty duration (such as specific years or lifetime terms), return policy windows (such as specific days or money-back periods), shipping speed claims, or around-the-clock support. Show only non-committal brand customer care and secure delivery cues unless explicitly verified.`;
+            visualOnlyDirective = `Pristine presentation of the authentic product in premium lighting communicating brand reliability and purchase confidence without text badges.`;
+        } else {
+            focalFeature = 'Package completeness, durable build quality, and customer support confidence';
+            visualDirective = `Buyer Trust & Package Reassurance: Pristine display of packaged components, organized accessories, and high-trust service reassurance cues confirming product authenticity and durability strictly using verified warranty or support policies. Do not invent warranty duration or unverified guarantees.`;
+            visualOnlyDirective = `Use supplied package contents or a believable support and delivery scene without trust badges, policy text, labels, or symbols.`;
+        }
     } else if (id === 'm12') {
         focalFeature = 'Simple step-by-step operation, intuitive controls, and easy maintenance';
         visualDirective = `Intuitive Step-by-Step Guide: Clear 3-4 step visual flow illustrating simple operation, quick-start setup, or easy maintenance with intuitive visual cues.`;
@@ -1682,9 +1816,16 @@ function resolveModuleFocalFeature(task = {}, sellingPoints = '', config = {}) {
         visualDirective = `Exploded Engineering View: Precision deconstructed layout showing core internal components floating in orderly alignment along an exploded axis alongside the reference product, with brushed metal reflections and subtle technical annotations.`;
         visualOnlyDirective = `Render an exploded view showing the internal core engineering and components floating in immaculate alignment alongside the product, without text labels or callouts.`;
     } else if (id === 'm18') {
-        focalFeature = 'Authentic everyday consumer unboxing and 5-star customer endorsement';
-        visualDirective = `Authentic UGC Lifestyle & Unboxing: Natural everyday setting with realistic consumer unboxing or hands-on usage moment, paired with a modern high-trust 5-star review quote card overlay.`;
-        visualOnlyDirective = `Capture an authentic everyday consumer unboxing or hands-on lifestyle moment in natural lighting, without any text badges or overlays.`;
+        const mode = task.mode || evaluateTaskEvidence(task)?.mode || (task.fallbackBehavior === 'downgrade_to_unboxing_visual' ? 'unboxing_visual' : 'review_mode');
+        if (mode === 'unboxing_visual') {
+            focalFeature = 'Authentic UGC-style unboxing and lifestyle creator visual';
+            visualDirective = `UGC Unboxing & Creator Shot: Natural everyday setting with realistic consumer unboxing, casual hands-on usage moment, or tabletop unboxing. STRICT UGC TRUTH MANDATE: Do not render star ratings, rating badges, fake review quotes, fake customer names, fake sales counts, or fake buyer testimonials. Render clean lifestyle creator unboxing visual only.`;
+            visualOnlyDirective = `Capture an authentic everyday consumer unboxing or hands-on lifestyle moment in natural lighting, without any text badges, overlays, or star graphics.`;
+        } else {
+            focalFeature = 'Authentic verified customer review quote and social proof';
+            visualDirective = `Authentic UGC Lifestyle & Review: Natural everyday setting with realistic consumer unboxing or hands-on usage moment, paired with a modern high-trust review quote card overlay displaying ONLY verified real customer reviews from product facts.`;
+            visualOnlyDirective = `Capture an authentic everyday consumer unboxing or hands-on lifestyle moment in natural lighting, without any text badges or overlays.`;
+        }
     } else {
         focalFeature = parsed.items[0] || 'Specific product value';
         visualDirective = `Focused Section: Communicate specific value with clear hierarchy and the unchanged reference product as the main subject.`;
@@ -1717,17 +1858,21 @@ function buildModuleExecutionBrief(task = {}, sellingPoints = '', config = {}) {
         m5: 'Build a restrained lifestyle mood around the product. The product remains the anchor, not a small decorative prop.',
         m6: 'Use close-up framing for visible material, surface, controls, texture, seams, ports, or construction details from the reference product.',
         m7: 'Use editorial spacing and restrained copy. Focus on positioning and product fit, not invented brand history.',
-        m8: 'Use measurement lines, scale references, or storage layout. Prefer confirmed dimensions, and when missing infer plausible scale cues from the reference image.',
-        m9: 'Use a simple objective comparison layout with few rows. Compare practical features, not exaggerated superiority.',
-        m10: 'Use a clean specification card or chart. Prefer confirmed facts, and when missing infer plausible specification details from the reference image and product category.',
-        m11: 'Use trust cues such as support, maintenance, package list, shipping, returns, or warranty only when supplied.',
+        m8: 'Use measurement lines, scale references, or storage layout based strictly on confirmed dimensions. If exact dimensions are absent, show realistic ergonomic context without inventing precise numbers.',
+        m9: 'Use a simple objective comparison layout with few rows. Compare practical features based strictly on confirmed differences, not exaggerated superiority.',
+        m10: 'Use a clean specification card or chart. Only show parameters that are present in confirmed product facts or clearly visible in the reference image.',
+        m11: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'customer_care')
+            ? 'Use a clean brand trust and purchase confidence composition with minimal neutral cues. STRICT TRUST POLICY: Do not invent warranty duration (such as specific years or lifetime terms), return policy windows (such as specific days or money-back periods), shipping speed claims, or around-the-clock support. Focus on brand care, authentic quality, and secure delivery.'
+            : 'Use trust cues such as support, maintenance, package list, shipping, returns, or warranty only when supplied from confirmed product facts.',
         m12: 'Use a simple 3-4 step instructional layout with icons or small visual cues and minimal copy.',
         m13: "Use a clean, organized knolling or flat-lay composition. Neatly arrange the hero product and all accompanying accessories in an orderly grid with clear space around each item.",
         m14: "Use a structured side-by-side comparison layout showing the complete bundle vs standalone items, with clear price-value badges.",
         m15: "Use a sequential 3-step or 4-step workflow layout showing the transition from item 1 to item 2 to item 3.",
         m16: "Use a macro detail view focusing on the premium build quality, precise connector/fit, and surface finish of the primary accessories.",
         m17: "Use an exploded view / precision deconstructed layout. The core mechanical or internal components float in clean, orderly alignment along a central exploded axis alongside the hero product, with subtle leader lines or technical annotations.",
-        m18: "Use an authentic lifestyle unboxing or everyday usage composition. Frame the product naturally in real consumer hands or on a tabletop, paired with a modern, high-trust 5-star customer review quote card overlay."
+        m18: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'unboxing_visual')
+            ? 'Use an authentic lifestyle unboxing or everyday usage composition. Frame the product naturally in real consumer hands or on a tabletop in natural ambient light. STRICT UGC TRUTH MANDATE: Do not render star rating graphics, rating badges, fake review quote cards, fake reviewer names, fake sales counts, or fake testimonials.'
+            : 'Use an authentic lifestyle social proof composition. Frame the product naturally in real consumer hands or on a tabletop, paired with a modern review card displaying ONLY verified customer review text, rating, and author from verified product facts. Never fabricate reviews.'
     };
     const visualOnlyCompositionById = {
         m1: 'Use a clean studio or premium lifestyle setting. Keep the unchanged source product large, clear, and instantly recognizable.',
@@ -1740,14 +1885,18 @@ function buildModuleExecutionBrief(task = {}, sellingPoints = '', config = {}) {
         m8: 'Show scale or storage footprint through familiar objects and spatial context, without measurement lines, numbers, or labels.',
         m9: 'Use a simple side-by-side visual comparison communicated only through composition and visible objects, without tables, rows, labels, or symbols.',
         m10: 'Use an organized visual arrangement of the unchanged product and only its visible supplied parts, without specification cards, values, or labels.',
-        m11: 'Use supplied package contents or a believable support and delivery scene without trust badges, policy text, labels, or symbols.',
+        m11: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'customer_care')
+            ? 'Use a clean, premium visual communicating brand quality, customer care, and purchase confidence without trust badges, policy text, labels, or symbols.'
+            : 'Use supplied package contents or a believable support and delivery scene without trust badges, policy text, labels, or symbols.',
         m12: 'Show a visual sequence of believable use or maintenance scenes without step numbers, labels, icons, arrows, or instruction text.',
         m13: 'Organize all visible items from the set in an elegant, orderly knolling arrangement with balanced spacing and no added labels or text.',
         m14: 'Contrast the assembled complete bundle against separate packaged units through clean spatial composition without numerical price tags.',
         m15: 'Present a seamless multi-step visual sequence of the items in action across three harmonious scenes without typography.',
         m16: 'Capture a pristine macro close-up of accessory craft, metallic texture, and seams without text labels.',
         m17: 'Render an exploded view showing the internal core engineering and components floating in immaculate alignment alongside the product, without text labels or callouts.',
-        m18: 'Capture an authentic everyday consumer unboxing or hands-on lifestyle moment in natural lighting, without any text badges or overlays.'
+        m18: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'unboxing_visual')
+            ? 'Capture an authentic everyday consumer unboxing, tabletop unpacking, or hands-on lifestyle moment in natural lighting, without any text badges, rating overlays, or star graphics.'
+            : 'Capture an authentic everyday consumer unboxing or hands-on lifestyle moment in natural lighting, without any text badges or overlays.'
     };
     const composition = task.includeText === false
         ? visualOnlyCompositionById[task.id]
@@ -1871,14 +2020,19 @@ function parseSellingPointsResponse(rawText = '') {
 }
 
 // 根据点击前的表单状态决定是否回填 AI 识别的产品名称及事实/禁用词。
+// 严格遵守用户数据最高优先级原则：绝不静默覆盖用户手动输入的内容。
 function resolveSellingPointsFormState(currentProductName = '', currentSellingPoints = '', parsedResult = {}) {
     const existingName = String(currentProductName || '').trim();
+    const existingPoints = String(currentSellingPoints || '').trim();
     const nextSellingPoints = String(parsedResult.sellingPoints || '').trim();
+    const hasExistingPoints = Boolean(existingPoints);
+
     if (!nextSellingPoints) {
         const state = {
             productName: existingName,
             sellingPoints: String(currentSellingPoints || ''),
-            didFillProductName: false
+            didFillProductName: false,
+            didPreserveUserSellingPoints: hasExistingPoints
         };
         if (parsedResult.productFacts !== undefined) state.productFacts = String(parsedResult.productFacts || '').trim();
         if (parsedResult.forbiddenClaims !== undefined) state.forbiddenClaims = String(parsedResult.forbiddenClaims || '').trim();
@@ -1887,10 +2041,13 @@ function resolveSellingPointsFormState(currentProductName = '', currentSellingPo
     }
 
     const generatedName = compactDetailText(parsedResult.productName || '', 160);
+    // 保护人工输入：已有卖点绝不静默覆盖
+    const finalSellingPoints = hasExistingPoints ? existingPoints : nextSellingPoints;
     const state = {
         productName: existingName || generatedName,
-        sellingPoints: nextSellingPoints,
-        didFillProductName: !existingName && Boolean(generatedName)
+        sellingPoints: finalSellingPoints,
+        didFillProductName: !existingName && Boolean(generatedName),
+        didPreserveUserSellingPoints: hasExistingPoints
     };
     if (parsedResult.productFacts !== undefined) state.productFacts = String(parsedResult.productFacts || '').trim();
     if (parsedResult.forbiddenClaims !== undefined) state.forbiddenClaims = String(parsedResult.forbiddenClaims || '').trim();
@@ -1898,27 +2055,1909 @@ function resolveSellingPointsFormState(currentProductName = '', currentSellingPo
     return state;
 }
 
+// ====== Product Facts 商品事实层系统 ======
+function getProductFactTier(item) {
+    if (!item) return 'unknown';
+    if (typeof item === 'string') return item.trim() ? 'user-provided' : 'unknown';
+    if (typeof item !== 'object' || Array.isArray(item)) return 'unknown';
+    if (item.verified === true) return 'verified';
+    if (item.source === 'user' || item.source === 'user-provided' || item.source === 'manual') {
+        return 'user-provided';
+    }
+    if (item.source === 'ai' || item.source === 'inferred') {
+        return 'AI inferred';
+    }
+    if (item.source === 'verified') return 'verified';
+    const hasValue = (item.value !== undefined && item.value !== null && item.value !== '') ||
+        (item.length !== undefined && item.length !== null);
+    return hasValue ? 'user-provided' : 'unknown';
+}
+
+function isProductFactConfirmed(item) {
+    const tier = getProductFactTier(item);
+    return tier === 'verified' || tier === 'user-provided';
+}
+
+function buildProductFacts(initial = {}) {
+    const rawText = typeof initial.rawUserText === 'string'
+        ? initial.rawUserText
+        : (typeof initial.productFacts === 'string' ? initial.productFacts : '');
+
+    return {
+        productName: {
+            value: initial.productName?.value !== undefined ? initial.productName.value : (typeof initial.productName === 'string' ? initial.productName : ''),
+            source: initial.productName?.source || (initial.productName ? 'user' : 'unknown'),
+            confidence: initial.productName?.confidence ?? 1.0,
+            verified: initial.productName?.verified ?? Boolean(initial.productName)
+        },
+        category: {
+            value: initial.category?.value !== undefined ? initial.category.value : (typeof initial.category === 'string' ? initial.category : ''),
+            source: initial.category?.source || 'unknown',
+            confidence: initial.category?.confidence ?? 0,
+            verified: initial.category?.verified ?? false
+        },
+        material: {
+            value: initial.material?.value !== undefined ? initial.material.value : (typeof initial.material === 'string' ? initial.material : ''),
+            source: initial.material?.source || 'unknown',
+            confidence: initial.material?.confidence ?? 0,
+            verified: initial.material?.verified ?? false
+        },
+        color: {
+            value: initial.color?.value !== undefined ? initial.color.value : (typeof initial.color === 'string' ? initial.color : ''),
+            source: initial.color?.source || 'unknown',
+            confidence: initial.color?.confidence ?? 0,
+            verified: initial.color?.verified ?? false
+        },
+        dimensions: {
+            length: initial.dimensions?.length ?? null,
+            width: initial.dimensions?.width ?? null,
+            height: initial.dimensions?.height ?? null,
+            unit: initial.dimensions?.unit || 'cm',
+            value: initial.dimensions?.value || null,
+            source: initial.dimensions?.source || 'unknown',
+            verified: initial.dimensions?.verified ?? Boolean(initial.dimensions?.length && initial.dimensions?.width)
+        },
+        weight: {
+            value: initial.weight?.value ?? null,
+            unit: initial.weight?.unit || 'kg',
+            source: initial.weight?.source || 'unknown',
+            verified: initial.weight?.verified ?? Boolean(initial.weight?.value)
+        },
+        warranty: {
+            value: initial.warranty?.value ?? (typeof initial.warranty === 'string' ? initial.warranty : null),
+            source: initial.warranty?.source || 'unknown',
+            verified: initial.warranty?.verified ?? Boolean(initial.warranty)
+        },
+        returnPolicy: {
+            value: initial.returnPolicy?.value ?? (typeof initial.returnPolicy === 'string' ? initial.returnPolicy : null),
+            source: initial.returnPolicy?.source || 'unknown',
+            verified: initial.returnPolicy?.verified ?? Boolean(initial.returnPolicy)
+        },
+        rawUserText: rawText,
+        rawUserTextSource: initial.rawUserTextSource || (rawText ? 'user' : 'unknown'),
+        packageContents: Array.isArray(initial.packageContents) ? initial.packageContents : [],
+        confirmedFeatures: Array.isArray(initial.confirmedFeatures) ? initial.confirmedFeatures : [],
+        unsupportedClaims: Array.isArray(initial.unsupportedClaims) ? initial.unsupportedClaims : [],
+        hasInternalCadOrTeardown: initial.hasInternalCadOrTeardown ?? false,
+        verifiedReviews: Array.isArray(initial.verifiedReviews) ? initial.verifiedReviews : []
+    };
+}
+
+function getVerifiedProductFacts(factsInput = null) {
+    ensureGlobalGenContext();
+    let facts = factsInput || globalGenContext.productFacts;
+    if (!facts) {
+        const domName = typeof document !== 'undefined' ? (document.getElementById('productNameInput')?.value || '').trim() : '';
+        const domFacts = typeof document !== 'undefined' ? (document.getElementById('productFactsText')?.value || '').trim() : '';
+        facts = buildProductFacts({
+            productName: domName ? { value: domName, source: 'user', verified: true } : '',
+            rawUserText: domFacts,
+            productFacts: domFacts
+        });
+        if (globalGenContext) {
+            globalGenContext.productFacts = facts;
+        }
+    }
+
+    // 保护人工直接在 DOM 中输入的数据：人工数据具备绝对最高优先级
+    if (typeof document !== 'undefined') {
+        const domName = (document.getElementById('productNameInput')?.value || '').trim();
+        if (domName && (!facts.productName || facts.productName.value !== domName)) {
+            facts.productName = {
+                value: domName,
+                source: 'user',
+                verified: true,
+                confidence: 1.0
+            };
+        }
+        const domFacts = (document.getElementById('productFactsText')?.value || '').trim();
+        if (domFacts && domFacts !== facts.rawUserText) {
+            facts.rawUserText = domFacts;
+            facts.rawUserTextSource = 'user';
+        }
+    }
+    return facts;
+}
+
+function serializeVerifiedProductFactsForAI(factsInput = null, options = {}) {
+    const facts = getVerifiedProductFacts(factsInput);
+    if (!facts) return '';
+
+    const lines = [];
+
+    // 严格只序列化 verified / user-provided 事实，未经确认的 AI inferred 坚决排除
+    if (isProductFactConfirmed(facts.productName) && facts.productName.value) {
+        lines.push(`- Product Name: ${facts.productName.value}`);
+    }
+    if (isProductFactConfirmed(facts.category) && facts.category.value) {
+        lines.push(`- Category: ${facts.category.value}`);
+    }
+    if (isProductFactConfirmed(facts.material) && facts.material.value) {
+        lines.push(`- Material: ${facts.material.value}`);
+    }
+    if (isProductFactConfirmed(facts.color) && facts.color.value) {
+        lines.push(`- Color: ${facts.color.value}`);
+    }
+    if (isProductFactConfirmed(facts.dimensions)) {
+        if (facts.dimensions.length !== null && facts.dimensions.length !== undefined && facts.dimensions.width !== null) {
+            const dimStr = `${facts.dimensions.length} × ${facts.dimensions.width}${facts.dimensions.height ? ' × ' + facts.dimensions.height : ''} ${facts.dimensions.unit || 'cm'}`;
+            lines.push(`- Dimensions: ${dimStr}`);
+        } else if (facts.dimensions.value) {
+            lines.push(`- Dimensions: ${facts.dimensions.value}`);
+        }
+    }
+    if (isProductFactConfirmed(facts.weight) && facts.weight.value !== null && facts.weight.value !== undefined) {
+        lines.push(`- Weight: ${facts.weight.value} ${facts.weight.unit || 'kg'}`);
+    }
+    if (isProductFactConfirmed(facts.warranty) && facts.warranty.value) {
+        lines.push(`- Warranty: ${facts.warranty.value}`);
+    }
+    if (isProductFactConfirmed(facts.returnPolicy) && facts.returnPolicy.value) {
+        lines.push(`- Return Policy: ${facts.returnPolicy.value}`);
+    }
+    if (Array.isArray(facts.packageContents) && facts.packageContents.length) {
+        lines.push(`- Package Contents: ${facts.packageContents.join(', ')}`);
+    }
+    if (Array.isArray(facts.confirmedFeatures) && facts.confirmedFeatures.length) {
+        lines.push(`- Confirmed Features: ${facts.confirmedFeatures.join('; ')}`);
+    }
+    if (facts.rawUserText && (facts.rawUserTextSource === 'user' || !facts.rawUserTextSource)) {
+        lines.push(`- User-Provided Specifications / Notes: ${compactDetailText(facts.rawUserText, 600)}`);
+    }
+
+    let serialized = lines.join('\n').trim();
+
+    // 仅在显式请求 options.includeUnverified 时输出独立带警示的 AI 猜测，绝不假冒确认事实
+    if (options.includeUnverified) {
+        const unverified = [];
+        const isAIUnconfirmed = (item) => getProductFactTier(item) === 'AI inferred' && item && item.value;
+        if (isAIUnconfirmed(facts.material)) unverified.push(`- Material: ${facts.material.value}`);
+        if (isAIUnconfirmed(facts.color)) unverified.push(`- Color: ${facts.color.value}`);
+        if (isAIUnconfirmed(facts.category)) unverified.push(`- Category: ${facts.category.value}`);
+        if (unverified.length > 0) {
+            serialized += `\n\n[UNCONFIRMED AI OBSERVATIONS - DO NOT USE AS FACTUAL CLAIMS]\n` + unverified.join('\n');
+        }
+    }
+
+    return serialized;
+}
+
+function mergeProductFacts(userFacts = {}, aiFacts = {}) {
+    const base = buildProductFacts(aiFacts);
+    const user = buildProductFacts(userFacts);
+    const result = { ...base };
+
+    const fields = ['productName', 'category', 'material', 'color', 'dimensions', 'weight', 'warranty', 'returnPolicy'];
+    fields.forEach(field => {
+        const uField = user[field];
+        const bField = base[field];
+        if (field === 'dimensions') {
+            if (uField.verified || (uField.length !== null && uField.width !== null)) {
+                result[field] = { ...uField };
+            } else if (bField.length !== null) {
+                result[field] = { ...bField };
+            }
+        } else if (field === 'weight') {
+            if (uField.verified || uField.value !== null) {
+                result[field] = { ...uField };
+            } else if (bField.value !== null) {
+                result[field] = { ...bField };
+            }
+        } else {
+            if (uField.verified || (uField.value && (uField.source === 'user' || uField.source === 'user-provided'))) {
+                result[field] = { ...uField };
+            } else if (bField.value) {
+                result[field] = { ...bField };
+            }
+        }
+    });
+
+    result.packageContents = (user.packageContents && user.packageContents.length)
+        ? user.packageContents
+        : (base.packageContents || []);
+    result.confirmedFeatures = Array.from(new Set([...(user.confirmedFeatures || []), ...(base.confirmedFeatures || [])]));
+    result.unsupportedClaims = Array.from(new Set([...(user.unsupportedClaims || []), ...(base.unsupportedClaims || [])]));
+    result.rawUserText = user.rawUserText || base.rawUserText || '';
+    result.rawUserTextSource = user.rawUserText ? 'user' : (base.rawUserText ? 'ai' : 'unknown');
+    return result;
+}
+
+function confirmProductFact(facts, field, value, verified = true) {
+    if (!facts) return buildProductFacts();
+    const updated = { ...facts };
+    if (updated[field] && typeof updated[field] === 'object' && !Array.isArray(updated[field])) {
+        updated[field] = {
+            ...updated[field],
+            value: value !== undefined ? value : updated[field].value,
+            source: 'user',
+            verified: verified !== false
+        };
+    } else {
+        updated[field] = value;
+    }
+    return updated;
+}
+
+function renderProductFactsCard(facts) {
+    if (typeof document === 'undefined') return;
+    const container = document.getElementById('productFactsCardContainer');
+    if (!container) return;
+
+    const currentFacts = facts || (globalGenContext && globalGenContext.productFacts) || buildProductFacts({
+        productName: document.getElementById('productNameInput')?.value || '',
+        category: (typeof window !== 'undefined' && window.brandContextHub && window.brandContextHub.activeCategory) || '',
+        sellingPoints: document.getElementById('sellingPointsText')?.value || '',
+        productFacts: document.getElementById('productFactsText')?.value || '',
+        forbiddenClaims: document.getElementById('forbiddenClaimsText')?.value || ''
+    });
+
+    const hasFacts = Boolean(
+        currentFacts.productName?.value ||
+        (currentFacts.dimensions && (currentFacts.dimensions.length || currentFacts.dimensions.verified)) ||
+        (currentFacts.material && currentFacts.material.value) ||
+        (currentFacts.color && currentFacts.color.value) ||
+        (currentFacts.weight && currentFacts.weight.value) ||
+        (currentFacts.warranty && currentFacts.warranty.value) ||
+        (currentFacts.returnPolicy && currentFacts.returnPolicy.value) ||
+        (currentFacts.packageContents && currentFacts.packageContents.length)
+    );
+
+    if (!hasFacts) {
+        container.innerHTML = `
+            <div class="p-2.5 rounded-lg border border-dashed border-slate-200 bg-slate-50/60 text-slate-400 text-[11px] flex items-center justify-between">
+                <span class="flex items-center gap-1.5">
+                    <i class="ph-bold ph-shield-check text-slate-400"></i>
+                    <span>未提取商品事实，点击“AI 帮写”或在输入框补充后自动校验</span>
+                </span>
+                <span class="text-[9px] bg-slate-100 text-slate-500 font-medium px-1.5 py-0.5 rounded">待录入</span>
+            </div>
+        `;
+        return;
+    }
+
+    const chips = [];
+    if (currentFacts.productName?.value) {
+        chips.push({ label: '品名', val: currentFacts.productName.value, verified: currentFacts.productName.verified, field: 'productName' });
+    }
+    if (currentFacts.dimensions && (currentFacts.dimensions.length || currentFacts.dimensions.verified)) {
+        const dimStr = currentFacts.dimensions.length
+            ? `${currentFacts.dimensions.length}×${currentFacts.dimensions.width || 0}×${currentFacts.dimensions.height || 0} ${currentFacts.dimensions.unit || 'cm'}`
+            : '已确认尺寸';
+        chips.push({ label: '尺寸', val: dimStr, verified: currentFacts.dimensions.verified, field: 'dimensions', impact: 'm8 (尺寸规格图)' });
+    }
+    if (currentFacts.material?.value) {
+        chips.push({ label: '材质', val: currentFacts.material.value, verified: currentFacts.material.verified, field: 'material', impact: 'm5 (材质工艺细节)' });
+    }
+    if (currentFacts.color?.value) {
+        chips.push({ label: '颜色', val: currentFacts.color.value, verified: currentFacts.color.verified, field: 'color' });
+    }
+    if (currentFacts.weight?.value) {
+        chips.push({ label: '重量', val: `${currentFacts.weight.value} ${currentFacts.weight.unit || 'kg'}`, verified: currentFacts.weight.verified, field: 'weight', impact: 'm8 (规格参数)' });
+    }
+    if (currentFacts.warranty?.value) {
+        chips.push({ label: '质保', val: currentFacts.warranty.value, verified: currentFacts.warranty.verified, field: 'warranty', impact: 'm11 (服务保障)' });
+    }
+    if (currentFacts.packageContents && currentFacts.packageContents.length) {
+        chips.push({ label: '清单', val: currentFacts.packageContents.join(', '), verified: true, field: 'packageContents', impact: 'm13 (全家福开箱)' });
+    }
+
+    const unverifiedCount = chips.filter(c => !c.verified).length;
+    const badgeText = unverifiedCount > 0 ? `⚠ ${unverifiedCount} 个事实待确认` : '✓ 事实可信度已确认';
+    const badgeClass = unverifiedCount > 0
+        ? 'bg-amber-50 text-amber-800 border-amber-200'
+        : 'bg-emerald-50 text-emerald-800 border-emerald-200';
+
+    const chipsHtml = chips.map(c => `
+        <div class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] border transition-all ${c.verified ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-amber-50/70 border-amber-200 text-amber-900'}">
+            <span class="font-bold text-slate-500">${detailEscapeHtml(c.label)}:</span>
+            <span class="font-medium truncate max-w-[110px]" title="${detailEscapeHtml(c.val)}${c.impact ? ' (影响: ' + detailEscapeHtml(c.impact) + ')' : ''}">${detailEscapeHtml(c.val)}</span>
+            ${!c.verified && c.field ? `
+                <button type="button" onclick="confirmProductFactItem('${c.field}')" class="text-amber-700 hover:text-amber-900 font-bold ml-1 cursor-pointer bg-amber-100/60 px-1 py-0.2 rounded hover:bg-amber-200" title="确认该项事实可信度">确认</button>
+            ` : '<i class="ph-bold ph-check text-emerald-600 text-[10px] ml-0.5"></i>'}
+        </div>
+    `).join('');
+
+    container.innerHTML = `
+        <div class="p-2.5 bg-white rounded-xl border border-slate-200/90 shadow-2xs space-y-2">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                    <i class="ph-bold ph-shield-check text-indigo-600"></i>
+                    <span>商品事实可信度审核</span>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded border ${badgeClass}">${badgeText}</span>
+                    ${unverifiedCount > 0 ? `
+                        <button type="button" onclick="confirmAllProductFacts()" class="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer">一键全确认</button>
+                    ` : ''}
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto custom-scrollbar">
+                ${chipsHtml}
+            </div>
+        </div>
+    `;
+}
+
+function confirmAllProductFacts() {
+    ensureGlobalGenContext();
+    if (!globalGenContext.productFacts) {
+        globalGenContext.productFacts = buildProductFacts();
+    }
+    const facts = globalGenContext.productFacts;
+    ['productName', 'category', 'material', 'color', 'dimensions', 'weight', 'warranty', 'returnPolicy'].forEach(f => {
+        if (facts[f] && typeof facts[f] === 'object') {
+            facts[f].verified = true;
+        }
+    });
+    renderProductFactsCard(facts);
+    if (typeof showToast === 'function') showToast('已确认全部商品事实可信度', 'success');
+
+    if (typeof buildRecommendedDetailPlan === 'function') {
+        const plan = buildRecommendedDetailPlan({ productFacts: facts });
+        if (plan && typeof applyRecommendedDetailPlan === 'function') {
+            applyRecommendedDetailPlan(plan);
+        }
+    }
+}
+
+function confirmProductFactItem(field) {
+    ensureGlobalGenContext();
+    if (!globalGenContext.productFacts) {
+        globalGenContext.productFacts = buildProductFacts();
+    }
+    const facts = globalGenContext.productFacts;
+    if (facts[field] && typeof facts[field] === 'object') {
+        facts[field].verified = true;
+    }
+    renderProductFactsCard(facts);
+    if (typeof showToast === 'function') {
+        showToast(`已确认事实: ${field}，关联模块门禁已解锁`, 'success');
+    }
+
+    if (typeof buildRecommendedDetailPlan === 'function') {
+        const plan = buildRecommendedDetailPlan({ productFacts: facts });
+        if (plan && typeof applyRecommendedDetailPlan === 'function') {
+            applyRecommendedDetailPlan(plan);
+        }
+    }
+}
+
+// ====== 素材语义角色识别系统 ======
+function resolveAssetSemanticRoles(images = []) {
+    if (!Array.isArray(images)) return [];
+    return images.map((img, index) => {
+        const isPrimary = index === 0 || img.isPrimary || img.physicalRole === 'primary';
+        const filename = String(img.name || '').toLowerCase();
+        let semanticRole = img.semanticRole;
+        let confidence = img.confidence ?? 0.85;
+
+        if (img.isUserAssigned || img.userConfirmed) {
+            semanticRole = img.semanticRole || img.role || (isPrimary ? 'hero' : 'unknown');
+            confidence = 1.0;
+        } else if (!semanticRole || semanticRole === 'unknown') {
+            if (isPrimary) {
+                semanticRole = 'hero';
+                confidence = 0.98;
+            } else if (/back|rear|背面/i.test(filename)) {
+                semanticRole = 'back';
+                confidence = 0.90;
+            } else if (/side|侧面/i.test(filename)) {
+                semanticRole = 'side';
+                confidence = 0.90;
+            } else if (/front|正面/i.test(filename)) {
+                semanticRole = 'front';
+                confidence = 0.92;
+            } else if (/detail|macro|close|texture|seam|port|特写|细节|材质/i.test(filename)) {
+                semanticRole = 'detail';
+                confidence = 0.88;
+            } else if (/material|布料|金属|皮革/i.test(filename)) {
+                semanticRole = 'material';
+                confidence = 0.88;
+            } else if (/part|accessory|cable|charger|remote|配件/i.test(filename)) {
+                semanticRole = 'accessory';
+                confidence = 0.90;
+            } else if (/box|package|knolling|bundle|包装|全家福/i.test(filename)) {
+                semanticRole = 'package';
+                confidence = 0.92;
+            } else if (/spec|param|label|tag|铭牌|标签|参数/i.test(filename)) {
+                semanticRole = 'spec_label';
+                confidence = 0.92;
+            } else if (/dim|size|measure|ruler|尺寸/i.test(filename)) {
+                semanticRole = 'dimension_reference';
+                confidence = 0.90;
+            } else if (/scene|life|use|usage|home|场景/i.test(filename)) {
+                semanticRole = 'usage_scene';
+                confidence = 0.85;
+            } else {
+                semanticRole = index === 1 ? 'front' : (index === 2 ? 'back' : 'detail');
+                confidence = 0.75;
+            }
+        }
+
+        return {
+            ...img,
+            physicalRole: isPrimary ? 'primary' : 'secondary',
+            semanticRole,
+            role: isPrimary ? 'primary' : (img.isUserAssigned ? (img.role || semanticRole) : semanticRole),
+            confidence,
+            isUserAssigned: Boolean(img.isUserAssigned),
+            userConfirmed: Boolean(img.userConfirmed)
+        };
+    });
+}
+
+// ====== Module Evidence Gate 事实门禁校验器 ======
+function evaluateTaskEvidence(task, projectContext = {}) {
+    if (!task) return { allowed: true, status: 'passed', reason: '', missingEvidence: [], fallbackModule: null, fallbackBehavior: 'visual_infer' };
+    const taskId = typeof task === 'string' ? task : (task.id || task.moduleId || '');
+    const taskTitle = typeof task === 'object' && task ? (task.title || task.displayTitle || taskId) : taskId;
+    const facts = projectContext.facts || getVerifiedProductFacts(projectContext.productFacts);
+    const assets = Array.isArray(projectContext.assets)
+        ? projectContext.assets
+        : ((typeof globalGenContext !== 'undefined' && globalGenContext?.uploadedImages)
+            ? globalGenContext.uploadedImages
+            : ((typeof currentUploadedImages !== 'undefined') ? currentUploadedImages : []));
+    const config = projectContext.config || ((typeof globalGenContext !== 'undefined' && globalGenContext?.config) ? globalGenContext.config : {});
+
+    const modulesConfig = (typeof MODULES_CONFIG !== 'undefined')
+        ? MODULES_CONFIG
+        : ((typeof globalThis !== 'undefined' && globalThis.MODULES_CONFIG) || []);
+    const modConfig = modulesConfig.find(m => m.id === taskId) || {};
+    const riskLevel = (typeof task === 'object' && task.riskLevel) || modConfig.riskLevel || 'low';
+    const reqs = (typeof task === 'object' && task.evidenceRequirements && task.evidenceRequirements.length)
+        ? task.evidenceRequirements
+        : (modConfig.evidenceRequirements || []);
+    const fallbackModule = (typeof task === 'object' && task.fallbackModule) || modConfig.fallbackModule || null;
+    const fallbackBehavior = (typeof task === 'object' && task.fallbackBehavior) || modConfig.fallbackBehavior || 'blocked';
+
+    const missing = [];
+
+    // 事实与素材证据校验基础判定
+    const hasDimensions = Boolean(
+        (facts.dimensions && isProductFactConfirmed(facts.dimensions) && ((facts.dimensions.length !== null && facts.dimensions.width !== null) || facts.dimensions.verified || facts.dimensions.value)) ||
+        (typeof facts.dimensions === 'string' && facts.dimensions.trim()) ||
+        (facts.rawUserText && (facts.rawUserTextSource === 'user' || !facts.rawUserTextSource) && /(?:尺寸|规格|长|宽|高|cm|mm|inch|寸|\d+\s*[x*×]\s*\d+)/i.test(facts.rawUserText))
+    );
+    const hasMaterial = Boolean(
+        (isProductFactConfirmed(facts.material) && (facts.material.value || typeof facts.material === 'string')) ||
+        (typeof facts.material === 'string' && facts.material.trim()) ||
+        (facts.rawUserText && /(?:材质|面料|做工|钛合金|不锈钢|皮革|木|塑料|silicone|leather|aluminum|steel|glass|ceramic)/i.test(facts.rawUserText)) ||
+        assets.some(a => ['material', 'detail'].includes(a.role || a.semanticRole))
+    );
+    const hasAngleAssets = assets.length >= 2 || assets.some(a => ['angle', 'front', 'back', 'side', 'detail'].includes(a.role || a.semanticRole));
+    const hasWeight = Boolean(
+        (facts.weight && isProductFactConfirmed(facts.weight) && facts.weight.value !== null && facts.weight.value !== undefined) ||
+        (typeof facts.weight === 'string' && facts.weight.trim())
+    );
+    const hasSpecs = Boolean(
+        (facts.rawUserText && /(?:参数|规格|功率|容量|电压|mah|w|hz|v|weight|kg|g)/i.test(facts.rawUserText)) ||
+        hasWeight ||
+        hasDimensions
+    );
+    const hasWarrantyPolicy = Boolean(
+        (isProductFactConfirmed(facts.warranty) && facts.warranty.value) ||
+        (isProductFactConfirmed(facts.returnPolicy) && facts.returnPolicy.value) ||
+        (facts.rawUserText && /(?:保修|质保|售后|退换|warranty|guarantee|return|refund|policy)/i.test(facts.rawUserText))
+    );
+    const hasCompetitorFacts = Boolean(
+        (Array.isArray(facts.differentiators) && facts.differentiators.length > 0) ||
+        (facts.rawUserText && /(?:对比|优于|竞品|区别|优势|vs|competitor|better than|difference)/i.test(facts.rawUserText)) ||
+        (typeof window !== 'undefined' && window.brandContextHub?.getActiveProfile()?.differentiators)
+    );
+    const hasPackageContents = Boolean(
+        (Array.isArray(facts.packageContents) && facts.packageContents.length > 0) ||
+        (facts.bundleItems && facts.bundleItems.length > 0) ||
+        (facts.rawUserText && /(?:清单|配件|装箱|包装包含|内含|package|includes|in the box|pieces)/i.test(facts.rawUserText))
+    );
+    const hasBundlePricing = Boolean(
+        (facts.bundlePricing && facts.bundlePricing.value) ||
+        (facts.singlePrice && facts.bundlePrice) ||
+        (facts.rawUserText && /(?:售价|价格|省|立省|原价|特惠|price|save|bundle value|\$|\¥|\€)/i.test(facts.rawUserText))
+    );
+    const hasInternalEngineering = Boolean(
+        (facts.hasInternalCadOrTeardown === true) ||
+        assets.some(a => a.role === 'cad' || a.role === 'internal' || a.semanticRole === 'internal_engineering' || /cad|blueprint|exploded|internal|teardown|结构|拆解|内部/i.test(a.name || '')) ||
+        (facts.rawUserText && /(?:cad|图纸|内部构造|爆炸图|拆解|机芯|电路板|teardown|exploded view|blueprint)/i.test(facts.rawUserText))
+    );
+    const hasVerifiedReviews = Boolean(
+        (Array.isArray(facts.verifiedReviews) && facts.verifiedReviews.length > 0) ||
+        (Array.isArray(facts.realReviews) && facts.realReviews.length > 0) ||
+        (facts.rawUserText && /(?:用户评价|真实买家|好评|review|testimonial|feedback|customer quote)/i.test(facts.rawUserText))
+    );
+
+    for (const req of reqs) {
+        if (req === 'dimensions' && !hasDimensions) missing.push('真实物理尺寸与规格数据');
+        if (req === 'material' && !hasMaterial) missing.push('明确材质说明或微距材质特写素材');
+        if (req === 'multiAngleAssets' && !hasAngleAssets) missing.push('至少2个不同角度的真实产品素材');
+        if (req === 'specs' && !hasSpecs) missing.push('产品硬件参数或规格书事实');
+        if (req === 'warrantyPolicy' && !hasWarrantyPolicy) missing.push('质保年限、售后支持或退换货政策');
+        if (req === 'competitorFacts' && !hasCompetitorFacts) missing.push('真实的对比基准或差异化论据');
+        if (req === 'packageContents' && !hasPackageContents) missing.push('装箱清单与配件数量明细');
+        if (req === 'bundlePricing' && !hasBundlePricing) missing.push('套装价格与组合节省金额事实');
+        if (req === 'internalEngineeringAssets' && !hasInternalEngineering) missing.push('内部结构CAD图、拆机图或工程图纸依据');
+        if (req === 'verifiedCustomerReviews' && !hasVerifiedReviews) missing.push('真实可信的买家口碑评价或用户原声');
+    }
+
+    if (missing.length === 0) {
+        let mode = 'standard';
+        if (taskId === 'm11') mode = 'after_sales';
+        else if (taskId === 'm18') mode = 'review_mode';
+        else if (task && task.mode) mode = task.mode;
+
+        return {
+            allowed: true,
+            status: 'passed',
+            mode,
+            reason: '',
+            missingEvidence: [],
+            fallbackModule,
+            fallbackBehavior
+        };
+    }
+
+    const isBlocked = (riskLevel === 'critical' || fallbackBehavior === 'blocked');
+    if (isBlocked) {
+        return {
+            allowed: false,
+            status: 'blocked',
+            mode: 'blocked',
+            reason: `未提供${missing.join('、')}。根据商品事实准则，门禁系统已安全拦截，防止 AI 虚构。`,
+            missingEvidence: missing,
+            fallbackModule,
+            fallbackBehavior
+        };
+    }
+
+    let warningMode = 'warning';
+    if (taskId === 'm11' && (fallbackBehavior === 'downgrade_to_customer_care' || fallbackBehavior === 'customer_care')) {
+        warningMode = 'customer_care';
+    } else if (taskId === 'm18' && (fallbackBehavior === 'downgrade_to_unboxing_visual' || fallbackBehavior === 'unboxing_visual')) {
+        warningMode = 'unboxing_visual';
+    } else if (fallbackBehavior) {
+        warningMode = fallbackBehavior;
+    }
+
+    return {
+        allowed: true,
+        status: 'warning',
+        mode: warningMode,
+        reason: `未提供${missing.join('、')}，已降级为安全预警模式生成，杜绝无据生成。`,
+        missingEvidence: missing,
+        fallbackModule,
+        fallbackBehavior
+    };
+}
+
+function assertTaskGenerationAllowed(task, projectContext = {}) {
+    const evaluation = evaluateTaskEvidence(task, projectContext);
+    if (!evaluation.allowed) {
+        const title = typeof task === 'object' && task ? (task.title || task.displayTitle || task.id) : task;
+        const err = new Error(`[Evidence Gate 拦截] 模块 【${title}】 未通过事实门禁：${evaluation.reason}`);
+        err.isEvidenceGateBlocked = true;
+        err.evaluation = evaluation;
+        throw err;
+    }
+    if (typeof task === 'object' && task && evaluation.mode) {
+        task.mode = evaluation.mode;
+    }
+    return evaluation;
+}
+
+function validateContentPlanEvidence(activeModules = [], factsInput = {}, assetsInput = []) {
+    const facts = buildProductFacts(factsInput);
+    const assets = Array.isArray(assetsInput) ? assetsInput : [];
+    const ready = [];
+    const warnings = [];
+    const blocked = [];
+
+    activeModules.forEach(mod => {
+        const id = typeof mod === 'string' ? mod : (mod.id || mod.moduleId);
+        const modTitle = typeof mod === 'object' && mod ? (mod.title || id) : id;
+        const evalResult = evaluateTaskEvidence(mod, { facts, assets });
+
+        if (evalResult.status === 'blocked') {
+            blocked.push({
+                id,
+                title: modTitle,
+                riskLevel: 'high',
+                reason: evalResult.reason,
+                missingField: evalResult.missingEvidence.join(','),
+                recommendedAlternative: evalResult.fallbackModule || 'm2'
+            });
+        } else if (evalResult.status === 'warning') {
+            warnings.push({
+                id,
+                title: modTitle,
+                reason: evalResult.reason,
+                missingField: evalResult.missingEvidence.join(','),
+                autoDowngrade: true
+            });
+            ready.push(mod);
+        } else {
+            ready.push(mod);
+        }
+    });
+
+    return { ready, warnings, blocked };
+}
+
+// ====== Channel First 目标渠道与 AI 智能规划系统 ======
+let currentDetailChannel = 'shopify';
+let currentRecommendedPlan = null;
+let userExplicitlyClearedModules = false;
+
+function setUserExplicitlyClearedModules(val) {
+    userExplicitlyClearedModules = Boolean(val);
+    if (typeof globalThis !== 'undefined') globalThis.userExplicitlyClearedModules = userExplicitlyClearedModules;
+    if (typeof window !== 'undefined') window.userExplicitlyClearedModules = userExplicitlyClearedModules;
+    return userExplicitlyClearedModules;
+}
+
+function getUserExplicitlyClearedModules() {
+    return userExplicitlyClearedModules;
+}
+
+function getDetailChannel() {
+    return currentDetailChannel;
+}
+
+function setDetailChannel(channelId = 'shopify') {
+    const normId = (channelId === 'general') ? 'generic' : channelId;
+    const configMap = (typeof DETAIL_CHANNELS_CONFIG !== 'undefined')
+        ? DETAIL_CHANNELS_CONFIG
+        : ((typeof globalThis !== 'undefined' && globalThis.DETAIL_CHANNELS_CONFIG) || {});
+    const channelMeta = configMap[normId] || configMap[channelId] || configMap.shopify || {
+        id: normId,
+        defaultPresentationMode: 'hybrid',
+        defaultPreset: 'shopify_dtc'
+    };
+    currentDetailChannel = channelMeta.id || normId;
+    if (typeof globalThis !== 'undefined') globalThis.currentDetailChannel = currentDetailChannel;
+    if (typeof window !== 'undefined') window.currentDetailChannel = currentDetailChannel;
+
+    // 1. 同步推荐的呈现形态 (DTC Hybrid / Gallery)
+    if (channelMeta.defaultPresentationMode && typeof setDetailPresentationMode === 'function') {
+        const targetMode = channelMeta.defaultPresentationMode === 'hybrid' ? 'hybrid' : 'images';
+        setDetailPresentationMode(targetMode);
+    }
+
+    // 2. 更新渠道卡片的高亮 UI 状态
+    if (typeof document !== 'undefined') {
+        const allChannelKeys = ['shopify', 'amazon', 'social', 'generic'];
+        allChannelKeys.forEach(k => {
+            const card = document.getElementById(`detail-channel-card-${k}`);
+            if (card) {
+                const isActive = (k === currentDetailChannel);
+                card.classList.toggle('border-indigo-600', isActive);
+                card.classList.toggle('bg-indigo-50/40', isActive);
+                card.classList.toggle('shadow-sm', isActive);
+                card.classList.toggle('border-slate-200', !isActive);
+                card.classList.toggle('bg-white', !isActive);
+                const checkIcon = card.querySelector('.channel-check-badge');
+                if (checkIcon) checkIcon.classList.toggle('hidden', !isActive);
+            }
+        });
+    }
+
+    // 3. 同步更新渠道主行动交付按钮
+    if (typeof updatePrimaryDeliveryCTA === 'function') {
+        updatePrimaryDeliveryCTA();
+    }
+
+    // 4. 重新计算 AI 推荐方案
+    if (typeof buildRecommendedDetailPlan === 'function') {
+        try {
+            const assets = (typeof currentUploadedImages !== 'undefined' && currentUploadedImages.length)
+                ? currentUploadedImages
+                : (globalGenContext?.uploadedImages || []);
+            const facts = (globalGenContext && globalGenContext.productFacts) || buildProductFacts();
+            const plan = buildRecommendedDetailPlan({
+                targetChannel: currentDetailChannel,
+                productFacts: facts,
+                assets
+            });
+            if (plan && typeof applyRecommendedDetailPlan === 'function') {
+                applyRecommendedDetailPlan(plan);
+            }
+        } catch (e) {
+            console.warn('[Channel Switch] Auto planner re-calc skipped:', e);
+        }
+    }
+
+    return currentDetailChannel;
+}
+
+function buildRecommendedDetailPlan(options = {}) {
+    const rawChan = options.targetChannel || currentDetailChannel || 'shopify';
+    const channel = (rawChan === 'general') ? 'generic' : rawChan;
+    const configMap = (typeof DETAIL_CHANNELS_CONFIG !== 'undefined')
+        ? DETAIL_CHANNELS_CONFIG
+        : ((typeof globalThis !== 'undefined' && globalThis.DETAIL_CHANNELS_CONFIG) || {});
+    const channelMeta = configMap[channel] || configMap.shopify || {
+        id: channel,
+        recommendedModules: ['m1', 'm2', 'm3', 'm5', 'm6']
+    };
+
+    const facts = options.productFacts || (globalGenContext && globalGenContext.productFacts) || buildProductFacts();
+    const assets = options.assets || (typeof currentUploadedImages !== 'undefined' && currentUploadedImages.length ? currentUploadedImages : []);
+
+    const modulesConfig = (typeof MODULES_CONFIG !== 'undefined')
+        ? MODULES_CONFIG
+        : ((typeof globalThis !== 'undefined' && globalThis.MODULES_CONFIG) || []);
+    const baseModuleIds = [...(channelMeta.recommendedModules || [])];
+
+    // 如果发现多件套或套装事实（如 bundleItems 存在且 > 1），自动推荐全家福与套装模块
+    if (facts.bundleItems && facts.bundleItems.length > 1) {
+        if (!baseModuleIds.includes('m13')) baseModuleIds.push('m13');
+        if (!baseModuleIds.includes('m14')) baseModuleIds.push('m14');
+    }
+
+    // 实例化为候选模块定义
+    const candidateModules = baseModuleIds.map(id => {
+        const modDef = modulesConfig.find(m => m.id === id) || { id, title: id };
+        return {
+            id: modDef.id,
+            title: modDef.title,
+            displayTitle: modDef.title,
+            variant: 0,
+            includeCopy: true,
+            riskLevel: modDef.riskLevel || 'low',
+            evidenceRequirements: modDef.evidenceRequirements || []
+        };
+    });
+
+    // 运行 Evidence Gate 事实门禁审查
+    const gateResult = validateContentPlanEvidence(candidateModules, facts, assets);
+    const blockedIds = new Set(gateResult.blocked.map(b => b.id));
+    const warningMap = new Map(gateResult.warnings.map(w => [w.id, w.reason]));
+
+    const includedModules = [];
+    const excludedModules = [];
+
+    candidateModules.forEach(mod => {
+        if (blockedIds.has(mod.id)) {
+            const blockedInfo = gateResult.blocked.find(b => b.id === mod.id);
+            excludedModules.push({
+                id: mod.id,
+                title: mod.title,
+                reason: blockedInfo?.reason || '缺少该模块所需的真实事实依据，已由门禁系统安全排除'
+            });
+        } else {
+            const modCopy = { ...mod };
+            if (warningMap.has(mod.id)) {
+                modCopy.warning = warningMap.get(mod.id);
+            }
+            includedModules.push(modCopy);
+        }
+    });
+
+    const estimatedImages = includedModules.length;
+
+    const plan = {
+        channel: channelMeta.id || channel,
+        channelMeta,
+        includedModules,
+        excludedModules,
+        estimatedImages,
+        summaryText: `AI 推荐 ${includedModules.length} 个区块，预计生成 ${estimatedImages} 张图片`
+    };
+
+    return plan;
+}
+
+function applyRecommendedDetailPlan(plan, options = {}) {
+    if (!plan) return;
+    currentRecommendedPlan = plan;
+    if (typeof setUserExplicitlyClearedModules === 'function') setUserExplicitlyClearedModules(false); else userExplicitlyClearedModules = false;
+    if (typeof globalThis !== 'undefined') globalThis.currentRecommendedPlan = currentRecommendedPlan;
+    if (typeof window !== 'undefined') window.currentRecommendedPlan = currentRecommendedPlan;
+
+    const includedIds = new Set((plan.includedModules || []).map(m => m.id));
+    const targetModules = (typeof modules !== 'undefined' && Array.isArray(modules))
+        ? modules
+        : ((typeof globalThis !== 'undefined' && globalThis.modules) || (typeof MODULES_CONFIG !== 'undefined' ? MODULES_CONFIG : []));
+
+    targetModules.forEach(mod => {
+        const isIncluded = includedIds.has(mod.id);
+        mod.active = isIncluded;
+        if (isIncluded && (!mod.count || mod.count < 1)) {
+            mod.count = 1;
+        }
+        if (isIncluded && currentDetailPresentationMode === 'hybrid') {
+            mod.includeText = false;
+        }
+        if (typeof document !== 'undefined') {
+            const cb = document.getElementById('mod-' + mod.id);
+            if (cb) {
+                cb.checked = isIncluded;
+            }
+        }
+    });
+
+    if (typeof document !== 'undefined') {
+        includedIds.forEach(id => {
+            const cb = document.getElementById('mod-' + id);
+            if (cb) {
+                cb.checked = true;
+            }
+        });
+    }
+
+    if (!options.skipInitModules && typeof initModules === 'function') {
+        initModules();
+    }
+
+    if (typeof document !== 'undefined') {
+        // 渲染推荐方案预览卡片（Step 4 UI）
+        renderRecommendedPlanUI(plan);
+    }
+
+    return plan;
+}
+
+function renderRecommendedPlanUI(plan = currentRecommendedPlan) {
+    if (!plan || typeof document === 'undefined') return;
+    const container = document.getElementById('aiPlanSummaryContainer');
+    if (!container) return;
+
+    const channelTitle = plan.channelMeta?.title || plan.channel;
+    const incHtml = plan.includedModules.map(m => `
+        <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-emerald-50/70 border border-emerald-100 text-xs">
+            <span class="font-medium text-emerald-900 flex items-center gap-1.5">
+                <i class="ph-bold ph-check-circle text-emerald-600"></i>
+                ${detailEscapeHtml(m.title)}
+            </span>
+            ${m.warning ? `<span class="text-[10px] text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded truncate max-w-[140px]" title="${detailEscapeHtml(m.warning)}">降级提示</span>` : '<span class="text-[10px] text-emerald-600 font-bold">推荐包含</span>'}
+        </div>
+    `).join('');
+
+    const excHtml = plan.excludedModules.map(m => `
+        <div class="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-amber-50/70 border border-amber-100 text-xs">
+            <span class="font-medium text-amber-900 flex items-center gap-1.5">
+                <i class="ph-bold ph-warning text-amber-500"></i>
+                ${detailEscapeHtml(m.title)}
+            </span>
+            <span class="text-[10px] text-amber-700 max-w-[200px] truncate" title="${detailEscapeHtml(m.reason)}">${detailEscapeHtml(m.reason)}</span>
+        </div>
+    `).join('');
+
+    container.innerHTML = `
+        <div class="p-3.5 bg-white rounded-xl border border-slate-200 shadow-xs space-y-2.5">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h4 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <i class="ph-bold ph-sparkle text-indigo-600"></i>
+                        <span>AI 智能规划详情页方案 (${detailEscapeHtml(channelTitle)})</span>
+                    </h4>
+                    <p class="text-[10px] text-slate-500 mt-0.5">${detailEscapeHtml(plan.summaryText)}</p>
+                </div>
+                <button type="button" onclick="toggleAdvancedPlanDrawer()" class="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer">
+                    <i class="ph-bold ph-sliders"></i>
+                    <span>调整方案 (高级)</span>
+                </button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-52 overflow-y-auto pr-1">
+                ${incHtml}
+                ${excHtml}
+            </div>
+        </div>
+    `;
+}
+
+function toggleAdvancedPlanDrawer() {
+    const drawer = document.getElementById('advancedPlanDrawer') || document.getElementById('moduleSelectionContainer');
+    if (!drawer) return;
+    drawer.classList.toggle('hidden');
+    const isVisible = !drawer.classList.contains('hidden');
+    if (isVisible && typeof drawer.scrollIntoView === 'function') {
+        drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+// ====== Task 复合子状态机辅助函数 ======
+function computeTaskOverallStatus(statusObj = {}) {
+    if (!statusObj) return 'pending';
+    const img = statusObj.image || 'pending';
+    if (img === 'cancelled') return 'cancelled';
+    if (img === 'failed' || img === 'error') return 'failed';
+    if (img === 'running' || img === 'loading') return 'running';
+    if (img === 'pending') return 'pending';
+
+    if (img === 'success') {
+        const auxFailed = statusObj.copy === 'failed' || statusObj.seo === 'failed';
+        const auxRunning = statusObj.copy === 'running' || statusObj.seo === 'running';
+        if (auxFailed) return 'partial_success';
+        if (auxRunning) return 'running';
+        return 'success';
+    }
+    return 'pending';
+}
+
+function getTaskOverallStatus(task) {
+    if (!task) return 'pending';
+    if (task.subStatus && typeof task.subStatus === 'object') {
+        return task.subStatus.overall || 'pending';
+    }
+    if (typeof task.status === 'object' && task.status !== null) {
+        return task.status.overall || 'pending';
+    }
+    return String(task.status || 'pending');
+}
+
+function setTaskSubStatus(task, updates = {}) {
+    if (!task) return {};
+    if (!task.subStatus || typeof task.subStatus !== 'object') {
+        const rawStr = typeof task.status === 'string' ? task.status : (task.status?.overall || 'pending');
+        task.subStatus = {
+            overall: rawStr === 'error' ? 'failed' : rawStr,
+            image: rawStr === 'error' ? 'failed' : rawStr,
+            compression: 'skipped',
+            seo: 'skipped',
+            copy: 'skipped',
+            upload: 'idle'
+        };
+    }
+    Object.assign(task.subStatus, updates);
+    task.subStatus.overall = computeTaskOverallStatus(task.subStatus);
+
+    if (task.subStatus.image === 'cancelled' || task.subStatus.overall === 'cancelled') {
+        task.status = 'cancelled';
+    } else if (task.subStatus.image === 'failed' || task.subStatus.image === 'error' || task.subStatus.overall === 'failed') {
+        task.status = 'error';
+    } else if (task.subStatus.image === 'running' || task.subStatus.image === 'loading') {
+        task.status = 'loading';
+    } else if (task.subStatus.image === 'success') {
+        task.status = 'success';
+    } else {
+        task.status = 'pending';
+    }
+    return task.subStatus;
+}
+
+// ====== Phase 3 (P1): 统一三栏 Editor 与 Section Tree / Inspector 联动 ======
+let activeInspectorTaskId = null;
+
+const PRESET_REPAINT_PROMPTS = [
+    { id: 'light_bg', label: '换浅色背景', prompt: 'clean minimalist light neutral studio background, soft daylight' },
+    { id: 'enlarge', label: '放大商品主体', prompt: 'centered close-up framing, slightly enlarged product hero showcase' },
+    { id: 'minimal_life', label: '更极简生活化', prompt: 'warm Scandinavian interior, subtle cozy home ambient setting' },
+    { id: 'natural_light', label: '增加自然光感', prompt: 'bright natural golden-hour sunbeam illumination, crisp highlights' }
+];
+
+function toggleSectionTree(force) {
+    if (typeof document === 'undefined') return;
+    const sidebar = document.getElementById('sectionTreeSidebar');
+    if (!sidebar) return;
+    const shouldHide = typeof force === 'boolean' ? !force : !sidebar.classList.contains('hidden');
+    sidebar.classList.toggle('hidden', shouldHide);
+    const btn = document.getElementById('btnToggleSectionTree');
+    if (btn) {
+        btn.classList.toggle('bg-indigo-50', !shouldHide);
+        btn.classList.toggle('text-indigo-600', !shouldHide);
+    }
+}
+
+function toggleSectionInspector(force) {
+    if (typeof document === 'undefined') return;
+    const sidebar = document.getElementById('sectionInspectorSidebar');
+    if (!sidebar) return;
+    const shouldHide = typeof force === 'boolean' ? !force : !sidebar.classList.contains('hidden');
+    sidebar.classList.toggle('hidden', shouldHide);
+    const btn = document.getElementById('btnToggleInspector');
+    if (btn) {
+        btn.classList.toggle('bg-indigo-50', !shouldHide);
+        btn.classList.toggle('text-indigo-600', !shouldHide);
+    }
+}
+
+function getDetailTasksList() {
+    if (!globalGenContext || !globalGenContext.tasks) return [];
+    if (Array.isArray(globalGenContext.tasks)) {
+        return globalGenContext.tasks;
+    }
+    if (typeof globalGenContext.tasks === 'object') {
+        const tasksObj = globalGenContext.tasks;
+        const order = Array.isArray(globalGenContext.longImageOrder) && globalGenContext.longImageOrder.length
+            ? globalGenContext.longImageOrder
+            : Object.keys(tasksObj);
+        const list = [];
+        const seen = new Set();
+        order.forEach(id => {
+            const t = tasksObj[id] || Object.values(tasksObj).find(x => x.uniqueId === id || x.id === id);
+            if (t && !seen.has(t.uniqueId || t.id)) {
+                list.push(t);
+                seen.add(t.uniqueId || t.id);
+            }
+        });
+        Object.values(tasksObj).forEach(t => {
+            if (t && !seen.has(t.uniqueId || t.id)) {
+                list.push(t);
+                seen.add(t.uniqueId || t.id);
+            }
+        });
+        return list;
+    }
+    return [];
+}
+
+function findDetailTask(taskId) {
+    if (!taskId || !globalGenContext || !globalGenContext.tasks) return null;
+    if (Array.isArray(globalGenContext.tasks)) {
+        return globalGenContext.tasks.find(t => t.uniqueId === taskId || t.id === taskId) || null;
+    }
+    if (typeof globalGenContext.tasks === 'object') {
+        return globalGenContext.tasks[taskId] || Object.values(globalGenContext.tasks).find(t => t.uniqueId === taskId || t.id === taskId) || null;
+    }
+    return null;
+}
+
+function getActiveInspectorTask() {
+    if (!activeInspectorTaskId) return null;
+    return findDetailTask(activeInspectorTaskId);
+}
+
+function setActiveInspectorTask(taskId) {
+    activeInspectorTaskId = taskId;
+    if (typeof globalThis !== 'undefined') globalThis.activeInspectorTaskId = activeInspectorTaskId;
+    if (typeof window !== 'undefined') window.activeInspectorTaskId = activeInspectorTaskId;
+
+    if (typeof document !== 'undefined') {
+        renderSectionInspector(taskId);
+        highlightSelectedSection(taskId);
+        renderSectionTree();
+    }
+}
+
+function highlightSelectedSection(taskId) {
+    if (typeof document === 'undefined') return;
+    const container = document.getElementById('dtcHybridContainer');
+    if (!container) return;
+
+    container.querySelectorAll('.dtc-section-selected').forEach(el => {
+        el.classList.remove('dtc-section-selected', 'ring-2', 'ring-indigo-500', 'ring-offset-2', 'rounded-xl');
+    });
+
+    if (!taskId) return;
+    const targetSection = container.querySelector(`[data-task-unique-id="${taskId}"]`);
+    if (targetSection) {
+        targetSection.classList.add('dtc-section-selected', 'ring-2', 'ring-indigo-500', 'ring-offset-2', 'rounded-xl');
+        if (typeof targetSection.scrollIntoView === 'function') {
+            targetSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+}
+
+function moveDetailTask(taskId, direction) {
+    if (!globalGenContext || !globalGenContext.tasks) return false;
+
+    if (Array.isArray(globalGenContext.tasks)) {
+        const tasks = globalGenContext.tasks;
+        const idx = tasks.findIndex(t => t.uniqueId === taskId || t.id === taskId);
+        if (idx === -1) return false;
+
+        if (direction === 'up') {
+            if (idx === 0) return false;
+            const temp = tasks[idx];
+            tasks[idx] = tasks[idx - 1];
+            tasks[idx - 1] = temp;
+        } else if (direction === 'down') {
+            if (idx === tasks.length - 1) return false;
+            const temp = tasks[idx];
+            tasks[idx] = tasks[idx + 1];
+            tasks[idx + 1] = temp;
+        } else {
+            return false;
+        }
+        globalGenContext.longImageOrder = tasks.map(t => t.uniqueId || t.id);
+    } else if (typeof globalGenContext.tasks === 'object') {
+        const tasksObj = globalGenContext.tasks;
+        const order = Array.isArray(globalGenContext.longImageOrder) && globalGenContext.longImageOrder.length
+            ? [...globalGenContext.longImageOrder]
+            : Object.keys(tasksObj);
+
+        let targetId = taskId;
+        let idx = order.indexOf(targetId);
+        if (idx === -1) {
+            const foundKey = Object.keys(tasksObj).find(k => tasksObj[k].uniqueId === taskId || tasksObj[k].id === taskId);
+            if (foundKey) {
+                targetId = foundKey;
+                idx = order.indexOf(targetId);
+            }
+        }
+        if (idx === -1) return false;
+
+        if (direction === 'up') {
+            if (idx === 0) return false;
+            const temp = order[idx];
+            order[idx] = order[idx - 1];
+            order[idx - 1] = temp;
+        } else if (direction === 'down') {
+            if (idx === order.length - 1) return false;
+            const temp = order[idx];
+            order[idx] = order[idx + 1];
+            order[idx + 1] = temp;
+        } else {
+            return false;
+        }
+        globalGenContext.longImageOrder = order;
+    } else {
+        return false;
+    }
+
+    if (typeof renderSectionTree === 'function') renderSectionTree();
+    if (typeof renderDtcHybridPreview === 'function' && currentDetailResultView === 'hybrid') {
+        renderDtcHybridPreview();
+    }
+    return true;
+}
+
+function toggleDetailTaskVisibility(taskId) {
+    const task = findDetailTask(taskId);
+    if (!task) return false;
+
+    task.isHidden = !task.isHidden;
+
+    if (typeof renderSectionTree === 'function') renderSectionTree();
+    if (typeof renderDtcHybridPreview === 'function' && currentDetailResultView === 'hybrid') {
+        renderDtcHybridPreview();
+    }
+    return task.isHidden;
+}
+
+function updateDetailTaskContent(taskId, updates = {}) {
+    const task = findDetailTask(taskId);
+    if (!task) return null;
+
+    task.dtcCopy = {
+        ...(task.dtcCopy || {}),
+        ...updates
+    };
+
+    if (typeof renderDtcHybridPreview === 'function' && currentDetailResultView === 'hybrid') {
+        renderDtcHybridPreview();
+    }
+    return task;
+}
+
+function updateDetailTaskSeo(taskId, updates = {}) {
+    const task = findDetailTask(taskId);
+    if (!task) return null;
+
+    task.seo = {
+        ...(task.seo || {}),
+        ...updates
+    };
+    return task;
+}
+
+function updateDetailTaskLayout(taskId, updates = {}) {
+    const task = findDetailTask(taskId);
+    if (!task) return null;
+
+    Object.assign(task, updates);
+
+    if (typeof renderDtcHybridPreview === 'function' && currentDetailResultView === 'hybrid') {
+        renderDtcHybridPreview();
+    }
+    return task;
+}
+
+function recordTaskImageVersion(taskInput, newImageUrl, promptAdjustment = '') {
+    const task = (typeof taskInput === 'string') ? findDetailTask(taskInput) : taskInput;
+    if (!task) return null;
+    if (!Array.isArray(task.imageVersions)) {
+        task.imageVersions = [];
+    }
+    if (task.imageUrl && task.imageUrl !== newImageUrl) {
+        task.imageVersions.unshift({
+            versionId: 'ver_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+            imageUrl: task.imageUrl,
+            promptAdjustment: promptAdjustment || '',
+            createdAt: Date.now()
+        });
+        task.imageVersions = task.imageVersions.slice(0, 5);
+    }
+    task.imageUrl = newImageUrl;
+    return task;
+}
+
+function rollbackTaskImageVersion(taskId, versionId) {
+    const task = findDetailTask(taskId);
+    if (!task || !Array.isArray(task.imageVersions)) return false;
+
+    const versionIndex = task.imageVersions.findIndex(v => v.versionId === versionId);
+    if (versionIndex === -1) return false;
+
+    const targetVersion = task.imageVersions[versionIndex];
+    const previousCurrentUrl = task.imageUrl;
+
+    task.imageUrl = targetVersion.imageUrl;
+    targetVersion.imageUrl = previousCurrentUrl;
+
+    if (typeof renderSectionInspector === 'function') renderSectionInspector(taskId);
+    if (typeof renderDtcHybridPreview === 'function' && currentDetailResultView === 'hybrid') {
+        renderDtcHybridPreview();
+    }
+    return true;
+}
+
+function renderSectionTree() {
+    if (typeof document === 'undefined') return;
+    const container = document.getElementById('sectionTreeContainer');
+    if (!container) return;
+
+    const tasks = getDetailTasksList();
+
+    const allModuleDefs = (typeof MODULES_CONFIG !== 'undefined' && Array.isArray(MODULES_CONFIG))
+        ? MODULES_CONFIG
+        : ((typeof globalThis !== 'undefined' && globalThis.MODULES_CONFIG) || []);
+    const optionsHtml = allModuleDefs.map(m => `<option value="${m.id}">${m.title || m.name} (${m.id})</option>`).join('');
+    const addSectionControl = `
+        <div class="pt-2.5 mt-2 border-t border-slate-100 px-1">
+            <div class="text-[10px] font-bold text-slate-500 mb-1.5 flex items-center gap-1">
+                <i class="ph-bold ph-plus-circle text-indigo-600"></i>
+                <span>添加新区块</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <select id="selectNewSectionModule" class="flex-1 text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-medium focus:outline-none focus:border-indigo-500">
+                    <option value="">选择要添加的模块...</option>
+                    ${optionsHtml}
+                </select>
+                <button type="button" onclick="addNewSectionFromTree()" class="h-7 px-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1 shrink-0">
+                    <i class="ph-bold ph-plus text-xs"></i>
+                    <span>添加</span>
+                </button>
+            </div>
+        </div>
+    `;
+
+    if (!tasks.length) {
+        container.innerHTML = `
+            <div class="p-3 text-center text-slate-400 text-xs">暂无生成区块</div>
+            ${addSectionControl}
+        `;
+        return;
+    }
+
+    const itemsHtml = tasks.map((task, index) => {
+        const isSelected = (task.uniqueId === activeInspectorTaskId || task.id === activeInspectorTaskId);
+        const isHidden = Boolean(task.isHidden);
+        const subStatus = task.subStatus || {};
+        let statusIcon = '<i class="ph-bold ph-check text-emerald-500 text-xs"></i>';
+        if (subStatus.overall === 'failed') {
+            statusIcon = '<i class="ph-bold ph-x-circle text-rose-500 text-xs"></i>';
+        } else if (subStatus.overall === 'running') {
+            statusIcon = '<span class="loader w-2.5 h-2.5 border-indigo-600 border-t-transparent"></span>';
+        } else if (subStatus.overall === 'partial_success') {
+            statusIcon = '<i class="ph-bold ph-warning text-amber-500 text-xs"></i>';
+        }
+
+        const taskId = task.uniqueId || task.id;
+        return `
+            <div class="flex items-center justify-between p-2 rounded-lg text-xs transition-all cursor-pointer border ${isSelected ? 'bg-indigo-50/80 border-indigo-300 shadow-2xs font-bold text-indigo-900' : 'bg-white border-slate-200/80 hover:bg-slate-50 text-slate-700'}"
+                onclick="setActiveInspectorTask('${taskId}')">
+                <div class="flex items-center gap-2 min-w-0 flex-1">
+                    <span class="w-4 h-4 rounded bg-slate-100 text-slate-500 font-mono text-[10px] flex items-center justify-center shrink-0">${index + 1}</span>
+                    <span class="truncate ${isHidden ? 'opacity-40 line-through' : ''}">${detailEscapeHtml(task.displayTitle || task.title)}</span>
+                    <span class="text-[9px] px-1 rounded bg-slate-100 text-slate-500 shrink-0 uppercase font-mono">${task.id}</span>
+                </div>
+                <div class="flex items-center gap-1 shrink-0 ml-1.5" onclick="event.stopPropagation()">
+                    ${statusIcon}
+                    <button type="button" onclick="moveDetailTask('${taskId}', 'up')" class="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer" title="上移区块">
+                        <i class="ph-bold ph-arrow-up text-[10px]"></i>
+                    </button>
+                    <button type="button" onclick="moveDetailTask('${taskId}', 'down')" class="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer" title="下移区块">
+                        <i class="ph-bold ph-arrow-down text-[10px]"></i>
+                    </button>
+                    <button type="button" onclick="toggleDetailTaskVisibility('${taskId}')" class="p-1 ${isHidden ? 'text-slate-300' : 'text-slate-500 hover:text-slate-800'} rounded cursor-pointer" title="${isHidden ? '显示区块' : '隐藏区块'}">
+                        <i class="ph-bold ${isHidden ? 'ph-eye-slash' : 'ph-eye'} text-xs"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = `
+        <div class="space-y-1.5 p-2">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 px-1 flex items-center justify-between">
+                <span>页面结构树 (${tasks.length})</span>
+                <span class="text-[9px] text-slate-400 font-normal">点击选中编辑</span>
+            </div>
+            ${itemsHtml}
+            ${addSectionControl}
+        </div>
+    `;
+}
+
+// 从页面结构树底栏新增单个区块，并通过统一 Evidence Gate 检验
+async function addNewSectionFromTree(targetModuleId = '') {
+    const selectEl = document.getElementById('selectNewSectionModule');
+    const moduleId = (targetModuleId || selectEl?.value || '').trim();
+    if (!moduleId) {
+        if (typeof showToast === 'function') showToast('请先选择要添加的模块', 'warning');
+        return false;
+    }
+
+    const allModuleDefs = (typeof MODULES_CONFIG !== 'undefined' && Array.isArray(MODULES_CONFIG))
+        ? MODULES_CONFIG
+        : ((typeof globalThis !== 'undefined' && globalThis.MODULES_CONFIG) || []);
+    const modDef = allModuleDefs.find(m => m.id === moduleId) || { id: moduleId, name: moduleId, desc: '' };
+
+    if (!globalGenContext) {
+        globalGenContext = {
+            tasks: {},
+            config: typeof getDetailConfig === 'function' ? getDetailConfig() : {},
+            productFacts: typeof getVerifiedProductFacts === 'function' ? getVerifiedProductFacts() : {},
+            sellingPoints: '',
+            uploadedImages: currentUploadedImages || [],
+            longImageOrder: []
+        };
+    }
+    if (!globalGenContext.tasks) globalGenContext.tasks = {};
+    if (!Array.isArray(globalGenContext.longImageOrder)) globalGenContext.longImageOrder = [];
+
+    const modTitle = modDef.title || modDef.name || moduleId;
+    const modDesc = modDef.subtitle || modDef.desc || '';
+    const existingCount = Object.values(globalGenContext.tasks).filter(t => t.id === moduleId).length;
+    const uniqueId = `${moduleId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const displayTitle = existingCount > 0 ? `${modTitle} #${existingCount + 1}` : modTitle;
+
+    const newTask = {
+        id: moduleId,
+        uniqueId,
+        title: modTitle,
+        subtitle: modDesc,
+        displayTitle,
+        prompt: '',
+        variant: 1,
+        totalVariants: 1,
+        includeText: true,
+        status: 'pending',
+        subStatus: {
+            overall: 'pending',
+            image: 'pending',
+            compression: 'pending',
+            seo: 'pending',
+            copy: 'pending',
+            upload: 'idle'
+        }
+    };
+
+    // 1. 严格经过统一 Evidence Gate 门禁校验
+    try {
+        assertTaskGenerationAllowed(newTask, {
+            facts: typeof getVerifiedProductFacts === 'function' ? getVerifiedProductFacts() : {},
+            uploadedImages: currentUploadedImages || globalGenContext.uploadedImages || []
+        });
+    } catch (gateErr) {
+        if (typeof showToast === 'function') {
+            showToast(`无法添加区块 [${modTitle}]：${gateErr.message}`, 'error');
+        }
+        console.warn(`[EvidenceGate] Blocked adding ${moduleId}:`, gateErr.message);
+        return false;
+    }
+
+    // 2. 注册任务并追加到结构树序列
+    globalGenContext.tasks[uniqueId] = newTask;
+    globalGenContext.longImageOrder.push(uniqueId);
+
+    // 3. 立即刷新结构树与检视器
+    if (selectEl) selectEl.value = '';
+    renderSectionTree();
+    setActiveInspectorTask(uniqueId);
+    if (typeof showToast === 'function') {
+        showToast(`已添加新区块 [${displayTitle}]，正在开始生成...`, 'info');
+    }
+
+    // 4. 触发异步生成
+    (async () => {
+        try {
+            await generateSingleWrap(uniqueId, false, '', null);
+            if (typeof showToast === 'function') {
+                showToast(`新区块 [${displayTitle}] 生成完成！`, 'success');
+            }
+        } catch (genErr) {
+            console.error(`Error generating added task ${uniqueId}:`, genErr);
+            if (typeof showToast === 'function') {
+                showToast(`新区块 [${displayTitle}] 生成失败: ${genErr.message}`, 'error');
+            }
+        } finally {
+            renderSectionTree();
+            if (typeof renderDtcHybridPreview === 'function') renderDtcHybridPreview();
+            if (typeof updatePublishReadinessUI === 'function') updatePublishReadinessUI();
+            if (typeof scheduleDraftAutosave === 'function') scheduleDraftAutosave();
+        }
+    })();
+
+    return newTask;
+}
+
+function renderSectionInspector(taskId) {
+    if (typeof document === 'undefined') return;
+    const container = document.getElementById('sectionInspectorPanel');
+    if (!container) return;
+
+    const task = getActiveInspectorTask();
+    if (!task) {
+        container.innerHTML = `
+            <div class="p-6 text-center text-slate-400 flex flex-col items-center justify-center gap-2 h-full">
+                <i class="ph-bold ph-cursor-click text-3xl text-slate-300"></i>
+                <div class="text-xs font-bold text-slate-600">属性检视器</div>
+                <div class="text-[11px]">点击左侧结构树或中间预览区任一模块，实时调整文案、图片重绘指令与 SEO</div>
+            </div>
+        `;
+        return;
+    }
+
+    const copy = task.dtcCopy || {};
+    const seo = task.seo || {};
+    const imgVersions = task.imageVersions || [];
+
+    const versionThumbnails = imgVersions.length ? `
+        <div class="pt-2 border-t border-slate-100">
+            <div class="text-[10px] font-bold text-slate-500 mb-1">历史生成版本 (回滚)</div>
+            <div class="flex items-center gap-1.5 overflow-x-auto custom-scrollbar py-1">
+                ${imgVersions.map((v, i) => `
+                    <button type="button" onclick="rollbackTaskImageVersion('${task.uniqueId}', '${v.versionId}')"
+                        class="w-12 h-12 rounded border border-slate-200 overflow-hidden shrink-0 hover:border-indigo-500 transition-all cursor-pointer relative group"
+                        title="回滚到该版本 (${detailEscapeHtml(v.promptAdjustment || '初始版')})">
+                        <img src="${v.imageUrl}" class="w-full h-full object-cover">
+                        <span class="absolute bottom-0 right-0 bg-black/60 text-white text-[8px] px-0.5">#${i + 1}</span>
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+    ` : '';
+
+    const quickPills = PRESET_REPAINT_PROMPTS.map(p => `
+        <button type="button" onclick="document.getElementById('inspectorRepaintPrompt').value = '${p.prompt}'"
+            class="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 border border-slate-200 font-medium transition-colors cursor-pointer">
+            ${p.label}
+        </button>
+    `).join('');
+
+    container.innerHTML = `
+        <div class="flex flex-col h-full overflow-y-auto custom-scrollbar p-4 space-y-4">
+            <!-- 头部 -->
+            <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-xs font-black text-slate-800 truncate">${detailEscapeHtml(task.displayTitle || task.title)}</span>
+                        <span class="text-[9px] bg-indigo-50 text-indigo-700 font-mono px-1 rounded uppercase font-bold">${task.id}</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-0.5">当前激活区块属性</div>
+                </div>
+                <button type="button" onclick="setActiveInspectorTask(null)" class="text-slate-400 hover:text-slate-700 p-1 cursor-pointer" title="关闭属性面板">
+                    <i class="ph-bold ph-x text-sm"></i>
+                </button>
+            </div>
+
+            <!-- 1. 视觉与重绘 -->
+            <div class="space-y-2 p-3 bg-slate-50/70 rounded-xl border border-slate-200/90">
+                <div class="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span class="flex items-center gap-1"><i class="ph-bold ph-image text-indigo-600"></i> 视觉与重绘</span>
+                </div>
+                ${task.imageUrl ? `
+                    <div class="relative rounded-lg overflow-hidden border border-slate-200 aspect-video bg-white flex items-center justify-center">
+                        <img src="${task.imageUrl}" class="w-full h-full object-cover">
+                    </div>
+                ` : '<div class="text-[11px] text-slate-400 text-center py-4 bg-white rounded border border-dashed border-slate-200">未出图</div>'}
+
+                <div class="space-y-1.5">
+                    <div class="text-[10px] font-bold text-slate-500">自然语言局部重绘微调</div>
+                    <div class="flex flex-wrap gap-1 mb-1.5">
+                        ${quickPills}
+                    </div>
+                    <textarea id="inspectorRepaintPrompt" rows="2"
+                        class="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 resize-none leading-tight"
+                        placeholder="输入微调提示词，例如：换浅色背景，放大主体..."></textarea>
+                    <button type="button" onclick="retryFailedModuleImages([getActiveInspectorTask()])"
+                        class="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
+                        <i class="ph-bold ph-arrows-clockwise"></i>
+                        <span>局部重新生成此图</span>
+                    </button>
+                </div>
+
+                ${versionThumbnails}
+            </div>
+
+            <!-- 2. 文案编辑 (DTC Copy) -->
+            <div class="space-y-2.5 p-3 bg-slate-50/70 rounded-xl border border-slate-200/90">
+                <div class="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span class="flex items-center gap-1"><i class="ph-bold ph-article text-indigo-600"></i> 文案在线编辑</span>
+                    <button type="button" onclick="retryTaskAuxiliaryStep('${task.uniqueId}', 'copy')" class="text-[10px] text-indigo-600 hover:underline font-bold cursor-pointer">AI 重新帮写</button>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 block mb-0.5">主标题 (Headline)</label>
+                    <input type="text" value="${detailEscapeHtml(copy.headline || '')}"
+                        oninput="updateDetailTaskContent('${task.uniqueId}', { headline: this.value })"
+                        class="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 font-bold text-slate-800">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 block mb-0.5">副标题 / 说明 (Subheadline)</label>
+                    <textarea rows="2" oninput="updateDetailTaskContent('${task.uniqueId}', { subheadline: this.value })"
+                        class="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-slate-600 resize-none leading-relaxed">${detailEscapeHtml(copy.subheadline || '')}</textarea>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 block mb-0.5">角标 / 亮点 (Tagline)</label>
+                    <input type="text" value="${detailEscapeHtml(copy.tagline || '')}"
+                        oninput="updateDetailTaskContent('${task.uniqueId}', { tagline: this.value })"
+                        class="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-slate-700">
+                </div>
+            </div>
+
+            <!-- 3. SEO 元数据 -->
+            <div class="space-y-2.5 p-3 bg-slate-50/70 rounded-xl border border-slate-200/90">
+                <div class="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span class="flex items-center gap-1"><i class="ph-bold ph-magnifying-glass text-indigo-600"></i> SEO 元数据</span>
+                    <button type="button" onclick="retryTaskAuxiliaryStep('${task.uniqueId}', 'seo')" class="text-[10px] text-indigo-600 hover:underline font-bold cursor-pointer">重新生成 SEO</button>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 block mb-0.5">SEO Title</label>
+                    <input type="text" value="${detailEscapeHtml(seo.titleTarget || '')}"
+                        oninput="updateDetailTaskSeo('${task.uniqueId}', { titleTarget: this.value })"
+                        class="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-slate-700">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-500 block mb-0.5">Alt 描述文本</label>
+                    <input type="text" value="${detailEscapeHtml(seo.altTarget || '')}"
+                        oninput="updateDetailTaskSeo('${task.uniqueId}', { altTarget: this.value })"
+                        class="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 text-slate-700">
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// ==========================================
+// Phase 4 (P1): 上架准备度 (Readiness) 与 本地防抖自动保存 (Autosave)
+// ==========================================
+
+let dtcDraftAutosaveTimer = null;
+
+// 计算当前详情页全案的上架准备度 (0 ~ 100%)
+function computePublishReadiness(tasksInput, channel = 'shopify') {
+    const rawList = Array.isArray(tasksInput) ? tasksInput : Object.values(tasksInput || {});
+    const activeTasks = rawList.filter(t => t && !t.isHidden);
+
+    if (!activeTasks.length) {
+        return {
+            score: 0,
+            percentage: 0,
+            isReadyToPublish: false,
+            items: [
+                { id: 'images', label: '视觉图片渲染', passed: false, hint: '暂无有效生成图片' },
+                { id: 'copy', label: '营销文案就绪', passed: false, hint: '暂无就绪文案' },
+                { id: 'hosting', label: '云端图床托管', passed: false, hint: '尚未上传至云端' },
+                { id: 'seo', label: 'SEO 元数据', passed: false, hint: '未配置 SEO' }
+            ]
+        };
+    }
+
+    // 1. 视觉图片检查 (40分)
+    const imagesWithSrc = activeTasks.filter(t => {
+        const src = t.imageUrl || t.imageSrc || '';
+        return Boolean(src && (src.startsWith('data:image/') || src.startsWith('http')));
+    });
+    const imagesReady = imagesWithSrc.length === activeTasks.length;
+    const imagesScore = Math.round((imagesWithSrc.length / activeTasks.length) * 40);
+
+    // 2. 文案检查 (20分)
+    const copyWithContent = activeTasks.filter(t => {
+        const copy = t.dtcCopy || {};
+        const headline = copy.headline || t.title || '';
+        return Boolean(headline && headline.trim());
+    });
+    const copyReady = copyWithContent.length === activeTasks.length;
+    const copyScore = Math.round((copyWithContent.length / activeTasks.length) * 20);
+
+    // 3. 图床托管 / 导出格式检查 (20分)
+    const isCloudTarget = channel === 'shopify' || channel === 'standalone' || channel === 'dtc';
+    let hostingReady = false;
+    let hostingScore = 0;
+    if (isCloudTarget) {
+        const hostedCount = activeTasks.filter(t => {
+            const src = t.imageUrl || t.imageSrc || '';
+            return Boolean(src && (src.startsWith('http://') || src.startsWith('https://')) && !src.includes('127.0.0.1') && !src.includes('localhost'));
+        }).length;
+        hostingReady = hostedCount === activeTasks.length;
+        hostingScore = Math.round((hostedCount / activeTasks.length) * 20);
+    } else {
+        hostingReady = true;
+        hostingScore = 20;
+    }
+
+    // 4. SEO 元数据检查 (20分)
+    const seoCount = activeTasks.filter(t => {
+        const seo = t.seo || {};
+        return Boolean(seo.titleTarget || seo.title || t.title);
+    }).length;
+    const seoReady = seoCount === activeTasks.length;
+    const seoScore = Math.round((seoCount / activeTasks.length) * 20);
+
+    const totalScore = imagesScore + copyScore + hostingScore + seoScore;
+    const percentage = Math.min(100, Math.max(0, totalScore));
+
+    return {
+        score: totalScore,
+        percentage,
+        isReadyToPublish: percentage >= 80,
+        items: [
+            {
+                id: 'images',
+                label: '视觉图片渲染',
+                passed: imagesReady,
+                hint: `${imagesWithSrc.length}/${activeTasks.length} 个区块图片已生成`
+            },
+            {
+                id: 'copy',
+                label: '营销文案就绪',
+                passed: copyReady,
+                hint: `${copyWithContent.length}/${activeTasks.length} 个区块文案已就绪`
+            },
+            {
+                id: 'hosting',
+                label: isCloudTarget ? '云端图床托管' : '切片物料就绪',
+                passed: hostingReady,
+                hint: isCloudTarget
+                    ? (hostingReady ? '全案图片已托管于云端' : '部分图片仍为本地缓存，建议托管到图床')
+                    : '随时可打包切片物料'
+            },
+            {
+                id: 'seo',
+                label: 'SEO 元数据',
+                passed: seoReady,
+                hint: `${seoCount}/${activeTasks.length} 个区块已配置 SEO`
+            }
+        ]
+    };
+}
+
+// 刷新顶部上架准备度徽标
+function updatePublishReadinessUI() {
+    if (typeof document === 'undefined') return;
+    const tasks = (typeof getDetailTasksList === 'function') ? getDetailTasksList() : [];
+    const channel = (typeof getDetailChannel === 'function') ? getDetailChannel() : (currentDetailChannel || 'shopify');
+    const readiness = computePublishReadiness(tasks, channel);
+
+    const badge = document.getElementById('publishReadinessBadge');
+    if (badge) {
+        badge.textContent = `${readiness.percentage}% 就绪`;
+        badge.className = readiness.percentage >= 80
+            ? 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300'
+            : (readiness.percentage > 0
+                ? 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300'
+                : 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200');
+    }
+}
+
+// 保存工作台草稿至 localStorage
+function saveStudioDraft() {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+        const tasks = (typeof getDetailTasksList === 'function') ? getDetailTasksList() : [];
+        const channel = (typeof getDetailChannel === 'function') ? getDetailChannel() : (currentDetailChannel || 'shopify');
+        const draft = {
+            channel,
+            layoutStyle: currentDtcLayoutStyle || 'editorial',
+            brandColor: currentDtcBrandColor || 'indigo',
+            customBrandColor: (typeof customBrandColor !== 'undefined') ? customBrandColor : null,
+            productFacts: (typeof currentProductFacts !== 'undefined') ? currentProductFacts : null,
+            tasks,
+            longImageOrder: (globalGenContext && Array.isArray(globalGenContext.longImageOrder)) ? globalGenContext.longImageOrder : tasks.map(t => t.uniqueId || t.id),
+            productName: document.getElementById('productName')?.value || '',
+            sellingPoints: document.getElementById('sellingPoints')?.value || '',
+            language: document.getElementById('languageSelect')?.value || 'English',
+            savedAt: Date.now()
+        };
+        localStorage.setItem('dtc_studio_current_draft', JSON.stringify(draft));
+        updateAutosaveStatusUI(draft.savedAt);
+        return true;
+    } catch (e) {
+        console.warn('保存详情页草稿失败:', e);
+        return false;
+    }
+}
+
+// 读取已保存的草稿
+function getStudioDraft() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem('dtc_studio_current_draft');
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+// 清理草稿
+function clearStudioDraft() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.removeItem('dtc_studio_current_draft');
+    } catch (e) {}
+}
+
+// 从草稿恢复工作台状态
+function restoreStudioDraft(draft) {
+    if (!draft) draft = (typeof getStudioDraft === 'function') ? getStudioDraft() : null;
+    if (!draft || typeof draft !== 'object') return false;
+    try {
+        if (draft.channel && typeof setDetailChannel === 'function') {
+            setDetailChannel(draft.channel);
+        }
+        if (draft.layoutStyle && typeof setDtcLayoutStyle === 'function') {
+            setDtcLayoutStyle(draft.layoutStyle);
+        }
+        if (draft.brandColor && typeof setDtcBrandColor === 'function') {
+            setDtcBrandColor(draft.brandColor);
+        }
+        if (draft.productFacts) {
+            currentProductFacts = draft.productFacts;
+            if (typeof renderProductFactsCard === 'function') {
+                renderProductFactsCard();
+            }
+        }
+        if (Array.isArray(draft.tasks) && draft.tasks.length) {
+            if (!globalGenContext) globalGenContext = {};
+            globalGenContext.tasks = draft.tasks;
+            if (Array.isArray(draft.longImageOrder) && draft.longImageOrder.length) {
+                globalGenContext.longImageOrder = draft.longImageOrder;
+            } else {
+                globalGenContext.longImageOrder = draft.tasks.map(t => t.uniqueId || t.id);
+            }
+            if (typeof renderSectionTree === 'function') renderSectionTree();
+            if (typeof renderDtcHybridPreview === 'function') renderDtcHybridPreview();
+        }
+        updatePrimaryDeliveryCTA();
+        updatePublishReadinessUI();
+        return true;
+    } catch (e) {
+        console.error('恢复草稿失败:', e);
+        return false;
+    }
+}
+
+// 防抖自动保存调度
+function scheduleDraftAutosave(debounceMs = 1500) {
+    if (dtcDraftAutosaveTimer) {
+        clearTimeout(dtcDraftAutosaveTimer);
+    }
+    dtcDraftAutosaveTimer = setTimeout(() => {
+        saveStudioDraft();
+        dtcDraftAutosaveTimer = null;
+    }, debounceMs);
+}
+
+// 更新自动保存时间戳提示 (Local Autosave)
+function updateAutosaveStatusUI(timestamp) {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('dtcAutosaveStatus');
+    if (!el) return;
+    if (timestamp === 'idle') {
+        el.textContent = '本地草稿已重置';
+        el.title = '本地草稿自动保存 (Local Autosave)';
+        el.classList.remove('hidden');
+        return;
+    }
+    const timeStr = timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    el.textContent = `✓ 本地草稿已自动保存 ${timeStr}`;
+    el.title = '本地草稿已实时自动保存至浏览器存储 (Local Autosave)';
+    el.classList.remove('hidden');
+}
+
+// 聚焦渠道主交付 CTA 样式与文案更新
+function updatePrimaryDeliveryCTA() {
+    if (typeof document === 'undefined') return;
+    const channel = (typeof getDetailChannel === 'function') ? getDetailChannel() : (currentDetailChannel || 'shopify');
+    const btn = document.getElementById('btnPrimaryDeliveryCTA');
+    const textEl = document.getElementById('btnPrimaryDeliveryCTAText');
+    const iconEl = document.getElementById('btnPrimaryDeliveryCTAIcon');
+    if (!btn || !textEl) return;
+
+    if (channel === 'amazon') {
+        textEl.textContent = '下载 Amazon 切图物料包';
+        if (iconEl) iconEl.className = 'ph-bold ph-crop text-sm';
+        btn.className = 'h-8 flex items-center gap-1.5 text-white bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 active:scale-95 transition-all text-xs font-bold px-3.5 rounded-lg shadow-sm cursor-pointer whitespace-nowrap';
+        btn.title = '一键裁剪并下载 Amazon A+ 官方规范切图物料包 (ZIP)';
+    } else if (channel === 'social') {
+        textEl.textContent = '导出社媒营销切片';
+        if (iconEl) iconEl.className = 'ph-bold ph-share-network text-sm';
+        btn.className = 'h-8 flex items-center gap-1.5 text-white bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 active:scale-95 transition-all text-xs font-bold px-3.5 rounded-lg shadow-sm cursor-pointer whitespace-nowrap';
+        btn.title = '一键导出适配 TikTok/Instagram 等社交平台的营销切片图片';
+    } else if (channel === 'general' || channel === 'generic') {
+        textEl.textContent = '一键上架物料包 (ZIP)';
+        if (iconEl) iconEl.className = 'ph-bold ph-package text-sm';
+        btn.className = 'h-8 flex items-center gap-1.5 text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 transition-all text-xs font-bold px-3.5 rounded-lg shadow-sm cursor-pointer whitespace-nowrap';
+        btn.title = '一键打包通用高清物料包 (ZIP)';
+    } else {
+        // shopify / standalone default
+        textEl.textContent = '准备上架 (Shopify / 独立站)';
+        if (iconEl) iconEl.className = 'ph-bold ph-paper-plane-tilt text-sm';
+        btn.className = 'h-8 flex items-center gap-1.5 text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 transition-all text-xs font-bold px-3.5 rounded-lg shadow-sm cursor-pointer whitespace-nowrap';
+        btn.title = '进入独立站上架预检与自包含 HTML 交付抽屉';
+    }
+
+    updatePublishReadinessUI();
+}
+
+// 渠道主交付单一行动分发执行
+function executePrimaryChannelPublish() {
+    const channel = (typeof getDetailChannel === 'function') ? getDetailChannel() : (currentDetailChannel || 'shopify');
+    if (channel === 'amazon') {
+        if (typeof downloadAmazonAPlusCrops === 'function') {
+            downloadAmazonAPlusCrops();
+        }
+    } else if (channel === 'social') {
+        if (typeof downloadAllModules === 'function') {
+            downloadAllModules();
+        }
+    } else if (channel === 'general' || channel === 'generic') {
+        if (typeof exportFullLaunchKit === 'function') {
+            exportFullLaunchKit();
+        }
+    } else {
+        if (typeof openDetailDtcHtmlModal === 'function') {
+            openDetailDtcHtmlModal();
+        }
+    }
+}
+
+// 同步 Editor 排序至长图设计器
+function syncEditorOrderToLongImage() {
+    if (!globalGenContext) return;
+    const list = (typeof getDetailTasksList === 'function') ? getDetailTasksList() : [];
+    if (list.length) {
+        globalGenContext.longImageOrder = list.map(t => t.uniqueId || t.id);
+    }
+}
+
+
 // 根据模块 ID 和序号返回当前模块的转化职责，避免不同图片重复讲同一件事。
 function getModuleContentRole(task = {}, sellingPoints = '', config = {}) {
     const variant = Number(task.variant || 0);
     const roles = {
         m1: 'Hero: immediately state what the product is, the primary user benefit, and 2-3 proof points. Avoid vague revolution/ultimate language.',
         m3: 'Lifestyle scene: show one believable use case with realistic scale, natural lighting, and minimal overlay text.',
-        m4: 'Multi-angle proof: show real product angles or faithful inferred views. Focus on appearance and construction, not marketing promises.',
+        m4: 'Multi-angle proof: show real product angles based strictly on confirmed references. Do not hallucinate unverified rear or internal structures.',
         m5: 'Lifestyle mood: communicate fit with the user environment using quiet visual cues and very little text.',
         m6: 'Detail close-up: highlight material, texture, controls, surface, seams, ports, or build details visible in the reference.',
         m7: 'Brand story: express product positioning with restrained editorial copy and no unsupported origin or mission claims.',
-        m8: 'Size and dimensions: show scale, measurements, or storage footprint. Prefer supplied values, and infer plausible scale cues when missing.',
-        m9: 'Comparison: use an objective feature table. Compare functions and convenience, not inflated superiority claims.',
-        m10: 'Specifications: Prefer supplied facts or visible reference cues. If values are missing, infer plausible specification details for the product category.',
-        m11: 'Trust: show after-sales, support, maintenance, shipping, returns, or package-list reassurance only if supported by supplied information.',
+        m8: 'Size and dimensions: show scale, measurements, or storage footprint. STRICT MANDATE: Use verified dimensions only; never invent arbitrary measurements.',
+        m9: 'Comparison: use an objective feature table. Compare factual functions and convenience, not inflated superiority or unverifiable competitor claims.',
+        m10: 'Specifications: Strictly show verified parameters present in the supplied product facts. Do not invent arbitrary numbers.',
+        m11: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'customer_care')
+            ? 'Customer Care: express warm brand support, packaging confidence, and reliable customer assistance without inventing unverified warranty terms or return days.'
+            : 'Trust: show after-sales reassurance based strictly on supplied warranty and return policies. Do not invent warranty duration or guarantees.',
         m12: 'Usage guide: show a clear step-by-step use or maintenance flow with simple icons and minimal text.',
         m13: "What's in the Box: show the complete bundle breakdown in an organized flat lay or knolling layout. Clearly label every accessory, part, and piece count.",
-        m14: "Bundle value comparison: contrast buying individual items separately vs purchasing this complete bundle. Highlight one-stop convenience and cost savings.",
+        m14: "Bundle value comparison: highlight all-in-one convenience and complete bundle value without inventing arbitrary pricing numbers or discounts.",
         m15: "Multi-step synergy: illustrate how the different items in the kit work together sequentially in a streamlined 3-step routine.",
         m16: "Key accessory spotlight: macro close-up highlighting durable materials, precision fit, and OEM-grade build quality of essential accessories.",
-        m17: "Exploded View: render an exploded view showing the internal core engineering and components floating in immaculate alignment alongside the product.",
-        m18: "UGC Social Proof: show authentic lifestyle unboxing or everyday usage composition with high-trust customer review card."
+        m17: "Exploded View: render precision engineering components only when verified structural CAD or teardown references exist. Never hallucinate unverified internal parts.",
+        m18: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'unboxing_visual')
+            ? 'UGC Unboxing Visual: showcase authentic lifestyle unboxing or tabletop product moment with natural ambient light, without star rating graphics or fake customer quotes.'
+            : "UGC Social Proof: show authentic lifestyle unboxing. Never generate fake 5-star customer review quotes unless verified real reviews exist."
     };
     if (task.id === 'm2') {
         const benefitRoles = [
@@ -1985,7 +4024,11 @@ function getModuleStrategyCn(task = {}, sellingPoints = '', config = {}) {
             visual: '规格表要清楚、大字、少行，只展示已知事实。',
             avoid: '避免编造承重、速度、功率、认证、保修等参数。'
         },
-        m11: {
+        m11: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'customer_care') ? {
+            goal: '提供品牌关怀与售后支持，营造安心购买氛围。',
+            visual: '温馨克制的关怀视觉、精美包装展示或官方支持提示，无虚构承诺。',
+            avoid: '严禁虚构具体质保年限、退换天数或无依据的官方承诺。'
+        } : {
             goal: '建立信任，降低售后、配送、维护和购买风险。',
             visual: '可展示保修、客服、包装清单、维护便利等已知内容。',
             avoid: '避免虚构认证、保修年限、退换政策。'
@@ -2020,10 +4063,14 @@ function getModuleStrategyCn(task = {}, sellingPoints = '', config = {}) {
             visual: '核心部件工整悬浮展开，材质细腻，拉丝金属/工程塑料真实反光，工整对齐。',
             avoid: '避免凭空胡乱捏造虚假电子芯片或破坏产品外部原貌。'
         },
-        m18: {
+        m18: ((task.mode || evaluateTaskEvidence(task)?.mode) === 'unboxing_visual') ? {
+            goal: '通过生活化开箱展示产品开箱即用状态与生活质感。',
+            visual: '自然日光或生活实景开箱、手持实拍，无五星评分与虚构评语。',
+            avoid: '严禁添加五星好评标识、虚假买家评价或伪造销量数字。'
+        } : {
             goal: '通过真实买家开箱与生活场景使用，打消下单疑虑，强化社交好评背书。',
-            visual: '自然日光/生活实景，真实比例，5星好评与简明真实评语卡片。',
-            avoid: '避免虚假医美/虚假过度承诺与过度摆拍假感。'
+            visual: '自然日光/生活实景，真实比例，真实买家评语卡片。',
+            avoid: '避免虚构评语、无依据评星与过度摆拍假感。'
         }
     };
     if (task.id === 'm2') {
@@ -2081,22 +4128,29 @@ Return strict JSON only:
 
 // 拼接最终发给图片模型的模块级提示词，融合模块职责、卖点、配置、合规和重绘要求。
 function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdjustment = '') {
-    const moduleTitle = getPromptModuleTitle(task);
-    const moduleRequest = task.includeText === false
+    let effectiveTask = task;
+    if (!effectiveTask.mode && (effectiveTask.id === 'm11' || effectiveTask.id === 'm18')) {
+        const evalResult = evaluateTaskEvidence(effectiveTask);
+        if (evalResult && evalResult.mode) {
+            effectiveTask = { ...effectiveTask, mode: evalResult.mode };
+        }
+    }
+    const moduleTitle = getPromptModuleTitle(effectiveTask);
+    const moduleRequest = effectiveTask.includeText === false
         ? `Create a visual-only interpretation of "${moduleTitle}" and follow the NO ADDED TEXT policy.`
-        : task.prompt;
+        : effectiveTask.prompt;
     const productInfo = compactDetailText(sellingPoints, 1800);
     const guardrails = buildProductGuardrails(config);
     const productLock = buildProductLockPrompt(config);
-    const executionBrief = buildModuleExecutionBrief(task, sellingPoints, config);
-    const textPolicy = buildModuleTextPolicy(task, config);
+    const executionBrief = buildModuleExecutionBrief(effectiveTask, sellingPoints, config);
+    const textPolicy = buildModuleTextPolicy(effectiveTask, config);
     const themeContext = config.marketingTheme && config.marketingTheme !== 'none'
         ? `Marketing theme: ${config.marketingTheme}. Integrate it lightly without overwhelming the product.`
         : 'Marketing theme: none. Keep the layout evergreen and product-led.';
-    const variationRule = task.totalVariants > 1
-        ? task.includeText === false
-            ? `Variant rule: this is version ${Number(task.variant || 0) + 1}/${task.totalVariants}. Do NOT repeat the same angle, scene, product placement, or visual composition used by sibling variants.`
-            : `Variant rule: this is version ${Number(task.variant || 0) + 1}/${task.totalVariants}. Do NOT repeat the same angle, headline, visual composition, or callout set used by sibling variants.`
+    const variationRule = effectiveTask.totalVariants > 1
+        ? effectiveTask.includeText === false
+            ? `Variant rule: this is version ${Number(effectiveTask.variant || 0) + 1}/${effectiveTask.totalVariants}. Do NOT repeat the same angle, scene, product placement, or visual composition used by sibling variants.`
+            : `Variant rule: this is version ${Number(effectiveTask.variant || 0) + 1}/${effectiveTask.totalVariants}. Do NOT repeat the same angle, headline, visual composition, or callout set used by sibling variants.`
         : 'Variant rule: one focused version only.';
     const repaintRule = promptAdjustment
         ? `User repaint instruction: ${promptAdjustment}. CRITICAL: Apply this instruction ONLY to background scene, props, lighting, angle, or text layout while strictly preserving product identity, structure, details, section role, compliance, and readability. NEVER alter or redesign the physical product itself.`
@@ -2104,8 +4158,8 @@ function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdj
     const brandDirectives = (typeof window !== 'undefined' && window.brandContextHub && typeof window.brandContextHub.getVisualBrandDirectives === 'function')
         ? window.brandContextHub.getVisualBrandDirectives()
         : '';
-    const focalLead = task.focalFeature
-        ? `\nPRIMARY VISUAL FOCUS (CRITICAL): Feature and visualize "${task.focalFeature}". The composition, scene props, and lighting must directly express this core selling point without altering the product.`
+    const focalLead = effectiveTask.focalFeature
+        ? `\nPRIMARY VISUAL FOCUS (CRITICAL): Feature and visualize "${effectiveTask.focalFeature}". The composition, scene props, and lighting must directly express this core selling point without altering the product.`
         : '';
 
     return `IMAGE TASK
@@ -2138,8 +4192,8 @@ HARD RULES
 - Generate one finished image only, not a wireframe or instruction sheet.
 - Keep one primary visual idea, clear hierarchy, and no overstuffed collage.
 - Forbidden claims: no clinical outcomes, no body-shape guarantees, no guaranteed measurable results, and no forbidden wording supplied by the user.
-${task.includeText === false ? '- Do not add commercial specifications, dimensions, values, warranty terms, app functions, or other written details.' : '- If specs, dimensions, capacity, warranty, app functions, or similar commercial details are not supplied, generate cautious, plausible e-commerce copy without altering the product itself.'}
-- Avoid medical outcomes, body-transformation promises, fat-loss promises, absolute superlatives, and unverifiable performance claims.
+${effectiveTask.includeText === false ? '- Do not add commercial specifications, dimensions, values, warranty terms, app functions, or other written details.' : '- STRICT PRODUCT TRUTH MANDATE: Only facts marked verified or explicitly provided by the user may be presented as exact factual claims. If specs, dimensions, capacity, warranty terms, performance metrics, or reviews are not supplied, NEVER invent fake numbers, fake certifications, fake 5-star ratings, or fake warranties.'}
+${effectiveTask.id === 'm11' && effectiveTask.mode === 'customer_care' ? '- STRICT TRUST RESTRAINT: Do not display or invent unverified warranty terms (such as specific warranty years or lifetime claims), return policy durations (such as specific days or money-back periods), shipping speed guarantees, or round-the-clock support. Focus strictly on brand care and purchase confidence without inventing unverified facts.\n' : ''}${effectiveTask.id === 'm18' && effectiveTask.mode === 'unboxing_visual' ? '- STRICT UGC RESTRAINT: Do not generate star rating symbols or icons, rating badges, fabricated customer quotes, invented reviewer names, or fictitious sales counts. Render clean lifestyle unboxing visual only.\n' : ''}- Avoid medical outcomes, body-transformation promises, fat-loss promises, absolute superlatives, and unverifiable performance claims.
 - Keep shadows, perspective, scale, and human posture realistic.
 ${repaintRule}`.trim();
 }
@@ -2159,9 +4213,14 @@ function buildStrategyTasks(activeModules = [], sellingPoints = '', config = {})
     activeModules.forEach(mod => {
         for (let i = 0; i < (mod.count || 1); i++) {
             const tempTask = { ...mod, variant: i, totalVariants: mod.count || 1 };
+            const gateEval = evaluateTaskEvidence(tempTask);
+            if (gateEval && gateEval.mode) {
+                tempTask.mode = gateEval.mode;
+            }
             const focal = resolveModuleFocalFeature(tempTask, sellingPoints, config);
             const task = {
                 ...mod,
+                mode: tempTask.mode,
                 includeText: mod.includeText !== false,
                 uniqueId: `${mod.id}_${i}`,
                 displayTitle: mod.count > 1 ? `${mod.title} 0${i + 1}` : mod.title,
@@ -2441,12 +4500,27 @@ function validateSortedIds(sortedIds, expectedIds) {
     return clean.length === expectedIds.length ? clean : null;
 }
 
-// 解析 data URL 图片，拆出 MIME 类型和 base64 数据。
+// 基于 Base64 魔数识别图片真实 MIME 类型，防御客户端扩展名与真实内容不一致。
+function detectMimeTypeFromBase64(b64, fallback = 'image/jpeg') {
+    if (!b64 || typeof b64 !== 'string') return fallback;
+    const clean = b64.trim();
+    if (clean.startsWith('/9j/')) return 'image/jpeg';
+    if (clean.startsWith('iVBORw0KGgo')) return 'image/png';
+    if (clean.startsWith('UklGR')) return 'image/webp';
+    if (clean.startsWith('R0lGOD')) return 'image/gif';
+    if (clean.startsWith('Qk')) return 'image/bmp';
+    return fallback;
+}
+
+// 解析 data URL 图片，拆出 MIME 类型和 base64 数据，并校准真实 MIME。
 function parseImageDataUrl(dataUrl) {
     if (!dataUrl || !dataUrl.includes(',')) return null;
+    const rawMime = dataUrl.split(';')[0].split(':')[1];
+    const data = dataUrl.split(',')[1];
+    const mimeType = detectMimeTypeFromBase64(data, rawMime);
     return {
-        mimeType: dataUrl.split(';')[0].split(':')[1],
-        data: dataUrl.split(',')[1]
+        mimeType,
+        data
     };
 }
 
@@ -2459,10 +4533,19 @@ async function imageUrlToDataUrl(src) {
     return await fileToDataUrl(blob);
 }
 
-// 确保图片对象包含模型调用需要的 mimeType 和 base64 data 字段。
+// 确保图片对象包含模型调用需要的 mimeType 和 base64 data 字段，并校准真实 MIME。
 async function ensureInlineImageData(image) {
     if (!image) return null;
-    if (image.data && image.mimeType) return image;
+    if (image.data && image.mimeType) {
+        const detected = detectMimeTypeFromBase64(image.data, image.mimeType);
+        if (detected !== image.mimeType) {
+            return {
+                ...image,
+                mimeType: detected
+            };
+        }
+        return image;
+    }
     const dataUrl = await imageUrlToDataUrl(image.base64 || image.imageSrc || '');
     const parsed = parseImageDataUrl(dataUrl);
     if (!parsed) return null;
@@ -2525,13 +4608,23 @@ function renderUploadedImagePreviews() {
             </div>
             <select onchange="updateImageRole(${index}, this.value)" class="mt-1 w-full text-[10px] border border-gray-200 rounded bg-white px-1 py-0.5 outline-none">
                 ${[
-                    ['primary', '主图'],
-                    ['angle', '角度/外观'],
-                    ['detail', '细节/材质'],
-                    ['scene', '场景参考'],
-                    ['spec', '尺寸/参数'],
-                    ['package', '包装/配件']
-                ].map(([value, label]) => `<option value="${value}" ${(img.role || (index === 0 ? 'primary' : 'angle')) === value ? 'selected' : ''}>${label}</option>`).join('')}
+                    ['hero', '主图 (Hero)'],
+                    ['front', '正面 (Front)'],
+                    ['back', '背面 (Back)'],
+                    ['side', '侧面 (Side)'],
+                    ['detail', '细节微距 (Detail)'],
+                    ['material', '材质工艺 (Material)'],
+                    ['accessory', '配件附件 (Accessory)'],
+                    ['package', '包装/清单 (Package)'],
+                    ['spec_label', '参数标贴 (Spec Label)'],
+                    ['dimension_reference', '尺寸参照 (Dimension)'],
+                    ['usage_scene', '使用场景 (Usage Scene)'],
+                    ['unknown', '未识别 (Unknown)']
+                ].map(([value, label]) => {
+                    const curRole = img.semanticRole || img.role || (index === 0 ? 'hero' : 'unknown');
+                    const isSelected = curRole === value || (index === 0 && (value === 'hero' || value === 'primary'));
+                    return `<option value="${value}" ${isSelected ? 'selected' : ''}>${label}</option>`;
+                }).join('')}
             </select>
             ${index > 0 ? `<button onclick="setPrimaryImage(${index})" title="设为主图"
                 class="absolute left-1 top-1 bg-white/90 text-blue-600 rounded px-1.5 py-0.5 text-[9px] font-black opacity-0 group-hover:opacity-100 transition-opacity">主图</button>` : ''}
@@ -2545,9 +4638,16 @@ function renderUploadedImagePreviews() {
 // 更新某张上传素材的角色，用于后续按模块优先选择参考图。
 function updateImageRole(index, role) {
     if (!Array.isArray(currentUploadedImages) || !currentUploadedImages[index]) return;
-    currentUploadedImages[index] = { ...currentUploadedImages[index], role };
-    if (index === 0 && role !== 'primary') {
-        currentUploadedImages[index].role = 'primary';
+    const isPrimary = index === 0;
+    const resolvedRole = isPrimary ? 'hero' : role;
+    currentUploadedImages[index] = {
+        ...currentUploadedImages[index],
+        role: resolvedRole === 'hero' ? 'primary' : resolvedRole,
+        semanticRole: resolvedRole,
+        isUserAssigned: true,
+        userConfirmed: true
+    };
+    if (index === 0 && role !== 'hero' && role !== 'primary') {
         showToast('第一张固定为主图角色', 'info');
     }
     renderUploadedImagePreviews();
@@ -2597,31 +4697,165 @@ function setDetailProductImage(imageDataUrl, filename = 'Imported Image', asPrim
     }
 }
 
-function clearDetailInputs() {
-    const nameInput = document.getElementById('productNameInput');
-    const pointsText = document.getElementById('sellingPointsText');
-    const factsText = document.getElementById('productFactsText');
-    const claimsText = document.getElementById('forbiddenClaimsText');
-    if (nameInput) nameInput.value = '';
-    if (pointsText) pointsText.value = '';
-    if (factsText) factsText.value = '';
-    if (claimsText) claimsText.value = '';
-    if (typeof showToast === 'function') showToast('已清空详情页输入内容', 'info');
+function resetDetailProjectState() {
+    // 1. 重置全局生成上下文 (任务、配置、商品事实、卖点、参考图)
+    globalGenContext = {
+        tasks: {},
+        config: null,
+        productFacts: null,
+        sellingPoints: '',
+        primaryImage: null,
+        angleImages: [],
+        uploadedImages: [],
+        longImageOrder: []
+    };
+
+    // 2. 清空当前上传素材与语义角色
+    currentUploadedImages = [];
+    currentUploadedBase64 = null;
+    if (typeof document !== 'undefined') {
+        const uploadEl = document.getElementById('imageUpload');
+        if (uploadEl) uploadEl.value = '';
+    }
+
+    // 3. 清空 DOM 输入字段
+    if (typeof document !== 'undefined') {
+        const nameInput = document.getElementById('productNameInput');
+        const pointsText = document.getElementById('sellingPointsText');
+        const factsText = document.getElementById('productFactsText');
+        const claimsText = document.getElementById('forbiddenClaimsText');
+        if (nameInput) nameInput.value = '';
+        if (pointsText) pointsText.value = '';
+        if (factsText) factsText.value = '';
+        if (claimsText) claimsText.value = '';
+    }
+
+    // 4. 重置模块重绘与版本历史、推荐方案
+    detailStrategyOverrides = {};
+    taskImageVersions = {};
+    currentRecommendedPlan = null;
+    if (typeof setUserExplicitlyClearedModules === 'function') setUserExplicitlyClearedModules(false); else userExplicitlyClearedModules = false;
+    activeInspectorTaskId = null;
+    currentSelectedSectionId = null;
+
+    // 5. 中止进行中的生成流
+    if (detailGenerationAbortController) {
+        try { detailGenerationAbortController.abort(); } catch (_) {}
+        detailGenerationAbortController = null;
+    }
+    isDetailGenerating = false;
+
+    // 6. 重置模块选中状态与张数
+    const targetModules = (typeof modules !== 'undefined' && Array.isArray(modules))
+        ? modules
+        : ((typeof globalThis !== 'undefined' && globalThis.modules) || []);
+    targetModules.forEach(m => {
+        m.active = false;
+        m.count = 1;
+    });
+
+    // 7. 清除本地草稿持久化
+    if (typeof clearStudioDraft === 'function') {
+        clearStudioDraft();
+    }
+
+    // 8. 刷新各区域 UI
+    if (typeof renderUploadedImagePreviews === 'function') renderUploadedImagePreviews();
+    if (typeof renderProductFactsCard === 'function') renderProductFactsCard(buildProductFacts());
+    if (typeof renderSectionTree === 'function') renderSectionTree();
+    if (typeof renderSectionInspector === 'function') renderSectionInspector();
+    if (typeof updateDetailFailureUI === 'function') updateDetailFailureUI();
+    if (typeof updatePublishReadinessUI === 'function') updatePublishReadinessUI();
+    if (typeof updateAutosaveStatusUI === 'function') updateAutosaveStatusUI('idle');
+
+    // 9. 清空中心画布与预览 DOM
+    if (typeof document !== 'undefined') {
+        const modulesContainer = document.getElementById('modulesResultContainer');
+        const hybridContainer = document.getElementById('dtcHybridContainer');
+        if (modulesContainer) modulesContainer.innerHTML = '';
+        if (hybridContainer) hybridContainer.innerHTML = '';
+        const progressContainer = document.getElementById('detailGenProgressContainer');
+        if (progressContainer) progressContainer.classList.add('hidden');
+        const handoffCard = document.getElementById('detailDeliveryHandoffCard');
+        if (handoffCard) handoffCard.classList.add('hidden');
+    }
+
+    if (typeof showToast === 'function') {
+        showToast('已重置详情页项目（已彻底清空素材、事实、生成任务与草稿）', 'info');
+    }
 }
 
-// 根据模块类型选择传给模型的图片素材，多角度模块会带上更多角度参考图。
+function clearDetailInputs() {
+    resetDetailProjectState();
+}
+
+// 根据模块类型选择传给模型的图片素材，智能排序并把最契合该模块角色的素材排在最前
 function getImagesForTask(task) {
-    const primaryImage = globalGenContext.primaryImage;
-    const angleImages = globalGenContext.angleImages || [];
-    const byRole = role => angleImages.filter(img => img.role === role);
-    let preferred = [];
-    if (task.id === 'm3' || task.id === 'm5') preferred = byRole('scene');
-    else if (task.id === 'm6' || task.id === 'm16') preferred = byRole('detail');
-    else if (task.id === 'm8' || task.id === 'm10') preferred = byRole('spec');
-    else if (task.id === 'm11' || task.id === 'm13' || task.id === 'm14') preferred = byRole('package');
-    else if (task.id === 'm4' || task.id === 'm15') preferred = byRole('angle');
-    const fallback = (task.id === 'm4' || task.id === 'm13') ? angleImages : [];
-    return primaryImage ? [primaryImage, ...preferred, ...fallback].slice(0, 6) : [];
+    const allImages = (Array.isArray(currentUploadedImages) && currentUploadedImages.length)
+        ? currentUploadedImages
+        : (Array.isArray(globalGenContext?.uploadedImages) && globalGenContext.uploadedImages.length
+            ? globalGenContext.uploadedImages
+            : [globalGenContext?.primaryImage, ...(globalGenContext?.angleImages || [])].filter(Boolean));
+
+    if (!allImages.length) return [];
+
+    const taskId = task.id || '';
+
+    // 按模块需求定义语义角色偏好排序
+    const rolePreferences = {
+        m4: ['front', 'back', 'side', 'angle', 'hero', 'primary'],
+        m6: ['detail', 'material', 'hero', 'front', 'primary'],
+        m8: ['dimension_reference', 'spec_label', 'front', 'hero', 'primary'],
+        m9: ['front', 'hero', 'primary'],
+        m10: ['spec_label', 'detail', 'hero', 'primary'],
+        m13: ['package', 'accessory', 'hero', 'primary'],
+        m16: ['accessory', 'detail', 'material', 'hero', 'primary'],
+        m17: ['detail', 'spec_label', 'hero', 'primary'],
+        m3: ['usage_scene', 'scene', 'hero', 'front', 'primary'],
+        m5: ['usage_scene', 'scene', 'hero', 'front', 'primary'],
+        m1: ['hero', 'primary', 'front'],
+        m2: ['hero', 'primary', 'front'],
+        m7: ['hero', 'primary', 'front'],
+        m11: ['package', 'hero', 'primary', 'front'],
+        m12: ['hero', 'primary', 'front', 'detail'],
+        m14: ['package', 'hero', 'primary'],
+        m15: ['hero', 'accessory', 'primary'],
+        m18: ['usage_scene', 'hero', 'primary']
+    };
+
+    const preferredRoles = rolePreferences[taskId] || ['hero', 'primary', 'front'];
+
+    // 评分排序：最契合模块偏好角色的排在最前
+    const scoredImages = allImages.map((img, idx) => {
+        const role = String(img.semanticRole || img.role || '').toLowerCase();
+        let rank = preferredRoles.indexOf(role);
+        if (rank === -1) {
+            if (role === 'primary' || img.isPrimary) rank = preferredRoles.indexOf('primary');
+            if (rank === -1) rank = 999;
+        }
+        return { img, rank, origIdx: idx };
+    });
+
+    scoredImages.sort((a, b) => {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        return a.origIdx - b.origIdx;
+    });
+
+    const ordered = scoredImages.map(item => item.img);
+
+    // 去重并限制最多 6 张
+    const seen = new Set();
+    const result = [];
+    for (const img of ordered) {
+        const key = img.id || img.base64?.slice(0, 40) || img.name;
+        if (!seen.has(key)) {
+            seen.add(key);
+            result.push(img);
+        }
+        if (result.length >= 6) break;
+    }
+
+    return result;
 }
 
 // 初始化模块选择网格，显示模块卡片、分类筛选、实时统计与紧凑控制底栏。
@@ -2630,13 +4864,49 @@ function initModules() {
     if (!grid) return;
     grid.innerHTML = '';
 
-    if (typeof updatePresetButtonsUI === 'function') {
-        updatePresetButtonsUI();
+    // 0. 同步渠道卡片高亮状态、商品事实审核卡片与 AI 推荐方案概要
+    const allChannelKeys = ['shopify', 'amazon', 'social', 'generic'];
+    allChannelKeys.forEach(k => {
+        const card = document.getElementById(`detail-channel-card-${k}`);
+        if (card) {
+            const isActive = (k === (currentDetailChannel || 'shopify'));
+            card.classList.toggle('border-indigo-600', isActive);
+            card.classList.toggle('bg-indigo-50/40', isActive);
+            card.classList.toggle('shadow-sm', isActive);
+            card.classList.toggle('border-slate-200', !isActive);
+            card.classList.toggle('bg-white', !isActive);
+            const checkIcon = card.querySelector ? card.querySelector('.channel-check-badge') : null;
+            if (checkIcon) checkIcon.classList.toggle('hidden', !isActive);
+        }
+    });
+
+    if (typeof renderProductFactsCard === 'function') {
+        renderProductFactsCard();
     }
 
     const targetModules = (typeof modules !== 'undefined' && Array.isArray(modules))
         ? modules
         : ((typeof globalThis !== 'undefined' && globalThis.modules) || []);
+
+    if (!currentRecommendedPlan && typeof buildRecommendedDetailPlan === 'function') {
+        try {
+            currentRecommendedPlan = buildRecommendedDetailPlan();
+        } catch (e) {}
+    }
+
+    if (currentRecommendedPlan && !targetModules.some(m => m.active) && !userExplicitlyClearedModules) {
+        if (typeof applyRecommendedDetailPlan === 'function') {
+            applyRecommendedDetailPlan(currentRecommendedPlan, { skipInitModules: true });
+        }
+    }
+
+    if (currentRecommendedPlan && typeof renderRecommendedPlanUI === 'function') {
+        renderRecommendedPlanUI(currentRecommendedPlan);
+    }
+
+    if (typeof updatePresetButtonsUI === 'function') {
+        updatePresetButtonsUI();
+    }
 
     const activeModules = targetModules.filter(m => m.active);
     const activeCount = activeModules.length;
@@ -2774,7 +5044,19 @@ function getCurrentStrategyTasks() {
     const config = getDetailConfig();
     if (!config) return null;
     const sellingPoints = document.getElementById('sellingPointsText')?.value || '';
-    const activeModules = modules.filter(m => m.active);
+    const targetModules = (typeof modules !== 'undefined' && Array.isArray(modules))
+        ? modules
+        : ((typeof globalThis !== 'undefined' && globalThis.modules) || []);
+    let activeModules = targetModules.filter(m => m.active);
+    if (!activeModules.length && !userExplicitlyClearedModules) {
+        if (!currentRecommendedPlan && typeof buildRecommendedDetailPlan === 'function') {
+            try { currentRecommendedPlan = buildRecommendedDetailPlan(); } catch (e) {}
+        }
+        if (currentRecommendedPlan && typeof applyRecommendedDetailPlan === 'function') {
+            applyRecommendedDetailPlan(currentRecommendedPlan);
+            activeModules = targetModules.filter(m => m.active);
+        }
+    }
     return applyStrategyOverrides(
         buildStrategyTasks(activeModules, sellingPoints, config),
         typeof detailStrategyOverrides === 'object' ? detailStrategyOverrides : {}
@@ -2877,6 +5159,7 @@ function applyStrategyPreview() {
 
 // 切换某个详情页模块的启用状态。
 function toggleModule(id) {
+    if (typeof setUserExplicitlyClearedModules === 'function') setUserExplicitlyClearedModules(false); else userExplicitlyClearedModules = false;
     const targetModules = (typeof modules !== 'undefined' && Array.isArray(modules))
         ? modules
         : ((typeof globalThis !== 'undefined' && globalThis.modules) || []);
@@ -2968,9 +5251,13 @@ async function ingestDetailImageFiles(files) {
                 ...parseImageDataUrl(base64)
             };
         }));
-        currentUploadedImages = [...currentUploadedImages, ...uploaded]
-            .slice(0, DETAIL_MAX_UPLOAD_IMAGES)
-            .map((img, index) => ({ ...img, isPrimary: index === 0, role: index === 0 ? 'primary' : img.role || 'angle' }));
+        const merged = [...currentUploadedImages, ...uploaded].slice(0, DETAIL_MAX_UPLOAD_IMAGES);
+        currentUploadedImages = resolveAssetSemanticRoles(merged).map((img, index) => ({
+            ...img,
+            isPrimary: index === 0,
+            physicalRole: index === 0 ? 'primary' : 'secondary',
+            role: index === 0 ? 'primary' : (img.isUserAssigned ? img.role : (img.semanticRole || img.role || 'angle'))
+        }));
         currentUploadedBase64 = currentUploadedImages[0]?.base64 || null;
         renderUploadedImagePreviews();
         const angleCount = Math.max(0, currentUploadedImages.length - 1);
@@ -3031,7 +5318,7 @@ async function generateSellingPoints() {
     btn.innerHTML = '<span class="loader w-3 h-3 border-2 border-blue-500 border-t-transparent mr-1"></span> 生成中...';
     btn.disabled = true;
 
-    const sellingPointImages = [getPrimaryUploadedImage(), ...getAngleUploadedImages().slice(0, 2)].filter(Boolean);
+    const sellingPointImages = [getPrimaryUploadedImage(), ...getAngleUploadedImages()].filter(Boolean);
     const currentProductName = productNameInput?.value.trim() || '';
     const currentSellingPoints = textArea?.value || '';
     const outputLanguage = getDetailConfig().language || 'English';
@@ -3072,7 +5359,11 @@ async function generateSellingPoints() {
         if (productNameInput && nextState.didFillProductName) {
             productNameInput.value = nextState.productName;
         }
-        textArea.value = nextState.sellingPoints;
+        if (nextState.didPreserveUserSellingPoints) {
+            showToast('已保留您手工编辑的核心卖点（未被AI覆盖）', 'info');
+        } else {
+            textArea.value = nextState.sellingPoints;
+        }
         const factsInput = document.getElementById('productFactsText');
         if (factsInput && !factsInput.value.trim() && nextState.productFacts) {
             factsInput.value = nextState.productFacts;
@@ -3082,6 +5373,28 @@ async function generateSellingPoints() {
             forbiddenInput.value = nextState.forbiddenClaims;
         }
         showToast('卖点提取成功', 'success');
+
+        // 更新并渲染商品事实卡片 (Step 3)
+        ensureGlobalGenContext();
+        const currentBrandCat = (typeof window !== 'undefined' && window.brandContextHub && window.brandContextHub.activeCategory) || '';
+        globalGenContext.productFacts = buildProductFacts({
+            productName: nextState.productName || productNameInput?.value || '',
+            category: currentBrandCat,
+            sellingPoints: textArea?.value || '',
+            productFacts: factsInput?.value || '',
+            forbiddenClaims: forbiddenInput?.value || ''
+        });
+        if (typeof renderProductFactsCard === 'function') {
+            renderProductFactsCard(globalGenContext.productFacts);
+        }
+
+        // 重新计算 AI 智能推荐方案 (Step 4)
+        if (typeof buildRecommendedDetailPlan === 'function') {
+            const plan = buildRecommendedDetailPlan({ productFacts: globalGenContext.productFacts });
+            if (plan && typeof applyRecommendedDetailPlan === 'function') {
+                applyRecommendedDetailPlan(plan);
+            }
+        }
 
         // AI 自动匹配画面风格与独立站排版风格
         const matchedStyle = applyRecommendedStyle(
@@ -3597,25 +5910,39 @@ function abortDetailGeneration() {
     return true;
 }
 
-// 获取当前所有生成失败、手动终止或缺少有效图片的模块任务
+// 获取当前所有生成失败或缺少有效图片的模块任务（严格排除主动取消状态）
 function getFailedModuleTasks() {
     if (!globalGenContext?.tasks) return [];
     return Object.values(globalGenContext.tasks).filter(task => {
         if (!task || !task.uniqueId) return false;
+        const overall = getTaskOverallStatus(task);
+        if (overall === 'cancelled') return false;
         const hasValidImage = Boolean(
             task.imageSrc &&
             (task.imageSrc.startsWith('data:image/') || task.imageSrc.startsWith('http'))
         );
-        return task.status === 'error' || task.status === 'cancelled' || task.isFallback || !hasValidImage;
+        return overall === 'error' || overall === 'failed' || task.isFallback || !hasValidImage;
     });
 }
 
-// 刷新失败提示条及工具栏重试按钮的状态
+// 获取当前被用户主动取消/终止但尚未完成的任务
+function getCancelledModuleTasks() {
+    if (!globalGenContext?.tasks) return [];
+    return Object.values(globalGenContext.tasks).filter(task => {
+        if (!task || !task.uniqueId) return false;
+        const overall = getTaskOverallStatus(task);
+        return overall === 'cancelled';
+    });
+}
+
+// 刷新失败提示条及工具栏重试/继续按钮的状态
 function updateDetailFailureUI() {
     const failedTasks = getFailedModuleTasks();
+    const cancelledTasks = getCancelledModuleTasks();
     const count = failedTasks.length;
+    const cancelledCount = cancelledTasks.length;
 
-    // 1. 顶部工具栏重试按钮
+    // 1. 顶部工具栏重试失败按钮
     const toolbarRetryBtn = document.getElementById('btnRetryFailedToolbar');
     const toolbarRetryText = document.getElementById('btnRetryFailedToolbarText');
     if (toolbarRetryBtn) {
@@ -3629,20 +5956,73 @@ function updateDetailFailureUI() {
         }
     }
 
-    // 2. 结果区失败警示条
+    // 2. 顶部工具栏继续已取消按钮
+    const toolbarContinueBtn = document.getElementById('btnContinueCancelledToolbar');
+    const toolbarContinueText = document.getElementById('btnContinueCancelledToolbarText');
+    if (toolbarContinueBtn) {
+        if (cancelledCount > 0) {
+            toolbarContinueBtn.classList.remove('hidden');
+            toolbarContinueBtn.classList.add('flex');
+            if (toolbarContinueText) toolbarContinueText.textContent = `继续生成剩余区块 (${cancelledCount})`;
+        } else {
+            toolbarContinueBtn.classList.add('hidden');
+            toolbarContinueBtn.classList.remove('flex');
+        }
+    }
+
+    // 3. 结果区警示条及独立操作按钮
     const alertBar = document.getElementById('detailFailureAlertBar');
     const alertMsg = document.getElementById('detailFailureAlertMsg');
+    const btnRetry = document.getElementById('btnRetryFailedImages');
+    const btnContinue = document.getElementById('btnContinueCancelledImages');
+    const btnContinueText = document.getElementById('btnContinueCancelledImagesText');
+
     if (alertBar) {
-        if (count > 0 && !alertBar.dataset.dismissed) {
+        if ((count > 0 || cancelledCount > 0) && !alertBar.dataset.dismissed) {
             alertBar.classList.remove('hidden');
             alertBar.classList.add('flex');
-            if (alertMsg) {
-                alertMsg.textContent = `检测到 ${count} 张模块图片生成失败或中断`;
+
+            if (count > 0 && cancelledCount > 0) {
+                alertBar.className = 'w-full bg-rose-50 border border-rose-200 px-3.5 py-2 rounded-xl flex items-center justify-between gap-3 text-xs shadow-2xs';
+                if (alertMsg) alertMsg.textContent = `检测到 ${count} 张模块图片失败，${cancelledCount} 个区块已停止`;
+                if (btnRetry) { btnRetry.classList.remove('hidden'); btnRetry.classList.add('flex'); }
+                if (btnContinue) {
+                    btnContinue.classList.remove('hidden');
+                    btnContinue.classList.add('flex');
+                    if (btnContinueText) btnContinueText.textContent = `继续生成剩余区块 (${cancelledCount})`;
+                }
+            } else if (count > 0) {
+                alertBar.className = 'w-full bg-rose-50 border border-rose-200 px-3.5 py-2 rounded-xl flex items-center justify-between gap-3 text-xs shadow-2xs';
+                if (alertMsg) alertMsg.textContent = `检测到 ${count} 张模块图片生成失败`;
+                if (btnRetry) { btnRetry.classList.remove('hidden'); btnRetry.classList.add('flex'); }
+                if (btnContinue) { btnContinue.classList.add('hidden'); btnContinue.classList.remove('flex'); }
+            } else {
+                // 仅有 cancelled 任务
+                alertBar.className = 'w-full bg-amber-50 border border-amber-200 px-3.5 py-2 rounded-xl flex items-center justify-between gap-3 text-xs shadow-2xs';
+                if (alertMsg) alertMsg.textContent = `已主动停止生成：还有 ${cancelledCount} 个区块未完成`;
+                if (btnRetry) { btnRetry.classList.add('hidden'); btnRetry.classList.remove('flex'); }
+                if (btnContinue) {
+                    btnContinue.classList.remove('hidden');
+                    btnContinue.classList.add('flex');
+                    if (btnContinueText) btnContinueText.textContent = `继续生成剩余区块 (${cancelledCount})`;
+                }
             }
         } else {
             alertBar.classList.add('hidden');
             alertBar.classList.remove('flex');
+            if (btnRetry) { btnRetry.classList.add('hidden'); btnRetry.classList.remove('flex'); }
+            if (btnContinue) { btnContinue.classList.add('hidden'); btnContinue.classList.remove('flex'); }
         }
+    }
+
+    // 4. 中断提示副文本
+    const alertMsgSub = document.getElementById('detailGenProgressText');
+    if (alertMsgSub && cancelledCount > 0 && count === 0) {
+        const completedCount = Object.values(globalGenContext?.tasks || {}).filter(t => {
+            const st = getTaskOverallStatus(t);
+            return st === 'success' || st === 'partial_success';
+        }).length;
+        alertMsgSub.textContent = `已停止生成：${completedCount} 个区块已完成，${cancelledCount} 个区块未开始`;
     }
 }
 
@@ -3654,6 +6034,44 @@ function dismissDetailFailureAlert() {
         alertBar.classList.remove('flex');
         alertBar.dataset.dismissed = 'true';
     }
+}
+
+// 重新生成某个模块的辅助任务（文案或 SEO）
+async function retryTaskAuxiliaryStep(uniqueId, stepType = 'copy') {
+    const task = globalGenContext?.tasks?.[uniqueId] || Object.values(globalGenContext?.tasks || {}).find(t => t.uniqueId === uniqueId || t.id === uniqueId);
+    if (!task) return false;
+    const { sellingPoints, config } = globalGenContext || {};
+    if (stepType === 'copy') {
+        setTaskSubStatus(task, { copy: 'running' });
+        showToast(`正在重试 [${task.title}] 文案生成...`, 'info');
+        delete task.dtcCopyError;
+        delete task.dtcCopyFallback;
+        const copyRes = await generateDtcSectionCopy(task, sellingPoints, config);
+        if (copyRes && !task.dtcCopyError) {
+            setTaskSubStatus(task, { copy: 'success' });
+            showToast(`[${task.title}] 文案生成成功！`, 'success');
+        } else {
+            setTaskSubStatus(task, { copy: 'failed' });
+            showToast(`[${task.title}] 文案重试失败`, 'error');
+        }
+    } else if (stepType === 'seo') {
+        setTaskSubStatus(task, { seo: 'running' });
+        showToast(`正在重试 [${task.title}] SEO 生成...`, 'info');
+        delete task.seoError;
+        const seoRes = await generateSEOMetadata(task, sellingPoints);
+        if (seoRes) {
+            setTaskSubStatus(task, { seo: 'success' });
+            showToast(`[${task.title}] SEO 元数据生成成功！`, 'success');
+        } else {
+            setTaskSubStatus(task, { seo: 'failed' });
+            showToast(`[${task.title}] SEO 重试失败`, 'error');
+        }
+    }
+    if (typeof currentDetailPresentationMode !== 'undefined' && currentDetailPresentationMode === 'hybrid' && typeof renderDtcHybridPreview === 'function') {
+        renderDtcHybridPreview();
+    }
+    updateDetailFailureUI();
+    return true;
 }
 
 // 一键重新生成所有失败或中断的模块图片，保留已成功的图片
@@ -3775,6 +6193,125 @@ async function retryFailedModuleImages() {
     }
 }
 
+// 一键继续调度当前被主动终止/取消的模块，保留已成功的模块
+async function continueCancelledDetailTasks() {
+    if (isDetailGenerating) {
+        showToast('当前已有生成任务正在进行，请先终止或等待完成', 'warning');
+        return;
+    }
+
+    const cancelledTasks = getCancelledModuleTasks();
+    if (!cancelledTasks.length) {
+        showToast('当前没有待继续的已取消区块', 'info');
+        updateDetailFailureUI();
+        return;
+    }
+
+    const totalCancelled = cancelledTasks.length;
+    const concurrency = (typeof CONCURRENCY_LIMIT !== 'undefined' && CONCURRENCY_LIMIT) ? CONCURRENCY_LIMIT : 2;
+    const stagger = (typeof STAGGER_DELAY !== 'undefined' && STAGGER_DELAY) ? STAGGER_DELAY : 2000;
+    const logMsg = `继续生成已取消区块 | 共 ${totalCancelled} 个 | 并发控制: ${concurrency}`;
+    console.log(`%c[详情页] ${logMsg}`, "color: #d97706; font-weight: bold;");
+    remoteLog(logMsg);
+
+    const alertBar = document.getElementById('detailFailureAlertBar');
+    if (alertBar) delete alertBar.dataset.dismissed;
+
+    detailGenerationAbortController = new AbortController();
+    isDetailGenerating = true;
+    const signal = detailGenerationAbortController.signal;
+    updateDetailGeneratingUI(true, 0, totalCancelled);
+
+    const activeTasks = [];
+    let completedCount = 0;
+    let continueSuccessCount = 0;
+    let continueErrorCount = 0;
+
+    for (let i = 0; i < cancelledTasks.length; i++) {
+        if (signal.aborted) break;
+
+        if (activeTasks.length >= concurrency) {
+            await Promise.race(activeTasks);
+        }
+        if (signal.aborted) break;
+
+        const task = cancelledTasks[i];
+        const submitMsg = `正在继续生成模块 [${task.title}] (${i + 1}/${totalCancelled})`;
+        console.log(`%c[详情页] ${submitMsg}`, "color: #8b5cf6;");
+        remoteLog(submitMsg);
+
+        const taskPromise = (async () => {
+            try {
+                const result = await generateSingleWrap(task.uniqueId, false, '', signal);
+                if (result?.status === 'success' || result?.status === 'partial_success') {
+                    continueSuccessCount++;
+                    remoteLog(`模块 [${task.title}] 继续生成成功`);
+                } else if (result?.status === 'cancelled') {
+                    // cancelled
+                } else {
+                    continueErrorCount++;
+                    remoteLog(`模块 [${task.title}] 继续生成失败`);
+                }
+            } catch (err) {
+                if (err.name === 'AbortError' || signal.aborted) {
+                    task.status = 'cancelled';
+                    setModuleStatus(task.uniqueId, 'cancelled');
+                    return;
+                }
+                continueErrorCount++;
+                console.error(`Continue task ${task.uniqueId} failed:`, err);
+                setModuleStatus(task.uniqueId, 'error');
+                remoteLog(`模块 [${task.title}] 生成异常: ${err.message}`);
+            } finally {
+                completedCount++;
+                updateDetailGeneratingUI(isDetailGenerating, completedCount, totalCancelled);
+            }
+        })();
+
+        activeTasks.push(taskPromise);
+        taskPromise.finally(() => {
+            const idx = activeTasks.indexOf(taskPromise);
+            if (idx > -1) activeTasks.splice(idx, 1);
+        });
+
+        if (i < cancelledTasks.length - 1) {
+            try {
+                await abortableDelay(stagger, signal);
+            } catch (err) {
+                if (err.name === 'AbortError' || signal.aborted) break;
+            }
+        }
+    }
+
+    await Promise.allSettled(activeTasks);
+
+    isDetailGenerating = false;
+    updateDetailGeneratingUI(false);
+    updateDetailFailureUI();
+
+    if (signal.aborted) {
+        showToast(`继续生成已手动终止（已完成 ${continueSuccessCount} 个）`, 'info');
+        remoteLog(`详情页继续生成终止 | 已完成 ${continueSuccessCount} 个`);
+    } else {
+        const remainingCancelled = getCancelledModuleTasks().length;
+        const remainingFailed = getFailedModuleTasks().length;
+        if (remainingCancelled === 0 && remainingFailed === 0) {
+            showToast(`🎉 所有待生成区块已全部完成！(共 ${continueSuccessCount} 个)`, 'success');
+            remoteLog(`详情页所有区块继续生成成功 | 共 ${continueSuccessCount} 个`);
+        } else {
+            showToast(`已完成 ${continueSuccessCount} 个区块，剩余 ${remainingCancelled} 个取消，${remainingFailed} 个失败`, 'warning');
+            remoteLog(`详情页继续生成结束 | 完成 ${continueSuccessCount} 个，取消 ${remainingCancelled} 个，失败 ${remainingFailed} 个`);
+        }
+        if (continueSuccessCount > 0) {
+            saveDetailProjectToHistory();
+        }
+    }
+
+    if (currentDetailPresentationMode === 'hybrid' && typeof renderDtcHybridPreview === 'function') {
+        renderDtcHybridPreview();
+    }
+}
+
 // 启动整套详情页生成流程：校验输入、创建任务队列、并发生成模块并渲染结果区。
 async function generateAIPage() {
     if (isDetailGenerating) {
@@ -3782,7 +6319,19 @@ async function generateAIPage() {
         return;
     }
 
-    const activeModules = modules.filter(m => m.active);
+    const targetModules = (typeof modules !== 'undefined' && Array.isArray(modules))
+        ? modules
+        : ((typeof globalThis !== 'undefined' && globalThis.modules) || []);
+    let activeModules = targetModules.filter(m => m.active);
+    if (!activeModules.length && !userExplicitlyClearedModules) {
+        if (!currentRecommendedPlan && typeof buildRecommendedDetailPlan === 'function') {
+            try { currentRecommendedPlan = buildRecommendedDetailPlan(); } catch (e) {}
+        }
+        if (currentRecommendedPlan && typeof applyRecommendedDetailPlan === 'function') {
+            applyRecommendedDetailPlan(currentRecommendedPlan);
+            activeModules = targetModules.filter(m => m.active);
+        }
+    }
     if (!activeModules.length) { showToast('请至少选择一个模块', 'error'); return; }
     const primaryImage = getPrimaryUploadedImage();
     const angleImages = getAngleUploadedImages();
@@ -4087,16 +6636,192 @@ function transferDetailToAds() {
     }
 }
 
+/**
+ * 格式化用户友好的详情页生图异常文案，禁止泄露后端裸异常堆栈或敏感 URL
+ */
+function formatFriendlyDetailErrorMessage(error) {
+    if (!error) return "AI 生成失败，请稍后重试";
+    const raw = typeof error === 'string' ? error : (error.message || String(error));
+
+    // 1. 鉴权与配置错误
+    if (raw.includes("401") || raw.includes("鉴权失败") || raw.includes("API Key")) {
+        return "AI 服务商鉴权失败 (401)，请在设置中检查 API Key 是否有效";
+    }
+    if (raw.includes("403") || raw.includes("Forbidden") || raw.includes("权限")) {
+        return "AI 服务商访问权限不足 (403)，请在设置中检查模型配置";
+    }
+    if (raw.includes("404") || raw.includes("Not Found")) {
+        return "AI 模型或接口不存在 (404)，请在设置中确认模型名称";
+    }
+    // 2. 限流或配额
+    if (raw.includes("429") || raw.includes("Quota") || raw.includes("Rate limit") || raw.includes("频繁") || raw.includes("额度")) {
+        return "AI 请求过于频繁或额度不足 (429)，请稍后重试或检查账户余额";
+    }
+    // 3. 参数或图片格式问题
+    if (raw.includes("400") || raw.includes("422") || raw.includes("bad_request") || raw.includes("MIME")) {
+        return "AI 请求参数或图片素材不兼容，请更换参考图或检查提示词";
+    }
+    // 4. 超时与网络
+    if (raw.includes("504") || raw.includes("Timeout") || raw.includes("timed out") || raw.includes("ETIMEDOUT")) {
+        return "AI 上游网关响应超时，所有自动重试均已完成，请稍后重新生成";
+    }
+    if (raw.includes("502") || raw.includes("503") || raw.includes("Bad Gateway") || raw.includes("Service Unavailable") || raw.includes("ECONNRESET") || raw.includes("网络")) {
+        return "上游 AI 服务繁忙或连接中断，所有自动重试均已完成，请稍后重新生成";
+    }
+    // 5. 过滤敏感堆栈与 URL 泄露
+    if (raw.includes("http://") || raw.includes("https://") || raw.includes("Traceback") || raw.includes("File \"") || raw.includes("line ")) {
+        return "AI 响应异常，请点击按钮重新生成此模块";
+    }
+
+    if (raw.length < 50 && !/[{}\[\]<>]/.test(raw)) {
+        return raw;
+    }
+    return "AI 生成遇到异常，请点击下方按钮重新生成";
+}
+
+/**
+ * 实时感知后端 AI 重试事件 (ai_retry)，同步更新任务状态与卡片重试提示
+ */
+function handleDetailAIRetryEvent(eventData) {
+    if (!eventData) return;
+    const msg = typeof eventData.message === 'object' ? eventData.message : {};
+    const operationId = msg.operation_id || eventData.operation_id;
+    const attempt = msg.attempt ?? eventData.retry;
+    const maxAttempts = msg.max_attempts;
+    const statusText = msg.status_text || (attempt && maxAttempts ? `接口响应异常，正在自动重试（${attempt}/${maxAttempts - 1}）` : '接口响应异常，正在自动重试...');
+
+    const tasksList = typeof getDetailTasksList === 'function' ? getDetailTasksList() : Object.values(globalGenContext?.tasks || {});
+    const task = tasksList.find(t =>
+        t.clientOperationKey === operationId ||
+        t.uniqueId === operationId ||
+        t.id === operationId
+    );
+
+    if (task) {
+        task.retryStatusText = statusText;
+        if (attempt !== undefined) task.retryAttempt = attempt;
+        if (maxAttempts !== undefined) task.retryMaxAttempts = maxAttempts;
+
+        const resolvedId = task.uniqueId || task.id;
+        const contentDiv = document.getElementById(`content-mod-${resolvedId}`);
+        if (contentDiv && task.status !== 'success') {
+            const existingNotice = contentDiv.querySelector('.detail-retry-notice');
+            if (existingNotice) {
+                existingNotice.innerHTML = `<i class="ph-bold ph-arrows-clockwise animate-spin text-amber-500"></i><span>${detailEscapeHtml(statusText)}</span>`;
+            } else {
+                const noticeEl = document.createElement('div');
+                noticeEl.className = 'detail-retry-notice mt-2 text-xs font-semibold text-amber-600 flex items-center justify-center gap-1.5 animate-pulse';
+                noticeEl.innerHTML = `<i class="ph-bold ph-arrows-clockwise animate-spin text-amber-500"></i><span>${detailEscapeHtml(statusText)}</span>`;
+                contentDiv.appendChild(noticeEl);
+            }
+        }
+    }
+}
+
+let detailEventSource = null;
+
+function connectDetailEventStream(options = {}) {
+    if (detailEventSource) return;
+    const EventSourceClass = options.EventSourceClass
+        || (typeof window !== "undefined" && window.EventSource)
+        || (typeof EventSource !== "undefined" ? EventSource : null);
+    if (!EventSourceClass) return;
+
+    try {
+        const streamUrl = `${API_BASE}/api/settings/logs/stream`;
+        detailEventSource = new EventSourceClass(streamUrl);
+        detailEventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.event === 'ai_retry') {
+                    handleDetailAIRetryEvent(data);
+                }
+            } catch (_err) {}
+        };
+        detailEventSource.onerror = () => {};
+    } catch (_err) {}
+}
+
+function disconnectDetailEventStream() {
+    if (detailEventSource) {
+        try {
+            detailEventSource.close();
+        } catch (_err) {}
+        detailEventSource = null;
+    }
+}
+
+/**
+ * 手动重试当前任务（复用原有 clientOperationKey，新生成 client_request_id）
+ */
+async function retrySingleModuleTask(uniqueId) {
+    const task = typeof findDetailTask === 'function' ? findDetailTask(uniqueId) : globalGenContext?.tasks?.[uniqueId];
+    if (!task) return;
+    if (!task.clientOperationKey) {
+        task.clientOperationKey = task.uniqueId || uniqueId;
+    }
+    return await generateSingleWrap(uniqueId, false, '', null, { isRetry: true });
+}
+
+/**
+ * 重新生成单模块（分配全新 clientOperationKey 与 client_request_id）
+ */
+async function regenerateSingleModuleTask(uniqueId) {
+    const task = typeof findDetailTask === 'function' ? findDetailTask(uniqueId) : globalGenContext?.tasks?.[uniqueId];
+    if (!task) return;
+    task.clientOperationKey = (typeof generateUuid === 'function')
+        ? generateUuid()
+        : ('op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+    task.error = '';
+    delete task.retryStatusText;
+    delete task.retryAttempt;
+    return await generateSingleWrap(uniqueId, false, '', null, { isRegenerate: true });
+}
+
 // 生成或重绘单个详情页模块图片，失败时降级为本地 HTML/CSS 占位图。
-async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = '', signal = null) {
+async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = '', signal = null, options = {}) {
     const task = globalGenContext?.tasks?.[uniqueId] || Object.values(globalGenContext?.tasks || {}).find(t => t.uniqueId === uniqueId || t.id === uniqueId);
     if (!task) return;
     const resolvedId = task.uniqueId || uniqueId;
 
+    if (!task.clientOperationKey || options.isRegenerate) {
+        task.clientOperationKey = (typeof generateUuid === 'function')
+            ? generateUuid()
+            : (task.uniqueId || uniqueId);
+    }
+
     if (signal?.aborted) {
-        task.status = 'cancelled';
+        setTaskSubStatus(task, { overall: 'cancelled', image: 'cancelled' });
         setModuleStatus(resolvedId, 'cancelled');
         return { status: 'cancelled', task };
+    }
+
+    // Task-level final Evidence Guard (不可绕过的终极事实门禁)
+    try {
+        assertTaskGenerationAllowed(task, {
+            facts: getVerifiedProductFacts(),
+            assets: (typeof globalGenContext !== 'undefined' && globalGenContext?.uploadedImages)
+                ? globalGenContext.uploadedImages
+                : ((typeof currentUploadedImages !== 'undefined') ? currentUploadedImages : []),
+            config: typeof globalGenContext !== 'undefined' ? globalGenContext?.config : {}
+        });
+    } catch (gateErr) {
+        const errorMsg = gateErr.message;
+        task.error = errorMsg;
+        task.status = 'error';
+        setTaskSubStatus(task, { overall: 'failed', image: 'failed' });
+        setModuleStatus(resolvedId, 'error');
+        const errContentDiv = document.getElementById(`content-mod-${resolvedId}`);
+        if (errContentDiv) {
+            errContentDiv.innerHTML = `<div class="p-4 text-center text-xs text-rose-600 font-bold bg-rose-50 rounded-lg border border-rose-200">
+                <i class="ph-bold ph-shield-warning text-lg mb-1 block"></i>
+                <span>${detailEscapeHtml(errorMsg)}</span>
+            </div>`;
+            errContentDiv.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
+        }
+        remoteLog(`[门禁拦截] 模块 [${task.title}] 未通过事实门禁: ${errorMsg}`);
+        updateDetailFailureUI();
+        return { status: 'error', task, error: errorMsg };
     }
 
     remoteLog(`开始渲染模块: ${task.title}`);
@@ -4108,7 +6833,7 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
     if (!contentDiv) return;
 
     setModuleStatus(resolvedId, 'loading');
-    task.status = 'loading';
+    setTaskSubStatus(task, { overall: 'running', image: 'running' });
     task.error = '';
     contentDiv.innerHTML = `<span class="loader border-blue-500 border-t-transparent w-8 h-8 mb-3"></span><span class="text-sm text-gray-500 font-medium">AI引擎构图中...</span>`;
     document.getElementById(`regen-btn-${resolvedId}`)?.classList.add('hidden');
@@ -4126,7 +6851,7 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
     const angleRule = isAngleModule
         ? (hasAngleReferences
             ? `9. Multi-angle mode: I provided real angle reference images after the first primary image. Use these references faithfully to build a multi-angle collage. Do not hallucinate different product variants.`
-            : `9. Multi-angle mode: Only one primary image is provided. Generate plausible front, side, back, detail, and perspective views from the primary image while preserving the exact product identity, proportions, materials, and colors.`)
+            : `9. Multi-angle mode: Only one reference image is provided. Faithfully preserve the exact product identity, proportions, materials, and colors without altering or morphing physical features.`)
         : '';
 
     let prompt = buildModuleGenerationPrompt(task, sellingPoints, config, promptAdjustment);
@@ -4148,11 +6873,19 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
 
     try {
         // 1. 优先调用核心且昂贵的生图服务，与次要的文案/SEO任务解耦
-        const imgRes = await callAI("image", payload, { signal });
+        const imgRes = await callAI("image", payload, {
+            signal,
+            taskId: resolvedId,
+            clientOperationKey: task.clientOperationKey
+        });
         const imagePart = imgRes.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
         if (!imagePart?.inlineData) {
             throw new Error("No image data in response");
         }
+
+        delete task.retryStatusText;
+        delete task.retryAttempt;
+        delete task.retryMaxAttempts;
 
         let generatedSrc = `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
 
@@ -4167,9 +6900,11 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
                 if (compRes && compRes.changed && compRes.dataUrl) {
                     generatedSrc = compRes.dataUrl;
                     task.compressedStats = compRes;
+                    setTaskSubStatus(task, { compression: 'success' });
                 }
             } catch (cErr) {
                 console.warn('[WebP] Module auto compression fallback to raw:', cErr);
+                setTaskSubStatus(task, { compression: 'failed' });
             }
         }
 
@@ -4177,17 +6912,47 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
         contentDiv.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
         contentDiv.style.padding = '0';
         task.imageSrc = generatedSrc;
-        task.status = 'success';
         task.isFallback = false;
+        setTaskSubStatus(task, { image: 'success' });
         setModuleStatus(uniqueId, 'success');
 
         // 2. 辅助文本与 SEO 元数据渐进增强，使用 Promise.allSettled 隔离失败，确保生图产物绝不回滚
         const auxPromises = [];
         if (!skipSEO) {
-            auxPromises.push(generateSEOMetadata(task, sellingPoints, { signal }));
+            setTaskSubStatus(task, { seo: 'running' });
+            auxPromises.push(
+                generateSEOMetadata(task, sellingPoints, { signal })
+                    .then(res => {
+                        if (res) {
+                            setTaskSubStatus(task, { seo: 'success' });
+                        } else {
+                            setTaskSubStatus(task, { seo: 'failed' });
+                        }
+                        return res;
+                    })
+                    .catch(err => {
+                        setTaskSubStatus(task, { seo: 'failed' });
+                        throw err;
+                    })
+            );
         }
-        if (currentDetailPresentationMode === 'hybrid') {
-            auxPromises.push(generateDtcSectionCopy(task, sellingPoints, config, { signal }));
+        if (typeof currentDetailPresentationMode !== 'undefined' && currentDetailPresentationMode === 'hybrid') {
+            setTaskSubStatus(task, { copy: 'running' });
+            auxPromises.push(
+                generateDtcSectionCopy(task, sellingPoints, config, { signal })
+                    .then(res => {
+                        if (res && !task.dtcCopyError) {
+                            setTaskSubStatus(task, { copy: 'success' });
+                        } else {
+                            setTaskSubStatus(task, { copy: 'failed' });
+                        }
+                        return res;
+                    })
+                    .catch(err => {
+                        setTaskSubStatus(task, { copy: 'failed' });
+                        throw err;
+                    })
+            );
         }
         if (auxPromises.length > 0) {
             const auxResults = await Promise.allSettled(auxPromises);
@@ -4201,6 +6966,7 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
     } catch (error) {
         if (error.name === 'AbortError' || signal?.aborted) {
             remoteLog(`模块 [${task.title}] 生成被用户手动终止`);
+            setTaskSubStatus(task, { overall: 'cancelled', image: 'cancelled' });
             task.status = 'cancelled';
             task.isFallback = false;
             task.error = '生成已终止';
@@ -4217,22 +6983,30 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
 
         console.error(`[AI Image Generation Error] Module [${task.title}]:`, error);
         remoteLog(`模块 [${task.title}] 生图失败: ${error.message || error}`);
+        setTaskSubStatus(task, { overall: 'failed', image: 'failed' });
         task.status = 'error';
         task.isFallback = false;
         task.error = error.message || String(error);
         task.imageSrc = '';
         setModuleStatus(resolvedId, 'error');
 
-        const errMsg = detailEscapeHtml(error.message || '模型调用失败，请检查设置中的图片模型');
+        const friendlyMsg = formatFriendlyDetailErrorMessage(error);
+        const escapedFriendlyMsg = detailEscapeHtml(friendlyMsg);
         contentDiv.innerHTML = `
             <div class="w-full h-full flex flex-col items-center justify-center text-xs text-red-500 p-6 text-center bg-red-50/40 rounded-xl border border-dashed border-red-200">
                 <i class="ph-bold ph-warning-circle text-3xl mb-2 text-red-500 animate-pulse"></i>
                 <span class="font-bold text-slate-800 text-sm mb-1">图片生成失败</span>
-                <p class="text-[11px] text-red-600 max-w-xs break-words mb-3">${errMsg}</p>
-                <button type="button" onclick="generateSingleWrap('${resolvedId}')" class="px-3 py-1.5 bg-white border border-red-200 hover:border-red-300 hover:bg-red-50 text-red-600 rounded-lg text-xs font-medium transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
-                    <i class="ph-bold ph-arrows-clockwise"></i>
-                    <span>点击重新生成此模块</span>
-                </button>
+                <p class="detail-error-message text-[11px] text-red-600 max-w-xs break-words mb-3">${escapedFriendlyMsg}</p>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="retrySingleModuleTask('${resolvedId}')" class="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-medium transition-all shadow-sm flex items-center gap-1 cursor-pointer">
+                        <i class="ph-bold ph-arrows-clockwise"></i>
+                        <span>重试</span>
+                    </button>
+                    <button type="button" onclick="regenerateSingleModuleTask('${resolvedId}')" class="px-2.5 py-1.5 bg-white border border-red-200 hover:border-red-300 hover:bg-red-50 text-red-600 rounded-lg text-xs font-medium transition-all shadow-sm flex items-center gap-1 cursor-pointer">
+                        <i class="ph-bold ph-sparkle"></i>
+                        <span>点击重新生成此模块</span>
+                    </button>
+                </div>
             </div>`;
         if (!skipSEO) {
             try {
@@ -4247,13 +7021,14 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
     task.seo = getModuleSeo(resolvedId);
     renderModuleQualityPanel(resolvedId);
     updateDetailFailureUI();
-    if (task.status === 'success') {
+    const overallStatus = getTaskOverallStatus(task);
+    if (overallStatus === 'success' || overallStatus === 'partial_success') {
         saveDetailProjectToHistory();
     }
-    if (currentDetailPresentationMode === 'hybrid' && currentDetailResultView === 'hybrid' && typeof renderDtcHybridPreview === 'function') {
+    if (typeof currentDetailPresentationMode !== 'undefined' && currentDetailPresentationMode === 'hybrid' && currentDetailResultView === 'hybrid' && typeof renderDtcHybridPreview === 'function') {
         renderDtcHybridPreview();
     }
-    return { status: task.status, task };
+    return { status: task.status, overallStatus, task };
 }
 
 // 在图片模型失败时渲染通用降级模块，保证页面仍有可下载的占位图。
@@ -4372,9 +7147,54 @@ async function downloadAllModules() {
     showToast('全部下载完毕！', 'success');
 }
 
-// 标准化历史任务，兼容旧记录中缺少文案模式字段的情况。
+// 标准化历史任务，兼容旧记录中缺少文案模式字段或旧版 string 状态的情况。
 function normalizeRestoredDetailTask(task = {}) {
-    return { ...task, includeText: task.includeText !== false };
+    const rawStatus = task.status;
+    let statusObj;
+    if (task.subStatus && typeof task.subStatus === 'object') {
+        statusObj = { ...task.subStatus };
+    } else if (rawStatus && typeof rawStatus === 'object') {
+        statusObj = {
+            overall: rawStatus.overall || 'pending',
+            image: rawStatus.image || 'pending',
+            compression: rawStatus.compression || 'skipped',
+            seo: rawStatus.seo || 'skipped',
+            copy: rawStatus.copy || 'skipped',
+            upload: rawStatus.upload || 'idle'
+        };
+    } else {
+        const str = String(rawStatus || 'pending');
+        const hasImage = Boolean(task.imageSrc);
+        const isError = str === 'error' || str === 'failed';
+        const isCancelled = str === 'cancelled';
+        const isRunning = str === 'loading' || str === 'running';
+
+        const imageSub = (hasImage || str === 'success' || str === 'partial_success')
+            ? 'success'
+            : (isError ? 'failed' : (isCancelled ? 'cancelled' : (isRunning ? 'running' : 'pending')));
+        const hasSeo = Boolean(task.seo && (task.seo.titleTarget || task.seo.titleZh || task.seo.altTarget));
+        const hasCopy = Boolean(task.dtcCopy && (task.dtcCopy.headline || task.dtcCopy.tagline || task.dtcCopy.subheadline));
+        const hasUploaded = Boolean(task.remoteImageUrl || (task.remoteImageUrls && Object.keys(task.remoteImageUrls).length > 0));
+
+        statusObj = {
+            image: imageSub,
+            compression: task.compressedStats ? 'success' : 'skipped',
+            seo: hasSeo ? 'success' : 'skipped',
+            copy: hasCopy ? 'success' : 'skipped',
+            upload: hasUploaded ? 'success' : 'idle'
+        };
+        statusObj.overall = (typeof computeTaskOverallStatus === 'function')
+            ? computeTaskOverallStatus(statusObj)
+            : (imageSub === 'success' ? (hasCopy && hasSeo ? 'success' : 'partial_success') : imageSub);
+    }
+
+    const legacyStatus = statusObj.overall === 'failed' ? 'error' : statusObj.overall;
+    return {
+        ...task,
+        includeText: task.includeText !== false,
+        status: legacyStatus,
+        subStatus: statusObj
+    };
 }
 
 // 详情页生成成功后自动保存全案项目快照至历史记录
@@ -4403,7 +7223,7 @@ function saveDetailProjectToHistory() {
             }
         }
     } catch (e) {
-        console.error('Auto save detail project to history failed:', e);
+        console.warn('保存详情全案至历史失败:', e);
     }
 }
 
@@ -4411,27 +7231,39 @@ function saveDetailProjectToHistory() {
 function collectCurrentRenderProject(finalImage = '') {
     if (!globalGenContext) return null;
     const taskEntries = Object.entries(globalGenContext.tasks || {});
-    const modulesSnapshot = taskEntries.map(([id, task]) => ({
-        id,
-        title: task.title,
-        subtitle: task.subtitle,
-        displayTitle: task.displayTitle,
-        prompt: task.prompt,
-        variant: task.variant,
-        totalVariants: task.totalVariants,
-        includeText: task.includeText !== false,
-        status: task.status || 'pending',
-        isFallback: !!task.isFallback,
-        error: task.error || '',
-        repaintPrompt: task.repaintPrompt || getModulePromptAdjustment(id),
-        imageSrc: getModuleImageSrc(id) || task.imageSrc || '',
-        remoteImageUrl: task.remoteImageUrl || '',
-        remoteImageUrls: task.remoteImageUrls ? { ...task.remoteImageUrls } : {},
-        activeStorageTarget: task.activeStorageTarget || '',
-        originalImageSrc: task.originalImageSrc || '',
-        seo: getModuleSeo(id),
-        dtcCopy: task.dtcCopy || null
-    }));
+    const modulesSnapshot = taskEntries.map(([id, task]) => {
+        const subStatus = task.subStatus ? { ...task.subStatus } : {
+            overall: task.status || 'pending',
+            image: (task.imageSrc || task.status === 'success') ? 'success' : (task.status === 'error' ? 'failed' : (task.status === 'cancelled' ? 'cancelled' : 'pending')),
+            compression: task.compressedStats ? 'success' : 'skipped',
+            seo: (task.seo && (task.seo.titleTarget || task.seo.titleZh)) ? 'success' : 'skipped',
+            copy: (task.dtcCopy && (task.dtcCopy.headline || task.dtcCopy.tagline)) ? 'success' : 'skipped',
+            upload: (task.remoteImageUrl || (task.remoteImageUrls && Object.keys(task.remoteImageUrls).length)) ? 'success' : 'idle'
+        };
+        return {
+            id,
+            title: task.title,
+            subtitle: task.subtitle,
+            displayTitle: task.displayTitle,
+            prompt: task.prompt,
+            variant: task.variant,
+            totalVariants: task.totalVariants,
+            includeText: task.includeText !== false,
+            status: task.status || 'pending',
+            subStatus,
+            isFallback: !!task.isFallback,
+            error: task.error || '',
+            repaintPrompt: task.repaintPrompt || getModulePromptAdjustment(id),
+            imageSrc: getModuleImageSrc(id) || task.imageSrc || '',
+            remoteImageUrl: task.remoteImageUrl || '',
+            remoteImageUrls: task.remoteImageUrls ? { ...task.remoteImageUrls } : {},
+            activeStorageTarget: task.activeStorageTarget || '',
+            originalImageSrc: task.originalImageSrc || '',
+            seo: getModuleSeo(id),
+            dtcCopy: task.dtcCopy || null
+        };
+    });
+    const verifiedFacts = getVerifiedProductFacts();
     return {
         version: 2,
         kind: 'detail-page-project',
@@ -4448,11 +7280,15 @@ function collectCurrentRenderProject(finalImage = '') {
             base64: img.base64,
             mimeType: img.mimeType,
             isPrimary: !!img.isPrimary,
-            role: img.role || ''
+            role: img.role || '',
+            semanticRole: img.semanticRole || img.role || '',
+            isUserAssigned: Boolean(img.isUserAssigned)
         })),
         sellingPoints: globalGenContext.sellingPoints || '',
         productName: globalGenContext.config?.productName || '',
-        productFacts: globalGenContext.config?.productFacts || '',
+        productFacts: serializeVerifiedProductFactsForAI(verifiedFacts),
+        rawProductFacts: (typeof document !== 'undefined' ? document.getElementById('productFactsText')?.value.trim() : '') || '',
+        verifiedFacts: verifiedFacts,
         forbiddenClaims: globalGenContext.config?.forbiddenClaims || '',
         config: globalGenContext.config || {},
         longImageOrder: (globalGenContext.longImageOrder || []).slice(),
@@ -4625,6 +7461,9 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
 // ====== 长图拖拽排版台逻辑 ======
 // 打开长图排版台，并在打开前刷新模块排序列表和预览画布。
 function openLongImageBuilder() {
+    if (typeof syncEditorOrderToLongImage === 'function') {
+        syncEditorOrderToLongImage();
+    }
     if (!globalGenContext || !globalGenContext.longImageOrder.length) {
         showToast('尚未生成任何视觉模块：请先在左侧勾选所需模块并点击【一键生成详情页】', 'error'); return;
     }
@@ -5175,7 +8014,7 @@ function handleModulePickerUpload(event) {
 function renderDtcImagePlate(imgSrc, title, isZh, aspectClass = 'aspect-square', roundedClass = 'rounded-2xl', extraWrapClass = '', taskId = '') {
     const escTitle = detailEscapeHtml(title || (isZh ? '模块大图' : 'Product Detail'));
     return `
-    <div class="relative group ${roundedClass} overflow-hidden bg-slate-100 border border-slate-200/80 shadow-xs ${aspectClass} ${extraWrapClass}">
+    <div class="relative group ${roundedClass} overflow-hidden bg-slate-100 border border-slate-200/80 shadow-xs ${aspectClass} ${extraWrapClass}" ${taskId ? `data-task-unique-id="${taskId}" onclick="if (typeof setActiveInspectorTask === 'function') setActiveInspectorTask('${taskId}')"` : ''}>
         ${imgSrc
             ? `<img src="${imgSrc}" alt="${escTitle}" loading="lazy" class="w-full h-full object-cover cursor-zoom-in transition-transform duration-300 group-hover:scale-105" onclick="openImageLightbox('${imgSrc}', '${escTitle}')" title="${isZh ? '点击查看大图' : 'View full image'}">`
             : `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs p-6 text-center">
@@ -6227,8 +9066,9 @@ function renderDtcHybridPreview() {
         : taskIds;
 
     order.forEach(id => {
-        const t = tasks[id];
+        const t = tasks[id] || (Array.isArray(tasks) ? tasks.find(x => x.uniqueId === id || x.id === id) : Object.values(tasks).find(x => x.uniqueId === id || x.id === id));
         if (!t) return;
+        if (t.isHidden) return;
         if (t.id === 'm11') {
             faqTasks.push(t);
         } else if (t.id === 'm12' || t.id === 'm15') {
@@ -7135,10 +9975,13 @@ async function exportFullLaunchKit() {
             activeProfile = window.brandContextHub.getActiveProfile();
         }
 
+        const verifiedFactsObj = getVerifiedProductFacts();
         const payload = {
             product_name: productName,
             brand_name: activeProfile?.brandName || activeProfile?.name || 'Default Brand',
-            category: activeProfile?.category || '',
+            category: activeProfile?.category || (verifiedFactsObj?.category?.value || ''),
+            product_facts: serializeVerifiedProductFactsForAI(verifiedFactsObj),
+            verified_facts: verifiedFactsObj,
             listing: listingData,
             ads: adsData,
             pdp_html: pdpHtml,
@@ -9169,6 +12012,87 @@ if (typeof globalThis !== 'undefined') {
     globalThis.renderDetailDeliveryHub = renderDetailDeliveryHub;
     globalThis.transferDetailToListing = transferDetailToListing;
     globalThis.transferDetailToAds = transferDetailToAds;
+    globalThis.buildProductFacts = buildProductFacts;
+    globalThis.mergeProductFacts = mergeProductFacts;
+    globalThis.confirmProductFact = confirmProductFact;
+    globalThis.resolveAssetSemanticRoles = resolveAssetSemanticRoles;
+    globalThis.validateContentPlanEvidence = validateContentPlanEvidence;
+    globalThis.computeTaskOverallStatus = computeTaskOverallStatus;
+    globalThis.getTaskOverallStatus = getTaskOverallStatus;
+    globalThis.setTaskSubStatus = setTaskSubStatus;
+    globalThis.getCancelledModuleTasks = getCancelledModuleTasks;
+    globalThis.retryTaskAuxiliaryStep = retryTaskAuxiliaryStep;
+    globalThis.normalizeRestoredDetailTask = normalizeRestoredDetailTask;
+    globalThis.currentDetailChannel = currentDetailChannel;
+    globalThis.currentRecommendedPlan = currentRecommendedPlan;
+    globalThis.userExplicitlyClearedModules = userExplicitlyClearedModules;
+    globalThis.setUserExplicitlyClearedModules = setUserExplicitlyClearedModules;
+    globalThis.getUserExplicitlyClearedModules = getUserExplicitlyClearedModules;
+    globalThis.setDetailChannel = setDetailChannel;
+    globalThis.getDetailChannel = getDetailChannel;
+    globalThis.buildRecommendedDetailPlan = buildRecommendedDetailPlan;
+    globalThis.applyRecommendedDetailPlan = applyRecommendedDetailPlan;
+    globalThis.renderRecommendedPlanUI = renderRecommendedPlanUI;
+    globalThis.toggleAdvancedPlanDrawer = toggleAdvancedPlanDrawer;
+    globalThis.renderProductFactsCard = renderProductFactsCard;
+    globalThis.confirmAllProductFacts = confirmAllProductFacts;
+    globalThis.confirmProductFactItem = confirmProductFactItem;
+    globalThis.calculateRelativeLuminance = calculateRelativeLuminance;
+    globalThis.calculateContrastRatio = calculateContrastRatio;
+    globalThis.getAccessibleContrastColor = getAccessibleContrastColor;
+    globalThis.activeInspectorTaskId = activeInspectorTaskId;
+    globalThis.getActiveInspectorTask = getActiveInspectorTask;
+    globalThis.setActiveInspectorTask = setActiveInspectorTask;
+    globalThis.highlightSelectedSection = highlightSelectedSection;
+    globalThis.moveDetailTask = moveDetailTask;
+    globalThis.toggleDetailTaskVisibility = toggleDetailTaskVisibility;
+    globalThis.updateDetailTaskContent = updateDetailTaskContent;
+    globalThis.updateDetailTaskSeo = updateDetailTaskSeo;
+    globalThis.updateDetailTaskLayout = updateDetailTaskLayout;
+    globalThis.recordTaskImageVersion = recordTaskImageVersion;
+    globalThis.rollbackTaskImageVersion = rollbackTaskImageVersion;
+    globalThis.PRESET_REPAINT_PROMPTS = PRESET_REPAINT_PROMPTS;
+    globalThis.renderSectionTree = renderSectionTree;
+    globalThis.renderSectionInspector = renderSectionInspector;
+    globalThis.toggleSectionTree = toggleSectionTree;
+    globalThis.toggleSectionInspector = toggleSectionInspector;
+    globalThis.getDetailTasksList = getDetailTasksList;
+    globalThis.findDetailTask = findDetailTask;
+    globalThis.computePublishReadiness = computePublishReadiness;
+    globalThis.updatePublishReadinessUI = updatePublishReadinessUI;
+    globalThis.saveStudioDraft = saveStudioDraft;
+    globalThis.getStudioDraft = getStudioDraft;
+    globalThis.clearStudioDraft = clearStudioDraft;
+    globalThis.restoreStudioDraft = restoreStudioDraft;
+    globalThis.scheduleDraftAutosave = scheduleDraftAutosave;
+    globalThis.updateAutosaveStatusUI = updateAutosaveStatusUI;
+    globalThis.updatePrimaryDeliveryCTA = updatePrimaryDeliveryCTA;
+    globalThis.executePrimaryChannelPublish = executePrimaryChannelPublish;
+    globalThis.syncEditorOrderToLongImage = syncEditorOrderToLongImage;
+    globalThis.getVerifiedProductFacts = getVerifiedProductFacts;
+    globalThis.serializeVerifiedProductFactsForAI = serializeVerifiedProductFactsForAI;
+    globalThis.getProductFactTier = getProductFactTier;
+    globalThis.isProductFactConfirmed = isProductFactConfirmed;
+    globalThis.evaluateTaskEvidence = evaluateTaskEvidence;
+    globalThis.assertTaskGenerationAllowed = assertTaskGenerationAllowed;
+    globalThis.resetDetailProjectState = resetDetailProjectState;
+    globalThis.continueCancelledDetailTasks = continueCancelledDetailTasks;
+    globalThis.addNewSectionFromTree = addNewSectionFromTree;
+    globalThis.getDetailPresentationMode = getDetailPresentationMode;
+    globalThis.setDetailPresentationMode = setDetailPresentationMode;
+    globalThis.getDetailResultView = getDetailResultView;
+    globalThis.switchDetailResultView = switchDetailResultView;
+    globalThis.computeCustomBrandColor = computeCustomBrandColor;
+    globalThis.ensureGlobalGenContext = ensureGlobalGenContext;
+    globalThis.detectMimeTypeFromBase64 = detectMimeTypeFromBase64;
+    globalThis.parseImageDataUrl = parseImageDataUrl;
+    globalThis.ensureInlineImageData = ensureInlineImageData;
+    globalThis.formatFriendlyDetailErrorMessage = formatFriendlyDetailErrorMessage;
+    globalThis.handleDetailAIRetryEvent = handleDetailAIRetryEvent;
+    globalThis.connectDetailEventStream = connectDetailEventStream;
+    globalThis.disconnectDetailEventStream = disconnectDetailEventStream;
+    globalThis.retrySingleModuleTask = retrySingleModuleTask;
+    globalThis.regenerateSingleModuleTask = regenerateSingleModuleTask;
 }
 if (typeof window !== 'undefined') {
     window.setDetailProductImage = setDetailProductImage;
@@ -9200,9 +12124,96 @@ if (typeof window !== 'undefined') {
     window.renderDetailDeliveryHub = renderDetailDeliveryHub;
     window.transferDetailToListing = transferDetailToListing;
     window.transferDetailToAds = transferDetailToAds;
+    window.buildProductFacts = buildProductFacts;
+    window.mergeProductFacts = mergeProductFacts;
+    window.confirmProductFact = confirmProductFact;
+    window.resolveAssetSemanticRoles = resolveAssetSemanticRoles;
+    window.validateContentPlanEvidence = validateContentPlanEvidence;
+    window.computeTaskOverallStatus = computeTaskOverallStatus;
+    window.getTaskOverallStatus = getTaskOverallStatus;
+    window.setTaskSubStatus = setTaskSubStatus;
+    window.getCancelledModuleTasks = getCancelledModuleTasks;
+    window.retryTaskAuxiliaryStep = retryTaskAuxiliaryStep;
+    window.normalizeRestoredDetailTask = normalizeRestoredDetailTask;
+    window.currentDetailChannel = currentDetailChannel;
+    window.currentRecommendedPlan = currentRecommendedPlan;
+    window.userExplicitlyClearedModules = userExplicitlyClearedModules;
+    window.setUserExplicitlyClearedModules = setUserExplicitlyClearedModules;
+    window.getUserExplicitlyClearedModules = getUserExplicitlyClearedModules;
+    window.setDetailChannel = setDetailChannel;
+    window.getDetailChannel = getDetailChannel;
+    window.buildRecommendedDetailPlan = buildRecommendedDetailPlan;
+    window.applyRecommendedDetailPlan = applyRecommendedDetailPlan;
+    window.renderRecommendedPlanUI = renderRecommendedPlanUI;
+    window.toggleAdvancedPlanDrawer = toggleAdvancedPlanDrawer;
+    window.renderProductFactsCard = renderProductFactsCard;
+    window.confirmAllProductFacts = confirmAllProductFacts;
+    window.confirmProductFactItem = confirmProductFactItem;
+    window.calculateRelativeLuminance = calculateRelativeLuminance;
+    window.calculateContrastRatio = calculateContrastRatio;
+    window.getAccessibleContrastColor = getAccessibleContrastColor;
+    window.activeInspectorTaskId = activeInspectorTaskId;
+    window.getActiveInspectorTask = getActiveInspectorTask;
+    window.setActiveInspectorTask = setActiveInspectorTask;
+    window.highlightSelectedSection = highlightSelectedSection;
+    window.moveDetailTask = moveDetailTask;
+    window.toggleDetailTaskVisibility = toggleDetailTaskVisibility;
+    window.updateDetailTaskContent = updateDetailTaskContent;
+    window.updateDetailTaskSeo = updateDetailTaskSeo;
+    window.updateDetailTaskLayout = updateDetailTaskLayout;
+    window.recordTaskImageVersion = recordTaskImageVersion;
+    window.rollbackTaskImageVersion = rollbackTaskImageVersion;
+    window.PRESET_REPAINT_PROMPTS = PRESET_REPAINT_PROMPTS;
+    window.renderSectionTree = renderSectionTree;
+    window.renderSectionInspector = renderSectionInspector;
+    window.toggleSectionTree = toggleSectionTree;
+    window.toggleSectionInspector = toggleSectionInspector;
+    window.getDetailTasksList = getDetailTasksList;
+    window.findDetailTask = findDetailTask;
+    window.computePublishReadiness = computePublishReadiness;
+    window.updatePublishReadinessUI = updatePublishReadinessUI;
+    window.saveStudioDraft = saveStudioDraft;
+    window.getStudioDraft = getStudioDraft;
+    window.clearStudioDraft = clearStudioDraft;
+    window.restoreStudioDraft = restoreStudioDraft;
+    window.scheduleDraftAutosave = scheduleDraftAutosave;
+    window.updateAutosaveStatusUI = updateAutosaveStatusUI;
+    window.updatePrimaryDeliveryCTA = updatePrimaryDeliveryCTA;
+    window.executePrimaryChannelPublish = executePrimaryChannelPublish;
+    window.syncEditorOrderToLongImage = syncEditorOrderToLongImage;
+    window.getVerifiedProductFacts = getVerifiedProductFacts;
+    window.serializeVerifiedProductFactsForAI = serializeVerifiedProductFactsForAI;
+    window.getProductFactTier = getProductFactTier;
+    window.isProductFactConfirmed = isProductFactConfirmed;
+    window.evaluateTaskEvidence = evaluateTaskEvidence;
+    window.assertTaskGenerationAllowed = assertTaskGenerationAllowed;
+    window.resetDetailProjectState = resetDetailProjectState;
+    window.continueCancelledDetailTasks = continueCancelledDetailTasks;
+    window.addNewSectionFromTree = addNewSectionFromTree;
+    window.getDetailPresentationMode = getDetailPresentationMode;
+    window.setDetailPresentationMode = setDetailPresentationMode;
+    window.getDetailResultView = getDetailResultView;
+    window.switchDetailResultView = switchDetailResultView;
+    window.computeCustomBrandColor = computeCustomBrandColor;
+    window.ensureGlobalGenContext = ensureGlobalGenContext;
+    window.detectMimeTypeFromBase64 = detectMimeTypeFromBase64;
+    window.parseImageDataUrl = parseImageDataUrl;
+    window.ensureInlineImageData = ensureInlineImageData;
+    window.formatFriendlyDetailErrorMessage = formatFriendlyDetailErrorMessage;
+    window.handleDetailAIRetryEvent = handleDetailAIRetryEvent;
+    window.connectDetailEventStream = connectDetailEventStream;
+    window.disconnectDetailEventStream = disconnectDetailEventStream;
+    window.retrySingleModuleTask = retrySingleModuleTask;
+    window.regenerateSingleModuleTask = regenerateSingleModuleTask;
 }
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
+        formatFriendlyDetailErrorMessage,
+        handleDetailAIRetryEvent,
+        connectDetailEventStream,
+        disconnectDetailEventStream,
+        retrySingleModuleTask,
+        regenerateSingleModuleTask,
         exportFullLaunchKit,
         getStandalonePdpHtmlString,
         setGlobalGenContext,
@@ -9226,6 +12237,81 @@ if (typeof module !== 'undefined' && module.exports) {
         updateDetailDtcHtmlModalContent,
         renderDetailDeliveryHub,
         transferDetailToListing,
-        transferDetailToAds
+        transferDetailToAds,
+        buildProductFacts,
+        mergeProductFacts,
+        confirmProductFact,
+        resolveAssetSemanticRoles,
+        validateContentPlanEvidence,
+        computeTaskOverallStatus,
+        getTaskOverallStatus,
+        setTaskSubStatus,
+        getCancelledModuleTasks,
+        retryTaskAuxiliaryStep,
+        normalizeRestoredDetailTask,
+        currentDetailChannel,
+        currentRecommendedPlan,
+        userExplicitlyClearedModules,
+        setUserExplicitlyClearedModules,
+        getUserExplicitlyClearedModules,
+        setDetailChannel,
+        getDetailChannel,
+        buildRecommendedDetailPlan,
+        applyRecommendedDetailPlan,
+        renderRecommendedPlanUI,
+        toggleAdvancedPlanDrawer,
+        renderProductFactsCard,
+        confirmAllProductFacts,
+        confirmProductFactItem,
+        calculateRelativeLuminance,
+        calculateContrastRatio,
+        getAccessibleContrastColor,
+        activeInspectorTaskId,
+        getActiveInspectorTask,
+        setActiveInspectorTask,
+        highlightSelectedSection,
+        moveDetailTask,
+        toggleDetailTaskVisibility,
+        updateDetailTaskContent,
+        updateDetailTaskSeo,
+        updateDetailTaskLayout,
+        recordTaskImageVersion,
+        rollbackTaskImageVersion,
+        PRESET_REPAINT_PROMPTS,
+        renderSectionTree,
+        renderSectionInspector,
+        toggleSectionTree,
+        toggleSectionInspector,
+        getDetailTasksList,
+        findDetailTask,
+        computePublishReadiness,
+        updatePublishReadinessUI,
+        saveStudioDraft,
+        getStudioDraft,
+        clearStudioDraft,
+        restoreStudioDraft,
+        scheduleDraftAutosave,
+        updateAutosaveStatusUI,
+        updatePrimaryDeliveryCTA,
+        executePrimaryChannelPublish,
+        syncEditorOrderToLongImage,
+        getVerifiedProductFacts,
+        serializeVerifiedProductFactsForAI,
+        getProductFactTier,
+        isProductFactConfirmed,
+        evaluateTaskEvidence,
+        assertTaskGenerationAllowed,
+        resetDetailProjectState,
+        continueCancelledDetailTasks,
+        addNewSectionFromTree,
+        getDetailPresentationMode,
+        setDetailPresentationMode,
+        getDetailResultView,
+        switchDetailResultView,
+        computeCustomBrandColor,
+        ensureGlobalGenContext,
+        detectMimeTypeFromBase64,
+        parseImageDataUrl,
+        ensureInlineImageData
     };
 }
