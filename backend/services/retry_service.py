@@ -45,6 +45,10 @@ class RetryServiceError(Exception):
         super().__init__(message)
         self.last_error = last_error
 
+    @property
+    def last_exception(self) -> Optional[Exception]:
+        return self.last_error
+
 
 class AmbiguousOutcomeError(RetryServiceError):
     """Raised when a non-idempotent operation may have reached upstream and outcome is unknown."""
@@ -251,11 +255,17 @@ def decide_retry(
             request_may_have_reached_upstream=reached,
         )
 
-    # 5. Determine delay (Retry-After header takes precedence)
     delay: float
     retry_after: Optional[float] = None
     if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
-        raw_header = exc.response.headers.get("Retry-After")
+        try:
+            headers = getattr(exc.response, "headers", None)
+            if headers is not None and hasattr(headers, "get"):
+                raw_header = headers.get("Retry-After")
+            else:
+                raw_header = None
+        except Exception:
+            raw_header = None
         retry_after = _parse_retry_after(raw_header)
 
     if retry_after is not None:

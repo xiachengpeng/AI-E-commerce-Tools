@@ -1,6 +1,8 @@
+import dataclasses
 import html
 import json
 import logging
+import os
 import re
 import time
 
@@ -8,6 +10,11 @@ import httpx
 
 from config import FIRECRAWL_API_KEY, FIRECRAWL_API_URL
 from services.app_log_service import app_logs
+from services.retry_service import (
+    execute_with_retry,
+    PolicyResolver,
+    RetryExhaustedError,
+)
 from services.security_utils import validate_outbound_url
 
 logger = logging.getLogger(__name__)
@@ -384,13 +391,39 @@ async def fetch_markdown(url: str, max_age: int = 3600, fallback_to_native: bool
         source="crawler",
         message="爬虫请求开始",
     )
-    try:
-        response = await client.post(
+    policy = PolicyResolver.get_policy("crawler_scrape")
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        policy = dataclasses.replace(policy, jitter="none")
+
+    async def _post_firecrawl():
+        resp = await client.post(
             current_url,
             json=payload,
             headers=headers,
         )
-        response.raise_for_status()
+        if resp.status_code in (401, 402, 404):
+            return resp
+        if resp.status_code == 429 or resp.status_code >= 500:
+            resp.raise_for_status()
+        return resp
+
+    try:
+        try:
+            response = await execute_with_retry(
+                _post_firecrawl,
+                policy=policy,
+                operation_type="crawler_scrape",
+                provider_name="firecrawl",
+            )
+        except RetryExhaustedError as e:
+            if isinstance(e.last_exception, httpx.HTTPStatusError):
+                response = e.last_exception.response
+            else:
+                raise e.last_exception or e
+
+        if response.status_code != 200:
+            response.raise_for_status()
+
         data = response.json()
 
         # V2 响应结构兼容性处理

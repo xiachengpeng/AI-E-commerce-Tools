@@ -1,9 +1,17 @@
+import dataclasses
 import json
 import logging
+import os
 from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
+
+from services.retry_service import (
+    execute_with_retry,
+    PolicyResolver,
+    RetryExhaustedError,
+)
 
 try:
     from models.settings import ProviderBalanceResult
@@ -27,6 +35,31 @@ class AIBalanceService:
 
     including New-API, One-API, DeepSeek, SiliconFlow, OpenRouter, and custom endpoints.
     """
+
+    async def _get_with_retry(self, client: httpx.AsyncClient, url: str, headers: dict) -> httpx.Response:
+        policy = PolicyResolver.get_policy("lightweight_query")
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            policy = dataclasses.replace(policy, jitter="none")
+
+        async def _fetch():
+            resp = await client.get(url, headers=headers)
+            if resp.status_code in (401, 403, 404):
+                return resp
+            if resp.status_code == 429 or resp.status_code >= 500:
+                resp.raise_for_status()
+            return resp
+
+        try:
+            return await execute_with_retry(
+                _fetch,
+                policy=policy,
+                operation_type="lightweight_query",
+                provider_name="balance_service",
+            )
+        except RetryExhaustedError as e:
+            if isinstance(e.last_exception, httpx.HTTPStatusError):
+                return e.last_exception.response
+            raise e.last_exception or e
 
     async def query_balance(
         self,
@@ -68,7 +101,7 @@ class AIBalanceService:
             # 1. If custom balance URL is specified, query it directly
             if clean_custom_url:
                 try:
-                    resp = await client.get(clean_custom_url, headers=headers)
+                    resp = await self._get_with_retry(client, clean_custom_url, headers=headers)
                     if resp.status_code == 401:
                         return ProviderBalanceResult(
                             status="error",
@@ -108,7 +141,7 @@ class AIBalanceService:
             if "deepseek.com" in host:
                 deepseek_url = "https://api.deepseek.com/user/balance"
                 try:
-                    resp = await client.get(deepseek_url, headers=headers)
+                    resp = await self._get_with_retry(client, deepseek_url, headers=headers)
                     if resp.status_code == 200:
                         data = resp.json()
                         infos = data.get("balance_infos") or []
@@ -141,7 +174,7 @@ class AIBalanceService:
             if "siliconflow.cn" in host or "siliconflow.com" in host:
                 silicon_url = "https://api.siliconflow.cn/v1/user/info"
                 try:
-                    resp = await client.get(silicon_url, headers=headers)
+                    resp = await self._get_with_retry(client, silicon_url, headers=headers)
                     if resp.status_code == 200:
                         data = resp.json()
                         user_data = data.get("data") or {}
@@ -165,7 +198,7 @@ class AIBalanceService:
             if "openrouter.ai" in host:
                 openrouter_url = "https://openrouter.ai/api/v1/credits"
                 try:
-                    resp = await client.get(openrouter_url, headers=headers)
+                    resp = await self._get_with_retry(client, openrouter_url, headers=headers)
                     if resp.status_code == 200:
                         data = resp.json()
                         cdata = data.get("data") or {}
@@ -191,7 +224,7 @@ class AIBalanceService:
 
             new_api_url = f"{base_root}/api/user/self"
             try:
-                resp = await client.get(new_api_url, headers=headers)
+                resp = await self._get_with_retry(client, new_api_url, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
                     # New-API returns {"success": true, "data": {"quota": 12345, ...}}
@@ -215,15 +248,27 @@ class AIBalanceService:
             except Exception as exc:
                 logger.debug("New-API /api/user/self probe failed: %s", exc)
 
-            # 4. Standard One-API / OpenAI billing endpoints fallback
+            # 4. Generic /v1/usage probe (通用查询默认探测)
+            usage_probe_url = f"{clean_base_url}/usage" if clean_base_url.endswith("/v1") else f"{clean_base_url}/v1/usage"
+            try:
+                resp_usage_probe = await self._get_with_retry(client, usage_probe_url, headers=headers)
+                if resp_usage_probe.status_code == 200:
+                    probe_data = resp_usage_probe.json()
+                    parsed_res = self._parse_generic_balance_response(probe_data, "通用 /v1/usage 接口")
+                    if parsed_res.status == "success":
+                        return parsed_res
+            except Exception as exc:
+                logger.debug("Generic /v1/usage probe failed: %s", exc)
+
+            # 5. Standard One-API / OpenAI billing endpoints fallback
             sub_url = f"{clean_base_url}/dashboard/billing/subscription"
             usage_url = f"{clean_base_url}/dashboard/billing/usage"
             try:
-                resp_sub = await client.get(sub_url, headers=headers)
+                resp_sub = await self._get_with_retry(client, sub_url, headers=headers)
                 if resp_sub.status_code == 404 and "/v1" not in clean_base_url:
                     sub_url = f"{clean_base_url}/v1/dashboard/billing/subscription"
                     usage_url = f"{clean_base_url}/v1/dashboard/billing/usage"
-                    resp_sub = await client.get(sub_url, headers=headers)
+                    resp_sub = await self._get_with_retry(client, sub_url, headers=headers)
 
                 if resp_sub.status_code == 200:
                     sub_data = resp_sub.json()
@@ -232,22 +277,19 @@ class AIBalanceService:
                     # Usage query
                     total_usage = 0.0
                     try:
-                        resp_usage = await client.get(usage_url, headers=headers)
+                        resp_usage = await self._get_with_retry(client, usage_url, headers=headers)
                         if resp_usage.status_code == 200:
                             total_usage = float(resp_usage.json().get("total_usage", 0.0))
                     except Exception:
                         pass
 
+                    # 模型 API Key 自身配额（如 1 亿美元不限额）不予作为真实余额展示
                     if hard_limit >= 10_000_000:
-                        rem_text = f"无限额度 (已用 ${total_usage:.2f})" if total_usage > 0 else "不限额度"
                         return ProviderBalanceResult(
-                            status="success",
-                            balance_text=rem_text,
+                            status="error",
+                            balance_text="查询失败",
                             currency="USD",
-                            total_balance=hard_limit,
-                            used_balance=total_usage,
-                            remaining_balance=None,
-                            message="One-API 不限额度令牌",
+                            message="查询失败，详情看日志（检测到接口仅返回模型令牌配额，非账户真实余额；请在【用量配置】中选用对应模板）",
                         )
 
                     rem = round(max(0.0, hard_limit - total_usage), 2)
@@ -263,6 +305,7 @@ class AIBalanceService:
                 elif resp_sub.status_code == 401:
                     return ProviderBalanceResult(
                         status="error",
+                        balance_text="查询失败",
                         message="认证失败：API Key 或访问令牌无效 (401)",
                     )
             except Exception as exc:
@@ -271,10 +314,8 @@ class AIBalanceService:
             # If all automated routes failed
             return ProviderBalanceResult(
                 status="error",
-                message=(
-                    "未检测到兼容的余额查询接口。若您的中转站是 New-API，请在【编辑线路】中填入系统访问令牌 (Access Token)；"
-                    "或填入自定义查询接口 URL"
-                ),
+                balance_text="查询失败",
+                message="查询失败，详情看日志",
             )
 
     def _parse_generic_balance_response(self, data: dict, label: str) -> ProviderBalanceResult:

@@ -97,6 +97,15 @@ async def _validate_public_url(url: str, resolver) -> None:
         raise ValueError("图片地址必须是公网地址")
 
 
+import dataclasses
+import os
+from services.retry_service import (
+    execute_with_retry,
+    PolicyResolver,
+    RetryExhaustedError,
+)
+
+
 async def fetch_public_image(
     url: str,
     client,
@@ -106,12 +115,16 @@ async def fetch_public_image(
     max_bytes: int = MAX_IMAGE_BYTES,
     resolver=resolve_host_addresses,
 ):
-    current_url = str(url or "")
-    redirects = 0
+    policy = PolicyResolver.get_policy("image_download")
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        policy = dataclasses.replace(policy, jitter="none")
 
-    while True:
-        await _validate_public_url(current_url, resolver)
-        try:
+    async def _download_once():
+        current_url = str(url or "")
+        redirects = 0
+
+        while True:
+            await _validate_public_url(current_url, resolver)
             async with client.stream(
                 "GET",
                 current_url,
@@ -131,6 +144,8 @@ async def fetch_public_image(
                 try:
                     response.raise_for_status()
                 except httpx.HTTPStatusError as exc:
+                    if response.status_code in (429, 500, 502, 503, 504):
+                        raise
                     raise ValueError("图片下载请求失败") from exc
 
                 content_type = response.headers.get(
@@ -153,16 +168,31 @@ async def fetch_public_image(
                     chunks.extend(chunk)
                     if len(chunks) > max_bytes:
                         raise ValueError("图片响应超过大小限制")
-        except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
-            raise ValueError("图片下载超时") from exc
-        except httpx.RequestError as exc:
-            raise ValueError("图片下载请求失败") from exc
 
-        try:
-            return validate_image_payload(
-                bytes(chunks),
-                content_type,
-                max_bytes=max_bytes,
-            )
-        except ValueError as exc:
-            raise ValueError("图片响应内容无效") from exc
+                return bytes(chunks), content_type
+
+    try:
+        raw_bytes, content_type = await execute_with_retry(
+            _download_once,
+            policy=policy,
+            operation_type="image_download",
+            provider_name="image_fetcher",
+        )
+    except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
+        raise ValueError("图片下载超时") from exc
+    except RetryExhaustedError as exc:
+        cause = exc.last_exception
+        if isinstance(cause, (httpx.TimeoutException, asyncio.TimeoutError)):
+            raise ValueError("图片下载超时") from cause
+        raise ValueError("图片下载请求失败") from cause
+    except httpx.RequestError as exc:
+        raise ValueError("图片下载请求失败") from exc
+
+    try:
+        return validate_image_payload(
+            raw_bytes,
+            content_type,
+            max_bytes=max_bytes,
+        )
+    except ValueError as exc:
+        raise ValueError("图片响应内容无效") from exc
