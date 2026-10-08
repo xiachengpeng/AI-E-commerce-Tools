@@ -3,24 +3,24 @@
 // ==========================================
 
 const MODULES_CONFIG = [
-    { id: 'm1', title: '首屏认知', promptTitle: 'Hero Product Understanding', subtitle: '让用户秒懂产品', active: false, count: 1, includeText: true, prompt: "Create a clear hero section that immediately explains what the product is, who it is for, and the primary benefit. Use one short headline, one short support line, and up to three proof-oriented callouts." },
-    { id: 'm2', title: '核心功能证明', promptTitle: 'Core Benefit Proof', subtitle: '给出购买理由', active: false, count: 1, includeText: true, prompt: "Create a focused benefit infographic. Each version must cover a different buying reason, with no repeated headline angle across variants." },
-    { id: 'm3', title: '场景/痛点唤醒', promptTitle: 'Usage Scenario and Pain Point', subtitle: '展示真实使用需求', active: false, count: 1, includeText: true, prompt: "Create a believable lifestyle usage scene with realistic product scale, natural lighting, and a single user context solving a daily pain point. Avoid exaggerated transformation claims." },
-    { id: 'm4', title: '外观/多角度证明', promptTitle: 'Appearance and Multi-Angle Proof', subtitle: '降低看不清疑虑', active: false, count: 1, includeText: true, prompt: "Create a layout showing a collage of different angle views of the product on a clean studio background." },
-    { id: 'm5', title: '生活方式氛围', promptTitle: 'Lifestyle Atmosphere', subtitle: '强化使用代入感', active: false, count: 1, includeText: true, prompt: "Create an atmospheric lifestyle shot with warm lighting, setting a mood that perfectly fits the product's aesthetic." },
-    { id: 'm6', title: '细节/材质证明', promptTitle: 'Detail and Material Proof', subtitle: '放大关键做工', active: false, count: 1, includeText: true, prompt: "Create a macro close-up shot highlighting the premium material, texture, and exquisite craftsmanship of the product." },
-    { id: 'm7', title: '品牌/定位表达', promptTitle: 'Brand Positioning Expression', subtitle: '建立产品调性', active: false, count: 1, includeText: true, prompt: "Create an editorial layout with a brand story aesthetic, combining the product with lifestyle elements and elegant text space." },
-    { id: 'm8', title: '尺寸/收纳证明', promptTitle: 'Size and Storage Proof', subtitle: '消除空间疑虑', active: false, count: 1, includeText: true, prompt: "Create a technical drawing or infographic style image showing exact dimensions, size proportions, or capacity with measurement lines." },
-    { id: 'm9', title: '对比差异证明', promptTitle: 'Objective Comparison Proof', subtitle: '说明为什么选它', active: false, count: 1, includeText: true, prompt: "Create an objective comparison table between a single-function alternative and this product. Use factual feature rows, not exaggerated superiority claims." },
-    { id: 'm10', title: '参数规格确认', promptTitle: 'Specification Confirmation', subtitle: '用事实消除顾虑', active: false, count: 1, includeText: true, prompt: "Create a clean specification section. Only show parameters that are present in the supplied product information or clearly visible in the reference image." },
-    { id: 'm11', title: '信任/售后背书', promptTitle: 'Trust and After-Sales Support', subtitle: '降低下单风险', active: false, count: 1, includeText: true, prompt: "Create a trust-building after-sales section using warranty, support, shipping, returns, maintenance, or package-list cues only when provided. Do not invent certifications." },
-    { id: 'm12', title: '使用/维护指引', promptTitle: 'Usage and Maintenance Guide', subtitle: '降低使用门槛', active: false, count: 1, includeText: true, prompt: "Create an instructional step-by-step guide or usage tips layout showing how to properly use or maintain the product with clear visual cues." },
-    { id: 'm13', title: '全家福拆解清单', promptTitle: "What's in the Box / Bundle Breakdown", subtitle: '工整陈列所有配件与数量', active: false, count: 1, includeText: true, prompt: "Create an organized knolling / flat-lay composition showing the complete kit and what's in the box. Display the hero item cleanly alongside every accessory, replacement part, and cable in an orderly grid layout with clear visual hierarchy." },
-    { id: 'm14', title: '组合超值算账对比', promptTitle: 'Bundle Value and Savings Comparison', subtitle: '量化1+1>2一站式省心', active: false, count: 1, includeText: true, prompt: "Create a value-comparison visual highlighting the bundle package advantage. Show the complete bundle set on one side and communicate all-in-one convenience and significant savings compared to buying individual parts separately." },
-    { id: 'm15', title: '分步协同使用动线', promptTitle: 'Multi-Step Routine and Synergy', subtitle: '展示多件搭配使用流', active: false, count: 1, includeText: true, prompt: "Create an instructional multi-step routine layout showing how the different items in this set work together sequentially (Step 1, Step 2, Step 3) to achieve the complete outcome." },
-    { id: 'm16', title: '关键配件精工特写', promptTitle: 'Key Accessory Craft and Spec', subtitle: '打消配件廉价劣质疑虑', active: false, count: 1, includeText: true, prompt: "Create a macro close-up shot highlighting the premium build quality, precise fit, and durable materials of the core accessories and attachments included in the package." },
-    { id: 'm17', title: '爆炸拆解/精密构造', promptTitle: 'Exploded View / Precision Engineering', subtitle: '硬核内部构造与工匠级机芯/零件透视', active: false, count: 1, includeText: true, prompt: "Create an exploded view / precision deconstructed layout showing the internal engineering and core components floating in perfect alignment alongside the main product. High-end industrial design aesthetic with clean leader lines, metallic reflections, and subtle callouts." },
-    { id: 'm18', title: 'UGC买家秀/社交背书', promptTitle: 'UGC Social Proof / Unboxing Card', subtitle: '真实买家生活开箱与高转化口碑评价', active: false, count: 1, includeText: true, prompt: "Create a realistic UGC / social unboxing card showing the product in an authentic everyday consumer setting with a clean, high-trust 5-star customer review quote overlay and authentic lifestyle context." }
+    { id: 'm1', title: '首屏认知', promptTitle: 'Hero Product Understanding', subtitle: '让用户秒懂产品', active: false, count: 1, includeText: true, riskLevel: 'low', evidenceRequirements: ['productName'], fallbackModule: null, fallbackBehavior: 'visual_infer', prompt: "Create a clear hero section that immediately explains what the product is, who it is for, and the primary benefit. Use one short headline, one short support line, and up to three proof-oriented callouts." },
+    { id: 'm2', title: '核心功能证明', promptTitle: 'Core Benefit Proof', subtitle: '给出购买理由', active: false, count: 1, includeText: true, riskLevel: 'low', evidenceRequirements: ['confirmedFeatures'], fallbackModule: null, fallbackBehavior: 'base_benefit', prompt: "Create a focused benefit infographic. Each version must cover a different buying reason, with no repeated headline angle across variants." },
+    { id: 'm3', title: '场景/痛点唤醒', promptTitle: 'Usage Scenario and Pain Point', subtitle: '展示真实使用需求', active: false, count: 1, includeText: true, riskLevel: 'low', evidenceRequirements: ['category'], fallbackModule: null, fallbackBehavior: 'visual_scene', prompt: "Create a believable lifestyle usage scene with realistic product scale, natural lighting, and a single user context solving a daily pain point. Avoid exaggerated transformation claims." },
+    { id: 'm4', title: '外观/多角度证明', promptTitle: 'Appearance and Multi-Angle Proof', subtitle: '降低看不清疑虑', active: false, count: 1, includeText: true, riskLevel: 'high', evidenceRequirements: ['multiAngleAssets'], fallbackModule: 'm1', fallbackBehavior: 'warning', prompt: "Create a layout showing a collage of different angle views of the product on a clean studio background." },
+    { id: 'm5', title: '生活方式氛围', promptTitle: 'Lifestyle Atmosphere', subtitle: '强化使用代入感', active: false, count: 1, includeText: true, riskLevel: 'low', evidenceRequirements: [], fallbackModule: null, fallbackBehavior: 'lifestyle_scene', prompt: "Create an atmospheric lifestyle shot with warm lighting, setting a mood that perfectly fits the product's aesthetic." },
+    { id: 'm6', title: '细节/材质证明', promptTitle: 'Detail and Material Proof', subtitle: '放大关键做工', active: false, count: 1, includeText: true, riskLevel: 'medium', evidenceRequirements: ['material'], fallbackModule: 'm2', fallbackBehavior: 'visual_texture', prompt: "Create a macro close-up shot highlighting the premium material, texture, and exquisite craftsmanship of the product." },
+    { id: 'm7', title: '品牌/定位表达', promptTitle: 'Brand Positioning Expression', subtitle: '建立产品调性', active: false, count: 1, includeText: true, riskLevel: 'low', evidenceRequirements: ['brandProfile'], fallbackModule: null, fallbackBehavior: 'general_atmosphere', prompt: "Create an editorial layout with a brand story aesthetic, combining the product with lifestyle elements and elegant text space." },
+    { id: 'm8', title: '尺寸/收纳证明', promptTitle: 'Size and Storage Proof', subtitle: '消除空间疑虑', active: false, count: 1, includeText: true, riskLevel: 'high', evidenceRequirements: ['dimensions'], fallbackModule: 'm2', fallbackBehavior: 'blocked', prompt: "Create an authentic dimension and scale demonstration layout with clean measurement lines based strictly on confirmed dimensions. If exact numbers are absent, show realistic ergonomic comparison without inventing precise numbers." },
+    { id: 'm9', title: '对比差异证明', promptTitle: 'Objective Comparison Proof', subtitle: '说明为什么选它', active: false, count: 1, includeText: true, riskLevel: 'high', evidenceRequirements: ['competitorFacts', 'differentiators'], fallbackModule: 'm2', fallbackBehavior: 'blocked', prompt: "Create an objective comparison table between a single-function alternative and this product. Use factual feature rows, not exaggerated superiority claims." },
+    { id: 'm10', title: '参数规格确认', promptTitle: 'Specification Confirmation', subtitle: '用事实消除顾虑', active: false, count: 1, includeText: true, riskLevel: 'medium', evidenceRequirements: ['specs'], fallbackModule: 'm2', fallbackBehavior: 'visible_only', prompt: "Create a clean specification section. Only show parameters that are present in the supplied product information or clearly visible in the reference image." },
+    { id: 'm11', title: '信任/售后背书', promptTitle: 'Trust and After-Sales Support', subtitle: '降低下单风险', active: false, count: 1, includeText: true, riskLevel: 'high', evidenceRequirements: ['warrantyPolicy'], fallbackModule: 'm7', fallbackBehavior: 'downgrade_to_customer_care', prompt: "Create a trust-building after-sales section using warranty, support, shipping, returns, maintenance, or package-list cues only when provided. Do not invent certifications or warranty durations." },
+    { id: 'm12', title: '使用/维护指引', promptTitle: 'Usage and Maintenance Guide', subtitle: '降低使用门槛', active: false, count: 1, includeText: true, riskLevel: 'medium', evidenceRequirements: ['usageWorkflow'], fallbackModule: 'm3', fallbackBehavior: 'general_routine', prompt: "Create an instructional step-by-step guide or usage tips layout showing how to properly use or maintain the product with clear visual cues." },
+    { id: 'm13', title: '全家福拆解清单', promptTitle: "What's in the Box / Bundle Breakdown", subtitle: '工整陈列所有配件与数量', active: false, count: 1, includeText: true, riskLevel: 'high', evidenceRequirements: ['packageContents'], fallbackModule: 'm1', fallbackBehavior: 'visible_items', prompt: "Create an organized knolling / flat-lay composition showing the complete kit and what's in the box. Display the hero item cleanly alongside every accessory, replacement part, and cable in an orderly grid layout with clear visual hierarchy." },
+    { id: 'm14', title: '组合超值算账对比', promptTitle: 'Bundle Value and Savings Comparison', subtitle: '量化1+1>2一站式省心', active: false, count: 1, includeText: true, riskLevel: 'high', evidenceRequirements: ['bundlePricing'], fallbackModule: 'm2', fallbackBehavior: 'downgrade_to_convenience', prompt: "Create a value-comparison visual highlighting the bundle package advantage. Show the complete bundle set on one side and communicate all-in-one convenience and value without inventing fake percentage or dollar discounts." },
+    { id: 'm15', title: '分步协同使用动线', promptTitle: 'Multi-Step Routine and Synergy', subtitle: '展示多件搭配使用流', active: false, count: 1, includeText: true, riskLevel: 'medium', evidenceRequirements: ['routineSteps'], fallbackModule: 'm3', fallbackBehavior: 'synergy_flow', prompt: "Create an instructional multi-step routine layout showing how the different items in this set work together sequentially (Step 1, Step 2, Step 3) to achieve the complete outcome." },
+    { id: 'm16', title: '关键配件精工特写', promptTitle: 'Key Accessory Craft and Spec', subtitle: '打消配件廉价劣质疑虑', active: false, count: 1, includeText: true, riskLevel: 'medium', evidenceRequirements: ['accessoryDetails'], fallbackModule: 'm6', fallbackBehavior: 'macro_detail', prompt: "Create a macro close-up shot highlighting the premium build quality, precise fit, and durable materials of the core accessories and attachments included in the package." },
+    { id: 'm17', title: '爆炸拆解/精密构造', promptTitle: 'Exploded View / Precision Engineering', subtitle: '硬核内部构造与工匠级机芯/零件透视', active: false, count: 1, includeText: true, riskLevel: 'critical', evidenceRequirements: ['internalEngineeringAssets'], fallbackModule: 'm6', fallbackBehavior: 'blocked', prompt: "Create a high-precision engineering deconstructed layout showing verified components alongside the product. STRICT PROHIBITION: Only execute if confirmed CAD, blueprint, or teardown references exist. Never hallucinate internal mechanisms." },
+    { id: 'm18', title: 'UGC买家秀/社交背书', promptTitle: 'UGC Social Proof / Unboxing Card', subtitle: '真实买家生活开箱与高转化口碑评价', active: false, count: 1, includeText: true, riskLevel: 'high', evidenceRequirements: ['verifiedCustomerReviews'], fallbackModule: 'm5', fallbackBehavior: 'downgrade_to_unboxing_visual', prompt: "Create an authentic lifestyle unboxing presentation showing the product in a real-world setting. STRICT TRUTH MANDATE: Only display customer review cards if verified real reviews are provided; otherwise showcase pure lifestyle unboxing without fake star ratings." }
 ];
 
 if (typeof globalThis !== 'undefined') {
@@ -422,12 +422,60 @@ const DTC_DEFAULT_TYPOGRAPHY = {
     bodyLineHeight: '1.6'
 };
 
+const DETAIL_CHANNELS_CONFIG = {
+    shopify: {
+        id: 'shopify',
+        title: 'Shopify / WooCommerce',
+        subtitle: '完整独立站商品详情页',
+        desc: '包含 Hero、核心卖点、材质细节、使用场景与 FAQ 等完整 DTC Hybrid 交互区块',
+        defaultPresentationMode: 'hybrid',
+        defaultPreset: 'shopify_dtc',
+        defaultRatio: '1:1',
+        primaryCTA: '准备上架',
+        recommendedModules: ['m1', 'm2', 'm5', 'm6', 'm8', 'm10', 'm11', 'm12']
+    },
+    amazon: {
+        id: 'amazon',
+        title: 'Amazon',
+        subtitle: '主图 / 辅图 / A+ 素材',
+        desc: '符合 Amazon 7 图规范，覆盖首屏转化、卖点证明、场景应用与参数合规',
+        defaultPresentationMode: 'gallery',
+        defaultPreset: 'amazon_seven',
+        defaultRatio: '1:1',
+        primaryCTA: '下载 Amazon 切图物料包',
+        recommendedModules: ['m1', 'm2', 'm3', 'm4', 'm6', 'm8', 'm10']
+    },
+    social: {
+        id: 'social',
+        title: 'TikTok / Shopee / Lazada',
+        subtitle: '社交电商与平台详情视觉',
+        desc: '针对移动端强视觉节奏，侧重开箱抓人、核心痛点、场景穿透与真实感',
+        defaultPresentationMode: 'gallery',
+        defaultPreset: 'tiktok_viral',
+        defaultRatio: '9:16',
+        primaryCTA: '导出平台物料包',
+        recommendedModules: ['m1', 'm2', 'm3', 'm6', 'm12', 'm18']
+    },
+    generic: {
+        id: 'generic',
+        title: '通用商品营销图',
+        subtitle: '自由多尺寸商业视觉物料',
+        desc: '满足多渠道素材投放、画册印刷及常规展示需求',
+        defaultPresentationMode: 'gallery',
+        defaultPreset: 'custom',
+        defaultRatio: '1:1',
+        primaryCTA: '批量打包下载',
+        recommendedModules: ['m1', 'm2', 'm3', 'm5', 'm6']
+    }
+};
+
 if (typeof window !== 'undefined') {
     window.DTC_LAYOUT_STYLES = DTC_LAYOUT_STYLES;
     window.DTC_BRAND_COLORS = DTC_BRAND_COLORS;
     window.DTC_FONT_FAMILIES = DTC_FONT_FAMILIES;
     window.DTC_TYPOGRAPHY_PRESETS = DTC_TYPOGRAPHY_PRESETS;
     window.DTC_DEFAULT_TYPOGRAPHY = DTC_DEFAULT_TYPOGRAPHY;
+    window.DETAIL_CHANNELS_CONFIG = DETAIL_CHANNELS_CONFIG;
 }
 if (typeof globalThis !== 'undefined') {
     globalThis.DTC_LAYOUT_STYLES = DTC_LAYOUT_STYLES;
@@ -435,6 +483,7 @@ if (typeof globalThis !== 'undefined') {
     globalThis.DTC_FONT_FAMILIES = DTC_FONT_FAMILIES;
     globalThis.DTC_TYPOGRAPHY_PRESETS = DTC_TYPOGRAPHY_PRESETS;
     globalThis.DTC_DEFAULT_TYPOGRAPHY = DTC_DEFAULT_TYPOGRAPHY;
+    globalThis.DETAIL_CHANNELS_CONFIG = DETAIL_CHANNELS_CONFIG;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -453,6 +502,7 @@ if (typeof module !== 'undefined' && module.exports) {
         DTC_BRAND_COLORS,
         DTC_FONT_FAMILIES,
         DTC_TYPOGRAPHY_PRESETS,
-        DTC_DEFAULT_TYPOGRAPHY
+        DTC_DEFAULT_TYPOGRAPHY,
+        DETAIL_CHANNELS_CONFIG
     };
 }

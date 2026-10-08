@@ -145,6 +145,15 @@ def test_api_usage_query_proxy_and_crud():
             assert mock_req.call_args.args[1] == "https://api.relay-test.com/v1/api/user/self"
             assert call_kwargs["headers"]["Authorization"] == "Bearer sk-secret-model-key"
 
+            # Verify structured logs were emitted and tokens redacted
+            from main import app_logs
+            logs = [entry for entry in app_logs.recent() if entry.get("source") == "usage_query"]
+            assert len(logs) >= 2
+            assert any("发起中转站代理请求" in str(l.get("message")) for l in logs)
+            assert any("中转站代理响应成功" in str(l.get("message")) for l in logs)
+            for l in logs:
+                assert "sk-secret-model-key" not in str(l)
+
         # 3. Test PUT /api/settings/ai/providers/{id}/usage-query with balance_user_id
         put_res = client.put(
             f"/api/settings/ai/providers/{provider_id}/usage-query",

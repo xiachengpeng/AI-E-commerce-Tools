@@ -12,7 +12,7 @@
             console.error("Critical JS Error: " + msg + " at " + url + ":" + line);
         };
     </script>
-    <link rel="stylesheet" href="dist/output.css?v=20260917-sidebar-v1">
+    <link rel="stylesheet" href="dist/output.css?v=20260921-delivery-v1">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/bold/style.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/fill/style.css">
@@ -25,7 +25,7 @@
     </script>
 
     <!-- 核心样式 -->
-    <link rel="stylesheet" href="css/style.css?v=20260917-sidebar-v1">
+    <link rel="stylesheet" href="css/style.css?v=20260921-delivery-v1">
     <link rel="stylesheet" href="css/square_redraw.css?v=20260917-reset-v1">
     <link rel="stylesheet" href="css/analysis.css?v=20260917-reset-v1">
     <link rel="stylesheet" href="css/settings.css?v=20260920-ccswitch-v2">
@@ -34,7 +34,7 @@
     <!-- 基础配置与工具 (必须优先加载) -->
     <script src="js/languages.js?v=20260917-reset-v1"></script>
     <script src="js/config.js?v=20260917-reset-v1"></script>
-    <script src="js/utils.js?v=20260920-config-v2"></script>
+    <script src="js/utils.js?v=20260921-eyes-v2"></script>
     <script src="js/brand_context.js?v=20260917-reset-v1"></script>
 </head>
 
@@ -524,9 +524,80 @@
                         </div>
                     </div>
 
+                    <!-- Step 1: 目标交付渠道 (Channel First) -->
+                    <div class="mb-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center text-xs font-bold text-gray-800">
+                                <span class="w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 text-[10px] inline-flex items-center justify-center mr-1.5 font-black">1</span>
+                                <span>目标交付渠道</span>
+                            </div>
+                            <span class="text-[9px] text-slate-400 font-medium">智能匹配排版与规范</span>
+                        </div>
+                        <div id="detailChannelCardsContainer" class="grid grid-cols-2 gap-1.5">
+                            <button type="button" id="detail-channel-card-shopify" onclick="setDetailChannel('shopify')"
+                                class="p-2 text-left rounded-xl border border-indigo-600 bg-indigo-50/40 shadow-sm hover:border-indigo-500 transition-all cursor-pointer relative group">
+                                <div class="flex items-center justify-between mb-1">
+                                    <div class="flex items-center gap-1.5 text-xs font-bold text-slate-800 group-hover:text-indigo-600">
+                                        <i class="ph-bold ph-shopping-bag text-indigo-600"></i>
+                                        <span>Shopify / 独立站</span>
+                                    </div>
+                                    <span class="channel-check-badge text-indigo-600 font-bold"><i class="ph-bold ph-check text-xs"></i></span>
+                                </div>
+                                <div class="text-[10px] text-slate-500 flex items-center justify-between">
+                                    <span>图文穿插 (DTC)</span>
+                                    <span class="text-[9px] bg-indigo-100/70 text-indigo-700 font-bold px-1 rounded">推荐</span>
+                                </div>
+                            </button>
+                            <button type="button" id="detail-channel-card-amazon" onclick="setDetailChannel('amazon')"
+                                class="p-2 text-left rounded-xl border border-slate-200 bg-white hover:border-amber-400 transition-all cursor-pointer relative group">
+                                <div class="flex items-center justify-between mb-1">
+                                    <div class="flex items-center gap-1.5 text-xs font-bold text-slate-800 group-hover:text-amber-600">
+                                        <i class="ph-bold ph-package text-amber-500"></i>
+                                        <span>Amazon 亚马逊</span>
+                                    </div>
+                                    <span class="channel-check-badge text-indigo-600 font-bold hidden"><i class="ph-bold ph-check text-xs"></i></span>
+                                </div>
+                                <div class="text-[10px] text-slate-500 flex items-center justify-between">
+                                    <span>7图画廊 (纯图)</span>
+                                    <span class="text-[9px] bg-amber-50 text-amber-700 font-bold px-1 rounded">电商</span>
+                                </div>
+                            </button>
+                            <button type="button" id="detail-channel-card-social" onclick="setDetailChannel('social')"
+                                class="p-2 text-left rounded-xl border border-slate-200 bg-white hover:border-rose-400 transition-all cursor-pointer relative group">
+                                <div class="flex items-center justify-between mb-1">
+                                    <div class="flex items-center gap-1.5 text-xs font-bold text-slate-800 group-hover:text-rose-600">
+                                        <i class="ph-bold ph-lightning text-rose-500"></i>
+                                        <span>Social / TikTok</span>
+                                    </div>
+                                    <span class="channel-check-badge text-indigo-600 font-bold hidden"><i class="ph-bold ph-check text-xs"></i></span>
+                                </div>
+                                <div class="text-[10px] text-slate-500 flex items-center justify-between">
+                                    <span>痛点切片 (爆款)</span>
+                                    <span class="text-[9px] bg-rose-50 text-rose-700 font-bold px-1 rounded">种草</span>
+                                </div>
+                            </button>
+                            <button type="button" id="detail-channel-card-generic" onclick="setDetailChannel('generic')"
+                                class="p-2 text-left rounded-xl border border-slate-200 bg-white hover:border-blue-400 transition-all cursor-pointer relative group">
+                                <div class="flex items-center justify-between mb-1">
+                                    <div class="flex items-center gap-1.5 text-xs font-bold text-slate-800 group-hover:text-blue-600">
+                                        <i class="ph-bold ph-image text-blue-500"></i>
+                                        <span>通用长图海报</span>
+                                    </div>
+                                    <span class="channel-check-badge text-indigo-600 font-bold hidden"><i class="ph-bold ph-check text-xs"></i></span>
+                                </div>
+                                <div class="text-[10px] text-slate-500 flex items-center justify-between">
+                                    <span>长图无缝拼接</span>
+                                    <span class="text-[9px] bg-blue-50 text-blue-700 font-bold px-1 rounded">全能</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: 上传主图 / 角度素材 -->
                     <div class="mb-4">
                         <div class="flex items-center justify-between mb-2">
                             <div class="flex items-center text-xs font-bold text-gray-700">
+                                <span class="w-4 h-4 rounded-full bg-slate-100 text-slate-700 text-[10px] inline-flex items-center justify-center mr-1.5 font-black">2</span>
                                 <span>上传主图 / 角度素材</span>
                                 <i class="ph ph-question text-gray-400 ml-1 cursor-help"></i>
                             </div>
@@ -754,9 +825,13 @@
                         </div>
                     </div>
 
+                    <!-- Step 3: 商品事实与卖点 -->
                     <div class="mb-6 relative">
                         <div class="flex items-center justify-between mb-2">
-                            <div class="text-sm font-bold flex items-center">核心卖点</div>
+                            <div class="text-sm font-bold flex items-center">
+                                <span class="w-4 h-4 rounded-full bg-slate-100 text-slate-700 text-[10px] inline-flex items-center justify-center mr-1.5 font-black">3</span>
+                                <span>商品事实与核心卖点</span>
+                            </div>
                             <div class="flex items-center gap-1.5">
                                 <button type="button" onclick="clearDetailInputs()"
                                     class="text-[10px] text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded transition-colors font-medium cursor-pointer" title="清空产品名称与卖点输入，恢复干净状态">清空输入</button>
@@ -805,61 +880,80 @@
                                     placeholder="不要写 burn fat / medical recovery / FDA / 疗效保证 等"></textarea>
                             </div>
                         </div>
+
+                        <!-- 商品事实审核卡片容器 (Step 3 Facts Card) -->
+                        <div id="productFactsCardContainer" class="mt-2.5"></div>
                     </div>
 
-                    <div class="mb-4">
-                        <!-- 模块标题与统计徽标、快捷全选工具栏 -->
+                    <!-- Step 4: AI 页面规划方案 (AI Plan) -->
+                    <div class="mb-4" id="moduleSelectionContainer">
                         <div class="flex items-center justify-between mb-2">
                             <div class="flex items-center gap-2 min-w-0">
-                                <span class="text-sm font-bold text-gray-800 shrink-0">包含模块</span>
+                                <span class="w-4 h-4 rounded-full bg-slate-100 text-slate-700 text-[10px] inline-flex items-center justify-center mr-0.5 font-black">4</span>
+                                <span class="text-sm font-bold text-gray-800 shrink-0">AI 页面规划方案</span>
                                 <span id="moduleSelectionStatsBadge" class="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded-full truncate">已选 0 个模块</span>
                             </div>
-                            <div class="flex items-center gap-1 shrink-0">
-                                <button type="button" onclick="selectAllModules(true)" class="text-[10px] text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded transition-colors font-medium cursor-pointer">全选</button>
-                                <button type="button" onclick="invertModuleSelection()" class="text-[10px] text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded transition-colors font-medium cursor-pointer" title="反选模块">反选</button>
-                                <button type="button" onclick="selectAllModules(false)" class="text-[10px] text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-1.5 py-0.5 rounded transition-colors font-medium cursor-pointer">清空</button>
-                            </div>
-                        </div>
-
-                        <!-- 行业推荐预设选择 (2行3列紧凑布局) -->
-                        <div class="grid grid-cols-3 gap-1.5 mb-2.5">
-                            <button type="button" id="presetBtn_amazon_seven" onclick="applyModulePreset('amazon_seven')" class="text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="Amazon 7图套餐（7个货架主图与转化模块）">
-                                <i class="ph-bold ph-package shrink-0"></i> <span class="truncate">Amazon 7图</span>
-                            </button>
-                            <button type="button" id="presetBtn_shopify_dtc" onclick="applyModulePreset('shopify_dtc')" class="text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="独立站视觉流（7个DTC视觉与品牌模块）">
-                                <i class="ph-bold ph-shopping-bag shrink-0"></i> <span class="truncate">独立站视觉</span>
-                            </button>
-                            <button type="button" id="presetBtn_tiktok_viral" onclick="applyModulePreset('tiktok_viral')" class="text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="TikTok爆款流（5个痛点刺激与强转化模块）">
-                                <i class="ph-bold ph-lightning shrink-0"></i> <span class="truncate">TikTok爆款</span>
-                            </button>
-                            <button type="button" id="presetBtn_bundle_suite" onclick="applyModulePreset('bundle_suite')" class="text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="套装大礼包流（7个开箱全家福与多件配件模块）">
-                                <i class="ph-bold ph-gift shrink-0"></i> <span class="truncate">套装大礼包</span>
-                            </button>
-                            <button type="button" id="presetBtn_tech_hardware" onclick="applyModulePreset('tech_hardware')" class="text-[10px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200 hover:bg-cyan-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="3C硬核工匠流（7个核心功能+精密爆炸拆解模块）">
-                                <i class="ph-bold ph-cpu shrink-0"></i> <span class="truncate">3C硬核工匠</span>
-                            </button>
-                            <button type="button" id="presetBtn_social_ugc" onclick="applyModulePreset('social_ugc')" class="text-[10px] font-bold bg-pink-50 text-pink-800 border border-pink-200 hover:bg-pink-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="社交种草流（6个痛点唤醒与买家秀背书模块）">
-                                <i class="ph-bold ph-thumbs-up shrink-0"></i> <span class="truncate">社交种草流</span>
+                            <button type="button" onclick="toggleAdvancedPlanDrawer()" class="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 hover:underline flex items-center gap-1 cursor-pointer">
+                                <i class="ph-bold ph-sliders"></i>
+                                <span>自定义模块 (18)</span>
                             </button>
                         </div>
 
-                        <!-- 预设激活详情提示栏 -->
-                        <div id="presetActiveHint" class="hidden"></div>
+                        <!-- AI 推荐方案概要卡片容器 -->
+                        <div id="aiPlanSummaryContainer" class="mb-2.5"></div>
 
-                        <!-- 模块分类筛选标签栏 & 批量文案快捷工具 -->
-                        <div class="flex items-center justify-between gap-1 mb-2 pt-1 border-t border-slate-100">
-                            <div id="moduleCategoryTabs" class="flex items-center gap-1 overflow-x-auto custom-scrollbar text-[11px] font-bold py-0.5">
-                                <!-- 由 JS 动态注入分类 Tabs -->
+                        <!-- 高级模块抽屉 (默认折叠收起，避免用户迷失在 18 个复选框中) -->
+                        <div id="advancedPlanDrawer" class="hidden space-y-2.5 pt-2.5 border-t border-slate-200/80">
+                            <!-- 模块快捷全选工具栏 -->
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-[11px] font-bold text-slate-600">全量模块库与微调</span>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <button type="button" onclick="selectAllModules(true)" class="text-[10px] text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded transition-colors font-medium cursor-pointer">全选</button>
+                                    <button type="button" onclick="invertModuleSelection()" class="text-[10px] text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded transition-colors font-medium cursor-pointer" title="反选模块">反选</button>
+                                    <button type="button" onclick="selectAllModules(false)" class="text-[10px] text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-1.5 py-0.5 rounded transition-colors font-medium cursor-pointer">清空</button>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-1 shrink-0 text-[10px] text-slate-400">
-                                <button type="button" onclick="batchSetAllModuleText(true)" class="hover:text-blue-600 transition-colors" title="一键将所有选中的模块切换为【画面包含排版文字】">全含字</button>
-                                <span class="text-slate-300">/</span>
-                                <button type="button" onclick="batchSetAllModuleText(false)" class="hover:text-blue-600 transition-colors" title="一键将所有选中的模块切换为【纯净出图无文字】">全纯图</button>
+
+                            <!-- 行业推荐预设选择 (2行3列紧凑布局) -->
+                            <div class="grid grid-cols-3 gap-1.5 mb-2.5">
+                                <button type="button" id="presetBtn_amazon_seven" onclick="applyModulePreset('amazon_seven')" class="text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="Amazon 7图套餐（7个货架主图与转化模块）">
+                                    <i class="ph-bold ph-package shrink-0"></i> <span class="truncate">Amazon 7图</span>
+                                </button>
+                                <button type="button" id="presetBtn_shopify_dtc" onclick="applyModulePreset('shopify_dtc')" class="text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="独立站视觉流（7个DTC视觉与品牌模块）">
+                                    <i class="ph-bold ph-shopping-bag shrink-0"></i> <span class="truncate">独立站视觉</span>
+                                </button>
+                                <button type="button" id="presetBtn_tiktok_viral" onclick="applyModulePreset('tiktok_viral')" class="text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="TikTok爆款流（5个痛点刺激与强转化模块）">
+                                    <i class="ph-bold ph-lightning shrink-0"></i> <span class="truncate">TikTok爆款</span>
+                                </button>
+                                <button type="button" id="presetBtn_bundle_suite" onclick="applyModulePreset('bundle_suite')" class="text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="套装大礼包流（7个开箱全家福与多件配件模块）">
+                                    <i class="ph-bold ph-gift shrink-0"></i> <span class="truncate">套装大礼包</span>
+                                </button>
+                                <button type="button" id="presetBtn_tech_hardware" onclick="applyModulePreset('tech_hardware')" class="text-[10px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200 hover:bg-cyan-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="3C硬核工匠流（7个核心功能+精密爆炸拆解模块）">
+                                    <i class="ph-bold ph-cpu shrink-0"></i> <span class="truncate">3C硬核工匠</span>
+                                </button>
+                                <button type="button" id="presetBtn_social_ugc" onclick="applyModulePreset('social_ugc')" class="text-[10px] font-bold bg-pink-50 text-pink-800 border border-pink-200 hover:bg-pink-100 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 shadow-2xs truncate cursor-pointer" title="社交种草流（6个痛点唤醒与买家秀背书模块）">
+                                    <i class="ph-bold ph-thumbs-up shrink-0"></i> <span class="truncate">社交种草流</span>
+                                </button>
                             </div>
+
+                            <!-- 预设激活详情提示栏 -->
+                            <div id="presetActiveHint" class="hidden"></div>
+
+                            <!-- 模块分类筛选标签栏 & 批量文案快捷工具 -->
+                            <div class="flex items-center justify-between gap-1 mb-2 pt-1 border-t border-slate-100">
+                                <div id="moduleCategoryTabs" class="flex items-center gap-1 overflow-x-auto custom-scrollbar text-[11px] font-bold py-0.5">
+                                    <!-- 由 JS 动态注入分类 Tabs -->
+                                </div>
+                                <div class="flex items-center gap-1 shrink-0 text-[10px] text-slate-400">
+                                    <button type="button" onclick="batchSetAllModuleText(true)" class="hover:text-blue-600 transition-colors" title="一键将所有选中的模块切换为【画面包含排版文字】">全含字</button>
+                                    <span class="text-slate-300">/</span>
+                                    <button type="button" onclick="batchSetAllModuleText(false)" class="hover:text-blue-600 transition-colors" title="一键将所有选中的模块切换为【纯净出图无文字】">全纯图</button>
+                                </div>
+                            </div>
+
+                            <!-- 18 个模块卡片网格 -->
+                            <div class="grid grid-cols-2 gap-2" id="moduleGrid"></div>
                         </div>
-
-                        <!-- 18 个模块卡片网格 -->
-                        <div class="grid grid-cols-2 gap-2" id="moduleGrid"></div>
                     </div>
                 </div>
 
@@ -1034,6 +1128,24 @@
                                             <i class="ph-bold ph-squares-four"></i> 单图画廊
                                         </button>
                                     </div>
+
+                                    <div class="h-4 w-px bg-slate-200 hidden sm:block"></div>
+
+                                    <!-- 三栏工作台侧栏显隐切换 -->
+                                    <div class="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200/80 shadow-2xs">
+                                        <button id="btnToggleSectionTree" onclick="toggleSectionTree()" type="button"
+                                            class="h-7 flex items-center gap-1 px-2.5 text-xs font-semibold rounded-md transition-all text-slate-600 hover:text-slate-900 cursor-pointer"
+                                            title="展开/折叠页面结构树导航">
+                                            <i class="ph-bold ph-tree-structure text-indigo-600"></i>
+                                            <span class="hidden sm:inline">结构树</span>
+                                        </button>
+                                        <button id="btnToggleInspector" onclick="toggleSectionInspector()" type="button"
+                                            class="h-7 flex items-center gap-1 px-2.5 text-xs font-semibold rounded-md transition-all text-slate-600 hover:text-slate-900 cursor-pointer"
+                                            title="展开/折叠属性检视器">
+                                            <i class="ph-bold ph-sliders text-indigo-600"></i>
+                                            <span class="hidden sm:inline">检视器</span>
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <!-- 中间偏右：DTC 设计规范控制组（生成状态、双端视口、网页排版风格、品牌主色、字体排版） -->
@@ -1105,8 +1217,23 @@
 
                             <!-- 顶部第二行：动作与交付工具栏（层次分明，告别12按钮横向拥挤） -->
                             <div class="flex items-center justify-between pt-1.5 border-t border-slate-100 flex-wrap gap-2">
-                                <!-- 左侧：快捷操作组 -->
+                                <!-- 左侧：快捷操作组与准备度指示 -->
                                 <div class="flex items-center gap-2">
+                                    <!-- 上架准备度仪表盘徽标 -->
+                                    <div id="publishReadinessBadgeContainer" onclick="openDetailDeliveryHub()" class="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/80 cursor-pointer transition-colors" title="点击查看交付中心与上架准备度评分">
+                                        <span class="text-[11px] text-slate-400 font-medium hidden sm:inline">准备度:</span>
+                                        <span id="publishReadinessBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                                            0% 就绪
+                                        </span>
+                                    </div>
+
+                                    <!-- 自动保存状态指示 -->
+                                    <span id="dtcAutosaveStatus" class="hidden text-[11px] text-slate-400 font-medium items-center gap-1">
+                                        ✓ 已自动保存
+                                    </span>
+
+                                    <div class="h-4 w-px bg-slate-200 hidden sm:block"></div>
+
                                     <button id="btnRegenerateDetails" onclick="generateAIPage()" type="button"
                                         class="h-8 flex items-center gap-1.5 text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition-colors text-xs font-semibold px-3 rounded-lg shadow-2xs cursor-pointer" title="使用当前配置重新生成全案">
                                         <i class="ph-bold ph-arrows-clockwise text-indigo-600"></i>
@@ -1117,6 +1244,12 @@
                                         title="仅重新生成生成失败或中断的模块图片，保留已成功的图片">
                                         <i class="ph-bold ph-arrows-clockwise text-rose-600"></i>
                                         <span id="btnRetryFailedToolbarText">重试失败图片 (0)</span>
+                                    </button>
+                                    <button id="btnContinueCancelledToolbar" onclick="continueCancelledDetailTasks()" type="button"
+                                        class="hidden h-8 items-center gap-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors text-xs font-bold px-3 rounded-lg shadow-2xs cursor-pointer"
+                                        title="继续生成因主动中断而未完成的剩余区块">
+                                        <i class="ph-bold ph-play text-amber-600"></i>
+                                        <span id="btnContinueCancelledToolbarText">继续生成剩余区块 (0)</span>
                                     </button>
                                     <button onclick="openStandalonePdpPreview()" type="button"
                                         class="h-8 flex items-center gap-1.5 text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 transition-colors text-xs font-semibold px-3 rounded-lg shadow-2xs cursor-pointer" title="在新窗口以全屏模式预览独立站真实体验">
@@ -1228,13 +1361,22 @@
                                         </div>
                                     </div>
 
-                                    <!-- 主行动按钮：一键上架物料包 (ZIP) -->
-                                    <button id="btnExportLaunchKit" onclick="exportFullLaunchKit()" type="button"
-                                        class="h-8 flex items-center gap-1.5 text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 transition-all text-xs font-bold px-3.5 rounded-lg shadow-sm cursor-pointer whitespace-nowrap"
-                                        title="一键将当前全套 Listing、多平台广告文案、DTC 独立站自包含 HTML、高清切图打包导出为电商上架交付物料 ZIP 包">
-                                        <i class="ph-bold ph-package text-sm"></i>
-                                        <span>一键上架物料包 (ZIP)</span>
-                                    </button>
+                                     <!-- 一键交付中心快捷入口 (免遮挡预览画布) -->
+                                     <button id="btnOpenDeliveryHubToolbar" type="button" onclick="openDetailDeliveryHub()"
+                                         class="h-8 flex items-center gap-1.5 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors text-xs font-bold px-3 rounded-lg shadow-2xs cursor-pointer whitespace-nowrap"
+                                         title="打开视觉全案企划一键交付中心（打包ZIP、复制HTML代码、拼接长图、云图床托管、流转Listing与广告）">
+                                         <i class="ph-bold ph-package text-sm text-indigo-600"></i>
+                                         <span>交付中心</span>
+                                     </button>
+
+                                     <!-- 主行动按钮：聚焦渠道单一主交付 CTA (Channel-First Single Primary CTA) -->
+                                     <button id="btnPrimaryDeliveryCTA" onclick="executePrimaryChannelPublish()" type="button"
+                                         class="h-8 flex items-center gap-1.5 text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 transition-all text-xs font-bold px-3.5 rounded-lg shadow-sm cursor-pointer whitespace-nowrap"
+                                         title="准备上架并生成交付物料">
+                                         <i id="btnPrimaryDeliveryCTAIcon" class="ph-bold ph-paper-plane-tilt text-sm"></i>
+                                         <span id="btnPrimaryDeliveryCTAText">准备上架 (Shopify / 独立站)</span>
+                                     </button>
+                                     <button id="btnExportLaunchKit" onclick="exportFullLaunchKit()" type="button" class="hidden"><span>一键上架物料包 (ZIP)</span></button>
                                 </div>
                             </div>
 
@@ -1250,6 +1392,11 @@
                                         <i class="ph-bold ph-arrows-clockwise"></i>
                                         <span>一键重新生成失败图片</span>
                                     </button>
+                                    <button id="btnContinueCancelledImages" type="button" onclick="continueCancelledDetailTasks()"
+                                        class="hidden h-7 px-3 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
+                                        <i class="ph-bold ph-play"></i>
+                                        <span id="btnContinueCancelledImagesText">继续生成剩余区块</span>
+                                    </button>
                                     <button type="button" onclick="dismissDetailFailureAlert()" class="text-rose-400 hover:text-rose-700 p-1 cursor-pointer" title="关闭提醒">
                                         <i class="ph-bold ph-x text-xs"></i>
                                     </button>
@@ -1257,72 +1404,110 @@
                             </div>
                         </div>
                     </div>
-                    <!-- 单图画廊模式容器 -->
-                    <div id="modulesResultContainer" class="w-full max-w-3xl flex flex-col gap-6 pt-6 pb-20 px-4"></div>
-                    <!-- 独立站图文穿插响应式容器 -->
-                    <div id="dtcHybridContainer" class="hidden w-full flex flex-col items-center pt-6 pb-20 px-4"></div>
+                    <!-- 统一三栏工作台 (Unified 3-Column Studio Workspace) -->
+                    <div id="unifiedStudioWorkspace" class="w-full flex items-start gap-4 pt-4 pb-16 px-2 sm:px-4 max-w-[1720px] mx-auto min-h-[700px]">
+                        <!-- 左栏：页面结构树 / Section 导航 -->
+                        <aside id="sectionTreeSidebar" class="w-64 shrink-0 bg-white rounded-2xl border border-slate-200/90 shadow-sm sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto custom-scrollbar transition-all">
+                            <div class="p-3 border-b border-slate-100 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <i class="ph-bold ph-tree-structure text-indigo-600 text-sm"></i>
+                                    <span class="text-xs font-bold text-slate-800">页面结构</span>
+                                </div>
+                                <span class="text-[10px] text-slate-400">上下拖拽排序</span>
+                            </div>
+                            <div id="sectionTreeContainer" class="p-2 space-y-1.5">
+                                <div class="p-4 text-center text-slate-400 text-xs">暂无生成区块</div>
+                            </div>
+                        </aside>
 
-                    <!-- 商详全案生成后一键交付中心与跨模块流转 -->
-                    <div id="detailDeliveryHandoffCard" class="hidden w-full max-w-4xl mx-auto mb-16 px-4">
-                        <div class="bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 rounded-2xl p-6 text-white shadow-xl border border-indigo-500/30 relative overflow-hidden">
-                            <div class="absolute -right-10 -bottom-10 w-48 h-48 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
-                            <div class="flex items-center justify-between flex-wrap gap-4 pb-5 border-b border-white/10 relative z-10">
+                        <!-- 中栏：主预览区（单图画廊 / 独立站图文） -->
+                        <main id="sectionCenterCanvas" class="flex-1 min-w-0 flex flex-col items-center">
+                            <!-- 单图画廊模式容器 -->
+                            <div id="modulesResultContainer" class="w-full max-w-3xl flex flex-col gap-6 pb-12"></div>
+                            <!-- 独立站图文穿插响应式容器 -->
+                            <div id="dtcHybridContainer" class="hidden w-full flex flex-col items-center pb-12"></div>
+                        </main>
+
+                        <!-- 右栏：区块属性检视器 Inspector -->
+                        <aside id="sectionInspectorSidebar" class="w-80 shrink-0 bg-white rounded-2xl border border-slate-200/90 shadow-sm sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto custom-scrollbar transition-all">
+                            <div id="sectionInspectorPanel" class="h-full">
+                                <div class="p-6 text-center text-slate-400 flex flex-col items-center justify-center gap-2 h-full">
+                                    <i class="ph-bold ph-cursor-click text-3xl text-slate-300"></i>
+                                    <div class="text-xs font-bold text-slate-600">属性检视器</div>
+                                    <div class="text-[11px]">点击左侧结构树或中间预览区任一模块，实时调整文案、图片重绘指令与 SEO</div>
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
+
+                    <!-- 商详全案生成后一键交付中心与跨模块流转 (模态窗形态，杜绝遮挡中间图文画布) -->
+                    <div id="detailDeliveryHandoffCard" class="hidden fixed inset-0 z-[290] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4" onclick="if (event.target === this) dismissDetailDeliveryHub()">
+                        <div class="delivery-card-wrapper bg-white w-full max-w-4xl rounded-2xl p-6 shadow-2xl border border-slate-200/90 relative overflow-hidden max-h-[90vh] overflow-y-auto custom-scrollbar" onclick="event.stopPropagation()">
+                            <div class="flex items-center justify-between flex-wrap gap-4 pb-5 border-b border-slate-100 relative z-10">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-white shadow-md text-xl">
+                                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-500 flex items-center justify-center text-white shadow-sm text-xl">
                                         <i class="ph-bold ph-seal-check"></i>
                                     </div>
                                     <div>
                                         <div class="flex items-center gap-2">
-                                            <h3 class="text-base font-bold tracking-tight text-white">🎉 视觉全案企划已就绪 · 一键交付中心</h3>
-                                            <span id="detailDeliveryStatsBadge" class="text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full">已完成 0 个模块</span>
+                                            <h3 class="text-base font-bold tracking-tight text-slate-900">🎉 视觉全案企划已就绪 · 一键交付中心</h3>
+                                            <span id="detailDeliveryStatsBadge" class="text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full">已完成 0 个模块</span>
                                         </div>
-                                        <p class="text-xs text-slate-300/80 mt-0.5">模块视觉渲染与多语言文案已就绪，请选择发布交付渠道或继续流转至其他营销模块：</p>
+                                        <p class="text-xs text-slate-500 mt-0.5">模块视觉渲染与多语言文案已就绪，请选择发布交付渠道或继续流转至其他营销模块：</p>
                                     </div>
                                 </div>
-                                <button type="button" onclick="exportFullLaunchKit()" class="h-9 px-4 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95">
-                                    <i class="ph-bold ph-package text-sm"></i>
-                                    <span>一键打包全套上架物料 (ZIP)</span>
-                                </button>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="exportFullLaunchKit()" class="h-9 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-2 cursor-pointer active:scale-95">
+                                        <i class="ph-bold ph-package text-sm"></i>
+                                        <span>一键打包全套上架物料 (ZIP)</span>
+                                    </button>
+                                    <button type="button" id="btnToggleDeliveryCollapse" onclick="toggleDetailDeliveryHubCollapse()" class="h-9 w-9 flex items-center justify-center text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200/80 rounded-xl transition-colors cursor-pointer" title="收起/展开交付选项">
+                                        <i id="iconToggleDeliveryCollapse" class="ph-bold ph-caret-up text-base"></i>
+                                    </button>
+                                    <button type="button" id="btnDismissDeliveryCard" onclick="dismissDetailDeliveryHub()" class="h-9 w-9 flex items-center justify-center text-slate-400 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer" title="关闭交付中心卡片">
+                                        <i class="ph-bold ph-x text-base"></i>
+                                    </button>
+                                </div>
                             </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5 relative z-10">
-                                <div class="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col justify-between">
+                            <div id="detailDeliveryHandoffBody" class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5 relative z-10 transition-all">
+                                <div class="delivery-section-box bg-slate-50/90 rounded-xl p-4 border border-slate-200/90 flex flex-col justify-between">
                                     <div>
-                                        <div class="flex items-center gap-2 text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2">
+                                        <div class="flex items-center gap-2 text-xs font-bold text-indigo-700 uppercase tracking-wider mb-2">
                                             <i class="ph-bold ph-storefront"></i>
                                             <span>独立站与视觉资产交付</span>
                                         </div>
-                                        <p class="text-xs text-slate-300 leading-relaxed mb-3">直接获取自包含 DTC HTML 描述代码，或将图片托管至 WordPress / R2 / Shopify 云图床。</p>
+                                        <p class="text-xs text-slate-600 leading-relaxed mb-3">直接获取自包含 DTC HTML 描述代码，或将图片托管至 WordPress / R2 / Shopify 云图床。</p>
                                     </div>
-                                    <div class="flex items-center gap-2 flex-wrap pt-2 border-t border-white/10">
-                                        <button type="button" onclick="openDetailDtcHtmlModal()" class="h-8 px-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
-                                            <i class="ph-bold ph-code text-indigo-400"></i>
+                                    <div class="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-200/80">
+                                        <button type="button" onclick="openDetailDtcHtmlModal()" class="delivery-btn-white h-8 px-3 bg-white hover:bg-indigo-50/80 text-slate-700 hover:text-indigo-700 border border-slate-300 hover:border-indigo-300 font-semibold text-xs rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-code text-indigo-600"></i>
                                             <span>复制独立站 HTML 代码</span>
                                         </button>
-                                        <button type="button" onclick="openLongImageBuilder()" class="h-8 px-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
-                                            <i class="ph-bold ph-kanban text-amber-400"></i>
+                                        <button type="button" onclick="openLongImageBuilder()" class="delivery-btn-white h-8 px-3 bg-white hover:bg-amber-50/80 text-slate-700 hover:text-amber-700 border border-slate-300 hover:border-amber-300 font-semibold text-xs rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-kanban text-amber-600"></i>
                                             <span>拼接高清长图</span>
                                         </button>
-                                        <button type="button" onclick="openPdpAssetHostingModal()" class="h-8 px-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
-                                            <i class="ph-bold ph-cloud-arrow-up text-emerald-400"></i>
+                                        <button type="button" onclick="openPdpAssetHostingModal()" class="delivery-btn-white h-8 px-3 bg-white hover:bg-emerald-50/80 text-slate-700 hover:text-emerald-700 border border-slate-300 hover:border-emerald-300 font-semibold text-xs rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-cloud-arrow-up text-emerald-600"></i>
                                             <span>云图床托管 / 替换链接</span>
                                         </button>
                                     </div>
                                 </div>
-                                <div class="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col justify-between">
+                                <div class="delivery-section-box bg-slate-50/90 rounded-xl p-4 border border-slate-200/90 flex flex-col justify-between">
                                     <div>
-                                        <div class="flex items-center gap-2 text-xs font-bold text-amber-300 uppercase tracking-wider mb-2">
+                                        <div class="flex items-center gap-2 text-xs font-bold text-amber-800 uppercase tracking-wider mb-2">
                                             <i class="ph-bold ph-arrows-split-up-and-left"></i>
                                             <span>联动其他电商业务模块</span>
                                         </div>
-                                        <p class="text-xs text-slate-300 leading-relaxed mb-3">将当前商品名称、提炼卖点与视觉设定一键导入 Listing 编撰或广告文案创作，趁热打铁起量。</p>
+                                        <p class="text-xs text-slate-600 leading-relaxed mb-3">将当前商品名称、提炼卖点与视觉设定一键导入 Listing 编撰或广告文案创作，趁热打铁起量。</p>
                                     </div>
-                                    <div class="flex items-center gap-2 flex-wrap pt-2 border-t border-white/10">
-                                        <button type="button" onclick="transferDetailToListing()" class="h-8 px-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
-                                            <i class="ph-bold ph-article"></i>
+                                    <div class="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-200/80">
+                                        <button type="button" onclick="transferDetailToListing()" class="h-8 px-3 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-semibold text-xs rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-article text-amber-700"></i>
                                             <span>带入编撰 Listing (五点/标题)</span>
                                         </button>
-                                        <button type="button" onclick="transferDetailToAds()" class="h-8 px-3 bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/30 font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5 cursor-pointer">
-                                            <i class="ph-bold ph-megaphone"></i>
+                                        <button type="button" onclick="transferDetailToAds()" class="h-8 px-3 bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-300 font-semibold text-xs rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer">
+                                            <i class="ph-bold ph-megaphone text-rose-700"></i>
                                             <span>带入创作广告 (Meta/TikTok)</span>
                                         </button>
                                     </div>
@@ -3354,8 +3539,14 @@
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-600 mb-1">应用程序密码 (App Password)</label>
-                                        <input type="password" id="storageWpAppPassword" placeholder="在WP用户个人资料中生成" autocomplete="new-password"
-                                            class="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:bg-white focus:border-emerald-500 outline-none">
+                                        <div class="relative flex items-center">
+                                            <input type="password" id="storageWpAppPassword" placeholder="在WP用户个人资料中生成" autocomplete="new-password"
+                                                class="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 pr-8 bg-slate-50 focus:bg-white focus:border-emerald-500 outline-none">
+                                            <button type="button" class="absolute right-2 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                                                onclick="togglePasswordVisibility('storageWpAppPassword', this)" title="显示明文密钥" aria-label="显示明文密钥">
+                                                <i class="ph ph-eye text-sm"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="text-[11px] text-slate-400">
@@ -3396,8 +3587,14 @@
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-600 mb-1">Admin API 访问令牌 (shpat_...)</label>
-                                        <input type="password" id="storageShopifyAccessToken" placeholder="shpat_xxxxxxxxxxxx" autocomplete="new-password"
-                                            class="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:bg-white focus:border-green-500 outline-none">
+                                        <div class="relative flex items-center">
+                                            <input type="password" id="storageShopifyAccessToken" placeholder="shpat_xxxxxxxxxxxx" autocomplete="new-password"
+                                                class="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 pr-8 bg-slate-50 focus:bg-white focus:border-green-500 outline-none">
+                                            <button type="button" class="absolute right-2 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                                                onclick="togglePasswordVisibility('storageShopifyAccessToken', this)" title="显示明文密钥" aria-label="显示明文密钥">
+                                                <i class="ph ph-eye text-sm"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="text-[11px] text-slate-500 bg-slate-100/80 p-2.5 rounded-xl border border-slate-200/60 leading-relaxed">
@@ -3423,8 +3620,14 @@
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-bold text-slate-600 mb-1">R2 Secret Access Key</label>
-                                        <input type="password" id="storageR2SecretKey" placeholder="••••••••" autocomplete="new-password"
-                                            class="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:bg-white focus:border-amber-500 outline-none">
+                                        <div class="relative flex items-center">
+                                            <input type="password" id="storageR2SecretKey" placeholder="••••••••" autocomplete="new-password"
+                                                class="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 pr-8 bg-slate-50 focus:bg-white focus:border-amber-500 outline-none">
+                                            <button type="button" class="absolute right-2 text-slate-400 hover:text-slate-600 transition-colors p-1"
+                                                onclick="togglePasswordVisibility('storageR2SecretKey', this)" title="显示明文密钥" aria-label="显示明文密钥">
+                                                <i class="ph ph-eye text-sm"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -3747,7 +3950,7 @@
                     aria-labelledby="watermarkRemovalResultTitle">
                     <div class="watermark-removal-result-header">
                         <div>
-                            <span class="watermark-removal-step complete"><i class="ph ph-check"></i></span>
+                            <span id="watermarkRemovalResultBadge" class="watermark-removal-step complete"><i class="ph ph-check"></i></span>
                             <div>
                                 <h2 id="watermarkRemovalResultTitle">处理完成</h2>
                                 <p id="watermarkRemovalResultMeta">对比原图与消除结果</p>
@@ -4031,7 +4234,8 @@
                                     <div class="settings-password-wrapper">
                                         <i class="ph ph-key settings-input-prefix-icon"></i>
                                         <input type="password" id="settingsFirecrawlApiKey" placeholder="未配置 API Key" autocomplete="new-password" spellcheck="false">
-                                        <button type="button" id="settingsToggleFirecrawlKeyBtn" class="settings-icon-toggle-btn" onclick="toggleFirecrawlKeyVisibility()" title="切换明文显示" aria-label="切换明文显示">
+                                        <button type="button" id="settingsToggleFirecrawlKeyBtn" class="settings-icon-toggle-btn"
+                                            onclick="togglePasswordVisibility('settingsFirecrawlApiKey', this)" title="显示明文密钥" aria-label="显示明文密钥">
                                             <i id="settingsFirecrawlKeyEyeIcon" class="ph ph-eye"></i>
                                         </button>
                                     </div>
@@ -4254,6 +4458,9 @@
                                         <select id="settingsLogSource" onchange="filterSettingsLogs()">
                                             <option value="all">全部</option>
                                             <option value="ai">AI</option>
+                                            <option value="usage_query">用量查询</option>
+                                            <option value="balance">中转余额</option>
+                                            <option value="storage">对象存储</option>
                                             <option value="crawler">爬虫</option>
                                             <option value="image">图片</option>
                                             <option value="history">历史</option>
@@ -4346,8 +4553,15 @@
                             </div>
                             <label class="settings-field">
                                 <span>API Key</span>
-                                <input id="settingsProviderApiKey" type="password"
-                                    autocomplete="new-password" placeholder="输入 API Key">
+                                <div class="settings-password-wrapper">
+                                    <i class="ph ph-key settings-input-prefix-icon"></i>
+                                    <input id="settingsProviderApiKey" type="password"
+                                        autocomplete="new-password" placeholder="输入 API Key">
+                                    <button type="button" class="settings-icon-toggle-btn"
+                                        onclick="togglePasswordVisibility('settingsProviderApiKey', this)" title="显示明文密钥" aria-label="显示明文密钥">
+                                        <i class="ph ph-eye"></i>
+                                    </button>
+                                </div>
                                 <small>编辑时输入框保持为空；留空会保留已保存的 Key。</small>
                             </label>
                         </div>
@@ -4376,8 +4590,15 @@
                             <div class="settings-form-grid settings-form-grid-two">
                                 <label class="settings-field">
                                     <span>查询访问令牌 (Access Token)</span>
-                                    <input id="settingsProviderBalanceAccessToken" type="password"
-                                        autocomplete="new-password" placeholder="留空则复用上方 API Key">
+                                    <div class="settings-password-wrapper">
+                                        <i class="ph ph-key settings-input-prefix-icon"></i>
+                                        <input id="settingsProviderBalanceAccessToken" type="password"
+                                            autocomplete="new-password" placeholder="留空则复用上方 API Key">
+                                        <button type="button" class="settings-icon-toggle-btn"
+                                            onclick="togglePasswordVisibility('settingsProviderBalanceAccessToken', this)" title="显示明文密钥" aria-label="显示明文密钥">
+                                            <i class="ph ph-eye"></i>
+                                        </button>
+                                    </div>
                                     <small><strong>New-API 专用</strong>：若查询接口需要独立访问令牌，可在 New-API 后台【个人设置 ➔ 访问令牌】生成并填入。</small>
                                 </label>
                                 <label class="settings-field">
@@ -4430,11 +4651,20 @@
                         </div>
 
                         <div class="settings-form-section">
-                            <div class="settings-form-section-title">
-                                <i class="ph ph-cpu"></i>
-                                <span>能力与模型</span>
+                            <div class="flex items-center justify-between">
+                                <div class="settings-form-section-title mb-0">
+                                    <i class="ph ph-cpu"></i>
+                                    <span>能力与模型</span>
+                                </div>
+                                <button type="button" id="settingsFetchModelsBtn" onclick="fetchProviderModels(this)"
+                                    class="px-2.5 py-1 text-xs font-bold rounded-lg border border-slate-200 hover:border-indigo-400 text-slate-600 hover:text-indigo-600 bg-white shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                                    title="从中转站或提供商拉取可用模型列表">
+                                    <i class="ph ph-cloud-arrow-down"></i>
+                                    <span>获取模型列表</span>
+                                </button>
                             </div>
-                            <div class="settings-capability-options">
+                            <div id="settingsFetchModelsStatus" class="text-[11px] text-slate-400 mt-1 hidden"></div>
+                            <div class="settings-capability-options mt-2">
                                 <label class="settings-check-card">
                                     <input id="settingsSupportsText" type="checkbox"
                                         onchange="updateProviderCapabilityFields()" checked>
@@ -4457,13 +4687,19 @@
                                     <span>文本模型</span>
                                     <input id="settingsTextModel" type="text"
                                         placeholder="例如：gemini-2.5-pro">
-                                    <div id="settingsTextModelQuickPills" class="flex items-center gap-1 mt-1.5 flex-wrap"></div>
+                                    <select id="settingsTextModelSelect" onchange="onModelSelectChange('text', this.value)"
+                                        class="w-full text-xs border border-indigo-200 rounded-lg px-2.5 py-1.5 bg-indigo-50/50 text-slate-800 focus:bg-white focus:border-indigo-500 outline-none mt-1.5 hidden transition-all">
+                                        <option value="">-- 选择已获取的文本模型 --</option>
+                                    </select>
                                 </label>
                                 <label id="settingsImageModelField" class="settings-field settings-field-muted">
                                     <span>图片模型</span>
                                     <input id="settingsImageModel" type="text"
                                         placeholder="例如：gemini-2.5-flash-image" disabled>
-                                    <div id="settingsImageModelQuickPills" class="flex items-center gap-1 mt-1.5 flex-wrap"></div>
+                                    <select id="settingsImageModelSelect" onchange="onModelSelectChange('image', this.value)"
+                                        class="w-full text-xs border border-violet-200 rounded-lg px-2.5 py-1.5 bg-violet-50/50 text-slate-800 focus:bg-white focus:border-violet-500 outline-none mt-1.5 hidden transition-all">
+                                        <option value="">-- 选择已获取的图片模型 --</option>
+                                    </select>
                                 </label>
                             </div>
                             <div id="settingsImageGenerationModeFields"
@@ -4583,7 +4819,14 @@
                             <div class="settings-usage-grid settings-usage-grid-two mt-3">
                                 <label class="settings-usage-field">
                                     <span id="settingsUsageCredentialLabel" class="settings-usage-label">API Key (可选覆盖)</span>
-                                    <input id="settingsUsageApiKey" type="password" autocomplete="off" placeholder="留空则使用供应商的 API Key">
+                                    <div class="settings-password-wrapper">
+                                        <i class="ph ph-key settings-input-prefix-icon"></i>
+                                        <input id="settingsUsageApiKey" type="password" autocomplete="off" placeholder="留空则使用供应商的 API Key">
+                                        <button type="button" class="settings-icon-toggle-btn"
+                                            onclick="togglePasswordVisibility('settingsUsageApiKey', this)" title="显示明文密钥" aria-label="显示明文密钥">
+                                            <i class="ph ph-eye"></i>
+                                        </button>
+                                    </div>
                                 </label>
                                 <label class="settings-usage-field">
                                     <span class="settings-usage-label">请求地址 (可选覆盖)</span>
@@ -4753,7 +4996,14 @@
                                 </label>
                                 <label class="settings-field">
                                     <span>应用程序密码 (App Password)</span>
-                                    <input id="settingsWpAppPassword" type="password" placeholder="在WP用户个人资料中生成" autocomplete="new-password">
+                                    <div class="settings-password-wrapper">
+                                        <i class="ph ph-key settings-input-prefix-icon"></i>
+                                        <input id="settingsWpAppPassword" type="password" placeholder="在WP用户个人资料中生成" autocomplete="new-password">
+                                        <button type="button" class="settings-icon-toggle-btn"
+                                            onclick="togglePasswordVisibility('settingsWpAppPassword', this)" title="显示明文密钥" aria-label="显示明文密钥">
+                                            <i class="ph ph-eye"></i>
+                                        </button>
+                                    </div>
                                     <small>编辑时留空表示保留已保存的应用密码。</small>
                                 </label>
                             </div>
@@ -4800,7 +5050,14 @@
                             </div>
                             <label class="settings-field">
                                 <span>Admin API 访问令牌 (shpat_...) <b>*</b></span>
-                                <input id="settingsShopifyAccessToken" type="password" placeholder="shpat_xxxxxxxxxxxx" autocomplete="new-password">
+                                <div class="settings-password-wrapper">
+                                    <i class="ph ph-key settings-input-prefix-icon"></i>
+                                    <input id="settingsShopifyAccessToken" type="password" placeholder="shpat_xxxxxxxxxxxx" autocomplete="new-password">
+                                    <button type="button" class="settings-icon-toggle-btn"
+                                        onclick="togglePasswordVisibility('settingsShopifyAccessToken', this)" title="显示明文密钥" aria-label="显示明文密钥">
+                                        <i class="ph ph-eye"></i>
+                                    </button>
+                                </div>
                                 <small>编辑时留空表示保留已保存的访问令牌。</small>
                             </label>
                             <div class="settings-storage-guide-box">
@@ -4828,7 +5085,14 @@
                                 </label>
                                 <label class="settings-field">
                                     <span>R2 Secret Access Key</span>
-                                    <input id="settingsR2SecretKey" type="password" placeholder="••••••••" autocomplete="new-password">
+                                    <div class="settings-password-wrapper">
+                                        <i class="ph ph-key settings-input-prefix-icon"></i>
+                                        <input id="settingsR2SecretKey" type="password" placeholder="••••••••" autocomplete="new-password">
+                                        <button type="button" class="settings-icon-toggle-btn"
+                                            onclick="togglePasswordVisibility('settingsR2SecretKey', this)" title="显示明文密钥" aria-label="显示明文密钥">
+                                            <i class="ph ph-eye"></i>
+                                        </button>
+                                    </div>
                                     <small>在 R2 控制台右侧【管理 R2 API 令牌】中创建并复制。编辑时留空保留旧值。</small>
                                 </label>
                             </div>
@@ -4934,7 +5198,7 @@
         console.log("%c[System] DOM fully loaded, starting app.js...", "color: #4f46e5; font-weight: bold;");
     </script>
     <script src="js/usage_query_engine.js?v=20260920-ccswitch-v5"></script>
-    <script src="js/settings.js?v=20260920-ccswitch-v6"></script>
+    <script src="js/settings.js?v=20260921-vertex-v1"></script>
     <script src="js/app.js?v=20260920-config-v2"></script>
     <script src="js/universal_uploader.js"></script>
     <script src="js/details.js?v=20260917-reset-v1"></script>

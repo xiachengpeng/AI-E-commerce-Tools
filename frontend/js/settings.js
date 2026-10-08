@@ -982,8 +982,14 @@ function updateSettingsOverviewKpis() {
             if (textBalanceEl) {
                 if (textProvider.protocol === "openai_compatible") {
                     textBalanceEl.classList.remove("hidden");
-                    if (textProvider.last_balance_text) {
-                        textBalanceEl.innerHTML = `<span class="settings-kpi-balance-pill" title="当前中转站剩余额度"><i class="ph-bold ph-wallet"></i> ${escapeSettingsHtml(textProvider.last_balance_text)}</span>`;
+                    let textBal = textProvider.last_balance_text;
+                    if (textBal && (textBal.includes("无限额度") || textBal.includes("不限额度"))) {
+                        textBal = null;
+                    }
+                    if (textBal === "查询失败" || (textBal && textBal.includes("查询失败"))) {
+                        textBalanceEl.innerHTML = `<button type="button" class="settings-kpi-balance-btn is-error" onclick="event.stopPropagation(); queryProviderBalance(${Number(textProvider.id)}, this)" title="查询失败，详情看日志"><i class="ph-bold ph-warning-circle text-rose-500"></i> 查询失败</button>`;
+                    } else if (textBal) {
+                        textBalanceEl.innerHTML = `<span class="settings-kpi-balance-pill" title="当前中转站剩余额度"><i class="ph-bold ph-wallet"></i> ${escapeSettingsHtml(textBal)}</span>`;
                     } else {
                         textBalanceEl.innerHTML = `<button type="button" class="settings-kpi-balance-btn" onclick="event.stopPropagation(); queryProviderBalance(${Number(textProvider.id)}, this)" title="点击查询当前绑定中转站余额"><i class="ph ph-wallet"></i> 查余额</button>`;
                     }
@@ -1025,8 +1031,14 @@ function updateSettingsOverviewKpis() {
             if (imageBalanceEl) {
                 if (imageProvider.protocol === "openai_compatible") {
                     imageBalanceEl.classList.remove("hidden");
-                    if (imageProvider.last_balance_text) {
-                        imageBalanceEl.innerHTML = `<span class="settings-kpi-balance-pill" title="当前中转站剩余额度"><i class="ph-bold ph-wallet"></i> ${escapeSettingsHtml(imageProvider.last_balance_text)}</span>`;
+                    let imgBal = imageProvider.last_balance_text;
+                    if (imgBal && (imgBal.includes("无限额度") || imgBal.includes("不限额度"))) {
+                        imgBal = null;
+                    }
+                    if (imgBal === "查询失败" || (imgBal && imgBal.includes("查询失败"))) {
+                        imageBalanceEl.innerHTML = `<button type="button" class="settings-kpi-balance-btn is-error" onclick="event.stopPropagation(); queryProviderBalance(${Number(imageProvider.id)}, this)" title="查询失败，详情看日志"><i class="ph-bold ph-warning-circle text-rose-500"></i> 查询失败</button>`;
+                    } else if (imgBal) {
+                        imageBalanceEl.innerHTML = `<span class="settings-kpi-balance-pill" title="当前中转站剩余额度"><i class="ph-bold ph-wallet"></i> ${escapeSettingsHtml(imgBal)}</span>`;
                     } else {
                         imageBalanceEl.innerHTML = `<button type="button" class="settings-kpi-balance-btn" onclick="event.stopPropagation(); queryProviderBalance(${Number(imageProvider.id)}, this)" title="点击查询当前绑定中转站余额"><i class="ph ph-wallet"></i> 查余额</button>`;
                     }
@@ -1417,20 +1429,44 @@ function providerUsageActionMarkup(provider) {
     `;
 }
 
+function markBalanceQueryFailed(providerId, reason = "") {
+    const provider = (settingsState.providers || []).find(p => Number(p.id) === Number(providerId));
+    if (provider) {
+        provider.last_balance_text = "查询失败";
+        provider.last_balance_at = new Date().toISOString();
+        renderProviderList();
+        if (typeof updateSettingsOverviewKpis === "function") {
+            updateSettingsOverviewKpis();
+        }
+        settingsRequest(`${API_BASE}/api/settings/ai/providers/${providerId}/balance/record`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ balance_text: "查询失败" })
+        }).catch(() => {});
+    }
+    settingsToast("查询失败，详情看日志", "warning");
+}
+
 function providerBalanceMarkup(provider) {
     if (provider.protocol !== "openai_compatible") return "";
-    const balanceText = provider.last_balance_text;
+    let balanceText = provider.last_balance_text;
+    // 模型 API Key 自身配额（如无限额度）不予展示
+    if (balanceText && (balanceText.includes("无限额度") || balanceText.includes("不限额度"))) {
+        balanceText = null;
+    }
     const balanceTime = provider.last_balance_at
         ? new Date(provider.last_balance_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
         : "";
     if (balanceText) {
+        const isError = balanceText === "查询失败" || balanceText.includes("查询失败");
         return `
-            <div class="settings-balance-badge" id="providerBalanceBadge-${Number(provider.id)}">
-                <i class="ph-bold ph-wallet"></i>
-                <span class="settings-balance-amount">余额: ${escapeSettingsHtml(balanceText)}</span>
-                ${balanceTime ? `<span class="settings-balance-time" title="更新时间">${balanceTime}</span>` : ""}
+            <div class="settings-balance-badge ${isError ? "is-error" : ""}" id="providerBalanceBadge-${Number(provider.id)}"
+                title="${isError ? "查询失败，详情看日志" : `更新时间: ${balanceTime}`}">
+                <i class="ph-bold ${isError ? "ph-warning-circle" : "ph-wallet"}"></i>
+                <span class="settings-balance-amount">${isError ? "查询失败" : `余额: ${escapeSettingsHtml(balanceText)}`}</span>
+                ${balanceTime && !isError ? `<span class="settings-balance-time" title="更新时间">${balanceTime}</span>` : ""}
                 <button type="button" class="settings-balance-refresh-btn"
-                    title="刷新中转站余额" aria-label="刷新余额"
+                    title="${isError ? "重新查询 (详情看日志)" : "刷新中转站余额"}" aria-label="刷新余额"
                     onclick="queryProviderBalance(${Number(provider.id)}, this)">
                     <i class="ph ph-arrows-clockwise"></i>
                 </button>
@@ -1454,7 +1490,6 @@ async function queryProviderBalance(providerId, button) {
     if (button) setSettingsButtonBusy(button, true);
 
     const badgeEl = settingsElement(`providerBalanceBadge-${Number(providerId)}`);
-    const originalBadgeHtml = badgeEl ? badgeEl.innerHTML : "";
     if (badgeEl) {
         badgeEl.innerHTML = `
             <span class="settings-balance-loading">
@@ -1465,22 +1500,29 @@ async function queryProviderBalance(providerId, button) {
     }
 
     try {
-        // 1. First, check if this provider has a configured usage-query script (CC-Switch style)
+        // 1. Check if this provider has a configured usage-query script (CC-Switch style)
         let usageConfig = null;
         try {
             usageConfig = await settingsRequest(`${API_BASE}/api/settings/ai/providers/${providerId}/usage-query`);
         } catch (_) {}
 
         const engine = getUsageQueryEngine();
-        if (usageConfig && usageConfig.balance_script && usageConfig.balance_script.trim() && engine) {
+        let scriptToExecute = (usageConfig && usageConfig.balance_script && usageConfig.balance_script.trim()) ? usageConfig.balance_script : null;
+
+        // 2、没有配置的情况下，默认使用通用查询
+        if (!scriptToExecute && engine) {
+            scriptToExecute = (engine.USAGE_QUERY_TEMPLATES && engine.USAGE_QUERY_TEMPLATES.general && engine.USAGE_QUERY_TEMPLATES.general.script) || null;
+        }
+
+        if (scriptToExecute && engine) {
             let parsed = null;
             try {
-                parsed = engine.parseUsageScript(usageConfig.balance_script);
+                parsed = engine.parseUsageScript(scriptToExecute);
             } catch (_) {}
 
             if (parsed && parsed.request) {
                 const reqObj = parsed.request || {};
-                const timeoutSeconds = usageConfig.balance_timeout || 10;
+                const timeoutSeconds = (usageConfig && usageConfig.balance_timeout) || 10;
                 const proxyPayload = {
                     provider_id: Number(providerId),
                     url: reqObj.url || "",
@@ -1498,19 +1540,19 @@ async function queryProviderBalance(providerId, button) {
                         body: JSON.stringify(proxyPayload)
                     });
                 } catch (reqErr) {
-                    settingsToast(`代理请求异常: ${reqErr.message}`, "error");
-                    if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
+                    remoteLog(`[${providerId}] 余额查询代理请求异常: ${reqErr.message}`, { level: "error", source: "balance" });
+                    markBalanceQueryFailed(providerId, reqErr.message);
                     return;
                 }
 
                 if (!proxyResp || !proxyResp.ok) {
                     const errorMsg = (proxyResp && (proxyResp.message || `HTTP ${proxyResp.status_code}`)) || "中转站接口请求失败";
-                    settingsToast(`中转站查询失败: ${errorMsg}`, "error");
-                    if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
+                    remoteLog(`[${providerId}] 余额查询未获取到有效响应: ${errorMsg}`, { level: "warning", source: "balance" });
+                    markBalanceQueryFailed(providerId, errorMsg);
                     return;
                 }
 
-                const extractResult = engine.executeUsageExtractor(usageConfig.balance_script, proxyResp.data);
+                const extractResult = engine.executeUsageExtractor(scriptToExecute, proxyResp.data);
                 if (extractResult && extractResult.isValid !== false && extractResult.remaining !== undefined && extractResult.remaining !== null) {
                     const unit = extractResult.unit || "USD";
                     const remNum = Number(extractResult.remaining);
@@ -1538,21 +1580,21 @@ async function queryProviderBalance(providerId, button) {
                     settingsToast(`中转站余额: ${balText}`, "success");
                     return;
                 } else {
-                    const reason = (extractResult && extractResult.invalidMessage) || "返回数据未提取到有效余额";
-                    settingsToast(`用量提取未通过: ${reason}`, "warning");
-                    if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
+                    const reason = (extractResult && extractResult.invalidMessage) || "未能从响应中提取到余额";
+                    remoteLog(`[${providerId}] 余额提取未通过: ${reason}`, { level: "warning", source: "balance" });
+                    markBalanceQueryFailed(providerId, reason);
                     return;
                 }
             }
         }
 
-        // 2. Default fallback to backend balance endpoint
+        // 2. Default fallback to backend balance endpoint (for non-openai or custom providers)
         const data = await settingsRequest(`${API_BASE}/api/settings/ai/providers/${providerId}/balance`, {
             method: "POST",
             headers: { "Content-Type": "application/json" }
         });
 
-        if (data.status === "success" && data.balance_text) {
+        if (data.status === "success" && data.balance_text && !data.balance_text.includes("无限额度") && !data.balance_text.includes("不限额度") && data.balance_text !== "查询失败") {
             settingsToast(`中转站余额: ${data.balance_text}`, "success");
             const provider = settingsState.providers.find(p => Number(p.id) === Number(providerId));
             if (provider) {
@@ -1563,16 +1605,12 @@ async function queryProviderBalance(providerId, button) {
                     updateSettingsOverviewKpis();
                 }
             }
-        } else if (data.status === "unsupported") {
-            settingsToast(data.message || "该协议不支持远程查询余额", "info");
-            if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
         } else {
-            settingsToast(data.message || "查询余额失败", "error");
-            if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
+            markBalanceQueryFailed(providerId, data.message || "未能查到有效余额");
         }
     } catch (error) {
-        settingsToast(`查询余额失败: ${error.message}`, "error");
-        if (badgeEl && originalBadgeHtml) badgeEl.innerHTML = originalBadgeHtml;
+        remoteLog(`[${providerId}] 查询余额失败: ${error.message}`, { level: "error", source: "balance" });
+        markBalanceQueryFailed(providerId, error.message);
     } finally {
         if (button) setSettingsButtonBusy(button, false);
     }
@@ -1738,7 +1776,21 @@ async function openUsageQueryModal(providerId) {
     const intervalInput = settingsElement("settingsUsageAutoInterval");
     const editor = settingsElement("settingsUsageScriptEditor");
 
-    if (apiKeyInput) apiKeyInput.value = "";
+    if (apiKeyInput) {
+        apiKeyInput.value = "";
+        apiKeyInput.type = "password";
+        if (apiKeyInput.dataset) {
+            delete apiKeyInput.dataset.cachedSecret;
+            delete apiKeyInput.dataset.isOriginalRevealed;
+        }
+        const usageKeyBtn = apiKeyInput?.parentElement?.querySelector("button");
+        if (usageKeyBtn) {
+            const icon = usageKeyBtn.querySelector("i");
+            if (icon) icon.className = "ph ph-eye";
+            usageKeyBtn.setAttribute("title", "显示明文密钥");
+            usageKeyBtn.setAttribute("aria-label", "显示明文密钥");
+        }
+    }
     if (baseUrlInput) baseUrlInput.value = "";
     if (userIdInput) userIdInput.value = "";
     if (timeoutInput) timeoutInput.value = "10";
@@ -1934,19 +1986,36 @@ async function testUsageQueryScript(button) {
         renderUsageQueryResult(proxyResp, extractResult);
 
         const isOverallSuccess = Boolean(proxyResp && proxyResp.ok) && (extractResult.isValid !== false);
+        const currentProvider = (settingsState.providers || []).find(p => Number(p.id) === Number(currentUsageQueryProviderId));
+        const providerName = currentProvider ? currentProvider.name : "用量配置";
+
         if (isOverallSuccess) {
             lastUsageQueryExtractResult = {
                 providerId: currentUsageQueryProviderId,
                 result: extractResult
             };
+            remoteLog(`[${providerName}] 用量脚本沙箱提取成功: 剩余=${extractResult.remaining ?? '--'} ${extractResult.unit || 'USD'} (已用=${extractResult.used ?? '--'}, 总额=${extractResult.total ?? '--'})`, {
+                level: "success",
+                source: "usage_query"
+            });
             settingsToast("测试执行成功", "success");
         } else {
             const warnMsg = !proxyResp.ok
                 ? `接口响应 HTTP ${proxyResp.status_code || 400}`
                 : (extractResult.invalidMessage || "提取未通过");
+            remoteLog(`[${providerName}] 用量脚本测试未通过: ${warnMsg}`, {
+                level: "warning",
+                source: "usage_query"
+            });
             settingsToast(`测试未通过: ${warnMsg}`, "warning");
         }
     } catch (err) {
+        const currentProvider = (settingsState.providers || []).find(p => Number(p.id) === Number(currentUsageQueryProviderId));
+        const providerName = currentProvider ? currentProvider.name : "用量配置";
+        remoteLog(`[${providerName}] 用量测试异常: ${err.message}`, {
+            level: "error",
+            source: "usage_query"
+        });
         if (resultArea && resultDetails) {
             resultArea.classList.remove("hidden");
             resultDetails.innerHTML = `
@@ -2173,6 +2242,18 @@ function openProviderEditor(id) {
 
     const apiKey = settingsElement("settingsProviderApiKey");
     apiKey.value = "";
+    apiKey.type = "password";
+    if (apiKey.dataset) {
+        delete apiKey.dataset.cachedSecret;
+        delete apiKey.dataset.isOriginalRevealed;
+    }
+    const apiKeyBtn = apiKey?.parentElement?.querySelector("button");
+    if (apiKeyBtn) {
+        const icon = apiKeyBtn.querySelector("i");
+        if (icon) icon.className = "ph ph-eye";
+        apiKeyBtn.setAttribute("title", "显示明文密钥");
+        apiKeyBtn.setAttribute("aria-label", "显示明文密钥");
+    }
     apiKey.placeholder = provider
         ? maskedKeyPlaceholder(provider)
         : "输入 API Key";
@@ -2207,6 +2288,18 @@ function openProviderEditor(id) {
     const balanceTokenEl = settingsElement("settingsProviderBalanceAccessToken");
     if (balanceTokenEl) {
         balanceTokenEl.value = "";
+        balanceTokenEl.type = "password";
+        if (balanceTokenEl.dataset) {
+            delete balanceTokenEl.dataset.cachedSecret;
+            delete balanceTokenEl.dataset.isOriginalRevealed;
+        }
+        const balanceBtn = balanceTokenEl?.parentElement?.querySelector("button");
+        if (balanceBtn) {
+            const icon = balanceBtn.querySelector("i");
+            if (icon) icon.className = "ph ph-eye";
+            balanceBtn.setAttribute("title", "显示明文密钥");
+            balanceBtn.setAttribute("aria-label", "显示明文密钥");
+        }
         balanceTokenEl.placeholder = provider?.has_balance_access_token
             ? (provider.balance_access_token_masked || "已保存访问令牌，留空表示保留")
             : "留空则复用上方 API Key";
@@ -2222,11 +2315,28 @@ function openProviderEditor(id) {
         balanceTestMsg.className = "settings-balance-test-msg";
     }
 
+    const textSelect = settingsElement("settingsTextModelSelect");
+    if (textSelect) {
+        textSelect.classList.add("hidden");
+        textSelect.innerHTML = '<option value="">-- 选择已获取的文本模型 --</option>';
+    }
+    const imageSelect = settingsElement("settingsImageModelSelect");
+    if (imageSelect) {
+        imageSelect.classList.add("hidden");
+        imageSelect.innerHTML = '<option value="">-- 选择已获取的图片模型 --</option>';
+    }
+    const fetchStatusEl = settingsElement("settingsFetchModelsStatus");
+    if (fetchStatusEl) {
+        fetchStatusEl.classList.add("hidden");
+        fetchStatusEl.innerHTML = "";
+    }
+
     updateProviderProtocolFields();
     updateProviderCapabilityFields();
     settingsElement("settingsProviderEditor").classList.remove("hidden");
     window.setTimeout(() => settingsElement("settingsProviderName")?.focus(), 0);
 }
+
 
 function closeProviderEditor() {
     settingsElement("settingsProviderEditor")?.classList.add("hidden");
@@ -2268,43 +2378,124 @@ const QUICK_RECOMMENDED_MODELS = {
     }
 };
 
-function renderProviderQuickModelPills(protocol = "gemini") {
-    const textWrap = settingsElement("settingsTextModelQuickPills");
-    const imageWrap = settingsElement("settingsImageModelQuickPills");
-    if (!textWrap || !imageWrap) return;
+function safeEscape(str) {
+    if (typeof escapeSettingsHtml === "function") return escapeSettingsHtml(str);
+    if (!str) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+const escapeHtml = safeEscape;
 
-    const models = QUICK_RECOMMENDED_MODELS[protocol] || QUICK_RECOMMENDED_MODELS.gemini;
-
-    textWrap.innerHTML = (models.text || []).map(m => `
-        <button type="button" onclick="applyQuickModelPill('text', '${m.id}')"
-            class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors cursor-pointer border border-indigo-100"
-            title="点击一键填入模型代码: ${m.id}">
-            ${m.label}
-        </button>
-    `).join("");
-
-    imageWrap.innerHTML = (models.image || []).map(m => `
-        <button type="button" onclick="applyQuickModelPill('image', '${m.id}')"
-            class="text-[10px] font-bold px-2 py-0.5 rounded bg-violet-50 hover:bg-violet-100 text-violet-700 transition-colors cursor-pointer border border-violet-100"
-            title="点击一键填入模型代码: ${m.id}">
-            ${m.label}
-        </button>
-    `).join("");
+function populateModelSelectDropdown(selectEl, models, placeholder) {
+    if (!selectEl) return;
+    const list = Array.isArray(models) ? models : [];
+    if (!list.length) {
+        selectEl.classList.add("hidden");
+        selectEl.innerHTML = `<option value="">${placeholder}</option>`;
+        return;
+    }
+    const optionsHtml = [`<option value="">${placeholder} (共 ${list.length} 个)</option>`];
+    list.forEach(m => {
+        optionsHtml.push(`<option value="${safeEscape(m)}">${safeEscape(m)}</option>`);
+    });
+    selectEl.innerHTML = optionsHtml.join("");
+    selectEl.classList.remove("hidden");
 }
 
-function applyQuickModelPill(capability, modelName) {
-    if (!modelName) return;
+
+function onModelSelectChange(capability, selectedModel) {
+    if (!selectedModel) return;
     if (capability === "text") {
         const textInput = settingsElement("settingsTextModel");
         if (textInput) {
-            textInput.value = modelName;
+            textInput.value = selectedModel;
             try { textInput.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
         }
     } else if (capability === "image") {
         const imgInput = settingsElement("settingsImageModel");
         if (imgInput) {
-            imgInput.value = modelName;
+            imgInput.value = selectedModel;
             try { imgInput.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {}
+        }
+    }
+}
+
+async function fetchProviderModels(button) {
+    const statusEl = settingsElement("settingsFetchModelsStatus");
+    const textSelect = settingsElement("settingsTextModelSelect");
+    const imageSelect = settingsElement("settingsImageModelSelect");
+
+    const protocol = (settingsElement("settingsProviderProtocol")?.value || "openai_compatible").trim();
+    const baseUrl = (settingsElement("settingsProviderBaseUrl")?.value || "").trim();
+    const apiKey = (settingsElement("settingsProviderApiKey")?.value || "").trim();
+    const providerId = settingsState.editingProviderId ?? (parseInt(settingsElement("settingsProviderId")?.value, 10) || null);
+
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="ph ph-spinner animate-spin"></i> <span>正在拉取...</span>';
+    }
+    if (statusEl) {
+        statusEl.classList.remove("hidden");
+        statusEl.innerHTML = '<span class="text-indigo-600 flex items-center gap-1"><i class="ph ph-spinner animate-spin"></i> 正在连接上游中转站拉取模型列表...</span>';
+    }
+
+    try {
+        const payload = {
+            provider_id: providerId,
+            protocol: protocol,
+            base_url: baseUrl,
+            api_key: apiKey,
+            vertex_project_id: (settingsElement("settingsVertexProjectId")?.value || "").trim(),
+            vertex_location: (settingsElement("settingsVertexLocation")?.value || "").trim(),
+            vertex_key_path: (settingsElement("settingsVertexKeyPath")?.value || "").trim(),
+        };
+        const apiBase = typeof API_BASE !== "undefined" ? API_BASE : "";
+        const data = await settingsRequest(`${apiBase}/api/settings/ai/providers/models/fetch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        if (!data || data.status !== "success") {
+            const err = data?.message || "拉取模型列表失败";
+            if (statusEl) {
+                statusEl.innerHTML = `<span class="text-rose-600 font-medium">✕ ${safeEscape(err)}</span>`;
+            }
+            settingsToast(`获取模型列表失败: ${err}`, "error");
+            return;
+        }
+
+        const models = data.models || [];
+        populateModelSelectDropdown(textSelect, models, "-- 选择已获取的文本模型 --");
+        populateModelSelectDropdown(imageSelect, models, "-- 选择已获取的图片模型 --");
+
+        const currentText = (settingsElement("settingsTextModel")?.value || "").trim();
+        if (currentText && textSelect) {
+            textSelect.value = currentText;
+        }
+        const currentImg = (settingsElement("settingsImageModel")?.value || "").trim();
+        if (currentImg && imageSelect) {
+            imageSelect.value = currentImg;
+        }
+
+        if (statusEl) {
+            statusEl.innerHTML = `<span class="text-emerald-600 font-medium">✓ 已成功拉取 ${data.count} 个模型，请从下方下拉列表中选择</span>`;
+        }
+        settingsToast(`成功获取 ${data.count} 个可用模型`, "success");
+    } catch (e) {
+        const errMsg = e.message || "网络请求异常";
+        if (statusEl) {
+            statusEl.innerHTML = `<span class="text-rose-600 font-medium">✕ ${safeEscape(errMsg)}</span>`;
+        }
+        settingsToast(`获取模型列表异常: ${errMsg}`, "error");
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = '<i class="ph ph-cloud-arrow-down"></i> <span>获取模型列表</span>';
         }
     }
 }
@@ -2322,8 +2513,8 @@ function updateProviderProtocolFields() {
     const baseUrl = settingsElement("settingsProviderBaseUrl");
     if (baseUrl) baseUrl.required = isOpenAI;
     updateProviderImageGenerationModeField();
-    renderProviderQuickModelPills(protocol);
 }
+
 
 function updateProviderImageGenerationModeField() {
     const protocol = settingsElement("settingsProviderProtocol")?.value || "gemini";
@@ -2670,6 +2861,18 @@ function renderCrawlerSettings(crawler = settingsState.crawler) {
     const keyInput = settingsElement("settingsFirecrawlApiKey");
     if (keyInput) {
         keyInput.value = "";
+        keyInput.type = "password";
+        if (keyInput.dataset) {
+            delete keyInput.dataset.cachedSecret;
+            delete keyInput.dataset.isOriginalRevealed;
+        }
+        const fcBtn = keyInput.parentElement?.querySelector("button");
+        if (fcBtn) {
+            const icon = fcBtn.querySelector("i");
+            if (icon) icon.className = "ph ph-eye";
+            fcBtn.setAttribute("title", "显示明文密钥");
+            fcBtn.setAttribute("aria-label", "显示明文密钥");
+        }
         keyInput.placeholder = maskedCrawlerKeyPlaceholder(crawler);
     }
 
@@ -3511,8 +3714,6 @@ if (typeof window !== "undefined") {
     window.testSettingsStorageConnection = testSettingsStorageConnection;
     window.saveSettingsStorageConfig = saveSettingsStorageConfig;
     window.formatStorageDisplayLabel = formatStorageDisplayLabel;
-    window.renderProviderQuickModelPills = renderProviderQuickModelPills;
-    window.applyQuickModelPill = applyQuickModelPill;
     window.providerBalanceActionMarkup = providerBalanceActionMarkup;
     window.queryProviderBalance = queryProviderBalance;
     window.testBalanceQueryConnection = testBalanceQueryConnection;
@@ -3524,13 +3725,17 @@ if (typeof window !== "undefined") {
     window.formatUsageQueryScript = formatUsageQueryScript;
     window.saveUsageQueryConfig = saveUsageQueryConfig;
     window.updateUsageCredentialUI = updateUsageCredentialUI;
+    window.fetchProviderModels = fetchProviderModels;
+    window.populateModelSelectDropdown = populateModelSelectDropdown;
+    window.onModelSelectChange = onModelSelectChange;
 }
 
 if (typeof module !== "undefined") {
     module.exports = {
         updateUsageCredentialUI,
-        renderProviderQuickModelPills,
-        applyQuickModelPill,
+        fetchProviderModels,
+        populateModelSelectDropdown,
+        onModelSelectChange,
         providerSupportsCapability,
         shouldShowImageGenerationMode,
         providerTestCapabilities,

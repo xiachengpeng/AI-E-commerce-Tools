@@ -50,6 +50,10 @@ from models.settings import (
     UsageQueryConfigWrite,
     UsageQueryProxyRequest,
     UsageQueryProxyResponse,
+    ProviderModelsFetchRequest,
+    ProviderModelsFetchResponse,
+    SecretRevealRequest,
+    SecretRevealResponse,
 )
 from services.ai_balance_service import AIBalanceService
 from services.firecrawl import (
@@ -123,7 +127,7 @@ from config import (
     FRONTEND_CONCURRENCY_LIMIT, FRONTEND_STAGGER_DELAY,
     CORS_ORIGINS, MAX_URL_LENGTH,
 )
-from db import init_db, get_db, SessionLocal, AppSetting, AICapabilityBinding, AIProviderConfig, FirecrawlConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory, WatermarkRemovalHistory
+from db import init_db, get_db, SessionLocal, AppSetting, AICapabilityBinding, AIProviderConfig, FirecrawlConfig, StorageConfig, AnalysisHistory, ListingHistory, TranslationHistory, TextTranslationHistory, AdsHistory, RenderHistory, SquareRedrawHistory, WatermarkRemovalHistory
 
 """业务历史模块与持久化模型的唯一映射来源。
 
@@ -1245,6 +1249,20 @@ def _format_provider_diagnostic(
         parts.append(f"request_id={safe_diagnostic['request_id']}")
     if safe_diagnostic.get("upstream_message"):
         parts.append(f"upstream={safe_diagnostic['upstream_message']}")
+    resp_body = safe_diagnostic.get("response_body")
+    detail_msg = None
+    if isinstance(resp_body, dict):
+        err = resp_body.get("error")
+        if isinstance(err, dict) and err.get("message"):
+            detail_msg = str(err["message"]).strip()
+        elif isinstance(err, str) and err.strip():
+            detail_msg = err.strip()
+        elif resp_body.get("message"):
+            detail_msg = str(resp_body["message"]).strip()
+        elif resp_body.get("detail"):
+            detail_msg = str(resp_body["detail"]).strip()
+    if detail_msg and detail_msg not in (safe_diagnostic.get("upstream_message") or ""):
+        parts.append(f"detail={detail_msg}")
     return " | ".join(parts)
 
 
@@ -1423,6 +1441,253 @@ async def api_test_ai_provider(
 
 
 @app.post(
+    "/api/settings/ai/providers/models/fetch",
+    response_model=ProviderModelsFetchResponse,
+)
+async def api_fetch_provider_models(
+    data: ProviderModelsFetchRequest,
+    db: Session = Depends(get_db),
+):
+    provider = db.get(AIProviderConfig, data.provider_id) if data.provider_id else None
+    protocol = (data.protocol or (provider.protocol if provider else None) or "openai_compatible").strip().lower()
+    base_url = (data.base_url or (provider.base_url if provider else "") or "").strip().rstrip("/")
+    api_key = (data.api_key or (provider.api_key if provider else "") or "").strip()
+
+    if protocol == "openai_compatible":
+        if not base_url:
+            return ProviderModelsFetchResponse(
+                status="error",
+                models=[],
+                count=0,
+                message="获取模型失败: 未提供 Base URL",
+            )
+        target_url = f"{base_url}/models" if base_url.endswith("/v1") else f"{base_url}/v1/models"
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(target_url, headers=headers)
+                if resp.status_code == 404 and not base_url.endswith("/v1"):
+                    resp = await client.get(f"{base_url}/models", headers=headers)
+
+                if resp.status_code != 200:
+                    return ProviderModelsFetchResponse(
+                        status="error",
+                        models=[],
+                        count=0,
+                        message=f"上游中转站返回 HTTP {resp.status_code}: {resp.text[:120]}",
+                    )
+                payload = resp.json()
+                models = []
+                data_list = payload.get("data") if isinstance(payload, dict) else (payload if isinstance(payload, list) else None)
+                if isinstance(data_list, list):
+                    for item in data_list:
+                        if isinstance(item, dict):
+                            mid = item.get("id") or item.get("name")
+                            if mid:
+                                models.append(str(mid).strip())
+                        elif isinstance(item, str):
+                            models.append(item.strip())
+                elif isinstance(payload, dict) and "models" in payload:
+                    for item in payload["models"]:
+                        if isinstance(item, dict):
+                            mid = item.get("id") or item.get("name")
+                            if mid:
+                                models.append(str(mid).strip())
+                        elif isinstance(item, str):
+                            models.append(item.strip())
+
+                unique_models = sorted(list(dict.fromkeys(models)))
+                if not unique_models:
+                    return ProviderModelsFetchResponse(
+                        status="error",
+                        models=[],
+                        count=0,
+                        message="接口返回成功，但未解析到可用模型列表",
+                    )
+                return ProviderModelsFetchResponse(
+                    status="success",
+                    models=unique_models,
+                    count=len(unique_models),
+                    message=f"成功获取 {len(unique_models)} 个模型",
+                )
+        except Exception as e:
+            return ProviderModelsFetchResponse(
+                status="error",
+                models=[],
+                count=0,
+                message=f"请求失败: {str(e)}",
+            )
+
+    elif protocol == "gemini":
+        if not api_key:
+            return ProviderModelsFetchResponse(
+                status="error",
+                models=[],
+                count=0,
+                message="获取模型失败: 未提供 Gemini API Key",
+            )
+        target_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(target_url)
+                if resp.status_code != 200:
+                    return ProviderModelsFetchResponse(
+                        status="error",
+                        models=[],
+                        count=0,
+                        message=f"Gemini 接口返回 HTTP {resp.status_code}: {resp.text[:120]}",
+                    )
+                payload = resp.json()
+                models = []
+                for item in payload.get("models", []):
+                    if isinstance(item, dict):
+                        name = item.get("name", "")
+                        if name.startswith("models/"):
+                            name = name[len("models/"):]
+                        if name:
+                            models.append(name.strip())
+                unique_models = sorted(list(dict.fromkeys(models)))
+                return ProviderModelsFetchResponse(
+                    status="success",
+                    models=unique_models,
+                    count=len(unique_models),
+                    message=f"成功获取 {len(unique_models)} 个模型",
+                )
+        except Exception as e:
+            return ProviderModelsFetchResponse(
+                status="error",
+                models=[],
+                count=0,
+                message=f"Gemini 请求失败: {str(e)}",
+            )
+
+    elif protocol == "vertex":
+        project_id = data.vertex_project_id or (provider.vertex_project_id if provider else None)
+        location = data.vertex_location or (provider.vertex_location if provider else None) or "global"
+        key_path = data.vertex_key_path or (provider.vertex_key_path if provider else None)
+
+        if not project_id:
+            return ProviderModelsFetchResponse(
+                status="error",
+                models=[],
+                count=0,
+                message="获取 Vertex AI 模型失败: 未配置 Google Cloud Project ID",
+            )
+
+        try:
+            from google import genai
+            from google.oauth2 import service_account
+
+            client_options = {
+                "vertexai": True,
+                "project": project_id,
+                "location": location,
+            }
+            if key_path and os.path.isfile(key_path):
+                client_options["credentials"] = (
+                    service_account.Credentials.from_service_account_file(key_path)
+                )
+
+            client = genai.Client(**client_options)
+            models = []
+            for item in client.models.list():
+                name = getattr(item, "name", "")
+                if name.startswith("publishers/google/models/"):
+                    name = name[len("publishers/google/models/"):]
+                elif name.startswith("models/"):
+                    name = name[len("models/"):]
+                if name:
+                    models.append(name.strip())
+
+            unique_models = sorted(list(dict.fromkeys(models)))
+            return ProviderModelsFetchResponse(
+                status="success",
+                models=unique_models,
+                count=len(unique_models),
+                message=f"成功获取 {len(unique_models)} 个 Vertex AI 模型",
+            )
+        except Exception as e:
+            return ProviderModelsFetchResponse(
+                status="error",
+                models=[],
+                count=0,
+                message=f"Vertex AI 获取模型失败: {str(e)}",
+            )
+
+    else:
+        return ProviderModelsFetchResponse(
+            status="error",
+            models=[],
+            count=0,
+            message=f"协议 {protocol} 暂不支持自动拉取模型列表，请手动输入模型名称",
+        )
+
+
+
+@app.post(
+    "/api/settings/secrets/reveal",
+    response_model=SecretRevealResponse,
+)
+def reveal_saved_secret(
+    request: SecretRevealRequest,
+    db: Session = Depends(get_db),
+):
+    category = request.category
+    field = request.field
+    secret_val = None
+
+    if category in ("ai_provider", "usage_query"):
+        allowed_fields = {
+            "api_key",
+            "balance_access_token",
+            "balance_custom_key",
+        }
+        if field not in allowed_fields:
+            return SecretRevealResponse(status="forbidden", secret=None)
+        if not request.id:
+            return SecretRevealResponse(status="not_found", secret=None)
+        provider = db.get(AIProviderConfig, request.id)
+        if not provider:
+            return SecretRevealResponse(status="not_found", secret=None)
+        secret_val = getattr(provider, field, None)
+
+    elif category == "crawler":
+        if field != "api_key":
+            return SecretRevealResponse(status="forbidden", secret=None)
+        crawler = db.query(FirecrawlConfig).first()
+        secret_val = crawler.api_key if crawler else None
+
+    elif category == "storage":
+        allowed_fields = {
+            "wp_app_password",
+            "shopify_access_token",
+            "r2_secret_access_key",
+            "r2_secret_key",
+        }
+        if field not in allowed_fields:
+            return SecretRevealResponse(status="forbidden", secret=None)
+        if not request.id:
+            return SecretRevealResponse(status="not_found", secret=None)
+        storage_row = db.get(StorageConfig, request.id)
+        if not storage_row:
+            return SecretRevealResponse(status="not_found", secret=None)
+        actual_field = "r2_secret_access_key" if field == "r2_secret_key" else field
+        secret_val = getattr(storage_row, actual_field, None)
+
+    else:
+        return SecretRevealResponse(status="forbidden", secret=None)
+
+    clean_secret = (secret_val or "").strip()
+    if not clean_secret:
+        return SecretRevealResponse(status="empty", secret="")
+
+    return SecretRevealResponse(status="success", secret=clean_secret)
+
+
+@app.post(
     "/api/settings/ai/providers/usage-query/proxy",
     response_model=UsageQueryProxyResponse,
 )
@@ -1438,8 +1703,18 @@ async def api_proxy_usage_query(
     api_key = (provider.balance_custom_key or provider.api_key or "").strip() if provider else ""
     access_token = (provider.balance_custom_key or provider.balance_access_token or api_key).strip() if provider else api_key
     user_id = (provider.balance_user_id or "").strip() if provider else ""
+    provider_name = provider.name if provider else "中转代理"
 
     secrets = [api_key, access_token]
+
+    def _sanitize_log_text(text: str | None) -> str:
+        if not text:
+            return ""
+        clean = str(text)
+        for sec in secrets:
+            if sec and len(sec) >= 4:
+                clean = clean.replace(sec, "********")
+        return clean
 
     # Interpolate variables in URL, headers, and body
     def _interpolate(text: str | None) -> str | None:
@@ -1453,6 +1728,13 @@ async def api_proxy_usage_query(
 
     target_url = _interpolate(data.url) or ""
     if not target_url.startswith(("http://", "https://")):
+        clean_target = _sanitize_log_text(target_url)
+        app_logs.emit(
+            level="error",
+            source="usage_query",
+            message=f"[{provider_name}] 无效的中转站代理请求 URL: {clean_target}",
+            provider=provider.name if provider else None,
+        )
         return UsageQueryProxyResponse(
             ok=False,
             status_code=400,
@@ -1467,6 +1749,14 @@ async def api_proxy_usage_query(
     body = _interpolate(data.body)
     method = (data.method or "GET").upper()
     timeout = min(max(data.timeout_seconds, 2), 60)
+    clean_target_url = _sanitize_log_text(target_url)
+
+    app_logs.emit(
+        level="info",
+        source="usage_query",
+        message=f"[{provider_name}] 发起中转站代理请求: [{method}] {clean_target_url}",
+        provider=provider.name if provider else None,
+    )
 
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
@@ -1484,6 +1774,34 @@ async def api_proxy_usage_query(
             except Exception:
                 parsed_data = resp.text
 
+            # Create sanitized snippet for logging diagnostics
+            if isinstance(parsed_data, (dict, list)):
+                try:
+                    resp_snippet = json.dumps(parsed_data, ensure_ascii=False)[:800]
+                except Exception:
+                    resp_snippet = str(parsed_data)[:800]
+            else:
+                resp_snippet = str(parsed_data)[:800]
+            clean_snippet = _sanitize_log_text(resp_snippet)
+
+            log_level = "success" if resp.is_success else ("warning" if resp.status_code < 500 else "error")
+            status_tag = "响应成功" if resp.is_success else "返回异常"
+
+            app_logs.emit(
+                level=log_level,
+                source="usage_query",
+                message={
+                    "summary": f"[{provider_name}] 中转站代理{status_tag}: [{method}] {clean_target_url} -> HTTP {resp.status_code} ({duration_ms}ms)",
+                    "diagnostic": {
+                        "category": "usage_proxy",
+                        "http_status": resp.status_code,
+                        "response_body": clean_snippet,
+                    },
+                },
+                provider=provider.name if provider else None,
+                duration_ms=duration_ms,
+            )
+
             return UsageQueryProxyResponse(
                 ok=resp.is_success,
                 status_code=resp.status_code,
@@ -1493,6 +1811,19 @@ async def api_proxy_usage_query(
             )
     except httpx.TimeoutException:
         duration_ms = int((time.perf_counter() - start_time) * 1000)
+        app_logs.emit(
+            level="error",
+            source="usage_query",
+            message={
+                "summary": f"[{provider_name}] 中转站代理请求超时 ({timeout}s): [{method}] {clean_target_url}",
+                "diagnostic": {
+                    "category": "timeout",
+                    "upstream_message": f"请求超时 ({timeout}s)",
+                },
+            },
+            provider=provider.name if provider else None,
+            duration_ms=duration_ms,
+        )
         return UsageQueryProxyResponse(
             ok=False,
             status_code=504,
@@ -1501,10 +1832,20 @@ async def api_proxy_usage_query(
         )
     except Exception as exc:
         duration_ms = int((time.perf_counter() - start_time) * 1000)
-        clean_msg = str(exc)
-        for sec in secrets:
-            if sec and len(sec) >= 4:
-                clean_msg = clean_msg.replace(sec, "********")
+        clean_msg = _sanitize_log_text(str(exc))
+        app_logs.emit(
+            level="error",
+            source="usage_query",
+            message={
+                "summary": f"[{provider_name}] 中转站代理请求失败: [{method}] {clean_target_url} -> {clean_msg}",
+                "diagnostic": {
+                    "category": "network_error",
+                    "upstream_message": clean_msg,
+                },
+            },
+            provider=provider.name if provider else None,
+            duration_ms=duration_ms,
+        )
         return UsageQueryProxyResponse(
             ok=False,
             status_code=502,
@@ -1529,6 +1870,7 @@ async def api_test_provider_balance(
     balance_user_id = data.balance_user_id
     timeout_seconds = 15
 
+    provider = None
     if data.provider_id:
         provider = db.get(AIProviderConfig, data.provider_id)
         if not provider:
@@ -1547,7 +1889,7 @@ async def api_test_provider_balance(
         timeout_seconds = provider.timeout_seconds or 15
 
     service = AIBalanceService()
-    return await service.query_balance(
+    result = await service.query_balance(
         protocol=protocol,
         base_url=base_url,
         api_key=api_key,
@@ -1556,6 +1898,24 @@ async def api_test_provider_balance(
         balance_user_id=balance_user_id,
         timeout_seconds=timeout_seconds,
     )
+
+    test_target_name = provider.name if (data.provider_id and provider) else "草稿配置"
+    log_level = "success" if result.status == "success" else ("warning" if result.status == "unsupported" else "error")
+    app_logs.emit(
+        level=log_level,
+        source="balance",
+        message={
+            "summary": f"[{test_target_name}] 余额连接测试完成: {result.balance_text or result.status} - {result.message or ''}",
+            "diagnostic": {
+                "category": "balance_test",
+                "upstream_message": result.message,
+                "response_body": f"balance={result.balance_text}, currency={result.currency}, remaining={result.remaining_balance}",
+            },
+        },
+        provider=provider.name if (data.provider_id and provider) else None,
+    )
+
+    return result
 
 
 @app.post(
@@ -1604,6 +1964,21 @@ async def api_query_provider_balance(
         provider.last_balance_at = datetime.datetime.now()
         db.commit()
 
+    log_level = "success" if result.status == "success" else ("warning" if result.status == "unsupported" else "error")
+    app_logs.emit(
+        level=log_level,
+        source="balance",
+        message={
+            "summary": f"[{provider.name}] 余额查询完成: {result.balance_text or result.status} - {result.message or ''}",
+            "diagnostic": {
+                "category": "balance_query",
+                "upstream_message": result.message,
+                "response_body": f"balance={result.balance_text}, currency={result.currency}, remaining={result.remaining_balance}",
+            },
+        },
+        provider=provider.name,
+    )
+
     return result
 
 
@@ -1619,6 +1994,13 @@ def api_record_provider_balance(
     provider.last_balance_text = data.balance_text.strip()[:80]
     provider.last_balance_at = datetime.datetime.now()
     db.commit()
+
+    app_logs.emit(
+        level="info",
+        source="balance",
+        message=f"[{provider.name}] 保存脚本提取余额记录: {provider.last_balance_text}",
+        provider=provider.name,
+    )
     return {"ok": True, "balance_text": provider.last_balance_text}
 
 

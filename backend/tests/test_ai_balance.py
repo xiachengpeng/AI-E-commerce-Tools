@@ -230,6 +230,10 @@ def test_api_provider_balance_endpoint(client: TestClient = None):
         assert data["balance_text"] == "$50.00"
         assert data["remaining_balance"] == 50.0
 
+        from main import app_logs
+        balance_logs = [l for l in app_logs.recent() if l.get("source") == "balance"]
+        assert any("余额查询完成" in str(l.get("message")) for l in balance_logs)
+
     # Cleanup
     test_client.delete(f"/api/settings/ai/providers/{provider_id}")
 
@@ -261,6 +265,10 @@ def test_api_provider_balance_test_draft():
         data = res.json()
         assert data["status"] == "success"
         assert data["balance_text"] == "$30.00"
+
+        from main import app_logs
+        test_logs = [l for l in app_logs.recent() if l.get("source") == "balance"]
+        assert any("余额连接测试完成" in str(l.get("message")) for l in test_logs)
 
 
 def test_api_provider_balance_test_saved_inheritance():
@@ -348,10 +356,10 @@ def test_one_api_unlimited_quota_token():
             )
         )
 
-        assert result.status == "success"
-        # Must not display $99999996.88
-        assert "99999" not in str(result.balance_text)
-        assert "无限" in str(result.balance_text) or "不限" in str(result.balance_text)
+        assert result.status == "error"
+        assert result.balance_text == "查询失败"
+        assert "查询失败，详情看日志" in result.message
+
 
 
 def test_api_record_provider_balance():

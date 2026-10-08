@@ -156,8 +156,9 @@ assert.deepStrictEqual(
     ))),
     {
         productName: '折叠式桌下走步机',
-        sellingPoints: '新的核心卖点',
-        didFillProductName: true
+        sellingPoints: 'old selling points',
+        didFillProductName: true,
+        didPreserveUserSellingPoints: true
     }
 );
 
@@ -169,8 +170,23 @@ assert.deepStrictEqual(
     ))),
     {
         productName: '用户确认的产品名',
+        sellingPoints: 'old selling points',
+        didFillProductName: false,
+        didPreserveUserSellingPoints: true
+    }
+);
+
+assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(context.resolveSellingPointsFormState(
+        '',
+        '',
+        { productName: '折叠式桌下走步机', sellingPoints: '新的核心卖点' }
+    ))),
+    {
+        productName: '折叠式桌下走步机',
         sellingPoints: '新的核心卖点',
-        didFillProductName: false
+        didFillProductName: true,
+        didPreserveUserSellingPoints: false
     }
 );
 
@@ -183,7 +199,8 @@ assert.deepStrictEqual(
     {
         productName: '',
         sellingPoints: '保留原卖点',
-        didFillProductName: false
+        didFillProductName: false,
+        didPreserveUserSellingPoints: true
     }
 );
 
@@ -229,6 +246,28 @@ for (const prompt of [withCopyPrompt, withoutCopyPrompt]) {
     assert.match(prompt, /logo, controls, buttons, ports, labels, texture, and component placement/i);
     assert.match(prompt, /do not alter or invent/i);
 }
+
+// 纯图模式下必须保留各模块在 MODULES_CONFIG 中的视觉、视角、光影与构图指导，绝不能抹平成千篇一律的单句
+const m6Task = {
+    id: 'm6',
+    title: '细节/材质证明',
+    promptTitle: 'Detail and Material Proof',
+    prompt: 'Create a macro close-up shot highlighting the premium material, texture, and exquisite craftsmanship of the product.',
+    includeText: false
+};
+const m6PurePrompt = context.buildModuleGenerationPrompt(m6Task, sellingPoints, factConfig);
+assert.match(m6PurePrompt, /macro close-up|texture|craftsmanship/i, 'm6 pure image prompt must preserve macro and texture instructions');
+
+const m4Task = {
+    id: 'm4',
+    title: '外观/多角度证明',
+    promptTitle: 'Appearance and Multi-Angle Proof',
+    prompt: 'Create a layout showing a collage of different angle views of the product on a clean studio background.',
+    includeText: false
+};
+const m4PurePrompt = context.buildModuleGenerationPrompt(m4Task, sellingPoints, factConfig);
+assert.match(m4PurePrompt, /collage of different angle views|angle views/i, 'm4 pure image prompt must preserve multi-angle composition instructions');
+assert.notStrictEqual(m6PurePrompt, m4PurePrompt);
 
 assert.match(firstPrompt, /SECTION GOAL/);
 assert.match(firstPrompt, /Do NOT repeat the same angle/i);

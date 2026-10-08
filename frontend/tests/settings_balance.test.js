@@ -53,7 +53,14 @@ test("settings.js exports providerBalanceActionMarkup and renders wallet button 
 test("index.html contains overview KPI balance elements and cache-busting version", () => {
     assert.match(indexHtml, /id="settingsKpiTextBalance"/);
     assert.match(indexHtml, /id="settingsKpiImageBalance"/);
-    assert.match(indexHtml, /js\/settings\.js\?v=20260920-(?:balance-v3|ccswitch-v1|ccswitch-v2|ccswitch-v3|ccswitch-v4|ccswitch-v5|ccswitch-v6)/);
+    assert.match(indexHtml, /js\/settings\.js\?v=(?:20260920-(?:balance-v3|ccswitch-v1|ccswitch-v2|ccswitch-v3|ccswitch-v4|ccswitch-v5|ccswitch-v6|logs-v1)|20260921-(?:models-v[123]|secret-v1|vertex-v1))/);
+});
+
+
+test("index.html contains expanded log source filter options including usage_query, balance, storage", () => {
+    assert.match(indexHtml, /<option value="usage_query">用量查询<\/option>/);
+    assert.match(indexHtml, /<option value="balance">中转余额<\/option>/);
+    assert.match(indexHtml, /<option value="storage">对象存储<\/option>/);
 });
 
 test("index.html contains balance test connection button and message container", () => {
@@ -85,4 +92,44 @@ test("queryProviderBalance displays immediate loading state and handles proxy fa
     const code = fs.readFileSync(jsPath, "utf8");
     assert.match(code, /settings-balance-loading/);
     assert.match(code, /proxyResp\.ok/);
+});
+
+test("providerBalanceMarkup suppresses unlimited quotas and renders is-error badge for 查询失败", () => {
+    const { providerBalanceMarkup } = require("../js/settings.js");
+    assert.equal(typeof providerBalanceMarkup, "function");
+
+    // 1. Unlimited quota must be suppressed (must not display "无限额度", renders empty query state)
+    const unlimitedProvider = {
+        id: 1,
+        protocol: "openai_compatible",
+        last_balance_text: "无限额度",
+        last_balance_at: "2026-09-20T12:00:00Z",
+    };
+    const unlimitedMarkup = providerBalanceMarkup(unlimitedProvider);
+    assert.doesNotMatch(unlimitedMarkup, /无限/);
+    assert.doesNotMatch(unlimitedMarkup, /不限/);
+    assert.match(unlimitedMarkup, /is-empty/);
+    assert.match(unlimitedMarkup, /查中转站余额/);
+
+
+
+    // 2. Failed query must render is-error badge
+    const failedProvider = {
+        id: 2,
+        protocol: "openai_compatible",
+        last_balance_text: "查询失败",
+        last_balance_at: "2026-09-20T12:00:00Z",
+    };
+    const failedMarkup = providerBalanceMarkup(failedProvider);
+    assert.match(failedMarkup, /settings-balance-badge/);
+    assert.match(failedMarkup, /is-error/);
+    assert.match(failedMarkup, /查询失败/);
+    assert.match(failedMarkup, /查询失败，详情看日志/);
+});
+
+test("queryProviderBalance defaults to general query and uses markBalanceQueryFailed on failure", () => {
+    const jsPath = path.join(frontendRoot, "js", "settings.js");
+    const code = fs.readFileSync(jsPath, "utf8");
+    assert.match(code, /engine\.USAGE_QUERY_TEMPLATES\.general\.script/);
+    assert.match(code, /markBalanceQueryFailed\(/);
 });

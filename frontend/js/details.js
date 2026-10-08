@@ -3268,16 +3268,18 @@ function recordTaskImageVersion(taskInput, newImageUrl, promptAdjustment = '') {
     if (!Array.isArray(task.imageVersions)) {
         task.imageVersions = [];
     }
-    if (task.imageUrl && task.imageUrl !== newImageUrl) {
+    const currentUrl = task.imageUrl || task.imageSrc;
+    if (currentUrl && currentUrl !== newImageUrl) {
         task.imageVersions.unshift({
             versionId: 'ver_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-            imageUrl: task.imageUrl,
-            promptAdjustment: promptAdjustment || '',
+            imageUrl: currentUrl,
+            promptAdjustment: task.repaintPrompt || promptAdjustment || '',
             createdAt: Date.now()
         });
         task.imageVersions = task.imageVersions.slice(0, 5);
     }
     task.imageUrl = newImageUrl;
+    task.imageSrc = newImageUrl;
     return task;
 }
 
@@ -3289,16 +3291,131 @@ function rollbackTaskImageVersion(taskId, versionId) {
     if (versionIndex === -1) return false;
 
     const targetVersion = task.imageVersions[versionIndex];
-    const previousCurrentUrl = task.imageUrl;
+    const previousCurrentUrl = task.imageUrl || task.imageSrc;
 
     task.imageUrl = targetVersion.imageUrl;
+    task.imageSrc = targetVersion.imageUrl;
     targetVersion.imageUrl = previousCurrentUrl;
+
+    if (targetVersion.promptAdjustment) {
+        task.repaintPrompt = targetVersion.promptAdjustment;
+    } else {
+        delete task.repaintPrompt;
+    }
 
     if (typeof renderSectionInspector === 'function') renderSectionInspector(taskId);
     if (typeof renderDtcHybridPreview === 'function' && currentDetailResultView === 'hybrid') {
         renderDtcHybridPreview();
     }
+    if (typeof renderSectionTree === 'function') {
+        renderSectionTree();
+    }
+    if (typeof showToast === 'function') {
+        showToast('已回滚至历史图像版本', 'success');
+    }
     return true;
+}
+
+function setInspectorRepaintPrompt(promptText) {
+    const input = document.getElementById('inspectorRepaintPrompt');
+    if (!input) return;
+    input.value = promptText;
+    input.focus();
+}
+
+function resetInspectorRepaintPrompt(uniqueId) {
+    const task = findDetailTask(uniqueId);
+    if (task) delete task.repaintPrompt;
+    const promptInput = document.getElementById('inspectorRepaintPrompt');
+    if (promptInput) promptInput.value = '';
+    if (typeof showToast === 'function') showToast('已清空微调提示词', 'info');
+}
+
+async function executeInspectorTaskRepaint(uniqueId) {
+    const task = findDetailTask(uniqueId) || getActiveInspectorTask();
+    if (!task) return;
+    const resolvedId = task.uniqueId || uniqueId;
+    const promptInput = document.getElementById('inspectorRepaintPrompt');
+    const repaintPrompt = promptInput ? promptInput.value.trim() : (task.repaintPrompt || '');
+
+    if (isDetailGenerating) {
+        if (typeof showToast === 'function') showToast('当前已有生成任务正在进行，请先等待完成', 'warning');
+        return;
+    }
+
+    if (typeof showToast === 'function') {
+        showToast(`正在重新生成 [${task.displayTitle || task.title}]...`, 'info');
+    }
+    task.repaintPrompt = repaintPrompt;
+
+    const btn = document.getElementById('btnInspectorRepaint');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="loader border-white border-t-transparent w-3.5 h-3.5 mr-1"></span><span>正在重绘中...</span>`;
+    }
+
+    try {
+        await regenerateSingleModuleTask(resolvedId, repaintPrompt);
+        if (typeof showToast === 'function') {
+            showToast(`模块 [${task.displayTitle || task.title}] 重绘完成！`, 'success');
+        }
+    } catch (err) {
+        console.error('[Inspector Repaint Error]:', err);
+        if (typeof showToast === 'function') {
+            showToast(`重绘失败: ${err.message}`, 'error');
+        }
+    } finally {
+        if (typeof renderSectionInspector === 'function') {
+            renderSectionInspector(resolvedId);
+        }
+        if (typeof renderDtcHybridPreview === 'function' && currentDetailResultView === 'hybrid') {
+            renderDtcHybridPreview();
+        }
+        if (typeof renderSectionTree === 'function') {
+            renderSectionTree();
+        }
+    }
+}
+
+async function resetAndRegenerateInspectorTask(uniqueId) {
+    const task = findDetailTask(uniqueId) || getActiveInspectorTask();
+    if (!task) return;
+    const resolvedId = task.uniqueId || uniqueId;
+
+    if (isDetailGenerating) {
+        if (typeof showToast === 'function') showToast('当前已有生成任务正在进行，请先等待完成', 'warning');
+        return;
+    }
+
+    delete task.repaintPrompt;
+    const promptInput = document.getElementById('inspectorRepaintPrompt');
+    if (promptInput) promptInput.value = '';
+
+    if (typeof showToast === 'function') {
+        showToast(`正在重置并按初始设定重新生成 [${task.displayTitle || task.title}]...`, 'info');
+    }
+
+    try {
+        await regenerateSingleModuleTask(resolvedId, '');
+        if (typeof showToast === 'function') {
+            showToast(`模块 [${task.displayTitle || task.title}] 已重置生成完成！`, 'success');
+        }
+    } catch (err) {
+        console.error('[Inspector Reset Error]:', err);
+        if (typeof showToast === 'function') {
+            showToast(`重置生成失败: ${err.message}`, 'error');
+        }
+    } finally {
+        if (typeof renderSectionInspector === 'function') {
+            renderSectionInspector(resolvedId);
+        }
+        if (typeof renderDtcHybridPreview === 'function' && currentDetailResultView === 'hybrid') {
+            renderDtcHybridPreview();
+        }
+        if (typeof renderSectionTree === 'function') {
+            renderSectionTree();
+        }
+    }
 }
 
 function renderSectionTree() {
@@ -3401,7 +3518,7 @@ async function addNewSectionFromTree(targetModuleId = '') {
     const allModuleDefs = (typeof MODULES_CONFIG !== 'undefined' && Array.isArray(MODULES_CONFIG))
         ? MODULES_CONFIG
         : ((typeof globalThis !== 'undefined' && globalThis.MODULES_CONFIG) || []);
-    const modDef = allModuleDefs.find(m => m.id === moduleId) || { id: moduleId, name: moduleId, desc: '' };
+    const modDef = allModuleDefs.find(m => m.id === moduleId) || { id: moduleId, name: moduleId, desc: '', prompt: '' };
 
     if (!globalGenContext) {
         globalGenContext = {
@@ -3416,29 +3533,42 @@ async function addNewSectionFromTree(targetModuleId = '') {
     if (!globalGenContext.tasks) globalGenContext.tasks = {};
     if (!Array.isArray(globalGenContext.longImageOrder)) globalGenContext.longImageOrder = [];
 
+    const sellingPoints = globalGenContext.sellingPoints || document.getElementById('sellingPoints')?.value || '';
+    const config = globalGenContext.config || (typeof getDetailConfig === 'function' ? getDetailConfig() : {});
     const modTitle = modDef.title || modDef.name || moduleId;
     const modDesc = modDef.subtitle || modDef.desc || '';
     const existingCount = Object.values(globalGenContext.tasks).filter(t => t.id === moduleId).length;
     const uniqueId = `${moduleId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const displayTitle = existingCount > 0 ? `${modTitle} #${existingCount + 1}` : modTitle;
 
+    const tempTask = { ...modDef, variant: existingCount, totalVariants: existingCount + 1 };
+    const focal = (typeof resolveModuleFocalFeature === 'function')
+        ? resolveModuleFocalFeature(tempTask, sellingPoints, config)
+        : { focalFeature: '', visualDirective: '' };
+    const isHybrid = (typeof currentDetailPresentationMode !== 'undefined' && currentDetailPresentationMode === 'hybrid');
+
     const newTask = {
+        ...modDef,
         id: moduleId,
         uniqueId,
         title: modTitle,
         subtitle: modDesc,
         displayTitle,
-        prompt: '',
-        variant: 1,
-        totalVariants: 1,
-        includeText: true,
+        prompt: modDef.prompt || '',
+        variant: existingCount,
+        totalVariants: existingCount + 1,
+        includeText: isHybrid ? false : (modDef.includeText !== false),
+        focalFeature: focal.focalFeature || '',
+        visualDirective: focal.visualDirective || '',
+        role: (typeof getModuleContentRole === 'function') ? getModuleContentRole(tempTask, sellingPoints, config) : '',
+        strategyCn: (typeof getModuleStrategyCn === 'function') ? getModuleStrategyCn({ ...tempTask, focalFeature: focal.focalFeature }, sellingPoints, config) : null,
         status: 'pending',
         subStatus: {
             overall: 'pending',
             image: 'pending',
             compression: 'pending',
             seo: 'pending',
-            copy: 'pending',
+            copy: isHybrid ? 'pending' : 'idle',
             upload: 'idle'
         }
     };
@@ -3461,15 +3591,44 @@ async function addNewSectionFromTree(targetModuleId = '') {
     globalGenContext.tasks[uniqueId] = newTask;
     globalGenContext.longImageOrder.push(uniqueId);
 
-    // 3. 立即刷新结构树与检视器
+    // 3. 同步画廊模式 DOM 骨架，确保画廊与独立站双模式无缝兼容
+    const galleryContainer = document.getElementById('modulesResultContainer');
+    if (galleryContainer && typeof galleryContainer.appendChild === 'function') {
+        const ratioStr = (config.aspectRatio || '1:1').replace(':', '/');
+        const cardDiv = document.createElement('div');
+        cardDiv.id = `result-mod-${uniqueId}`;
+        cardDiv.className = 'bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col group';
+        cardDiv.innerHTML = `
+            <div class="bg-gray-50/80 px-5 py-3 border-b border-gray-100 flex justify-between items-center backdrop-blur">
+                <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-4 bg-blue-500 rounded-full"></span>
+                    <span class="font-bold text-gray-700 text-sm">${detailEscapeHtml(displayTitle)}</span>
+                    <span id="status-badge-${uniqueId}" class="text-[10px] font-black px-2 py-0.5 rounded-full border bg-slate-100 text-slate-500 border-slate-200">等待中</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-400 mr-2">${detailEscapeHtml(modDesc)}</span>
+                    <button id="regen-btn-${uniqueId}" onclick="generateSingleWrap('${uniqueId}')" class="hidden flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 text-gray-500 hover:text-blue-600 transition-colors shadow-sm" title="重绘图像并刷新 SEO"><i class="ph ph-arrows-clockwise text-sm"></i></button>
+                </div>
+            </div>
+            <div id="content-mod-${uniqueId}" class="p-6 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iMTAiIGN5PSIxMCIgcj0iMSIgZmlsbD0iI2YxZjFmMSIvPjwvc3ZnPg==')]" style="aspect-ratio: ${ratioStr}; min-height: 200px;">
+                <span class="loader border-blue-500 border-t-transparent w-8 h-8 mb-3"></span><span class="text-sm text-gray-500 font-medium tracking-wide">AI引擎构图中...</span>
+            </div>
+            ${typeof renderPromptRegenerationControls === 'function' ? renderPromptRegenerationControls(uniqueId) : ''}
+            <div id="quality-panel-${uniqueId}" class="border-t border-gray-100 bg-white px-4 py-3"></div>
+        `;
+        galleryContainer.appendChild(cardDiv);
+    }
+
+    // 4. 立即刷新结构树、检视器与预览区（呈现 loading 骨架，拒绝黑屏与假失败）
     if (selectEl) selectEl.value = '';
     renderSectionTree();
     setActiveInspectorTask(uniqueId);
+    if (typeof renderDtcHybridPreview === 'function') renderDtcHybridPreview();
     if (typeof showToast === 'function') {
         showToast(`已添加新区块 [${displayTitle}]，正在开始生成...`, 'info');
     }
 
-    // 4. 触发异步生成
+    // 5. 触发异步生成
     (async () => {
         try {
             await generateSingleWrap(uniqueId, false, '', null);
@@ -3529,8 +3688,31 @@ function renderSectionInspector(taskId) {
         </div>
     ` : '';
 
+    const currentTaskImg = task.imageUrl || task.imageSrc || '';
+    const isTaskImageLoading = Boolean(task.status === 'loading' || task.subStatus?.image === 'running' || task.status === 'pending');
+
+    let imagePreviewHtml = '';
+    if (isTaskImageLoading) {
+        imagePreviewHtml = `
+            <div class="relative rounded-lg overflow-hidden border border-indigo-200 aspect-video bg-indigo-50/50 flex flex-col items-center justify-center text-indigo-600 gap-1.5 animate-pulse">
+                <span class="loader border-indigo-600 border-t-transparent w-5 h-5"></span>
+                <span class="text-[11px] font-medium">AI 正在构图中...</span>
+            </div>`;
+    } else if (currentTaskImg) {
+        imagePreviewHtml = `
+            <div class="relative rounded-lg overflow-hidden border border-slate-200 aspect-video bg-white flex items-center justify-center group">
+                <img src="${currentTaskImg}" class="w-full h-full object-cover">
+                <button type="button" onclick="openImageLightbox('${currentTaskImg}', '${detailEscapeHtml(task.displayTitle || task.title)}')"
+                    class="absolute bottom-2 right-2 bg-black/60 hover:bg-black/80 text-white text-[10px] px-2 py-0.5 rounded backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 cursor-pointer">
+                    <i class="ph ph-magnifying-glass-plus"></i><span>查看大图</span>
+                </button>
+            </div>`;
+    } else {
+        imagePreviewHtml = `<div class="text-[11px] text-slate-400 text-center py-4 bg-white rounded border border-dashed border-slate-200">未出图</div>`;
+    }
+
     const quickPills = PRESET_REPAINT_PROMPTS.map(p => `
-        <button type="button" onclick="document.getElementById('inspectorRepaintPrompt').value = '${p.prompt}'"
+        <button type="button" onclick="setInspectorRepaintPrompt('${detailEscapeHtml(p.prompt)}')"
             class="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 border border-slate-200 font-medium transition-colors cursor-pointer">
             ${p.label}
         </button>
@@ -3557,25 +3739,35 @@ function renderSectionInspector(taskId) {
                 <div class="flex items-center justify-between text-xs font-bold text-slate-700">
                     <span class="flex items-center gap-1"><i class="ph-bold ph-image text-indigo-600"></i> 视觉与重绘</span>
                 </div>
-                ${task.imageUrl ? `
-                    <div class="relative rounded-lg overflow-hidden border border-slate-200 aspect-video bg-white flex items-center justify-center">
-                        <img src="${task.imageUrl}" class="w-full h-full object-cover">
-                    </div>
-                ` : '<div class="text-[11px] text-slate-400 text-center py-4 bg-white rounded border border-dashed border-slate-200">未出图</div>'}
+                ${imagePreviewHtml}
 
                 <div class="space-y-1.5">
-                    <div class="text-[10px] font-bold text-slate-500">自然语言局部重绘微调</div>
+                    <div class="flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1">
+                        <span>自然语言局部重绘微调</span>
+                        <button type="button" onclick="resetInspectorRepaintPrompt('${task.uniqueId}')" class="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer flex items-center gap-0.5 font-normal" title="清空已输入的微调词">
+                            <i class="ph ph-arrow-counter-clockwise"></i>
+                            <span>清空微调词</span>
+                        </button>
+                    </div>
                     <div class="flex flex-wrap gap-1 mb-1.5">
                         ${quickPills}
                     </div>
                     <textarea id="inspectorRepaintPrompt" rows="2"
                         class="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-500 resize-none leading-tight"
-                        placeholder="输入微调提示词，例如：换浅色背景，放大主体..."></textarea>
-                    <button type="button" onclick="retryFailedModuleImages([getActiveInspectorTask()])"
-                        class="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
-                        <i class="ph-bold ph-arrows-clockwise"></i>
-                        <span>局部重新生成此图</span>
-                    </button>
+                        placeholder="输入微调提示词，例如：换浅色背景，放大主体...">${detailEscapeHtml(task.repaintPrompt || '')}</textarea>
+                    <div class="flex items-center gap-2 pt-1">
+                        <button type="button" id="btnInspectorRepaint" onclick="executeInspectorTaskRepaint('${task.uniqueId}')"
+                            class="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
+                            <i class="ph-bold ph-arrows-clockwise"></i>
+                            <span>${currentTaskImg ? '局部重新生成此图' : '生成此模块图片'}</span>
+                        </button>
+                        <button type="button" onclick="resetAndRegenerateInspectorTask('${task.uniqueId}')"
+                            class="px-2.5 py-1.5 bg-white hover:bg-slate-100 active:scale-98 border border-slate-200 text-slate-600 rounded-lg text-xs font-medium transition-all shadow-2xs flex items-center justify-center gap-1 cursor-pointer shrink-0"
+                            title="清空微调词并按模块默认提示词重置生成">
+                            <i class="ph ph-arrow-counter-clockwise"></i>
+                            <span>重置初始</span>
+                        </button>
+                    </div>
                 </div>
 
                 ${versionThumbnails}
@@ -4136,9 +4328,21 @@ function buildModuleGenerationPrompt(task, sellingPoints, config = {}, promptAdj
         }
     }
     const moduleTitle = getPromptModuleTitle(effectiveTask);
-    const moduleRequest = effectiveTask.includeText === false
-        ? `Create a visual-only interpretation of "${moduleTitle}" and follow the NO ADDED TEXT policy.`
-        : effectiveTask.prompt;
+    let moduleRequest = effectiveTask.prompt || '';
+    if (effectiveTask.includeText === false) {
+        if (moduleRequest) {
+            let visualOnlyRequest = moduleRequest
+                .replace(/use one short headline[^.]*\./gi, '')
+                .replace(/with one short headline[^.]*\./gi, '')
+                .replace(/and up to three[^.]*callouts\.?/gi, '')
+                .replace(/and up to three[^.]*callouts/gi, '')
+                .replace(/infographic/gi, 'photographic composition')
+                .trim();
+            moduleRequest = `Visual-only scene for "${moduleTitle}": ${visualOnlyRequest} Follow the NO ADDED TEXT policy: convey this section purely through camera framing, lighting, environment, and realistic props without rendered typography.`;
+        } else {
+            moduleRequest = `Create a visual-only interpretation of "${moduleTitle}" and follow the NO ADDED TEXT policy.`;
+        }
+    }
     const productInfo = compactDetailText(sellingPoints, 1800);
     const guardrails = buildProductGuardrails(config);
     const productLock = buildProductLockPrompt(config);
@@ -5754,58 +5958,24 @@ Return a JSON object:
         if (text) {
             const data = JSON.parse(text);
             task.dtcCopy = data;
+            delete task.dtcCopyError;
+            delete task.dtcCopyFallback;
             remoteLog(`模块 [${task.title}] DTC 语义化文案生成成功`);
             return data;
         }
+        task.dtcCopy = null;
+        task.dtcCopyError = '文案生成未返回有效内容';
+        delete task.dtcCopyFallback;
+        return null;
     } catch (e) {
         if (e.name === 'AbortError' || options?.signal?.aborted) return null;
         console.warn(`[DTC Copy Gen] Error for ${task.title}:`, e);
-        let fallbackCopy;
-        if (isTargetZh) {
-            fallbackCopy = {
-                tagline: (hasChineseText(focalFeature) ? focalFeature : task.title) || '核心优势',
-                headline: task.subtitle || task.title || '核心卖点',
-                subheadline: compactDetailText(sellingPoints, 120) || '精工打造，确保日常顺畅运行与持久安心体验。',
-                fbr: [{ feature: (hasChineseText(focalFeature) ? focalFeature : task.title) || '品质保证', benefit: task.subtitle || '出色操作体验', result: '' }]
-            };
-        } else {
-            fallbackCopy = {
-                tagline: defaultEn.tagline,
-                headline: defaultEn.headline,
-                subheadline: defaultEn.subheadline,
-                fbr: defaultEn.fbr ? defaultEn.fbr.slice() : [{ feature: 'Refined Quality', benefit: 'Engineered for reliable everyday performance.', result: '' }]
-            };
-        }
-        if (isBundleBox) {
-            fallbackCopy = {
-                tagline: isTargetZh ? '全套清单' : 'Complete Package',
-                headline: isTargetZh ? '包装清单' : "What's in the Box",
-                subheadline: isTargetZh ? '所有配件一应俱全，开箱即用。' : 'All essentials included and verified.',
-                items: [
-                    { name: isTargetZh ? '核心主机' : 'Main Unit', count: '1×', desc: isTargetZh ? '主功能设备' : 'Core product unit' },
-                    { name: isTargetZh ? '标准配件包' : 'Standard Accessories Kit', count: '1×', desc: isTargetZh ? '全套原厂配件' : 'Full OEM accessory set' },
-                    { name: isTargetZh ? '说明书与保修卡' : 'Quick Guide & Warranty', count: '1×', desc: isTargetZh ? '完整指引与品质保障' : 'Complete manual and warranty' }
-                ]
-            };
-        } else if (isBundleSavings) {
-            fallbackCopy = {
-                tagline: isTargetZh ? '超值组合' : 'Bundle & Save',
-                headline: isTargetZh ? '全套组合优势' : 'Complete System Value',
-                subheadline: isTargetZh ? '整套购买相比单独购买立省更多。' : 'Save significantly compared to purchasing components separately.',
-                bundleComparison: {
-                    singleItemsTotal: '$129.99',
-                    bundlePrice: '$79.99',
-                    savingsText: isTargetZh ? '立省 $50 (直降 38%)' : 'Save $50 (38% OFF)',
-                    perks: isTargetZh
-                        ? ['官方原装配件全包含', '无任何兼容性顾虑', '享受优先急速配送']
-                        : ['Official OEM accessories included', 'Zero compatibility risk', 'Fast insured delivery']
-                }
-            };
-        }
-        task.dtcCopy = fallbackCopy;
-        return fallbackCopy;
+        // 杜绝任何虚构假文案兜底！失败就失败，不捏造任何配件、价格或口号
+        task.dtcCopy = null;
+        task.dtcCopyError = e?.message || '文案生成失败';
+        delete task.dtcCopyFallback;
+        return null;
     }
-    return null;
 }
 
 // 全局详情页生成中止控制器与运行状态
@@ -6075,13 +6245,16 @@ async function retryTaskAuxiliaryStep(uniqueId, stepType = 'copy') {
 }
 
 // 一键重新生成所有失败或中断的模块图片，保留已成功的图片
-async function retryFailedModuleImages() {
+async function retryFailedModuleImages(specificTasks = null) {
     if (isDetailGenerating) {
         showToast('当前已有生成任务正在进行，请先终止或等待完成', 'warning');
         return;
     }
 
-    const failedTasks = getFailedModuleTasks();
+    const failedTasks = (Array.isArray(specificTasks) && specificTasks.length)
+        ? specificTasks.filter(Boolean)
+        : getFailedModuleTasks();
+
     if (!failedTasks.length) {
         showToast('当前没有需要重试的失败图片', 'info');
         updateDetailFailureUI();
@@ -6552,7 +6725,7 @@ async function generateAIPage() {
     }
 }
 
-// 渲染商详全案生成后一键交付中心
+// 渲染商详全案生成后一键交付中心状态
 function renderDetailDeliveryHub(successCount = 0, totalCount = 0) {
     const card = document.getElementById('detailDeliveryHandoffCard');
     if (!card) return;
@@ -6567,7 +6740,44 @@ function renderDetailDeliveryHub(successCount = 0, totalCount = 0) {
         badge.textContent = `已就绪 ${successCount} 个视觉模块${totalCount > successCount ? ` (共 ${totalCount} 个)` : ''}`;
     }
 
-    card.classList.remove('hidden');
+    // 免打扰机制：生成后不自动弹出交付中心窗口遮挡图文预览画布
+    // 商家可通过顶部工具栏【交付中心】或【准备度】随时主动唤起
+    if (typeof updatePublishReadinessUI === 'function') {
+        updatePublishReadinessUI();
+    }
+}
+
+// 打开商详全案交付中心模态窗
+function openDetailDeliveryHub() {
+    const card = document.getElementById('detailDeliveryHandoffCard');
+    const body = document.getElementById('detailDeliveryHandoffBody');
+    const icon = document.getElementById('iconToggleDeliveryCollapse');
+    if (card) {
+        card.classList.remove('hidden');
+        if (body && body.classList.contains('hidden')) {
+            body.classList.remove('hidden');
+            if (icon) icon.className = 'ph-bold ph-caret-up text-base';
+        }
+    }
+}
+
+// 关闭商详全案交付中心模态窗，恢复沉浸式图文画布预览
+function dismissDetailDeliveryHub() {
+    const card = document.getElementById('detailDeliveryHandoffCard');
+    if (card) {
+        card.classList.add('hidden');
+    }
+}
+
+// 展开/收起交付中心卡片详情面板
+function toggleDetailDeliveryHubCollapse() {
+    const body = document.getElementById('detailDeliveryHandoffBody');
+    const icon = document.getElementById('iconToggleDeliveryCollapse');
+    if (!body) return;
+    const isCollapsed = body.classList.toggle('hidden');
+    if (icon) {
+        icon.className = isCollapsed ? 'ph-bold ph-caret-down text-base' : 'ph-bold ph-caret-up text-base';
+    }
 }
 
 // 跨模块流转：将当前详情页信息带入 Listing 智能编撰模块
@@ -6766,7 +6976,7 @@ async function retrySingleModuleTask(uniqueId) {
 /**
  * 重新生成单模块（分配全新 clientOperationKey 与 client_request_id）
  */
-async function regenerateSingleModuleTask(uniqueId) {
+async function regenerateSingleModuleTask(uniqueId, promptAdjustment = '') {
     const task = typeof findDetailTask === 'function' ? findDetailTask(uniqueId) : globalGenContext?.tasks?.[uniqueId];
     if (!task) return;
     task.clientOperationKey = (typeof generateUuid === 'function')
@@ -6775,7 +6985,7 @@ async function regenerateSingleModuleTask(uniqueId) {
     task.error = '';
     delete task.retryStatusText;
     delete task.retryAttempt;
-    return await generateSingleWrap(uniqueId, false, '', null, { isRegenerate: true });
+    return await generateSingleWrap(uniqueId, false, promptAdjustment, null, { isRegenerate: true });
 }
 
 // 生成或重绘单个详情页模块图片，失败时降级为本地 HTML/CSS 占位图。
@@ -6830,15 +7040,23 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
         remoteLog(`模块 [${task.title}] 使用自定义提示词重绘`);
     }
     const contentDiv = document.getElementById(`content-mod-${resolvedId}`);
-    if (!contentDiv) return;
 
+    task.status = 'loading';
     setModuleStatus(resolvedId, 'loading');
     setTaskSubStatus(task, { overall: 'running', image: 'running' });
     task.error = '';
-    contentDiv.innerHTML = `<span class="loader border-blue-500 border-t-transparent w-8 h-8 mb-3"></span><span class="text-sm text-gray-500 font-medium">AI引擎构图中...</span>`;
+    if (contentDiv) {
+        contentDiv.innerHTML = `<span class="loader border-blue-500 border-t-transparent w-8 h-8 mb-3"></span><span class="text-sm text-gray-500 font-medium">AI引擎构图中...</span>`;
+        contentDiv.classList.add('p-6', 'flex-col', 'items-center', 'justify-center');
+        contentDiv.style.padding = '';
+    }
     document.getElementById(`regen-btn-${resolvedId}`)?.classList.add('hidden');
-    contentDiv.classList.add('p-6', 'flex-col', 'items-center', 'justify-center');
-    contentDiv.style.padding = '';
+    if (typeof currentDetailPresentationMode !== 'undefined' && currentDetailPresentationMode === 'hybrid' && currentDetailResultView === 'hybrid' && typeof renderDtcHybridPreview === 'function') {
+        renderDtcHybridPreview();
+    }
+    if (typeof renderSectionTree === 'function') {
+        renderSectionTree();
+    }
 
     const { sellingPoints, config } = globalGenContext;
     const taskImages = (await Promise.all(getImagesForTask(task).map(img => ensureInlineImageData(img)))).filter(Boolean);
@@ -6908,11 +7126,18 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
             }
         }
 
-        contentDiv.innerHTML = `<img src="${generatedSrc}" class="w-full h-full object-cover cursor-zoom-in" onclick="openImageLightbox('${generatedSrc}', '${detailEscapeHtml(task.displayTitle || task.title)}')" title="点击放大预览">`;
-        contentDiv.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
-        contentDiv.style.padding = '0';
+        if (contentDiv) {
+            contentDiv.innerHTML = `<img src="${generatedSrc}" class="w-full h-full object-cover cursor-zoom-in" onclick="openImageLightbox('${generatedSrc}', '${detailEscapeHtml(task.displayTitle || task.title)}')" title="点击放大预览">`;
+            contentDiv.classList.remove('p-6', 'flex-col', 'items-center', 'justify-center');
+            contentDiv.style.padding = '0';
+        }
+        if (typeof recordTaskImageVersion === 'function') {
+            recordTaskImageVersion(task, generatedSrc, promptAdjustment);
+        }
         task.imageSrc = generatedSrc;
+        task.imageUrl = generatedSrc;
         task.isFallback = false;
+        task.status = 'success';
         setTaskSubStatus(task, { image: 'success' });
         setModuleStatus(uniqueId, 'success');
 
@@ -6971,13 +7196,21 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
             task.isFallback = false;
             task.error = '生成已终止';
             setModuleStatus(uniqueId, 'cancelled');
-            contentDiv.innerHTML = `
-                <div class="w-full h-full flex flex-col items-center justify-center text-xs text-rose-500 p-6 text-center">
-                    <i class="ph-bold ph-stop-circle text-3xl mb-2 text-rose-400"></i>
-                    <span class="font-bold">生成已手动终止</span>
-                    <span class="text-[10px] text-slate-400 mt-1">随时可点击右上角刷新重新生成此模块</span>
-                </div>`;
+            if (contentDiv) {
+                contentDiv.innerHTML = `
+                    <div class="w-full h-full flex flex-col items-center justify-center text-xs text-rose-500 p-6 text-center">
+                        <i class="ph-bold ph-stop-circle text-3xl mb-2 text-rose-400"></i>
+                        <span class="font-bold">生成已手动终止</span>
+                        <span class="text-[10px] text-slate-400 mt-1">随时可点击右上角刷新重新生成此模块</span>
+                    </div>`;
+            }
             document.getElementById(`regen-btn-${uniqueId}`)?.classList.remove('hidden');
+            if (typeof currentDetailPresentationMode !== 'undefined' && currentDetailPresentationMode === 'hybrid' && currentDetailResultView === 'hybrid' && typeof renderDtcHybridPreview === 'function') {
+                renderDtcHybridPreview();
+            }
+            if (typeof renderSectionTree === 'function') {
+                renderSectionTree();
+            }
             return { status: 'cancelled', task };
         }
 
@@ -6992,22 +7225,24 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
 
         const friendlyMsg = formatFriendlyDetailErrorMessage(error);
         const escapedFriendlyMsg = detailEscapeHtml(friendlyMsg);
-        contentDiv.innerHTML = `
-            <div class="w-full h-full flex flex-col items-center justify-center text-xs text-red-500 p-6 text-center bg-red-50/40 rounded-xl border border-dashed border-red-200">
-                <i class="ph-bold ph-warning-circle text-3xl mb-2 text-red-500 animate-pulse"></i>
-                <span class="font-bold text-slate-800 text-sm mb-1">图片生成失败</span>
-                <p class="detail-error-message text-[11px] text-red-600 max-w-xs break-words mb-3">${escapedFriendlyMsg}</p>
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="retrySingleModuleTask('${resolvedId}')" class="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-medium transition-all shadow-sm flex items-center gap-1 cursor-pointer">
-                        <i class="ph-bold ph-arrows-clockwise"></i>
-                        <span>重试</span>
-                    </button>
-                    <button type="button" onclick="regenerateSingleModuleTask('${resolvedId}')" class="px-2.5 py-1.5 bg-white border border-red-200 hover:border-red-300 hover:bg-red-50 text-red-600 rounded-lg text-xs font-medium transition-all shadow-sm flex items-center gap-1 cursor-pointer">
-                        <i class="ph-bold ph-sparkle"></i>
-                        <span>点击重新生成此模块</span>
-                    </button>
-                </div>
-            </div>`;
+        if (contentDiv) {
+            contentDiv.innerHTML = `
+                <div class="w-full h-full flex flex-col items-center justify-center text-xs text-red-500 p-6 text-center bg-red-50/40 rounded-xl border border-dashed border-red-200">
+                    <i class="ph-bold ph-warning-circle text-3xl mb-2 text-red-500 animate-pulse"></i>
+                    <span class="font-bold text-slate-800 text-sm mb-1">图片生成失败</span>
+                    <p class="detail-error-message text-[11px] text-red-600 max-w-xs break-words mb-3">${escapedFriendlyMsg}</p>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="retrySingleModuleTask('${resolvedId}')" class="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-medium transition-all shadow-sm flex items-center gap-1 cursor-pointer">
+                            <i class="ph-bold ph-arrows-clockwise"></i>
+                            <span>重试</span>
+                        </button>
+                        <button type="button" onclick="regenerateSingleModuleTask('${resolvedId}')" class="px-2.5 py-1.5 bg-white border border-red-200 hover:border-red-300 hover:bg-red-50 text-red-600 rounded-lg text-xs font-medium transition-all shadow-sm flex items-center gap-1 cursor-pointer">
+                            <i class="ph-bold ph-sparkle"></i>
+                            <span>点击重新生成此模块</span>
+                        </button>
+                    </div>
+                </div>`;
+        }
         if (!skipSEO) {
             try {
                 await generateSEOMetadata(task, sellingPoints);
@@ -7027,6 +7262,9 @@ async function generateSingleWrap(uniqueId, skipSEO = false, promptAdjustment = 
     }
     if (typeof currentDetailPresentationMode !== 'undefined' && currentDetailPresentationMode === 'hybrid' && currentDetailResultView === 'hybrid' && typeof renderDtcHybridPreview === 'function') {
         renderDtcHybridPreview();
+    }
+    if (typeof renderSectionTree === 'function') {
+        renderSectionTree();
     }
     return { status: task.status, overallStatus, task };
 }
@@ -7845,49 +8083,80 @@ async function compressAllCurrentModuleImages() {
 
 // ====== 独立站 DTC 图文穿插 (Hybrid PDP) 预览与导出逻辑 ======
 
-// 提取并清洗模块文案，确保语言规范与结构完备
+// 渲染 DTC 区块文案异常/待生成状态卡片（杜绝任何虚假文案兜底，显式提示并提供重试）
+function renderDtcCopyStatusFallback(task, isZh, isPending = false, isHero = false) {
+    const uniqueId = task?.uniqueId || task?.id || '';
+    if (isPending) {
+        return `
+        <div class="dtc-copy-status-card p-6 rounded-2xl ${isHero ? 'bg-white/10 backdrop-blur-md border border-white/20 text-white' : 'bg-slate-50 border border-slate-200/80 text-slate-600'} space-y-3 animate-pulse">
+            <div class="h-3.5 ${isHero ? 'bg-white/20' : 'bg-slate-200'} rounded w-1/4"></div>
+            <div class="h-6 ${isHero ? 'bg-white/25' : 'bg-slate-200'} rounded w-3/4"></div>
+            <div class="h-3.5 ${isHero ? 'bg-white/15' : 'bg-slate-200'} rounded w-5/6"></div>
+            <div class="text-xs ${isHero ? 'text-white/80' : 'text-slate-400'} flex items-center gap-1.5 pt-1">
+                <i class="ph ph-spinner animate-spin"></i>
+                <span>${isZh ? '正在根据商品事实生成文案...' : 'Generating section copy from verified facts...'}</span>
+            </div>
+        </div>`;
+    }
+
+    const errDetail = task?.dtcCopyError ? detailEscapeHtml(task.dtcCopyError) : '';
+    return `
+    <div class="dtc-copy-status-card p-5 rounded-2xl ${isHero ? 'bg-slate-900/90 border border-amber-500/50 text-amber-200' : 'bg-amber-50/80 border border-amber-200/90 text-amber-900'} space-y-3 shadow-2xs">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2">
+                <i class="ph-bold ph-warning-circle text-amber-600 text-lg"></i>
+                <span class="text-xs font-bold ${isHero ? 'text-amber-300' : 'text-amber-900'}">${isZh ? '区块文案生成失败（已阻断虚构兜底）' : 'Section Copy Failed (Fictional fallback blocked)'}</span>
+            </div>
+            ${uniqueId ? `
+            <button type="button" class="px-2.5 py-1 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors flex items-center gap-1 shadow-2xs" onclick="event.stopPropagation(); retryTaskAuxiliaryStep('${uniqueId}', 'copy')">
+                <i class="ph-bold ph-arrows-clockwise"></i>
+                <span>${isZh ? '重试生成文案' : 'Retry Copy'}</span>
+            </button>` : ''}
+        </div>
+        <p class="text-xs ${isHero ? 'text-amber-200/90' : 'text-amber-800/90'} leading-relaxed">
+            ${isZh ? '此模块文案生成未成功。为避免给跨境消费者带来虚假宣传或合规误解，系统已严格阻断任何虚构假文案兜底。您可以点击上方重试重新生成，或在右侧属性面板中直接手动编写。' : 'Copy generation failed. Fictional claims were strictly blocked to protect store compliance. Click above to retry or write copy manually in the inspector.'}
+        </p>
+        ${errDetail ? `<div class="text-[10px] ${isHero ? 'bg-black/40 text-amber-300/80 border border-amber-500/30' : 'bg-amber-100/70 text-amber-800 font-mono'} p-2 rounded-lg truncate">${errDetail}</div>` : ''}
+    </div>`;
+}
+
+// 提取并清洗模块文案，确保语言规范与结构完备（拒绝假文案兜底）
 function prepareTaskDtcCopy(task, isZh) {
-    const copy = task?.dtcCopy || {};
-    const def = (typeof MODULE_DEFAULT_EN !== 'undefined' && MODULE_DEFAULT_EN[task?.id]) || {
-        tagline: 'KEY ADVANTAGE',
-        headline: 'Engineered for Performance',
-        subheadline: 'Built with industry-grade precision to ensure seamless everyday operation.',
-        fbr: [{ feature: 'Thoughtful Design', benefit: 'Engineered for lasting everyday satisfaction.', result: '' }]
-    };
+    const copy = task?.dtcCopy || null;
+    const isCopyFailed = task?.subStatus?.copy === 'failed' || Boolean(task?.dtcCopyError);
+    const isCopyPending = task?.subStatus?.copy === 'running' || task?.subStatus?.copy === 'pending';
+    const isLangMismatch = !isZh && Boolean((copy?.headline && hasChineseText(copy.headline)) || (copy?.tagline && hasChineseText(copy.tagline)));
+    const hasCopy = Boolean(!isLangMismatch && copy && (copy.headline || copy.subheadline || (Array.isArray(copy.fbr) && copy.fbr.length) || (Array.isArray(copy.trustBadges) && copy.trustBadges.length)));
 
-    let tagline = copy.tagline || (!isZh ? def.tagline : task?.title || 'Core Feature');
-    if (!isZh && hasChineseText(tagline)) tagline = def.tagline;
+    let tagline = '';
+    let headline = '';
+    let subheadline = '';
+    let fbrList = [];
 
-    let headline = copy.headline || (!isZh ? def.headline : task?.subtitle || task?.title || 'Product Highlight');
-    if (!isZh && hasChineseText(headline)) headline = def.headline;
+    if (hasCopy) {
+        tagline = copy.tagline || (isZh ? task?.title || '核心亮点' : 'Core Feature');
+        headline = copy.headline || (isZh ? task?.subtitle || task?.title || '核心卖点' : 'Product Highlight');
+        subheadline = copy.subheadline || copy.valueProposition || '';
 
-    let subheadline = copy.subheadline || copy.valueProposition || (!isZh ? def.subheadline : task?.subtitle || 'Built with industry-grade precision to ensure seamless everyday operation.');
-    if (!isZh && hasChineseText(subheadline)) subheadline = def.subheadline;
-
-    let fbrList = Array.isArray(copy.fbr) && copy.fbr.length
-        ? copy.fbr
-        : (Array.isArray(copy.trustBadges) && copy.trustBadges.length
-            ? copy.trustBadges.map(b => ({ feature: (typeof b === 'string' ? b : b.feature || '').replace(/^✓\s*/, ''), benefit: (typeof b === 'string' ? '' : b.benefit || ''), result: '' }))
-            : (isZh
-                ? [{ feature: task?.title || '核心优势', benefit: task?.subtitle || '出色操作体验', result: '' }]
-                : (def.fbr ? def.fbr.slice() : [{ feature: 'Verified Quality', benefit: 'Engineered for lasting everyday peace of mind.', result: '' }])));
-
-    if (!isZh) {
-        fbrList = fbrList.map((item, itemIdx) => {
-            let feat = item.feature || '';
-            let ben = item.benefit || item.result || '';
-            if (hasChineseText(feat)) {
-                feat = def.fbr?.[itemIdx]?.feature || def.fbr?.[0]?.feature || 'Premium Quality';
-            }
-            if (hasChineseText(ben)) {
-                ben = def.fbr?.[itemIdx]?.benefit || def.fbr?.[0]?.benefit || 'Engineered for reliable everyday performance.';
-            }
-            return { feature: feat, benefit: ben };
-        });
+        if (Array.isArray(copy.fbr) && copy.fbr.length) {
+            fbrList = copy.fbr;
+        } else if (Array.isArray(copy.trustBadges) && copy.trustBadges.length) {
+            fbrList = copy.trustBadges.map(b => ({
+                feature: (typeof b === 'string' ? b : b.feature || '').replace(/^✓\s*/, ''),
+                benefit: (typeof b === 'string' ? '' : b.benefit || ''),
+                result: ''
+            }));
+        }
+    } else {
+        // 杜绝任何虚构兜底文案！绝不捏造任何 Engineered for Performance 或精工打造等口号
+        tagline = isZh ? (task?.title || '待生成文案') : 'Pending Section';
+        headline = isZh ? (task?.subtitle || task?.title || '文案未生成') : 'Copy Not Generated';
+        subheadline = '';
+        fbrList = [];
     }
 
     const imgSrc = safeFormatImgSrc(task?.imageSrc || '');
-    return { copy, def, tagline, headline, subheadline, fbrList, imgSrc };
+    return { copy, def: null, tagline, headline, subheadline, fbrList, imgSrc, isCopyFailed: isCopyFailed || isLangMismatch, isCopyPending, hasCopy };
 }
 
 // 详情页模块图片替换选择器状态与逻辑
@@ -8012,16 +8281,36 @@ function handleModulePickerUpload(event) {
 
 // 渲染统一图片容器（支持悬浮放大、点击打开灯箱、原图下载角标、行内模块换图）
 function renderDtcImagePlate(imgSrc, title, isZh, aspectClass = 'aspect-square', roundedClass = 'rounded-2xl', extraWrapClass = '', taskId = '') {
-    const escTitle = detailEscapeHtml(title || (isZh ? '模块大图' : 'Product Detail'));
-    return `
-    <div class="relative group ${roundedClass} overflow-hidden bg-slate-100 border border-slate-200/80 shadow-xs ${aspectClass} ${extraWrapClass}" ${taskId ? `data-task-unique-id="${taskId}" onclick="if (typeof setActiveInspectorTask === 'function') setActiveInspectorTask('${taskId}')"` : ''}>
-        ${imgSrc
-            ? `<img src="${imgSrc}" alt="${escTitle}" loading="lazy" class="w-full h-full object-cover cursor-zoom-in transition-transform duration-300 group-hover:scale-105" onclick="openImageLightbox('${imgSrc}', '${escTitle}')" title="${isZh ? '点击查看大图' : 'View full image'}">`
-            : `<div class="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs p-6 text-center">
+    let cleanTitle = title;
+    if (!isZh && hasChineseText(cleanTitle)) {
+        cleanTitle = 'Product Detail';
+    }
+    const escTitle = detailEscapeHtml(cleanTitle || (isZh ? '模块大图' : 'Product Detail'));
+    const task = taskId ? (globalGenContext?.tasks?.[taskId] || Object.values(globalGenContext?.tasks || {}).find(t => t.uniqueId === taskId || t.id === taskId)) : null;
+    const isImageLoading = Boolean(task && (task.subStatus?.image === 'running' || task.status === 'loading' || task.status === 'pending'));
+
+    let contentHtml = '';
+    if (imgSrc) {
+        contentHtml = `<img src="${imgSrc}" alt="${escTitle}" loading="lazy" class="w-full h-full object-cover cursor-zoom-in transition-transform duration-300 group-hover:scale-105" onclick="openImageLightbox('${imgSrc}', '${escTitle}')" title="${isZh ? '点击查看大图' : 'View full image'}">`;
+    } else if (isImageLoading) {
+        contentHtml = `
+            <div class="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs p-6 text-center animate-pulse bg-slate-50">
+                <span class="loader border-indigo-600 border-t-transparent w-8 h-8 mb-2"></span>
+                <span class="font-medium text-slate-600 text-xs">${isZh ? 'AI 正在渲染模块视觉...' : 'Generating section visual...'}</span>
+                <span class="text-[10px] text-slate-400 mt-1">${isZh ? '已锁定商品外观，高保真出图中' : 'Locking product identity & rendering...'}</span>
+            </div>`;
+    } else {
+        contentHtml = `
+            <div class="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs p-6 text-center">
                 <i class="ph-bold ph-warning-circle text-3xl mb-1.5 text-rose-400"></i>
                 <span class="font-bold text-slate-700">${isZh ? '图片生成失败或缺失' : 'Image generation failed'}</span>
                 ${taskId ? `<button type="button" onclick="event.stopPropagation(); generateSingleWrap('${taskId}')" class="mt-2 text-xs font-bold text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-md transition-all flex items-center gap-1 shadow-2xs cursor-pointer"><i class="ph-bold ph-arrows-clockwise"></i><span>${isZh ? '重新生成此图片' : 'Regenerate Image'}</span></button>` : ''}
-               </div>`}
+            </div>`;
+    }
+
+    return `
+    <div class="relative group ${roundedClass} overflow-hidden bg-slate-100 border border-slate-200/80 shadow-xs ${aspectClass} ${extraWrapClass}" ${taskId ? `data-task-unique-id="${taskId}" onclick="if (typeof setActiveInspectorTask === 'function') setActiveInspectorTask('${taskId}')"` : ''}>
+        ${contentHtml}
         ${taskId ? `
         <button type="button" class="dtc-image-swap-btn" onclick="event.stopPropagation(); openModuleImagePicker('${taskId}')" title="${isZh ? '替换当前模块图片' : 'Swap module image'}">
             <i class="ph-bold ph-arrows-clockwise text-xs"></i><span>${isZh ? '换图' : 'Swap'}</span>
@@ -8182,8 +8471,30 @@ function renderDtcOfferStackSection(isZh, style = 'editorial') {
     </div>`;
 }
 
+// 验证是否具有经过确认的退换/质保/保障承诺事实
+function hasVerifiedRiskReversal(factsInput = null) {
+    let facts = factsInput;
+    if (!facts && typeof getVerifiedProductFacts === 'function') {
+        facts = getVerifiedProductFacts();
+    }
+    if (!facts && typeof globalGenContext !== 'undefined' && globalGenContext?.productFacts) {
+        facts = globalGenContext.productFacts;
+    }
+    if (!facts) return false;
+    const extractFactStr = (val) => {
+        if (!val) return '';
+        if (typeof val === 'string') return val.trim();
+        if (typeof val === 'object' && val.value) return String(val.value).trim();
+        return '';
+    };
+    const returnPolicy = extractFactStr(facts.returnPolicy);
+    const warranty = extractFactStr(facts.warranty);
+    const guarantee = extractFactStr(facts.guarantee);
+    return Boolean(returnPolicy || warranty || guarantee);
+}
+
 // 渲染 CRO 零风险退换保障卡 (Risk Reversal Guarantee)
-function renderDtcRiskReversalSection(isZh, style = 'editorial') {
+function renderDtcRiskReversalSection(isZh, style = 'editorial', customText = '') {
     const isTech = style === 'technical';
     const isLookbook = style === 'lookbook';
 
@@ -8203,9 +8514,9 @@ function renderDtcRiskReversalSection(isZh, style = 'editorial') {
                     ${isZh ? '100% 零风险试用保障：30天不满意全额退款' : '100% Risk-Free 30-Day Money Back Guarantee'}
                 </h4>
                 <p class="text-xs ${isTech ? 'text-slate-400 font-mono' : 'text-slate-600'} leading-relaxed">
-                    ${isZh
+                    ${customText || (isZh
                         ? '我们对产品品质有绝对信心。收到商品 30 天内，若有任何不满意，无需任何繁琐理由，联系客服即可发起全额退款。所有风险由我们承担，您可以完全放心体验！'
-                        : 'Try it for 30 full days. If for any reason you are not completely thrilled with the results, contact our support team for a prompt and courteous full refund. No hassles, no questions asked.'}
+                        : 'Try it for 30 full days. If for any reason you are not completely thrilled with the results, contact our support team for a prompt and courteous full refund. No hassles, no questions asked.')}
                 </p>
             </div>
         </section>
@@ -8286,13 +8597,45 @@ function renderDtcStepsSection(stepTasks, isZh, style = 'editorial') {
 
     const content = stepTasks.map(task => {
         const copy = task.dtcCopy || {};
-        const steps = Array.isArray(copy.steps) && copy.steps.length
-            ? copy.steps
-            : [
-                { step: 1, title: isZh ? '拆箱与快速就位' : 'Unpack & Prepare', instruction: isZh ? '取出主机并确认随附配件齐全。' : 'Take out the unit and inspect the included accessories.' },
-                { step: 2, title: isZh ? '60秒极速上手' : 'Quick 60-Second Setup', instruction: isZh ? '按照触感指示在1分钟内完成极简安装。' : 'Follow the intuitive tactile guides to complete setup in under a minute.' },
-                { step: 3, title: isZh ? '畅享卓越效果' : 'Enjoy Effortless Results', instruction: isZh ? '体验零负担的流畅日常使用体验。' : 'Experience flawless daily results with zero hassle.' }
-            ];
+        const steps = Array.isArray(copy.steps) && copy.steps.length ? copy.steps : [];
+        const imgSrc = safeFormatImgSrc(task.imageSrc || '');
+        const headline = copy.headline || (isZh ? '开箱即用 简单高效' : 'How Simple It Is To Use');
+
+        if (!steps.length) {
+            return `
+        <section class="p-6 md:p-10 ${isTech ? 'bg-[#0B0F19] border-t border-slate-800' : (isLookbook ? 'bg-[#faf8f5] border-t border-stone-200/80' : (isMinimalist ? 'bg-white border-t border-slate-100' : 'bg-slate-50/70 border-y border-slate-100'))} space-y-6">
+            ${imgSrc ? `<div class="max-w-xl mx-auto mb-6">${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-4/3 sm:aspect-16/9', isBento ? 'rounded-3xl' : 'rounded-2xl', '', task.id)}</div>` : ''}
+            <div class="dtc-copy-status-card p-6 rounded-2xl ${isTech ? 'bg-slate-900/90 border border-cyan-800/60 text-cyan-200' : 'bg-amber-50/80 border border-amber-200/90 text-amber-900'} text-center space-y-3 max-w-xl mx-auto shadow-2xs">
+                <div class="flex items-center justify-center gap-2 text-amber-800 font-bold text-sm">
+                    <i class="ph-bold ph-warning-circle text-lg text-amber-600"></i>
+                    <span>${isZh ? '步骤文案未生成（已阻断虚构步骤）' : 'Step instructions not generated (Fictional steps blocked)'}</span>
+                </div>
+                <p class="text-xs ${isTech ? 'text-cyan-200/80' : 'text-amber-800/90'} leading-relaxed">
+                    ${isZh ? '此模块未检测到 AI 提取的真实操作步骤。为避免误导买家，系统严禁捏造虚构的开箱与上手步骤。' : 'No verified step instructions generated. Fabricated setup instructions were blocked to protect product integrity.'}
+                </p>
+                <div class="flex items-center justify-center gap-2 pt-1">
+                    <button type="button" class="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors inline-flex items-center gap-1 shadow-2xs" onclick="event.stopPropagation(); retryTaskAuxiliaryStep('${task.uniqueId || task.id}', 'copy')">
+                        <i class="ph-bold ph-arrows-clockwise"></i>
+                        <span>${isZh ? '重试生成步骤文案' : 'Retry Step Copy'}</span>
+                    </button>
+                </div>
+            </div>
+        </section>`;
+        }
+
+        const stepsGrid = `
+            <div class="dtc-steps-grid grid grid-cols-1 ${imgSrc ? 'gap-4' : 'md:grid-cols-3 gap-5 md:gap-6'}">
+                ${steps.map((st, i) => `
+                <div class="dtc-step-card ${isTech ? 'bg-slate-900/80 border border-cyan-900/40 text-slate-200' : (isLookbook ? 'bg-white border border-stone-200/80' : (isBento ? 'bg-white rounded-3xl border border-slate-200/80' : (isMinimalist ? 'bg-slate-50/60 border border-slate-200/60' : 'bg-white border border-slate-200/80')))} p-5 sm:p-6 rounded-2xl shadow-xs relative flex flex-col md:flex-col gap-3.5 sm:gap-4 transition-all">
+                    <div class="dtc-step-badge w-10 h-10 ${isBento ? 'rounded-2xl' : 'rounded-xl'} ${isTech ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 font-mono' : (isLookbook ? 'bg-stone-800 text-stone-100 font-serif' : (isMinimalist ? 'bg-slate-900 text-white font-mono' : 'text-white'))} font-black flex items-center justify-center text-sm shadow-sm shrink-0">
+                        0${st.step || i + 1}
+                    </div>
+                    <div class="dtc-step-content space-y-1.5 flex-1 min-w-0">
+                        <h4 class="font-black ${isTech ? 'text-white' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-900')} text-base leading-snug">${detailEscapeHtml(st.title)}</h4>
+                        <p class="text-xs ${isTech ? 'text-slate-400 font-mono' : (isLookbook ? 'text-stone-600 font-sans' : 'text-slate-600')} leading-relaxed">${detailEscapeHtml(st.instruction)}</p>
+                    </div>
+                </div>`).join('')}
+            </div>`;
 
         return `
         <section class="p-6 md:p-10 ${isTech ? 'bg-[#0B0F19] border-t border-slate-800' : (isLookbook ? 'bg-[#faf8f5] border-t border-stone-200/80' : (isMinimalist ? 'bg-white border-t border-slate-100' : 'bg-slate-50/70 border-y border-slate-100'))} space-y-8">
@@ -8304,21 +8647,18 @@ function renderDtcStepsSection(stepTasks, isZh, style = 'editorial') {
                         : (isMinimalist
                             ? `<span class="text-xs uppercase tracking-widest font-mono text-slate-400 font-bold block">${detailEscapeHtml(copy.tagline || (isZh ? '简单三步上手' : 'EASY 3-STEP GUIDE'))}</span>`
                             : `<div class="dtc-section-tag"><i class="ph-fill ph-steps"></i> ${detailEscapeHtml(copy.tagline || (isZh ? '简单三步上手' : 'EASY 3-STEP GUIDE'))}</div>`))}
-                <h2 class="text-2xl font-black ${isTech ? 'text-white font-sans' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-900')} tracking-tight">${detailEscapeHtml(copy.headline || (isZh ? '开箱即用 简单高效' : 'How Simple It Is To Use'))}</h2>
+                <h2 class="text-2xl font-black ${isTech ? 'text-white font-sans' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-900')} tracking-tight">${detailEscapeHtml(headline)}</h2>
                 <p class="text-xs ${isTech ? 'text-slate-400 font-mono' : (isLookbook ? 'text-stone-600 font-sans' : 'text-slate-500')}">${isZh ? '无需专业知识，几秒内即可开始体验。' : 'Zero technical knowledge required. Ready out of the box in seconds.'}</p>
             </div>
-            <div class="dtc-steps-grid grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6">
-                ${steps.map((st, i) => `
-                <div class="dtc-step-card ${isTech ? 'bg-slate-900/80 border border-cyan-900/40 text-slate-200' : (isLookbook ? 'bg-white border border-stone-200/80' : (isBento ? 'bg-white rounded-3xl border border-slate-200/80' : (isMinimalist ? 'bg-slate-50/60 border border-slate-200/60' : 'bg-white border border-slate-200/80')))} p-5 sm:p-6 rounded-2xl shadow-xs relative flex flex-col md:flex-col gap-3.5 sm:gap-4 transition-all">
-                    <div class="dtc-step-badge w-10 h-10 ${isBento ? 'rounded-2xl' : 'rounded-xl'} ${isTech ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 font-mono' : (isLookbook ? 'bg-stone-800 text-stone-100 font-serif' : (isMinimalist ? 'bg-slate-900 text-white font-mono' : 'text-white'))} font-black flex items-center justify-center text-sm shadow-sm shrink-0">
-                        0${st.step || i + 1}
-                    </div>
-                    <div class="dtc-step-content space-y-1.5 flex-1 min-w-0">
-                        <h4 class="font-black ${isTech ? 'text-white' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-900')} text-base leading-snug">${detailEscapeHtml(st.title)}</h4>
-                        <p class="text-xs ${isTech ? 'text-slate-400 font-mono' : (isLookbook ? 'text-stone-600 font-sans' : 'text-slate-600')} leading-relaxed">${detailEscapeHtml(st.instruction)}</p>
-                    </div>
-                </div>`).join('')}
-            </div>
+            ${imgSrc ? `
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-center max-w-5xl mx-auto">
+                <div class="lg:col-span-5">
+                    ${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-4/3 sm:aspect-square', isBento ? 'rounded-3xl' : 'rounded-2xl', 'w-full shadow-md', task.id)}
+                </div>
+                <div class="lg:col-span-7">
+                    ${stepsGrid}
+                </div>
+            </div>` : stepsGrid}
         </section>`;
     }).join('');
 
@@ -8343,38 +8683,60 @@ function renderDtcSpecsSection(specsTasks, isZh, style = 'editorial') {
 
     const content = specsTasks.map(task => {
         const copy = task.dtcCopy || {};
-        const packageList = Array.isArray(copy.packageIncludes) && copy.packageIncludes.length
-            ? copy.packageIncludes
-            : (isZh
-                ? ['1 × 核心设备主机', '1 × 详尽使用说明书', '1 × 高品质保护外盒', '1 × 官方品质保修卡']
-                : ['1 × Master Product Unit', '1 × Comprehensive Manual', '1 × Premium Protection Case', '1 × 1-Year Warranty Card']);
-        const specList = Array.isArray(copy.specifications) && copy.specifications.length
-            ? copy.specifications
-            : (isZh
-                ? [
-                    { label: '核心材质', value: '航空级合金与环保符合材料' },
-                    { label: '设备重量', value: '轻量化紧凑便携设计' },
-                    { label: '通用适配', value: '多规格标准全面兼容' },
-                    { label: '权威认证', value: 'CE, FCC, RoHS 国际合规认证' }
-                ]
-                : [
-                    { label: 'Primary Material', value: 'Aerospace-Grade Alloy & Eco Composite' },
-                    { label: 'Weight', value: 'Compact & Ultralight Design' },
-                    { label: 'Compatibility', value: 'Universal Standard' },
-                    { label: 'Certification', value: 'CE, FCC, RoHS Certified' }
-                ]);
+        const facts = (task.productFacts && Object.keys(task.productFacts).length)
+            ? task.productFacts
+            : ((typeof getVerifiedProductFacts === 'function') ? getVerifiedProductFacts() : {});
+        const imgSrc = safeFormatImgSrc(task.imageSrc || '');
+        const headline = copy.headline || (isZh ? '包装清单与规格参数' : 'What’s In The Box & Specifications');
 
-        return `
-        <section class="p-6 md:p-10 space-y-8 ${isTech ? 'bg-[#0B0F19]' : ''}">
-            <div class="text-center max-w-xl mx-auto space-y-2">
-                ${isTech
-                    ? `<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-mono font-bold tracking-widest uppercase bg-cyan-950/80 text-cyan-400 border border-cyan-800/50">> [SYSTEM PARAMETERS & PACKAGING]</div>`
-                    : (isLookbook
-                        ? `<span class="text-[#b45309] font-sans tracking-[0.2em] text-xs uppercase font-semibold block">${detailEscapeHtml(copy.tagline || (isZh ? '透明配置' : 'TRANSPARENT DETAILS'))}</span>`
-                        : `<div class="dtc-section-tag"><i class="ph-fill ph-package"></i> ${detailEscapeHtml(copy.tagline || (isZh ? '透明配置' : 'TRANSPARENT DETAILS'))}</div>`)}
-                <h2 class="text-2xl font-black ${isTech ? 'text-white' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-900')} tracking-tight">${detailEscapeHtml(copy.headline || (isZh ? '包装清单与规格参数' : 'What’s In The Box & Specifications'))}</h2>
+        let packageList = Array.isArray(copy.packageIncludes) && copy.packageIncludes.length
+            ? copy.packageIncludes
+            : (Array.isArray(facts.packageIncludes) && facts.packageIncludes.length ? facts.packageIncludes : []);
+
+        let specList = Array.isArray(copy.specifications) && copy.specifications.length
+            ? copy.specifications
+            : [];
+
+        if (specList.length === 0) {
+            const extractFactStr = (val) => {
+                if (!val) return '';
+                if (typeof val === 'string') return val.trim();
+                if (typeof val === 'object' && val.value) return String(val.value).trim();
+                return '';
+            };
+            const mat = extractFactStr(facts.material);
+            const dims = extractFactStr(facts.dimensions);
+            const wt = extractFactStr(facts.weight);
+            const col = extractFactStr(facts.color);
+            if (mat) specList.push({ label: isZh ? '核心材质' : 'Material', value: mat });
+            if (dims) specList.push({ label: isZh ? '产品尺寸' : 'Dimensions', value: dims });
+            if (wt) specList.push({ label: isZh ? '产品重量' : 'Weight', value: wt });
+            if (col) specList.push({ label: isZh ? '商品颜色' : 'Color', value: col });
+        }
+
+        if (specList.length === 0 && packageList.length === 0) {
+            return `
+        <section class="p-6 md:p-10 space-y-6 ${isTech ? 'bg-[#0B0F19]' : ''}">
+            ${imgSrc ? `<div class="max-w-xl mx-auto mb-6">${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-4/3 sm:aspect-16/9', isBento ? 'rounded-3xl' : 'rounded-2xl', '', task.id)}</div>` : ''}
+            <div class="dtc-copy-status-card p-6 rounded-2xl ${isTech ? 'bg-slate-900/90 border border-cyan-800/60 text-cyan-200' : 'bg-amber-50/80 border border-amber-200/90 text-amber-900'} text-center space-y-3 max-w-xl mx-auto shadow-2xs">
+                <div class="flex items-center justify-center gap-2 text-amber-800 font-bold text-sm">
+                    <i class="ph-bold ph-warning-circle text-lg text-amber-600"></i>
+                    <span>${isZh ? '规格参数与清单未生成（已阻断虚构材料与认证）' : 'Specifications not generated (Fictional claims blocked)'}</span>
+                </div>
+                <p class="text-xs ${isTech ? 'text-cyan-200/80' : 'text-amber-800/90'} leading-relaxed">
+                    ${isZh ? '未检测到 AI 生成的规格或已确认商品事实。为防止违规与虚假宣传，系统已严格阻断捏造航空合金、CE认证等假数据。' : 'No verified specifications generated. Fabricated alloy materials and certifications were blocked.'}
+                </p>
+                <div class="flex items-center justify-center gap-2 pt-1">
+                    <button type="button" class="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors inline-flex items-center gap-1 shadow-2xs" onclick="event.stopPropagation(); retryTaskAuxiliaryStep('${task.uniqueId || task.id}', 'copy')">
+                        <i class="ph-bold ph-arrows-clockwise"></i>
+                        <span>${isZh ? '重试生成规格文案' : 'Retry Specs Copy'}</span>
+                    </button>
+                </div>
             </div>
-            <div class="dtc-specs-grid grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+        </section>`;
+        }
+
+        const packageCard = `
                 <!-- Package Included -->
                 <div class="${isTech ? 'bg-slate-900/80 border border-cyan-900/40 text-slate-200' : (isLookbook ? 'bg-stone-50/70 border border-stone-200/80' : (isBento ? 'bg-white rounded-3xl border border-slate-200/80' : (isMinimalist ? 'bg-slate-50/60 border border-slate-200/60' : 'bg-slate-50/80 border border-slate-200/80')))} p-5 sm:p-6 rounded-2xl shadow-xs space-y-4">
                     <div class="font-black ${isTech ? 'text-white font-mono' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-900')} text-sm flex items-center gap-2.5">
@@ -8390,8 +8752,9 @@ function renderDtcSpecsSection(specsTasks, isZh, style = 'editorial') {
                             <span class="leading-tight">${detailEscapeHtml(item)}</span>
                         </li>`).join('')}
                     </ul>
-                </div>
+                </div>`;
 
+        const specsCard = `
                 <!-- Tech Specs Table -->
                 <div class="${isTech ? 'bg-slate-900/80 border border-cyan-900/40 text-slate-200' : (isLookbook ? 'bg-stone-50/70 border border-stone-200/80' : (isBento ? 'bg-white rounded-3xl border border-slate-200/80' : (isMinimalist ? 'bg-slate-50/60 border border-slate-200/60' : 'bg-slate-50/80 border border-slate-200/80')))} p-5 sm:p-6 rounded-2xl shadow-xs space-y-4">
                     <div class="font-black ${isTech ? 'text-white font-mono' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-900')} text-sm flex items-center gap-2.5">
@@ -8407,8 +8770,33 @@ function renderDtcSpecsSection(specsTasks, isZh, style = 'editorial') {
                             <span class="${isTech ? 'text-cyan-300 font-mono' : 'text-slate-900 font-bold'} text-right">${detailEscapeHtml(spec.value)}</span>
                         </div>`).join('')}
                     </div>
-                </div>
+                </div>`;
+
+        const cardsContainer = `
+            <div class="dtc-specs-grid grid grid-cols-1 ${packageList.length && specList.length ? (imgSrc ? 'gap-6' : 'md:grid-cols-2 gap-6 md:gap-8') : 'gap-6'}">
+                ${packageList.length ? packageCard : ''}
+                ${specList.length ? specsCard : ''}
+            </div>`;
+
+        return `
+        <section class="p-6 md:p-10 space-y-8 ${isTech ? 'bg-[#0B0F19]' : ''}">
+            <div class="text-center max-w-xl mx-auto space-y-2">
+                ${isTech
+                    ? `<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-mono font-bold tracking-widest uppercase bg-cyan-950/80 text-cyan-400 border border-cyan-800/50">> [SYSTEM PARAMETERS & PACKAGING]</div>`
+                    : (isLookbook
+                        ? `<span class="text-[#b45309] font-sans tracking-[0.2em] text-xs uppercase font-semibold block">${detailEscapeHtml(copy.tagline || (isZh ? '透明配置' : 'TRANSPARENT DETAILS'))}</span>`
+                        : `<div class="dtc-section-tag"><i class="ph-fill ph-package"></i> ${detailEscapeHtml(copy.tagline || (isZh ? '透明配置' : 'TRANSPARENT DETAILS'))}</div>`)}
+                <h2 class="text-2xl font-black ${isTech ? 'text-white' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-900')} tracking-tight">${detailEscapeHtml(headline)}</h2>
             </div>
+            ${imgSrc ? `
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start max-w-5xl mx-auto">
+                <div class="lg:col-span-5">
+                    ${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-4/3 sm:aspect-square', isBento ? 'rounded-3xl' : 'rounded-2xl', 'w-full shadow-md', task.id)}
+                </div>
+                <div class="lg:col-span-7">
+                    ${cardsContainer}
+                </div>
+            </div>` : cardsContainer}
         </section>`;
     }).join('');
 
@@ -8432,15 +8820,29 @@ function renderDtcBundleBoxSection(bundleBoxTasks, isZh, style = 'editorial') {
 
     const content = bundleBoxTasks.map(task => {
         const copy = task.dtcCopy || {};
-        const items = Array.isArray(copy.items) && copy.items.length
-            ? copy.items
-            : [
-                { name: isZh ? '核心旗舰主机' : 'Core Hero Device', count: '1×', desc: isZh ? '精密核心性能单元' : 'Primary precision performance unit' },
-                { name: isZh ? '多功能配件模组' : 'Comprehensive Accessory Pack', count: '4×', desc: isZh ? '全场景适用替换组件' : 'Multi-functional attachments and heads' },
-                { name: isZh ? '极速快充适配器' : 'Quick Power Adapter & Cable', count: '1×', desc: isZh ? '快速安全充电线缆' : 'Fast safe universal charging system' },
-                { name: isZh ? '定制防护收纳盒' : 'Protective Travel Storage Case', count: '1×', desc: isZh ? '高强度量身贴合保护' : 'Heavy-duty custom fit protection' }
-            ];
+        const items = Array.isArray(copy.items) && copy.items.length ? copy.items : [];
         const imgSrc = safeFormatImgSrc(task.imageSrc || '');
+
+        if (!items.length) {
+            return `
+        <section class="p-6 md:p-10 ${isTech ? 'bg-slate-950 border-t border-slate-800' : (isLookbook ? 'bg-[#f4efe6] border-y border-stone-200' : 'bg-slate-50/70 border-y border-slate-100')} space-y-6">
+            <div class="dtc-copy-status-card p-6 rounded-2xl ${isTech ? 'bg-slate-900/90 border border-cyan-800/60 text-cyan-200' : 'bg-amber-50/80 border border-amber-200/90 text-amber-900'} text-center space-y-3 max-w-xl mx-auto shadow-2xs">
+                <div class="flex items-center justify-center gap-2 text-amber-800 font-bold text-sm">
+                    <i class="ph-bold ph-warning-circle text-lg text-amber-600"></i>
+                    <span>${isZh ? '开箱全家福配件清单未生成（已阻断虚构配件）' : 'Box items not generated (Fictional accessories blocked)'}</span>
+                </div>
+                <p class="text-xs ${isTech ? 'text-cyan-200/80' : 'text-amber-800/90'} leading-relaxed">
+                    ${isZh ? '此模块未生成真实的开箱清单。为保障跨境合规与真实履约，系统严禁自动填入虚构的主机与配件列表。' : 'No verified box contents generated. Fictional accessories were strictly blocked to prevent customer disputes.'}
+                </p>
+                <div class="flex items-center justify-center gap-2 pt-1">
+                    <button type="button" class="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors inline-flex items-center gap-1 shadow-2xs" onclick="event.stopPropagation(); retryTaskAuxiliaryStep('${task.uniqueId || task.id}', 'copy')">
+                        <i class="ph-bold ph-arrows-clockwise"></i>
+                        <span>${isZh ? '重试生成全家福文案' : 'Retry Box Copy'}</span>
+                    </button>
+                </div>
+            </div>
+        </section>`;
+        }
         return `
         <!-- Bundle What's in the Box -->
         <section class="p-6 md:p-10 ${isTech ? 'bg-slate-950 border-t border-slate-800' : (isLookbook ? 'bg-[#f4efe6] border-y border-stone-200' : 'bg-slate-50/70 border-y border-slate-100')} space-y-8">
@@ -8489,14 +8891,29 @@ function renderDtcBundleSavingsSection(bundleSavingsTasks, isZh, style = 'editor
 
     const content = bundleSavingsTasks.map(task => {
         const copy = task.dtcCopy || {};
-        const comp = copy.bundleComparison || {
-            singleItemsTotal: '$129.99',
-            bundlePrice: '$79.99',
-            savingsText: isZh ? '立省 $50 (立享 62折)' : 'Save $50 (38% OFF)',
-            perks: isZh
-                ? ['官方标配原厂配件', '免去多番单独购买烦恼', '优先专线快速发货']
-                : ['Official OEM accessories included', 'Zero compatibility hassle', 'Free priority expedited shipping']
-        };
+        const comp = copy.bundleComparison;
+
+        if (!comp || (!comp.bundlePrice && !comp.singleItemsTotal)) {
+            return `
+        <section class="p-6 md:p-10 space-y-6">
+            <div class="dtc-copy-status-card p-6 rounded-2xl ${isTech ? 'bg-slate-900/90 border border-cyan-800/60 text-cyan-200' : 'bg-amber-50/80 border border-amber-200/90 text-amber-900'} text-center space-y-3 max-w-xl mx-auto shadow-2xs">
+                <div class="flex items-center justify-center gap-2 text-amber-800 font-bold text-sm">
+                    <i class="ph-bold ph-warning-circle text-lg text-amber-600"></i>
+                    <span>${isZh ? '组合立省对比未生成（已阻断虚构价格与折扣）' : 'Bundle savings not generated (Fictional pricing blocked)'}</span>
+                </div>
+                <p class="text-xs ${isTech ? 'text-cyan-200/80' : 'text-amber-800/90'} leading-relaxed">
+                    ${isZh ? '未获取到真实的组合套餐价格。系统严禁随意捏造虚假价格与折扣，以防触犯海外电商价格合规监管。' : 'No verified pricing generated. Fake prices and discounts were blocked to prevent pricing compliance violations.'}
+                </p>
+                <div class="flex items-center justify-center gap-2 pt-1">
+                    <button type="button" class="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors inline-flex items-center gap-1 shadow-2xs" onclick="event.stopPropagation(); retryTaskAuxiliaryStep('${task.uniqueId || task.id}', 'copy')">
+                        <i class="ph-bold ph-arrows-clockwise"></i>
+                        <span>${isZh ? '重试生成组合文案' : 'Retry Bundle Copy'}</span>
+                    </button>
+                </div>
+            </div>
+        </section>`;
+        }
+
         return `
         <section class="p-6 md:p-10 space-y-6">
             <div class="max-w-2xl mx-auto ${isTech ? 'bg-slate-950 border border-cyan-800/60' : (isLookbook ? 'bg-stone-900 border border-stone-800' : 'bg-slate-900 border border-slate-800')} text-white p-6 sm:p-8 rounded-3xl shadow-xl space-y-6 relative overflow-hidden">
@@ -8512,12 +8929,12 @@ function renderDtcBundleSavingsSection(bundleSavingsTasks, isZh, style = 'editor
                 <div class="dtc-bundle-savings-grid grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div class="p-4 rounded-2xl bg-white/5 border border-white/10">
                         <span class="text-xs text-white/60 block">${isZh ? '单件分别购买总价' : 'If Bought Separately'}</span>
-                        <span class="text-2xl font-bold line-through text-white/50">${detailEscapeHtml(comp.singleItemsTotal || '$129.99')}</span>
+                        <span class="text-2xl font-bold line-through text-white/50">${detailEscapeHtml(comp.singleItemsTotal || '--')}</span>
                         <span class="text-[11px] text-white/40 block mt-1">${isZh ? '单件零售价 + 分开邮费' : 'Individual parts + shipping'}</span>
                     </div>
                     <div class="p-4 rounded-2xl ${isTech ? 'bg-cyan-500/10 border-cyan-400/30' : 'dtc-bundle-price-card bg-white/5'} border">
                         <span class="text-xs ${isTech ? 'text-cyan-300 font-mono' : 'dtc-accent-text'} font-bold block">${isZh ? '套装专属特惠价' : 'Bundle Kit Special'}</span>
-                        <span class="text-3xl font-black text-white">${detailEscapeHtml(comp.bundlePrice || '$79.99')}</span>
+                        <span class="text-3xl font-black text-white">${detailEscapeHtml(comp.bundlePrice || '--')}</span>
                         <span class="text-[11px] ${isTech ? 'text-cyan-300 font-mono' : 'dtc-accent-text'} font-bold block mt-1">✓ ${isZh ? '一键购齐 全部随附' : 'Complete package all-in-one'}</span>
                     </div>
                 </div>
@@ -8545,21 +8962,67 @@ function renderDtcBundleSavingsSection(bundleSavingsTasks, isZh, style = 'editor
 
 // 渲染 FAQ 常见疑问解答折叠面板
 function renderDtcFaqSection(faqTasks, isZh, style = 'editorial') {
+    if (!faqTasks || !faqTasks.length) return '';
     const faqTask = faqTasks[0];
     const copy = faqTask?.dtcCopy || {};
-    const faqs = Array.isArray(copy.faqs) && copy.faqs.length
-        ? copy.faqs
-        : [
-            { q: isZh ? "一般发货需要多长时间？" : "How long will delivery take?", a: isZh ? "所有订单均在24小时内处理完毕。标准物流通常在3-5个工作日内送达，提供全程实时物流追踪。" : "All orders are processed within 24 hours. Standard domestic shipping arrives within 3-5 business days with full real-time tracking." },
-            { q: isZh ? "如果我不满意可以退换吗？" : "What if I am not completely satisfied?", a: isZh ? "我们为您提供30天无风险试用体验。若您未达到满分满意，可随时联系客服团队办理全额退款。" : "We proudly stand behind our product with a 30-day no-risk trial. If you don't love it, simply contact our support team for a full refund." },
-            { q: isZh ? "新手第一次使用容易上手吗？" : "Is this suitable for first-time users?", a: isZh ? "完全无需担忧！产品专为直觉化开箱体验设计，配有图文并茂指南，无需任何专业知识。" : "Absolutely! It was purposefully designed for intuitive, out-of-the-box operation without requiring technical experience or tools." },
-            { q: isZh ? "产品包含品质保障或保修吗？" : "Is there a warranty included?", a: isZh ? "每份购买均自动享有一年官方正品保修，涵盖制造缺陷与非人为故障，安心无忧。" : "Yes, every purchase includes an automatic 1-Year Comprehensive Manufacturer Warranty covering all defects and operational failures." }
-        ];
+    const faqs = Array.isArray(copy.faqs) && copy.faqs.length ? copy.faqs : [];
+    const imgSrc = safeFormatImgSrc(faqTask?.imageSrc || '');
+    const headline = isZh ? '选购前的常见疑问' : 'Got Questions? We’ve Got Answers';
 
     const isTech = style === 'technical';
     const isLookbook = style === 'lookbook';
     const isMinimalist = style === 'minimalist';
     const isBento = style === 'bento';
+
+    if (!faqs.length) {
+        return `
+    <div class="dtc-section-container" data-section="faq">
+        <div class="dtc-section-actions">
+            <button type="button" class="dtc-section-copy-btn" onclick="copyDtcSectionHtml('faq', '${isZh ? '常见疑问解答' : 'FAQ'}')" title="${isZh ? '独立复制此模块 HTML' : 'Copy section HTML'}">
+                <i class="ph ph-copy"></i><span>${isZh ? '复制模块 HTML' : 'Copy HTML'}</span>
+            </button>
+        </div>
+        <section class="p-6 md:p-10 ${isTech ? 'bg-[#0B0F19] border-t border-slate-800 text-white' : (isLookbook ? 'bg-[#faf8f5] border-t border-stone-200/80 font-serif' : (isMinimalist ? 'bg-white border-t border-slate-100' : 'border-t border-slate-200/80 bg-gradient-to-b from-slate-50/50 to-white'))}">
+            ${imgSrc ? `<div class="max-w-xl mx-auto mb-6">${renderDtcImagePlate(imgSrc, headline, isZh, 'aspect-4/3 sm:aspect-16/9', isBento ? 'rounded-3xl' : 'rounded-2xl', '', faqTask?.id)}</div>` : ''}
+            <div class="dtc-copy-status-card p-6 rounded-2xl ${isTech ? 'bg-slate-900/90 border border-cyan-800/60 text-cyan-200' : 'bg-amber-50/80 border border-amber-200/90 text-amber-900'} text-center space-y-3 max-w-xl mx-auto shadow-2xs my-6">
+                <div class="flex items-center justify-center gap-2 text-amber-800 font-bold text-sm">
+                    <i class="ph-bold ph-warning-circle text-lg text-amber-600"></i>
+                    <span>${isZh ? '常见问答未生成（已阻断虚构物流与质保政策）' : 'FAQs not generated (Fictional policies blocked)'}</span>
+                </div>
+                <p class="text-xs ${isTech ? 'text-cyan-200/80' : 'text-amber-800/90'} leading-relaxed">
+                    ${isZh ? '未生成针对本商品的真实常见问题。系统严禁捏造 24小时发货、30天无理由退款或1年保修等假政策。' : 'No factual FAQs generated. Fabricated 24h shipping and warranty policies were blocked.'}
+                </p>
+                <div class="flex items-center justify-center gap-2 pt-1">
+                    <button type="button" class="px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors inline-flex items-center gap-1 shadow-2xs" onclick="event.stopPropagation(); retryTaskAuxiliaryStep('${faqTask?.uniqueId || faqTask?.id}', 'copy')">
+                        <i class="ph-bold ph-arrows-clockwise"></i>
+                        <span>${isZh ? '重试生成 FAQ 文案' : 'Retry FAQ Copy'}</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+    </div>`;
+    }
+
+    const faqAccordionList = faqs.map((faq, i) => `
+        <details class="dtc-accordion-item ${isTech ? 'bg-slate-900/80 border border-slate-800 text-white' : (isLookbook ? 'bg-white border border-stone-200/80' : (isBento ? 'bg-white border border-slate-200 rounded-3xl' : 'bg-white border border-slate-200/90 rounded-2xl'))} overflow-hidden shadow-xs transition-all duration-200 ${i === 0 ? 'active' : ''}" ${i === 0 ? 'open' : ''}>
+            <summary class="dtc-accordion-header p-4 sm:p-5 flex items-center justify-between gap-3.5 cursor-pointer select-none group" onclick="toggleDtcAccordion(this)">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="dtc-faq-q-badge w-7 h-7 rounded-lg ${isTech ? 'bg-cyan-950 text-cyan-400 font-mono' : (isLookbook ? 'bg-amber-50 text-amber-800' : '')} font-black text-xs flex items-center justify-center shrink-0 transition-all shadow-2xs">
+                        Q
+                    </div>
+                    <span class="font-bold ${isTech ? 'text-slate-100 font-mono' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-800')} text-sm sm:text-base leading-snug transition-colors">${detailEscapeHtml(faq.q)}</span>
+                </div>
+                <div class="dtc-chevron-circle w-7 h-7 rounded-full ${isTech ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'} flex items-center justify-center shrink-0 transition-all">
+                    <i class="ph-bold ph-caret-down text-sm dtc-chevron-icon transition-transform duration-300"></i>
+                </div>
+            </summary>
+            <div class="dtc-accordion-body px-4 sm:px-5 pb-5 pt-0">
+                <div class="pt-3 border-t ${isTech ? 'border-slate-800 text-slate-300 font-mono' : 'border-slate-100/90 text-slate-600'} text-xs sm:text-sm leading-relaxed sm:pl-10 flex items-start gap-2.5">
+                    <div class="w-5 h-5 rounded-md ${isTech ? 'bg-cyan-950 text-cyan-400' : 'bg-emerald-50 text-emerald-600'} font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">A</div>
+                    <div class="flex-1">${detailEscapeHtml(faq.a)}</div>
+                </div>
+            </div>
+        </details>`).join('');
 
     return `
     <div class="dtc-section-container" data-section="faq">
@@ -8575,7 +9038,7 @@ function renderDtcFaqSection(faqTasks, isZh, style = 'editorial') {
                     : (isLookbook
                         ? `<span class="text-[#b45309] font-sans tracking-[0.2em] text-xs uppercase font-semibold block">${isZh ? '常见疑虑解答' : 'FREQUENTLY ASKED QUESTIONS'}</span>`
                         : `<div class="dtc-section-tag"><i class="ph-fill ph-question"></i> ${isZh ? '常见疑虑解答' : 'FREQUENTLY ASKED QUESTIONS'}</div>`)}
-                <h2 class="text-2xl md:text-3xl font-black ${isTech ? 'text-white' : (isLookbook ? 'text-stone-900' : 'text-slate-900')} tracking-tight">${isZh ? '选购前的常见疑问' : 'Got Questions? We’ve Got Answers'}</h2>
+                <h2 class="text-2xl md:text-3xl font-black ${isTech ? 'text-white' : (isLookbook ? 'text-stone-900' : 'text-slate-900')} tracking-tight">${headline}</h2>
                 <p class="text-xs sm:text-sm ${isTech ? 'text-slate-400 font-mono' : (isLookbook ? 'text-stone-600 font-sans' : 'text-slate-500')}">${isZh ? '为您解答关于品质、物流与售后的一切疑虑。' : 'Everything you need to know before making your purchase decision.'}</p>
                 <div class="flex items-center justify-center gap-3 pt-1 text-[11px] font-semibold ${isTech ? 'text-slate-400 font-mono' : 'text-slate-500'}">
                     <span class="flex items-center gap-1"><i class="ph-fill ph-shield-check ${isTech ? 'text-cyan-400' : 'text-emerald-600'}"></i> ${isZh ? '30天无忧体验' : '30-Day Risk-Free Trial'}</span>
@@ -8584,28 +9047,15 @@ function renderDtcFaqSection(faqTasks, isZh, style = 'editorial') {
                 </div>
             </div>
 
-            <div class="max-w-2xl mx-auto space-y-3.5">
-                ${faqs.map((faq, i) => `
-                <details class="dtc-accordion-item ${isTech ? 'bg-slate-900/80 border border-slate-800 text-white' : (isLookbook ? 'bg-white border border-stone-200/80' : (isBento ? 'bg-white border border-slate-200 rounded-3xl' : 'bg-white border border-slate-200/90 rounded-2xl'))} overflow-hidden shadow-xs transition-all duration-200 ${i === 0 ? 'active' : ''}" ${i === 0 ? 'open' : ''}>
-                    <summary class="dtc-accordion-header p-4 sm:p-5 flex items-center justify-between gap-3.5 cursor-pointer select-none group" onclick="toggleDtcAccordion(this)">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <div class="dtc-faq-q-badge w-7 h-7 rounded-lg ${isTech ? 'bg-cyan-950 text-cyan-400 font-mono' : (isLookbook ? 'bg-amber-50 text-amber-800' : '')} font-black text-xs flex items-center justify-center shrink-0 transition-all shadow-2xs">
-                                Q
-                            </div>
-                            <span class="font-bold ${isTech ? 'text-slate-100 font-mono' : (isLookbook ? 'text-stone-900 font-serif' : 'text-slate-800')} text-sm sm:text-base leading-snug transition-colors">${detailEscapeHtml(faq.q)}</span>
-                        </div>
-                        <div class="dtc-chevron-circle w-7 h-7 rounded-full ${isTech ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'} flex items-center justify-center shrink-0 transition-all">
-                            <i class="ph-bold ph-caret-down text-sm dtc-chevron-icon transition-transform duration-300"></i>
-                        </div>
-                    </summary>
-                    <div class="dtc-accordion-body px-4 sm:px-5 pb-5 pt-0">
-                        <div class="pt-3 border-t ${isTech ? 'border-slate-800 text-slate-300 font-mono' : 'border-slate-100/90 text-slate-600'} text-xs sm:text-sm leading-relaxed sm:pl-10 flex items-start gap-2.5">
-                            <div class="w-5 h-5 rounded-md ${isTech ? 'bg-cyan-950 text-cyan-400' : 'bg-emerald-50 text-emerald-600'} font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">A</div>
-                            <div class="flex-1">${detailEscapeHtml(faq.a)}</div>
-                        </div>
-                    </div>
-                </details>`).join('')}
-            </div>
+            ${imgSrc ? `
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start max-w-5xl mx-auto">
+                <div class="lg:col-span-5">
+                    ${renderDtcImagePlate(imgSrc, headline, isZh, 'aspect-square', isBento ? 'rounded-3xl' : 'rounded-2xl', 'w-full shadow-md', faqTask?.id)}
+                </div>
+                <div class="lg:col-span-7 space-y-3.5">
+                    ${faqAccordionList}
+                </div>
+            </div>` : `<div class="max-w-2xl mx-auto space-y-3.5">${faqAccordionList}</div>`}
         </section>
     </div>`;
 }
@@ -8637,17 +9087,18 @@ function renderEditorialLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, 
                 <div class="space-y-16">
                     ${fbrTasks.map((task, idx) => {
                         const isEven = idx % 2 === 0;
-                        const { tagline, headline, subheadline, fbrList, imgSrc } = prepareTaskDtcCopy(task, isZh);
+                        const { tagline, headline, subheadline, fbrList, imgSrc, isCopyPending, hasCopy } = prepareTaskDtcCopy(task, isZh);
 
                         return `
                         <div class="dtc-alternating-grid grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-center ${!isEven ? 'md:grid-flow-dense' : ''}">
                             <!-- Visual -->
                             <div class="${!isEven ? 'md:col-start-2' : ''}">
-                                ${renderDtcImagePlate(imgSrc, headline, isZh, 'aspect-square', 'rounded-2xl', '', task.id)}
+                                ${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-square', 'rounded-2xl', '', task.id)}
                             </div>
 
                             <!-- Content -->
                             <div class="space-y-4 ${!isEven ? 'md:col-start-1' : ''}">
+                                ${!hasCopy ? renderDtcCopyStatusFallback(task, isZh, isCopyPending) : `
                                 <div class="space-y-2">
                                     <div class="dtc-section-tag">${detailEscapeHtml(tagline)}</div>
                                     <h3 class="text-xl md:text-2xl font-black text-slate-900 tracking-tight leading-snug" contenteditable="true" onblur="updateDtcText('${task.id}', 'headline', this)" title="${isZh ? '点击可直接编辑标题' : 'Click to edit headline'}">${detailEscapeHtml(headline)}</h3>
@@ -8669,7 +9120,7 @@ function renderEditorialLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, 
                                         </div>
                                     </div>`;
                                     }).join('')}
-                                </div>
+                                </div>`}
                             </div>
                         </div>`;
                     }).join('')}
@@ -8682,8 +9133,8 @@ function renderEditorialLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, 
         ${renderDtcSpecsSection(specsTasks, isZh, 'editorial')}
         ${renderDtcBundleBoxSection(bundleBoxTasks, isZh, 'editorial')}
         ${renderDtcBundleSavingsSection(bundleSavingsTasks, isZh, 'editorial')}
-        ${renderDtcOfferStackSection(isZh, 'editorial')}
-        ${renderDtcRiskReversalSection(isZh, 'editorial')}
+        ${(bundleBoxTasks.length > 0 || bundleSavingsTasks.length > 0) ? renderDtcOfferStackSection(isZh, 'editorial') : ''}
+        ${hasVerifiedRiskReversal() ? renderDtcRiskReversalSection(isZh, 'editorial') : ''}
         ${renderDtcFaqSection(faqTasks, isZh, 'editorial')}
     </div>`;
 }
@@ -8717,6 +9168,7 @@ function renderMinimalistLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks,
                     </div>` : ''}
                     <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent pointer-events-none"></div>
                     <div class="relative z-10 space-y-3 max-w-xl">
+                        ${!heroData.hasCopy ? renderDtcCopyStatusFallback(heroTask, isZh, heroData.isCopyPending, true) : `
                         <span class="inline-block px-3 py-1 rounded-full text-[10px] font-mono font-bold tracking-widest uppercase bg-white/20 backdrop-blur-md border border-white/30 text-white">${detailEscapeHtml(heroData.tagline)}</span>
                         <h2 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight" contenteditable="true" onblur="updateDtcText('${heroTask.id}', 'headline', this)" title="${isZh ? '点击可直接编辑标题' : 'Click to edit headline'}">${detailEscapeHtml(heroData.headline)}</h2>
                         <p class="text-xs sm:text-sm text-white/80 leading-relaxed max-w-lg" contenteditable="true" onblur="updateDtcText('${heroTask.id}', 'subheadline', this)" title="${isZh ? '点击可直接编辑副标题' : 'Click to edit subheadline'}">${detailEscapeHtml(heroData.subheadline)}</p>
@@ -8726,7 +9178,7 @@ function renderMinimalistLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks,
                                 <i class="ph-bold ph-check text-emerald-400"></i>
                                 <span class="font-bold">${detailEscapeHtml(item.feature)}</span>
                             </div>`).join('')}
-                        </div>
+                        </div>`}
                     </div>
                 </div>
             </section>` : ''}
@@ -8735,14 +9187,15 @@ function renderMinimalistLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks,
             ${remainingTasks.length ? `
             <section class="p-6 md:p-10 space-y-16">
                 ${remainingTasks.map((task, idx) => {
-                    const { tagline, headline, subheadline, fbrList, imgSrc } = prepareTaskDtcCopy(task, isZh);
+                    const { tagline, headline, subheadline, fbrList, imgSrc, isCopyPending, hasCopy } = prepareTaskDtcCopy(task, isZh);
                     const isReverse = idx % 2 === 1;
                     return `
                     <div class="dtc-minimalist-card grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12 items-center py-6 border-b border-slate-100 last:border-b-0 ${isReverse ? 'md:grid-flow-dense' : ''}">
                         <div class="dtc-minimalist-img md:col-span-7 ${isReverse ? 'md:col-start-6' : ''}">
-                            ${renderDtcImagePlate(imgSrc, headline, isZh, 'aspect-4/3', 'rounded-3xl', '', task.id)}
+                            ${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-4/3', 'rounded-3xl', '', task.id)}
                         </div>
                         <div class="dtc-minimalist-content md:col-span-5 space-y-4 ${isReverse ? 'md:col-start-1' : ''}">
+                            ${!hasCopy ? renderDtcCopyStatusFallback(task, isZh, isCopyPending) : `
                             <span class="text-xs uppercase tracking-widest font-mono text-slate-400 font-bold block">${detailEscapeHtml(tagline)}</span>
                             <h3 class="text-2xl font-black text-slate-900 tracking-tight" contenteditable="true" onblur="updateDtcText('${task.id}', 'headline', this)" title="${isZh ? '点击可直接编辑标题' : 'Click to edit headline'}">${detailEscapeHtml(headline)}</h3>
                             <p class="text-sm text-slate-500 leading-relaxed" contenteditable="true" onblur="updateDtcText('${task.id}', 'subheadline', this)" title="${isZh ? '点击可直接编辑副标题' : 'Click to edit subheadline'}">${detailEscapeHtml(subheadline)}</p>
@@ -8756,7 +9209,7 @@ function renderMinimalistLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks,
                                     ${benefitText ? `<span class="text-slate-500 text-[11px] block mt-0.5">${detailEscapeHtml(benefitText)}</span>` : ''}
                                 </div>`;
                                 }).join('')}
-                            </div>
+                            </div>`}
                         </div>
                     </div>`;
                 }).join('')}
@@ -8768,8 +9221,8 @@ function renderMinimalistLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks,
         ${renderDtcSpecsSection(specsTasks, isZh, 'minimalist')}
         ${renderDtcBundleBoxSection(bundleBoxTasks, isZh, 'minimalist')}
         ${renderDtcBundleSavingsSection(bundleSavingsTasks, isZh, 'minimalist')}
-        ${renderDtcOfferStackSection(isZh, 'minimalist')}
-        ${renderDtcRiskReversalSection(isZh, 'minimalist')}
+        ${(bundleBoxTasks.length > 0 || bundleSavingsTasks.length > 0) ? renderDtcOfferStackSection(isZh, 'minimalist') : ''}
+        ${hasVerifiedRiskReversal() ? renderDtcRiskReversalSection(isZh, 'minimalist') : ''}
         ${renderDtcFaqSection(faqTasks, isZh, 'minimalist')}
     </div>`;
 }
@@ -8795,7 +9248,7 @@ function renderBentoLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, bund
 
                 <div class="dtc-bento-grid grid grid-cols-1 md:grid-cols-3 gap-5">
                     ${fbrTasks.map((task, idx) => {
-                        const { tagline, headline, subheadline, fbrList, imgSrc } = prepareTaskDtcCopy(task, isZh);
+                        const { tagline, headline, subheadline, fbrList, imgSrc, isCopyPending, hasCopy } = prepareTaskDtcCopy(task, isZh);
                         let spanClass = 'md:col-span-1';
                         let isHeroTile = false;
                         let isWideBanner = false;
@@ -8818,17 +9271,19 @@ function renderBentoLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, bund
                             return `
                             <div class="${spanClass} dtc-bento-tile dtc-bento-hero bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-xs flex flex-col justify-between group relative overflow-hidden">
                                 <div class="space-y-3 mb-6">
+                                    ${!hasCopy ? renderDtcCopyStatusFallback(task, isZh, isCopyPending) : `
                                     <span class="inline-block text-[11px] font-bold px-2.5 py-1 rounded-full dtc-accent-badge uppercase tracking-wider">${detailEscapeHtml(tagline)}</span>
                                     <h3 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight" contenteditable="true" onblur="updateDtcText('${task.id}', 'headline', this)" title="${isZh ? '点击可直接编辑标题' : 'Click to edit headline'}">${detailEscapeHtml(headline)}</h3>
-                                    <p class="text-xs sm:text-sm text-slate-600 leading-relaxed" contenteditable="true" onblur="updateDtcText('${task.id}', 'subheadline', this)" title="${isZh ? '点击可直接编辑副标题' : 'Click to edit subheadline'}">${detailEscapeHtml(subheadline)}</p>
+                                    <p class="text-xs sm:text-sm text-slate-600 leading-relaxed" contenteditable="true" onblur="updateDtcText('${task.id}', 'subheadline', this)" title="${isZh ? '点击可直接编辑副标题' : 'Click to edit subheadline'}">${detailEscapeHtml(subheadline)}</p>`}
                                 </div>
-                                ${renderDtcImagePlate(imgSrc, headline, isZh, 'aspect-4/3', 'rounded-2xl', 'w-full', task.id)}
+                                ${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-4/3', 'rounded-2xl', 'w-full', task.id)}
+                                ${hasCopy ? `
                                 <div class="flex flex-wrap gap-2 pt-4">
                                     ${fbrList.map((item, itemIdx) => `
                                     <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/70 text-xs text-slate-800 font-bold" contenteditable="true" onblur="updateDtcFbrItem('${task.id}', ${itemIdx}, this)" title="${isZh ? '点击可直接编辑要点' : 'Click to edit highlight'}">
                                         <i class="ph-bold ph-check text-emerald-600"></i> ${detailEscapeHtml(item.feature)}
                                     </span>`).join('')}
-                                </div>
+                                </div>` : ''}
                             </div>`;
                         }
 
@@ -8836,9 +9291,10 @@ function renderBentoLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, bund
                             return `
                             <div class="${spanClass} dtc-bento-tile dtc-bento-banner rounded-3xl p-6 sm:p-8 border shadow-xs grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
                                 <div class="dtc-bento-banner-img">
-                                    ${renderDtcImagePlate(imgSrc, headline, isZh, 'aspect-16/9', 'rounded-2xl', '', task.id)}
+                                    ${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-16/9', 'rounded-2xl', '', task.id)}
                                 </div>
                                 <div class="dtc-bento-banner-content space-y-3">
+                                    ${!hasCopy ? renderDtcCopyStatusFallback(task, isZh, isCopyPending) : `
                                     <span class="inline-block text-[11px] font-bold px-2.5 py-1 rounded-full dtc-accent-badge uppercase tracking-wider">${detailEscapeHtml(tagline)}</span>
                                     <h3 class="text-xl font-black text-slate-900 tracking-tight" contenteditable="true" onblur="updateDtcText('${task.id}', 'headline', this)" title="${isZh ? '点击可直接编辑标题' : 'Click to edit headline'}">${detailEscapeHtml(headline)}</h3>
                                     <p class="text-xs text-slate-600 leading-relaxed" contenteditable="true" onblur="updateDtcText('${task.id}', 'subheadline', this)" title="${isZh ? '点击可直接编辑副标题' : 'Click to edit subheadline'}">${detailEscapeHtml(subheadline)}</p>
@@ -8848,22 +9304,24 @@ function renderBentoLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, bund
                                             <i class="ph-bold ph-check-circle dtc-accent-text"></i>
                                             <strong>${detailEscapeHtml(item.feature)}:</strong> ${detailEscapeHtml(item.benefit || '')}
                                         </div>`).join('')}
-                                    </div>
+                                    </div>`}
                                 </div>
                             </div>`;
                         }
 
                         return `
                         <div class="${spanClass} dtc-bento-tile bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-xs flex flex-col justify-between group space-y-4">
+                            ${!hasCopy ? renderDtcCopyStatusFallback(task, isZh, isCopyPending) : `
                             <div class="space-y-2">
                                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">${detailEscapeHtml(tagline)}</span>
                                 <h4 class="text-base font-black text-slate-900 leading-snug" contenteditable="true" onblur="updateDtcText('${task.id}', 'headline', this)" title="${isZh ? '点击可直接编辑标题' : 'Click to edit headline'}">${detailEscapeHtml(headline)}</h4>
                                 <p class="text-xs text-slate-500 leading-relaxed line-clamp-2" contenteditable="true" onblur="updateDtcText('${task.id}', 'subheadline', this)" title="${isZh ? '点击可直接编辑副标题' : 'Click to edit subheadline'}">${detailEscapeHtml(subheadline)}</p>
-                            </div>
-                            ${renderDtcImagePlate(imgSrc, headline, isZh, 'aspect-square', 'rounded-2xl', '', task.id)}
+                            </div>`}
+                            ${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-square', 'rounded-2xl', '', task.id)}
+                            ${hasCopy && fbrList[0] ? `
                             <div class="text-xs text-slate-700 border-t border-slate-100 pt-2.5">
-                                ${fbrList[0] ? `<span class="font-bold text-slate-900">${detailEscapeHtml(fbrList[0].feature)}:</span> <span class="text-slate-500 text-[11px]">${detailEscapeHtml(fbrList[0].benefit || '')}</span>` : ''}
-                            </div>
+                                <span class="font-bold text-slate-900">${detailEscapeHtml(fbrList[0].feature)}:</span> <span class="text-slate-500 text-[11px]">${detailEscapeHtml(fbrList[0].benefit || '')}</span>
+                            </div>` : ''}
                         </div>`;
                     }).join('')}
                 </div>
@@ -8875,8 +9333,8 @@ function renderBentoLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, bund
         ${renderDtcSpecsSection(specsTasks, isZh, 'bento')}
         ${renderDtcBundleBoxSection(bundleBoxTasks, isZh, 'bento')}
         ${renderDtcBundleSavingsSection(bundleSavingsTasks, isZh, 'bento')}
-        ${renderDtcOfferStackSection(isZh, 'bento')}
-        ${renderDtcRiskReversalSection(isZh, 'bento')}
+        ${(bundleBoxTasks.length > 0 || bundleSavingsTasks.length > 0) ? renderDtcOfferStackSection(isZh, 'bento') : ''}
+        ${hasVerifiedRiskReversal() ? renderDtcRiskReversalSection(isZh, 'bento') : ''}
         ${renderDtcFaqSection(faqTasks, isZh, 'bento')}
     </div>`;
 }
@@ -8902,13 +9360,14 @@ function renderLookbookLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, b
 
                 <div class="space-y-20">
                     ${fbrTasks.map(task => {
-                        const { tagline, headline, subheadline, fbrList, imgSrc } = prepareTaskDtcCopy(task, isZh);
+                        const { tagline, headline, subheadline, fbrList, imgSrc, isCopyPending, hasCopy } = prepareTaskDtcCopy(task, isZh);
                         return `
                         <div class="dtc-lookbook-item max-w-2xl mx-auto text-center space-y-5 sm:space-y-6">
                             <div class="dtc-lookbook-mat bg-white p-2.5 sm:p-3.5 rounded-2xl sm:rounded-3xl shadow-xs border border-stone-200/80 max-w-xl mx-auto">
-                                ${renderDtcImagePlate(imgSrc, headline, isZh, 'aspect-4/3', 'rounded-xl sm:rounded-2xl', 'w-full', task.id)}
+                                ${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-4/3', 'rounded-xl sm:rounded-2xl', 'w-full', task.id)}
                             </div>
                             <div class="space-y-3 px-2 sm:px-4">
+                                ${!hasCopy ? renderDtcCopyStatusFallback(task, isZh, isCopyPending) : `
                                 <span class="font-sans text-[11px] tracking-widest text-[#b45309] uppercase font-semibold block">${detailEscapeHtml(tagline)}</span>
                                 <h3 class="text-xl sm:text-2xl font-normal text-stone-900 font-serif leading-snug" contenteditable="true" onblur="updateDtcText('${task.id}', 'headline', this)" title="${isZh ? '点击可直接编辑标题' : 'Click to edit headline'}">${detailEscapeHtml(headline)}</h3>
                                 <p class="text-xs sm:text-sm font-sans text-stone-600 leading-relaxed max-w-lg mx-auto" contenteditable="true" onblur="updateDtcText('${task.id}', 'subheadline', this)" title="${isZh ? '点击可直接编辑副标题' : 'Click to edit subheadline'}">${detailEscapeHtml(subheadline)}</p>
@@ -8923,7 +9382,7 @@ function renderLookbookLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, b
                                         ${benefitText ? `<span class="text-stone-500">${detailEscapeHtml(benefitText)}</span>` : ''}
                                     </div>`;
                                     }).join('')}
-                                </div>
+                                </div>`}
                             </div>
                         </div>`;
                     }).join('')}
@@ -8936,8 +9395,8 @@ function renderLookbookLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, b
         ${renderDtcSpecsSection(specsTasks, isZh, 'lookbook')}
         ${renderDtcBundleBoxSection(bundleBoxTasks, isZh, 'lookbook')}
         ${renderDtcBundleSavingsSection(bundleSavingsTasks, isZh, 'lookbook')}
-        ${renderDtcOfferStackSection(isZh, 'lookbook')}
-        ${renderDtcRiskReversalSection(isZh, 'lookbook')}
+        ${(bundleBoxTasks.length > 0 || bundleSavingsTasks.length > 0) ? renderDtcOfferStackSection(isZh, 'lookbook') : ''}
+        ${hasVerifiedRiskReversal() ? renderDtcRiskReversalSection(isZh, 'lookbook') : ''}
         ${renderDtcFaqSection(faqTasks, isZh, 'lookbook')}
     </div>`;
 }
@@ -8966,19 +9425,20 @@ function renderTechnicalLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, 
                 <div class="space-y-12">
                     ${fbrTasks.map((task, idx) => {
                         const isEven = idx % 2 === 0;
-                        const { tagline, headline, subheadline, fbrList, imgSrc } = prepareTaskDtcCopy(task, isZh);
+                        const { tagline, headline, subheadline, fbrList, imgSrc, isCopyPending, hasCopy } = prepareTaskDtcCopy(task, isZh);
 
                         return `
                         <div class="dtc-technical-card bg-slate-900/80 rounded-2xl border border-cyan-900/40 p-5 sm:p-6 md:p-8 shadow-lg shadow-cyan-950/20 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-center ${!isEven ? 'md:grid-flow-dense' : ''}">
                             <div class="dtc-technical-img ${!isEven ? 'md:col-start-2' : ''}">
                                 <div class="relative">
-                                    ${renderDtcImagePlate(imgSrc, headline, isZh, 'aspect-square', 'rounded-xl', 'border-cyan-900/60', task.id)}
+                                    ${renderDtcImagePlate(imgSrc, headline || task.title, isZh, 'aspect-square', 'rounded-xl', 'border-cyan-900/60', task.id)}
                                     <div class="absolute top-2 left-2 px-2 py-0.5 rounded bg-cyan-950/90 border border-cyan-500/50 text-[10px] text-cyan-300 font-mono">
                                         SPEC_${String(idx + 1).padStart(2, '0')} // VERIFIED
                                     </div>
                                 </div>
                             </div>
                             <div class="dtc-technical-content space-y-4 ${!isEven ? 'md:col-start-1' : ''}">
+                                ${!hasCopy ? renderDtcCopyStatusFallback(task, isZh, isCopyPending, true) : `
                                 <div class="space-y-2">
                                     <span class="text-xs font-mono text-cyan-400 tracking-wider uppercase block">> ${detailEscapeHtml(tagline)}</span>
                                     <h3 class="text-xl md:text-2xl font-black text-white font-sans tracking-tight leading-snug" contenteditable="true" onblur="updateDtcText('${task.id}', 'headline', this)" title="${isZh ? '点击可直接编辑标题' : 'Click to edit headline'}">${detailEscapeHtml(headline)}</h3>
@@ -8997,7 +9457,7 @@ function renderTechnicalLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, 
                                         </div>
                                     </div>`;
                                     }).join('')}
-                                </div>
+                                </div>`}
                             </div>
                         </div>`;
                     }).join('')}
@@ -9010,8 +9470,8 @@ function renderTechnicalLayout(fbrTasks, stepTasks, specsTasks, bundleBoxTasks, 
         ${renderDtcSpecsSection(specsTasks, isZh, 'technical')}
         ${renderDtcBundleBoxSection(bundleBoxTasks, isZh, 'technical')}
         ${renderDtcBundleSavingsSection(bundleSavingsTasks, isZh, 'technical')}
-        ${renderDtcOfferStackSection(isZh, 'technical')}
-        ${renderDtcRiskReversalSection(isZh, 'technical')}
+        ${(bundleBoxTasks.length > 0 || bundleSavingsTasks.length > 0) ? renderDtcOfferStackSection(isZh, 'technical') : ''}
+        ${hasVerifiedRiskReversal() ? renderDtcRiskReversalSection(isZh, 'technical') : ''}
         ${renderDtcFaqSection(faqTasks, isZh, 'technical')}
     </div>`;
 }
@@ -9208,6 +9668,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closeImageLightbox();
+            dismissDetailDeliveryHub();
         }
     });
 }
@@ -9226,6 +9687,7 @@ function cleanDtcExportHtml(html) {
         .replace(/\s*onclick=(["'])openImageLightbox\([^)]*\)\1/gi, '')
         .replace(/\s*onclick=(["'])(?:event\.stopPropagation\(\);\s*)?(?:openModuleImagePicker|copyDtcSectionHtml)\([^)]*\)\1/gi, '')
         .replace(/\s*title=(["'])(点击可直接编辑|Click to edit|点击查看大图|View full image|点击放大全家福|View package image|替换当前模块图片|Swap module image|替换图片|Swap image|复制此模块 HTML|Copy section HTML)[^"']*\1/gi, '')
+        .replace(/<div class="dtc-copy-status-card[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '')
         .replace(/\bcursor-zoom-in\b/gi, '');
 
     // WordPress wpautop 防护：收拢标签间多余的空行与孤立换行，避免 WP 自动插入空 <p></p> 破坏栅格
@@ -11946,6 +12408,7 @@ if (typeof globalThis !== 'undefined') {
     globalThis.initDtcTypographyDropdowns = initDtcTypographyDropdowns;
     globalThis.renderDtcOfferStackSection = renderDtcOfferStackSection;
     globalThis.renderDtcRiskReversalSection = renderDtcRiskReversalSection;
+    globalThis.hasVerifiedRiskReversal = hasVerifiedRiskReversal;
     globalThis.buildDtcJsonLdSchema = buildDtcJsonLdSchema;
     globalThis.openPdpAssetHostingModal = openPdpAssetHostingModal;
     globalThis.closePdpAssetHostingModal = closePdpAssetHostingModal;
@@ -12010,6 +12473,9 @@ if (typeof globalThis !== 'undefined') {
     globalThis.getDetailDtcHtmlData = getDetailDtcHtmlData;
     globalThis.updateDetailDtcHtmlModalContent = updateDetailDtcHtmlModalContent;
     globalThis.renderDetailDeliveryHub = renderDetailDeliveryHub;
+    globalThis.openDetailDeliveryHub = openDetailDeliveryHub;
+    globalThis.dismissDetailDeliveryHub = dismissDetailDeliveryHub;
+    globalThis.toggleDetailDeliveryHubCollapse = toggleDetailDeliveryHubCollapse;
     globalThis.transferDetailToListing = transferDetailToListing;
     globalThis.transferDetailToAds = transferDetailToAds;
     globalThis.buildProductFacts = buildProductFacts;
@@ -12051,6 +12517,10 @@ if (typeof globalThis !== 'undefined') {
     globalThis.updateDetailTaskLayout = updateDetailTaskLayout;
     globalThis.recordTaskImageVersion = recordTaskImageVersion;
     globalThis.rollbackTaskImageVersion = rollbackTaskImageVersion;
+    globalThis.setInspectorRepaintPrompt = setInspectorRepaintPrompt;
+    globalThis.resetInspectorRepaintPrompt = resetInspectorRepaintPrompt;
+    globalThis.executeInspectorTaskRepaint = executeInspectorTaskRepaint;
+    globalThis.resetAndRegenerateInspectorTask = resetAndRegenerateInspectorTask;
     globalThis.PRESET_REPAINT_PROMPTS = PRESET_REPAINT_PROMPTS;
     globalThis.renderSectionTree = renderSectionTree;
     globalThis.renderSectionInspector = renderSectionInspector;
@@ -12093,6 +12563,18 @@ if (typeof globalThis !== 'undefined') {
     globalThis.disconnectDetailEventStream = disconnectDetailEventStream;
     globalThis.retrySingleModuleTask = retrySingleModuleTask;
     globalThis.regenerateSingleModuleTask = regenerateSingleModuleTask;
+    globalThis.prepareTaskDtcCopy = prepareTaskDtcCopy;
+    globalThis.renderDtcCopyStatusFallback = renderDtcCopyStatusFallback;
+    globalThis.renderDtcStepsSection = renderDtcStepsSection;
+    globalThis.renderDtcSpecsSection = renderDtcSpecsSection;
+    globalThis.renderDtcBundleBoxSection = renderDtcBundleBoxSection;
+    globalThis.renderDtcBundleSavingsSection = renderDtcBundleSavingsSection;
+    globalThis.renderDtcFaqSection = renderDtcFaqSection;
+    globalThis.renderEditorialLayout = renderEditorialLayout;
+    globalThis.renderMinimalistLayout = renderMinimalistLayout;
+    globalThis.renderBentoLayout = renderBentoLayout;
+    globalThis.renderLookbookLayout = renderLookbookLayout;
+    globalThis.renderTechnicalLayout = renderTechnicalLayout;
 }
 if (typeof window !== 'undefined') {
     window.setDetailProductImage = setDetailProductImage;
@@ -12122,8 +12604,24 @@ if (typeof window !== 'undefined') {
     window.getDetailDtcHtmlData = getDetailDtcHtmlData;
     window.updateDetailDtcHtmlModalContent = updateDetailDtcHtmlModalContent;
     window.renderDetailDeliveryHub = renderDetailDeliveryHub;
+    window.openDetailDeliveryHub = openDetailDeliveryHub;
+    window.dismissDetailDeliveryHub = dismissDetailDeliveryHub;
+    window.toggleDetailDeliveryHubCollapse = toggleDetailDeliveryHubCollapse;
     window.transferDetailToListing = transferDetailToListing;
     window.transferDetailToAds = transferDetailToAds;
+    window.prepareTaskDtcCopy = prepareTaskDtcCopy;
+    window.renderDtcCopyStatusFallback = renderDtcCopyStatusFallback;
+    window.renderDtcStepsSection = renderDtcStepsSection;
+    window.renderDtcSpecsSection = renderDtcSpecsSection;
+    window.renderDtcBundleBoxSection = renderDtcBundleBoxSection;
+    window.renderDtcBundleSavingsSection = renderDtcBundleSavingsSection;
+    window.renderDtcFaqSection = renderDtcFaqSection;
+    window.hasVerifiedRiskReversal = hasVerifiedRiskReversal;
+    window.renderEditorialLayout = renderEditorialLayout;
+    window.renderMinimalistLayout = renderMinimalistLayout;
+    window.renderBentoLayout = renderBentoLayout;
+    window.renderLookbookLayout = renderLookbookLayout;
+    window.renderTechnicalLayout = renderTechnicalLayout;
     window.buildProductFacts = buildProductFacts;
     window.mergeProductFacts = mergeProductFacts;
     window.confirmProductFact = confirmProductFact;
@@ -12163,6 +12661,10 @@ if (typeof window !== 'undefined') {
     window.updateDetailTaskLayout = updateDetailTaskLayout;
     window.recordTaskImageVersion = recordTaskImageVersion;
     window.rollbackTaskImageVersion = rollbackTaskImageVersion;
+    window.setInspectorRepaintPrompt = setInspectorRepaintPrompt;
+    window.resetInspectorRepaintPrompt = resetInspectorRepaintPrompt;
+    window.executeInspectorTaskRepaint = executeInspectorTaskRepaint;
+    window.resetAndRegenerateInspectorTask = resetAndRegenerateInspectorTask;
     window.PRESET_REPAINT_PROMPTS = PRESET_REPAINT_PROMPTS;
     window.renderSectionTree = renderSectionTree;
     window.renderSectionInspector = renderSectionInspector;
@@ -12205,9 +12707,35 @@ if (typeof window !== 'undefined') {
     window.disconnectDetailEventStream = disconnectDetailEventStream;
     window.retrySingleModuleTask = retrySingleModuleTask;
     window.regenerateSingleModuleTask = regenerateSingleModuleTask;
+    window.prepareTaskDtcCopy = prepareTaskDtcCopy;
+    window.renderDtcCopyStatusFallback = renderDtcCopyStatusFallback;
+    window.generateDtcSectionCopy = generateDtcSectionCopy;
+    window.renderDtcStepsSection = renderDtcStepsSection;
+    window.renderDtcSpecsSection = renderDtcSpecsSection;
+    window.renderDtcBundleBoxSection = renderDtcBundleBoxSection;
+    window.renderDtcBundleSavingsSection = renderDtcBundleSavingsSection;
+    window.renderDtcFaqSection = renderDtcFaqSection;
+    window.renderEditorialLayout = renderEditorialLayout;
+    window.renderMinimalistLayout = renderMinimalistLayout;
+    window.renderBentoLayout = renderBentoLayout;
+    window.renderLookbookLayout = renderLookbookLayout;
+    window.renderTechnicalLayout = renderTechnicalLayout;
 }
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
+        prepareTaskDtcCopy,
+        renderDtcCopyStatusFallback,
+        generateDtcSectionCopy,
+        renderDtcStepsSection,
+        renderDtcSpecsSection,
+        renderDtcBundleBoxSection,
+        renderDtcBundleSavingsSection,
+        renderDtcFaqSection,
+        renderEditorialLayout,
+        renderMinimalistLayout,
+        renderBentoLayout,
+        renderLookbookLayout,
+        renderTechnicalLayout,
         formatFriendlyDetailErrorMessage,
         handleDetailAIRetryEvent,
         connectDetailEventStream,
@@ -12236,6 +12764,9 @@ if (typeof module !== 'undefined' && module.exports) {
         getDetailDtcHtmlData,
         updateDetailDtcHtmlModalContent,
         renderDetailDeliveryHub,
+        openDetailDeliveryHub,
+        dismissDetailDeliveryHub,
+        toggleDetailDeliveryHubCollapse,
         transferDetailToListing,
         transferDetailToAds,
         buildProductFacts,
@@ -12277,6 +12808,10 @@ if (typeof module !== 'undefined' && module.exports) {
         updateDetailTaskLayout,
         recordTaskImageVersion,
         rollbackTaskImageVersion,
+        setInspectorRepaintPrompt,
+        resetInspectorRepaintPrompt,
+        executeInspectorTaskRepaint,
+        resetAndRegenerateInspectorTask,
         PRESET_REPAINT_PROMPTS,
         renderSectionTree,
         renderSectionInspector,
@@ -12312,6 +12847,7 @@ if (typeof module !== 'undefined' && module.exports) {
         ensureGlobalGenContext,
         detectMimeTypeFromBase64,
         parseImageDataUrl,
-        ensureInlineImageData
+        ensureInlineImageData,
+        hasVerifiedRiskReversal
     };
 }

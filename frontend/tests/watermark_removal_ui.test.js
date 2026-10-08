@@ -175,6 +175,7 @@ function createRuntimeHarness(
         "watermarkRemovalOriginal",
         "watermarkRemovalResult",
         "watermarkRemovalResultMeta",
+        "watermarkRemovalResultTitle",
         "watermarkRemovalDownload",
         "watermarkRemovalZoomButton",
         "watermarkRemovalPreview",
@@ -894,4 +895,21 @@ test("sidebar remains vertically reachable on short viewports", () => {
         style,
         /\.watermark-removal-sidebar\s*\{[^}]*overflow-y:\s*auto/
     );
+});
+
+
+test("unverified cleanup previews are labelled for manual review", async () => {
+    const harness = createRuntimeHarness(standardFetch);
+    await harness.window.restoreWatermarkRemovalHistory({ ...historyResult("old.png"), quality_status: "pending_review" });
+    assert.equal(harness.elements.watermarkRemovalResultTitle.textContent, "待人工核验");
+    assert.match(harness.elements.watermarkRemovalResultMeta.textContent, /主体轮廓/);
+    assert.equal(harness.elements.watermarkRemovalComparison.hidden, false);
+});
+
+test("verified cleanup previews distinguish visual review from unverified history", async () => {
+    const harness = createRuntimeHarness(standardFetch);
+    await harness.window.restoreWatermarkRemovalHistory({ ...historyResult("old.png"), quality_status: "verified" });
+    assert.equal(harness.elements.watermarkRemovalResultTitle.textContent, "已通过视觉核验");
+    await harness.window.restoreWatermarkRemovalHistory(historyResult("old.png"));
+    assert.equal(harness.elements.watermarkRemovalResultTitle.textContent, "待人工核验");
 });

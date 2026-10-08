@@ -286,7 +286,7 @@
    ========================================================== */
 .dtc-pdp-wrapper.dtc-viewport-mobile {
     width: 100%;
-    max-width: 390px;
+    max-width: 375px;
     border-radius: 36px;
     box-shadow: 0 12px 48px rgba(15, 23, 42, 0.16);
     border: 8px solid #0f172a;
@@ -1011,4 +1011,28 @@ summary.dtc-accordion-header::marker {
     box-shadow: 0 0 0px 1000px #ffffff inset !important;
     -webkit-text-fill-color: #4b5563 !important;
     transition: background-color 5000s ease-in-out 0s;
+}
+
+/* 商详全案交付中心卡片高对比度样式防脱落兜底 */
+#detailDeliveryHandoffCard .delivery-card-wrapper {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04) !important;
+}
+
+#detailDeliveryHandoffCard .delivery-section-box {
+    background-color: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+}
+
+#detailDeliveryHandoffCard .delivery-btn-white {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #334155 !important;
+}
+
+#detailDeliveryHandoffCard .delivery-btn-white:hover {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    border-color: #94a3b8 !important;
 }

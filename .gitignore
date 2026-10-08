@@ -31,6 +31,7 @@ AI_Analysis_Report_*.html
 # Local databases
 backend/history.db
 backend/*.db
+backend/*.db-*
 
 # Local debug scripts / secrets
 debug/

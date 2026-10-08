@@ -933,3 +933,46 @@ async def test_openai_headers_governed_by_capability():
     assert "X-Client-Request-Id" not in sent_headers_tp
     assert "Idempotency-Key" not in sent_headers_tp
 
+
+
+@pytest.mark.asyncio
+async def test_openai_binary_edit_mask_converts_white_to_transparent():
+    import io
+    from PIL import Image
+
+    mask = Image.new("L", (2, 2), 0)
+    mask.putpixel((1, 1), 255)
+    buffer = io.BytesIO()
+    mask.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    response = MagicMock()
+    response.json.return_value = {"data": [{"b64_json": TINY_PNG_BASE64}]}
+    transport = MagicMock(post=AsyncMock(return_value=response))
+    adapter = OpenAICompatibleAdapter(client=transport)
+    payload = {
+        "contents": [{"parts": [
+            {"text": "Remove overlay"},
+            {"inlineData": {"mimeType": "image/png", "data": encoded}},
+            {"inlineData": {"mimeType": "image/png", "data": encoded}},
+        ]}],
+        "imageEdit": {"maskIndex": 1},
+    }
+    await adapter.generate(make_snapshot(capability="image", image_generation_mode="image_to_image"), payload)
+    files = dict(transport.post.await_args.kwargs["files"])
+    with Image.open(io.BytesIO(files["mask"][1])) as sent:
+        assert sent.mode == "RGBA"
+        assert sent.getpixel((1, 1))[3] == 0
+        assert sent.getpixel((0, 0))[3] == 255
+    assert files["image"][1] == buffer.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_openai_masked_edit_rejects_text_to_image_before_network():
+    transport = MagicMock(post=AsyncMock())
+    adapter = OpenAICompatibleAdapter(client=transport)
+    with pytest.raises(ValueError, match="图生图"):
+        await adapter.generate(
+            make_snapshot(capability="image", image_generation_mode="text_to_image"),
+            {"contents": [{"parts": [{"text": "repair"}]}], "imageEdit": {"maskIndex": 1}},
+        )
+    transport.post.assert_not_awaited()

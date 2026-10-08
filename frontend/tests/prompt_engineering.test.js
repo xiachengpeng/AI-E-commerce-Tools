@@ -336,9 +336,9 @@ test("index.html contains two-tier result toolbar and dedicated visual style sel
     assert.ok(html.includes('id="btnRetryFailedImages"'), "index.html must contain btnRetryFailedImages");
 });
 
-test("getFailedModuleTasks accurately filters out success tasks and isolates failed/cancelled/missing tasks", () => {
+test("getFailedModuleTasks accurately filters out success tasks and isolates failed/fallback tasks while excluding cancelled", () => {
     const ctx = loadFrontendModules();
-    const { getFailedModuleTasks } = ctx;
+    const { getFailedModuleTasks, getCancelledModuleTasks } = ctx;
 
     ctx.globalGenContext = {
         tasks: {
@@ -350,8 +350,12 @@ test("getFailedModuleTasks accurately filters out success tasks and isolates fai
     };
 
     const failed = getFailedModuleTasks();
-    assert.equal(failed.length, 3, "Must identify exactly 3 failed/cancelled/fallback tasks");
-    assert.equal(failed.map(t => t.uniqueId).join(','), 'm2_0,m3_0,m4_0');
+    assert.equal(failed.length, 2, "Must identify exactly 2 failed/fallback tasks excluding cancelled");
+    assert.equal(failed.map(t => t.uniqueId).join(','), 'm2_0,m4_0');
+
+    const cancelled = getCancelledModuleTasks();
+    assert.equal(cancelled.length, 1, "Must identify 1 cancelled task");
+    assert.equal(cancelled[0].uniqueId, 'm3_0');
 });
 
 test("updateDetailFailureUI syncs toolbar retry button and failure alert bar correctly", () => {
@@ -381,7 +385,7 @@ test("updateDetailFailureUI syncs toolbar retry button and failure alert bar cor
 
     ctx.document.getElementById = (id) => mockElements[id] || null;
 
-    // 1. With failed tasks
+    // 1. With failed tasks (m3_0 is cancelled so only m2_0 counts as failure)
     ctx.globalGenContext = {
         tasks: {
             m1_0: { uniqueId: 'm1_0', status: 'success', imageSrc: 'data:image/png;base64,valid' },
@@ -392,9 +396,9 @@ test("updateDetailFailureUI syncs toolbar retry button and failure alert bar cor
 
     ctx.updateDetailFailureUI();
     assert.ok(!mockElements.btnRetryFailedToolbar.classList.contains('hidden'), "Toolbar retry button must be shown");
-    assert.equal(mockElements.btnRetryFailedToolbarText.textContent, "重试失败图片 (2)");
+    assert.equal(mockElements.btnRetryFailedToolbarText.textContent, "重试失败图片 (1)");
     assert.ok(!mockElements.detailFailureAlertBar.classList.contains('hidden'), "Alert bar must be shown");
-    assert.ok(mockElements.detailFailureAlertMsg.textContent.includes("2 张模块图片"));
+    assert.ok(mockElements.detailFailureAlertMsg.textContent.includes("1 张模块图片"));
 
     // 2. Dismiss alert bar
     ctx.dismissDetailFailureAlert();
@@ -437,13 +441,13 @@ test("retryFailedModuleImages retries ONLY the failed tasks and preserves succes
 
     await ctx.retryFailedModuleImages();
 
-    // Verify only m2_0 and m3_0 were retried
-    assert.deepEqual(retriedTaskIds, ['m2_0', 'm3_0'], "Must only retry the failed tasks");
+    // Verify only m2_0 was retried (m3_0 is cancelled, not failed)
+    assert.deepEqual(retriedTaskIds, ['m2_0'], "Must only retry the failed tasks");
 
     // Verify m1_0 was not touched
     assert.equal(ctx.globalGenContext.tasks.m1_0.imageSrc, 'data:image/png;base64,already_good');
 
-    // Verify all are now success
+    // Verify all failed are now success
     assert.equal(ctx.getFailedModuleTasks().length, 0);
     assert.ok(toasts.some(t => t.msg.includes("所有失败图片已全部成功恢复生成")), "Must report full recovery");
 });

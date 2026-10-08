@@ -217,6 +217,31 @@ When testing in an isolated worktree, copy local state only when necessary, keep
 - Non-destructive execution: `retryFailedModuleImages()` retries only failed items in-place with concurrency limits without re-running completed tasks.
 - Feedback synchronization: `updateDetailFailureUI()` synchronizes toolbar retry button (`btnRetryFailedToolbar`), top banner alert (`detailFailureAlertBar`), and batch retry button (`btnRetryFailedImages`) in real-time upon any failure, retry start, or success.
 
+### Progressive 4-Step Detail Workflow & 3-Column Studio
+
+- 4-step progressive pipeline:
+  - Step 1 Channel Select (`setDetailChannel`): Adapts recommended layouts, presets, viewports, and primary delivery CTA.
+  - Step 2 Asset Roles (`resolveAssetSemanticRoles`): Concurrently inspects up to 6 uploaded assets, inferring semantic roles (primary, detail, lifestyle, angle, packaging).
+  - Step 3 Facts Confirmation (`confirmProductFact`, `confirmAllProductFacts`): Lightweight card for reviewing extracted facts (category, material, dimensions, warranty, etc.) before image/copy synthesis.
+  - Step 4 AI Plan (`buildRecommendedDetailPlan`, `validateContentPlanEvidence`): Automatically recommends high-converting modules while gating missing evidence.
+- 3-column unified workbench:
+  - Left Section Tree (`#sectionTreeSidebar`): Section reordering, visibility toggle, sub-status badges, and module insertion.
+  - Center Dual Preview (`#modulesResultContainer` / `#dtcHybridContainer`): Instant switching between Gallery and Hybrid PDP, with click-to-highlight bi-directional inspector synchronization.
+  - Right Section Inspector (`#sectionInspectorSidebar`): In-place editing of headlines, subheadlines, taglines, and SEO metadata; preset-driven and natural language prompt repainting (`PRESET_REPAINT_PROMPTS`); multi-version history with zero-loss rollback.
+- Adaptive primary delivery CTA (`#btnPrimaryDeliveryCTA`, `updatePrimaryDeliveryCTA`): Automatically tunes action label for Shopify, Amazon A+, Social Media, or Universal ZIP.
+- Publish readiness dashboard (`computePublishReadiness`): 4-dimensional score across visuals, copy, hosting, and SEO.
+- Local autosave (`scheduleDraftAutosave`, `saveStudioDraft`): 1.5-second debounced local persistence with header timestamp status.
+
+### Factual Integrity Gate & No Fallback Copy
+
+- Strict prohibition of fabricated / fallback copy: When AI copy generation fails or lacks verified facts, never fabricate template slogans, prices, discounts, warranty durations, return policies, or material certifications. Failure is failure; fallback copy causes merchant and consumer misunderstanding and legal compliance risk.
+- `generateDtcSectionCopy` strictly returns `null` and records `task.dtcCopyError` on failure or unverified output.
+- `prepareTaskDtcCopy` returns `{ hasCopy: false, isCopyFailed: true }` without injecting `MODULE_DEFAULT_EN` slogans.
+- Structural sections (`renderDtcStepsSection`, `renderDtcSpecsSection`, `renderDtcBundleBoxSection`, `renderDtcBundleSavingsSection`, `renderDtcFaqSection`) render explicit status cards (`.dtc-copy-status-card`) with retry buttons (`retryTaskAuxiliaryStep`) instead of hallucinated prices, alloys, certifications, 24h shipping, or warranty terms.
+- 5 DTC layouts (Editorial, Minimalist, Bento, Lookbook, Technical) consistently display `.dtc-copy-status-card` when `hasCopy` is false, with inline retry and inspector edit capability.
+- `cleanDtcExportHtml` purges `.dtc-copy-status-card` to ensure internal retry UI never leaks into exported Shopify/WordPress HTML.
+- Language boundary: When target language is English, Chinese copy is flagged as mismatched and blocked from rendering on English PDPs.
+
 ### Universal cloud asset uploader & launch kit
 
 - Universal uploader modal (`universal_uploader.js`): Single and batch image asset dispatch to WordPress, Shopify, and Cloudflare R2 across Details, Redraw, Watermark, and Translate modules.
@@ -286,6 +311,15 @@ When testing in an isolated worktree, copy local state only when necessary, keep
   downgrade that request to text-to-image.
 - Disabling or deleting a provider that is currently bound must remain blocked until bindings are moved.
 - Changes to adapters or routing require focused tests for provider validation, binding selection, retries, normalization, error mapping, and secret scrubbing.
+
+### Unified AI API Retry & Fault Tolerance System
+
+- Single Controller Principle: All synchronization, backoff, and retry orchestration are strictly owned by backend `retry_service.py`. Long-running AI generation requests in frontend `fetchWithRetry` must not re-issue duplicate network requests.
+- Google GenAI SDK explicit locking: Google SDK transport clients must configure `HttpRetryOptions(attempts=1)` to disable invisible internal retries and prevent multiplying backoff loops.
+- Two-Tier Capability Matrix (`provider_capabilities.py`): Fine-grained per-provider and per-operation capabilities declare idempotency headers (`supports_idempotency`, `header_name`), `supports_retry_after`, and `has_side_effect_on_read_timeout`.
+- AMBIGUOUS_OUTCOME Circuit Breaker: Non-idempotent operations (image generation, WordPress media upload) encountering network read/write timeouts after request submission strictly halt automatic retries and forbid silent fallback provider switching to prevent double charging or duplicate remote assets.
+- Exponential Backoff & Jitter: Adheres to `Retry-After` response headers, respects global time budgets (`max_elapsed_time`), and applies Full Jitter randomization.
+- SSE Real-time Feedback & Redaction: Retry progression broadcasts via SSE `ai_retry` events with attempt counts and wait durations. Final failure messages are scrubbed of Python traces, internal IPs, and upstream URLs via `formatFriendlyDetailErrorMessage`.
 
 ### Square redraw
 

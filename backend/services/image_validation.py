@@ -6,6 +6,9 @@ from io import BytesIO
 from PIL import Image
 
 
+Image.init()
+
+
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 MAX_IMAGE_DIMENSION = 8192
 MAX_IMAGE_PIXELS = 20_000_000
@@ -22,20 +25,25 @@ class ValidatedImage:
 
 def validate_image_payload(
     data,
-    mime_type,
+    mime_type=None,
     *,
     max_bytes: int = MAX_IMAGE_BYTES,
     max_dimension: int = MAX_IMAGE_DIMENSION,
     max_pixels: int = MAX_IMAGE_PIXELS,
+    strict_mime: bool = True,
 ) -> ValidatedImage:
-    if not isinstance(mime_type, str):
-        raise ValueError("图片 MIME 类型无效")
-    declared_mime = mime_type.split(";", 1)[0].strip().lower()
-    declared_mime = {
-        "image/jpg": "image/jpeg",
-        "image/x-png": "image/png",
-    }.get(declared_mime, declared_mime)
-    if not declared_mime.startswith("image/"):
+    declared_mime = None
+    if isinstance(mime_type, str):
+        raw_mime = mime_type.split(";", 1)[0].strip().lower()
+        normalized = {
+            "image/jpg": "image/jpeg",
+            "image/x-png": "image/png",
+        }.get(raw_mime, raw_mime)
+        if normalized.startswith("image/"):
+            declared_mime = normalized
+        elif strict_mime:
+            raise ValueError("图片 MIME 类型无效")
+    elif strict_mime:
         raise ValueError("图片 MIME 类型无效")
 
     try:
@@ -91,8 +99,11 @@ def validate_image_payload(
                 decoded.load()
 
         actual_mime = Image.MIME.get(image_format, "").lower()
-        if not actual_mime or actual_mime != declared_mime:
-            raise ValueError("图片 MIME 类型与内容不一致")
+        if not actual_mime:
+            actual_mime = f"image/{image_format.lower()}"
+        if strict_mime:
+            if not actual_mime or not declared_mime or actual_mime != declared_mime:
+                raise ValueError("图片 MIME 类型与内容不一致")
     except ValueError:
         raise
     except Exception as exc:

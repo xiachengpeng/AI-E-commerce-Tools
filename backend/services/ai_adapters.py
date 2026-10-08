@@ -3,6 +3,9 @@ import base64
 from dataclasses import dataclass
 import inspect
 import json
+from io import BytesIO
+
+from PIL import Image, ImageChops
 import threading
 from abc import ABC, abstractmethod
 
@@ -477,6 +480,21 @@ def extract_openai_edit_images(payload):
     return images, images[mask_index]
 
 
+def _openai_edit_mask_bytes(mask, source):
+    """Translate our white-edit binary mask into the native transparent-edit PNG."""
+    if (mask.width, mask.height) != (source.width, source.height):
+        raise ValueError("遮罩尺寸必须与原图一致")
+    with Image.open(BytesIO(mask.data)) as decoded:
+        if "A" in decoded.getbands() or "transparency" in decoded.info:
+            native = decoded.convert("RGBA")
+        else:
+            native = Image.new("RGBA", decoded.size, "white")
+            native.putalpha(ImageChops.invert(decoded.convert("L")))
+        buffer = BytesIO()
+        native.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+
 def _openai_image_size(payload):
     generation_config = (
         payload.get("generationConfig")
@@ -611,6 +629,11 @@ class OpenAICompatibleAdapter(AIAdapter):
                 "response_format": "b64_json",
             }
             mode = snapshot.image_generation_mode or "image_to_image"
+            edit = payload.get("imageEdit") or payload.get("image_edit") or {}
+            if mode == "text_to_image" and (
+                edit.get("maskIndex") is not None or edit.get("mask_index") is not None
+            ):
+                raise ValueError("局部消除需要图生图编辑模型，请在设置中将图片服务商切换为图生图模式")
             if mode == "text_to_image":
                 response = await self.client.post(
                     f"{base_url}/v1/images/generations",
@@ -638,7 +661,7 @@ class OpenAICompatibleAdapter(AIAdapter):
                 if mask is not None:
                     files = [
                         ("image", ("source.png", images[0].data, images[0].mime_type)),
-                        ("mask", ("mask.png", mask.data, mask.mime_type)),
+                        ("mask", ("mask.png", _openai_edit_mask_bytes(mask, images[0]), "image/png")),
                     ]
                 else:
                     field_name = "image" if len(images) == 1 else "image[]"

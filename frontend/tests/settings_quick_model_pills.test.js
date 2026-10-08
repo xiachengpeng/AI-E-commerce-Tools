@@ -6,20 +6,49 @@ const path = require('node:path');
 const htmlPath = path.resolve(__dirname, '..', 'index.html');
 const htmlContent = fs.readFileSync(htmlPath, 'utf8');
 
-test('index.html contains quick model pill containers in provider modal', () => {
-    assert.match(
+test('index.html replaces static quick model pills with fetch models button and model select dropdowns', () => {
+    // 1. Static pills must be completely eliminated
+    assert.doesNotMatch(
         htmlContent,
         /id="settingsTextModelQuickPills"/,
-        'index.html should have #settingsTextModelQuickPills'
+        'index.html should no longer have #settingsTextModelQuickPills'
     );
-    assert.match(
+    assert.doesNotMatch(
         htmlContent,
         /id="settingsImageModelQuickPills"/,
-        'index.html should have #settingsImageModelQuickPills'
+        'index.html should no longer have #settingsImageModelQuickPills'
     );
+
+    // 2. Fetch models button and select dropdowns must exist
+    assert.match(htmlContent, /id="settingsFetchModelsBtn"/);
+    assert.match(htmlContent, /id="settingsTextModelSelect"/);
+    assert.match(htmlContent, /id="settingsImageModelSelect"/);
 });
 
-test('renderProviderQuickModelPills renders appropriate model pills for protocol', () => {
+test('populateModelSelectDropdown populates options and unhides select element', () => {
+    const { populateModelSelectDropdown } = require('../js/settings.js');
+    assert.equal(typeof populateModelSelectDropdown, 'function');
+
+    const mockSelect = {
+        innerHTML: '',
+        classList: {
+            classes: new Set(['hidden']),
+            add: (c) => mockSelect.classList.classes.add(c),
+            remove: (c) => mockSelect.classList.classes.delete(c),
+            contains: (c) => mockSelect.classList.classes.has(c),
+        }
+    };
+
+    const models = ['gpt-4o', 'claude-3-5-sonnet', 'dall-e-3'];
+    populateModelSelectDropdown(mockSelect, models, '-- 选择已获取的模型 --');
+
+    assert.equal(mockSelect.classList.contains('hidden'), false);
+    assert.match(mockSelect.innerHTML, /共 3 个/);
+    assert.match(mockSelect.innerHTML, /<option value="gpt-4o">gpt-4o<\/option>/);
+    assert.match(mockSelect.innerHTML, /<option value="claude-3-5-sonnet">claude-3-5-sonnet<\/option>/);
+});
+
+test('onModelSelectChange sets model input value and triggers update event', () => {
     const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'js', 'settings.js'), 'utf8');
 
     const elements = {};
@@ -27,13 +56,7 @@ test('renderProviderQuickModelPills renders appropriate model pills for protocol
         if (!elements[id]) {
             elements[id] = {
                 value: '',
-                textContent: '',
-                innerHTML: '',
-                classList: {
-                    add: () => {},
-                    remove: () => {},
-                    toggle: () => {}
-                }
+                dispatchEvent: () => {}
             };
         }
         return elements[id];
@@ -50,67 +73,21 @@ test('renderProviderQuickModelPills renders appropriate model pills for protocol
         settingsState: {
             providers: [],
             capabilityBindings: []
-        }
-    };
-
-    const vm = require('node:vm');
-    vm.createContext(context);
-    vm.runInContext(settingsJs, context);
-
-    assert.equal(typeof context.renderProviderQuickModelPills, 'function', 'renderProviderQuickModelPills must be defined');
-
-    // Test Gemini protocol pills
-    context.renderProviderQuickModelPills('gemini');
-    const textPillsGemini = getEl('settingsTextModelQuickPills').innerHTML;
-    assert.match(textPillsGemini, /gemini-2\.5-flash/, 'Gemini should offer gemini-2.5-flash pill');
-    assert.match(textPillsGemini, /gemini-2\.5-pro/, 'Gemini should offer gemini-2.5-pro pill');
-
-    // Test OpenAI compatible protocol pills
-    context.renderProviderQuickModelPills('openai_compatible');
-    const textPillsOpenAI = getEl('settingsTextModelQuickPills').innerHTML;
-    assert.match(textPillsOpenAI, /gpt-4o/, 'OpenAI compatible should offer gpt-4o pill');
-    assert.match(textPillsOpenAI, /gpt-4o-mini/, 'OpenAI compatible should offer gpt-4o-mini pill');
-});
-
-test('applyQuickModelPill sets input value and triggers update', () => {
-    const settingsJs = fs.readFileSync(path.resolve(__dirname, '..', 'js', 'settings.js'), 'utf8');
-
-    const elements = {};
-    const getEl = (id) => {
-        if (!elements[id]) {
-            elements[id] = {
-                value: '',
-                textContent: '',
-                innerHTML: '',
-                classList: {
-                    add: () => {},
-                    remove: () => {},
-                    toggle: () => {}
-                }
-            };
-        }
-        return elements[id];
-    };
-
-    const context = {
-        window: {
-            addEventListener: () => {}
         },
-        document: {
-            addEventListener: () => {},
-            getElementById: (id) => getEl(id)
-        }
+        Event: class {}
     };
 
     const vm = require('node:vm');
     vm.createContext(context);
     vm.runInContext(settingsJs, context);
 
-    assert.equal(typeof context.applyQuickModelPill, 'function', 'applyQuickModelPill must be defined');
+    assert.equal(typeof context.onModelSelectChange, 'function', 'onModelSelectChange must be defined');
 
-    context.applyQuickModelPill('text', 'gemini-2.5-flash');
-    assert.equal(getEl('settingsTextModel').value, 'gemini-2.5-flash', 'settingsTextModel value should be set');
+    // 1. Text model
+    context.onModelSelectChange('text', 'claude-3-5-sonnet');
+    assert.equal(getEl('settingsTextModel').value, 'claude-3-5-sonnet');
 
-    context.applyQuickModelPill('image', 'dall-e-3');
-    assert.equal(getEl('settingsImageModel').value, 'dall-e-3', 'settingsImageModel value should be set');
+    // 2. Image model
+    context.onModelSelectChange('image', 'flux-1-schnell');
+    assert.equal(getEl('settingsImageModel').value, 'flux-1-schnell');
 });

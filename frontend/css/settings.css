@@ -1171,6 +1171,20 @@
     border: none;
 }
 
+.settings-balance-badge.is-error {
+    color: #be123c;
+    background: #fff1f2;
+    border: 1px solid #fecdd3;
+}
+
+.settings-balance-badge.is-error .settings-balance-refresh-btn {
+    color: #e11d48;
+}
+
+.settings-balance-badge.is-error .settings-balance-refresh-btn:hover {
+    background: #ffe4e6;
+}
+
 .settings-balance-amount {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-weight: 800;
@@ -1544,6 +1558,12 @@
     padding-left: 36px !important;
     padding-right: 40px !important;
 }
+
+.settings-password-wrapper:not(:has(.settings-input-prefix-icon)) input {
+    padding-left: 12px !important;
+    padding-right: 40px !important;
+}
+
 
 .settings-icon-toggle-btn {
     position: absolute;

@@ -458,6 +458,14 @@ def migrate_ai_settings_tables():
                     "ADD COLUMN balance_auto_interval INTEGER DEFAULT 30"
                 )
             )
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE ai_provider_configs "
+                "SET last_balance_text = NULL "
+                "WHERE last_balance_text LIKE '%无限额度%' OR last_balance_text LIKE '%不限额度%'"
+            )
+        )
 
     with engine.begin() as connection:
         rows = connection.execute(

@@ -49,6 +49,8 @@
             original: byId("watermarkRemovalOriginal"),
             resultImage: byId("watermarkRemovalResult"),
             resultMeta: byId("watermarkRemovalResultMeta"),
+            resultTitle: byId("watermarkRemovalResultTitle"),
+            resultBadge: byId("watermarkRemovalResultBadge"),
             uploadCloud: byId("watermarkRemovalUploadCloud"),
             sendToSquareRedraw: byId("watermarkRemovalSendToSquareRedraw"),
             sendToTranslate: byId("watermarkRemovalSendToTranslate"),
@@ -633,9 +635,18 @@
         state.result = result;
         state.elements.original.src = assetUrl(originalUrl);
         state.elements.resultImage.src = assetUrl(result.result_url);
-        state.elements.resultMeta.textContent = result.width && result.height
-            ? `${result.width} × ${result.height} · 已消除 ${result.regions?.length || state.regions.length} 个区域`
-            : "对比原图与消除结果";
+        const verified = result.quality_status === "verified";
+        if (state.elements.resultTitle) {
+            state.elements.resultTitle.textContent = verified ? "已通过视觉核验" : "待人工核验";
+        }
+        if (state.elements.resultBadge) {
+            state.elements.resultBadge.classList.toggle("complete", verified);
+            state.elements.resultBadge.textContent = verified ? "✓" : "!";
+        }
+        const dimensions = result.width && result.height ? `${result.width} × ${result.height} · ` : "";
+        state.elements.resultMeta.textContent = verified
+            ? `${dimensions}已通过结构与水印检查，请对照原图确认细节`
+            : `${dimensions}预览已生成，请核对主体轮廓和水印残留`;
         state.elements.comparison.hidden = false;
         if (state.elements.uploadCloud) state.elements.uploadCloud.disabled = false;
         if (state.elements.sendToSquareRedraw) state.elements.sendToSquareRedraw.disabled = false;
@@ -695,7 +706,10 @@
                     result: payload.data
                 });
             }
-            if (typeof showToast === "function") showToast("水印消除完成", "success");
+            if (typeof showToast === "function") {
+                const verified = payload.data.quality_status === "verified";
+                showToast(verified ? "消除结果已通过视觉核验" : "预览已生成，请对照原图核验", verified ? "success" : "warning");
+            }
             setWatermarkRemovalBusy(false);
         } catch (error) {
             setWatermarkRemovalError(error.message || "处理失败，请稍后重试");

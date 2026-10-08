@@ -119,6 +119,14 @@ def inline_image_response(data, mime_type="image/png"):
     }
 
 
+def reviewed_image_mock(response):
+    async def generate(*, payload, capability):
+        if capability == "text":
+            return {"candidates": [{"content": {"parts": [{"text": '{"geometry_preserved": true, "watermark_removed": true}'}]}}]}
+        return response
+    return AsyncMock(side_effect=generate)
+
+
 def valid_request():
     region = WatermarkRegion(x=.1, y=.1, width=.3, height=.3)
     return WatermarkRemovalRequest(
@@ -251,7 +259,7 @@ async def test_remove_watermark_sends_source_and_mask_to_image_model(tmp_path, m
 
     static_root = tmp_path / "static"
     monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
-    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes()))
+    ai_mock = reviewed_image_mock(inline_image_response(make_png_bytes()))
 
     with patch(
         "services.watermark_removal_service.AIService.generate_content",
@@ -259,8 +267,8 @@ async def test_remove_watermark_sends_source_and_mask_to_image_model(tmp_path, m
     ):
         await remove_watermark(valid_request())
 
-    assert ai_mock.await_args.kwargs["capability"] == "image"
-    payload = ai_mock.await_args.kwargs["payload"]
+    assert ai_mock.await_args_list[0].kwargs["capability"] == "image"
+    payload = ai_mock.await_args_list[0].kwargs["payload"]
     parts = payload["contents"][0]["parts"]
     assert len([part for part in parts if "inlineData" in part]) == 2
     assert payload["imageEdit"] == {"maskIndex": 1}
@@ -268,11 +276,16 @@ async def test_remove_watermark_sends_source_and_mask_to_image_model(tmp_path, m
     prompt = parts[0]["text"]
     assert "Edit only the white masked regions" in prompt
     assert "Preserve all unmasked content" in prompt
-    assert "Do not preserve any content inside the white mask" in prompt
+    assert "Preserve real physical details" in prompt
+    # This endpoint serves arbitrary photographs; reference-specific materials
+    # must not become instructions for every uploaded image.
+    assert "metal" not in prompt.lower()
+    assert "cardboard" not in prompt.lower()
+    assert "Do not assume a material or object category" in prompt
 
 
 @pytest.mark.asyncio
-async def test_remove_watermark_sends_only_local_repair_crop(tmp_path, monkeypatch):
+async def test_remove_watermark_sends_full_scene_for_global_geometry(tmp_path, monkeypatch):
     import services.watermark_removal_service as watermark_service
 
     static_root = tmp_path / "static"
@@ -284,7 +297,7 @@ async def test_remove_watermark_sends_only_local_repair_crop(tmp_path, monkeypat
         mask_data=make_mask_url([(45, 45, 10, 10)], 100, 100),
         regions=[WatermarkRegion(x=.45, y=.45, width=.1, height=.1)],
     )
-    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes(50, 50)))
+    ai_mock = reviewed_image_mock(inline_image_response(make_png_bytes(50, 50)))
 
     with patch(
         "services.watermark_removal_service.AIService.generate_content",
@@ -292,11 +305,11 @@ async def test_remove_watermark_sends_only_local_repair_crop(tmp_path, monkeypat
     ):
         await remove_watermark(request)
 
-    parts = ai_mock.await_args.kwargs["payload"]["contents"][0]["parts"]
+    parts = ai_mock.await_args_list[0].kwargs["payload"]["contents"][0]["parts"]
     image_parts = [part["inlineData"] for part in parts if "inlineData" in part]
     with Image.open(io.BytesIO(base64.b64decode(image_parts[0]["data"]))) as sent_source:
         with Image.open(io.BytesIO(base64.b64decode(image_parts[1]["data"]))) as sent_mask:
-            assert sent_source.size == (47, 47)
+            assert sent_source.size == (100, 100)
             assert sent_mask.size == sent_source.size
 
 
@@ -305,7 +318,7 @@ async def test_remove_watermark_rejects_response_without_image(tmp_path, monkeyp
     import services.watermark_removal_service as watermark_service
 
     monkeypatch.setattr(watermark_service, "STATIC_DIR", str(tmp_path / "static"))
-    ai_mock = AsyncMock(return_value={"candidates": [{"content": {"parts": [{"text": "no image"}]}}]})
+    ai_mock = reviewed_image_mock({"candidates": [{"content": {"parts": [{"text": "no image"}]}}]})
 
     with patch(
         "services.watermark_removal_service.AIService.generate_content",
@@ -351,7 +364,7 @@ async def test_remove_watermark_normalizes_changed_dimensions(tmp_path, monkeypa
     model_image = Image.new("RGB", (12, 10), (12, 34, 56))
     model_buffer = io.BytesIO()
     model_image.save(model_buffer, format="PNG")
-    ai_mock = AsyncMock(return_value=inline_image_response(model_buffer.getvalue()))
+    ai_mock = reviewed_image_mock(inline_image_response(model_buffer.getvalue()))
 
     with patch(
         "services.watermark_removal_service.AIService.generate_content",
@@ -383,7 +396,7 @@ async def test_remove_watermark_rejects_model_images_outside_jpg_png_webp(
 
     static_root = tmp_path / "static"
     monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
-    ai_mock = AsyncMock(return_value=inline_image_response(
+    ai_mock = reviewed_image_mock(inline_image_response(
         make_image_bytes(image_format),
         mime_type,
     ))
@@ -404,7 +417,7 @@ async def test_remove_watermark_saves_source_mask_and_result(tmp_path, monkeypat
 
     static_root = tmp_path / "static"
     monkeypatch.setattr(watermark_service, "STATIC_DIR", str(static_root))
-    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes()))
+    ai_mock = reviewed_image_mock(inline_image_response(make_png_bytes()))
 
     with patch(
         "services.watermark_removal_service.AIService.generate_content",
@@ -443,7 +456,7 @@ async def test_remove_watermark_preserves_every_pixel_outside_canonical_mask(
         mask_data=make_mask_url([(2, 2, 3, 3)]),
         regions=[WatermarkRegion(x=.2, y=.2, width=.3, height=.3)],
     )
-    ai_mock = AsyncMock(return_value=inline_image_response(model_buffer.getvalue()))
+    ai_mock = reviewed_image_mock(inline_image_response(model_buffer.getvalue()))
 
     with patch(
         "services.watermark_removal_service.AIService.generate_content",
@@ -480,7 +493,7 @@ async def test_remove_watermark_sends_and_saves_regions_as_opaque_binary_mask(
         mask_data=make_gray_transparent_mask_url(),
         regions=[WatermarkRegion(x=.1, y=.1, width=.3, height=.3)],
     )
-    ai_mock = AsyncMock(return_value=inline_image_response(make_png_bytes()))
+    ai_mock = reviewed_image_mock(inline_image_response(make_png_bytes()))
 
     with patch(
         "services.watermark_removal_service.AIService.generate_content",
@@ -488,7 +501,7 @@ async def test_remove_watermark_sends_and_saves_regions_as_opaque_binary_mask(
     ):
         result = await remove_watermark(request)
 
-    parts = ai_mock.await_args.kwargs["payload"]["contents"][0]["parts"]
+    parts = ai_mock.await_args_list[0].kwargs["payload"]["contents"][0]["parts"]
     sent_mask_part = [part["inlineData"] for part in parts if "inlineData" in part][1]
     sent_mask_data = base64.b64decode(sent_mask_part["data"])
     saved_mask_data = url_to_test_path(static_root, result["mask_url"]).read_bytes()
@@ -505,5 +518,87 @@ async def test_remove_watermark_sends_and_saves_regions_as_opaque_binary_mask(
         } == {0, 255}
         for y in range(10):
             for x in range(10):
-                expected = 255 if 0 <= x < 6 and 0 <= y < 6 else 0
+                expected = 255 if 1 <= x < 4 and 1 <= y < 4 else 0
                 assert canonical_mask.getpixel((x, y)) == expected, (x, y)
+
+
+def test_repair_crop_gives_corner_watermark_structural_context():
+    from services.watermark_removal_service import _repair_crop_box
+
+    mask = Image.new("L", (892, 892), 0)
+    ImageDraw.Draw(mask).rectangle((620, 780, 891, 891), fill=255)
+    box = _repair_crop_box(mask, padding=11)
+    # Include enough of the rim above the watermark to infer its curvature.
+    assert box[1] <= 560
+    assert box[2] - box[0] == box[3] - box[1]
+    assert box[2:] == (892, 892)
+
+
+def test_feathering_never_leaks_outside_expanded_repair_mask():
+    mask = Image.new("L", (100, 100), 0)
+    ImageDraw.Draw(mask).rectangle((40, 40, 49, 49), fill=255)
+    feathered = _feathered_mask(mask, padding=5)
+    expanded = _expanded_mask(mask, padding=5)
+    for y in range(100):
+        for x in range(100):
+            if expanded.getpixel((x, y)) == 0:
+                assert feathered.getpixel((x, y)) == 0
+            if mask.getpixel((x, y)) == 255:
+                assert feathered.getpixel((x, y)) == 255
+
+
+@pytest.mark.asyncio
+async def test_watermark_result_preserves_all_pixels_outside_user_selection(tmp_path, monkeypatch):
+    import services.watermark_removal_service as service
+    monkeypatch.setattr(service, "STATIC_DIR", str(tmp_path))
+    source_data = make_pattern_png_bytes(100, 100)
+    request = WatermarkRemovalRequest(
+        filename="pattern.png", image_data=png_data_url(source_data),
+        mask_data=make_mask_url([(60, 80, 30, 20)], 100, 100),
+        regions=[WatermarkRegion(x=.6, y=.8, width=.3, height=.2)],
+    )
+    with patch.object(service.AIService, "generate_content", new=reviewed_image_mock(inline_image_response(make_png_bytes(100, 100)))):
+        result = await remove_watermark(request)
+    with Image.open(io.BytesIO(source_data)) as original, Image.open(url_to_test_path(tmp_path, result["result_url"])) as saved:
+        original = original.convert("RGBA")
+        for y in range(100):
+            for x in range(100):
+                if not (60 <= x < 90 and 80 <= y < 100):
+                    assert saved.getpixel((x, y)) == original.getpixel((x, y))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verdict", [
+    '{"geometry_preserved": false, "watermark_removed": true}',
+    '{"geometry_preserved": true, "watermark_removed": false}',
+    '{"geometry_preserved": "true", "watermark_removed": true}',
+    '{}',
+])
+async def test_watermark_rejects_damaged_or_unverified_results(tmp_path, monkeypatch, verdict):
+    import services.watermark_removal_service as service
+    monkeypatch.setattr(service, "STATIC_DIR", str(tmp_path / "static"))
+    async def generate(*, payload, capability):
+        if capability == "image":
+            return inline_image_response(make_png_bytes())
+        return {"candidates": [{"content": {"parts": [{"text": verdict}]}}]}
+    with patch.object(service.AIService, "generate_content", new=generate):
+        with pytest.raises(ValueError, match="验收"):
+            await remove_watermark(valid_request())
+    assert not (tmp_path / "static").exists()
+
+
+@pytest.mark.asyncio
+async def test_watermark_preserves_preview_when_visual_review_is_unavailable(tmp_path, monkeypatch):
+    import services.watermark_removal_service as service
+    monkeypatch.setattr(service, "STATIC_DIR", str(tmp_path))
+    calls = []
+    async def generate(*, payload, capability):
+        calls.append(capability)
+        if capability == "image":
+            return inline_image_response(make_png_bytes())
+        raise RuntimeError("review unavailable")
+    with patch.object(service.AIService, "generate_content", new=generate):
+        result = await remove_watermark(valid_request())
+    assert result["quality_status"] == "pending_review"
+    assert url_to_test_path(tmp_path, result["result_url"]).exists()
+    assert calls == ["image", "text"]

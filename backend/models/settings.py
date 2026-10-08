@@ -159,6 +159,7 @@ class ProviderConnectionTestResult(BaseModel):
 class FrontendLogEvent(BaseModel):
     level: str = "info"
     message: str
+    source: str | None = None
     capability: str | None = None
     provider: str | None = None
     model: str | None = None
@@ -189,3 +190,32 @@ class FirecrawlConnectionTestResult(BaseModel):
     status: Literal["success", "error"]
     duration_ms: int
     message: str
+
+
+class ProviderModelsFetchRequest(BaseModel):
+    provider_id: int | None = None
+    protocol: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    vertex_project_id: str | None = None
+    vertex_location: str | None = None
+    vertex_key_path: str | None = None
+
+
+
+class ProviderModelsFetchResponse(BaseModel):
+    status: Literal["success", "error"]
+    models: list[str] = Field(default_factory=list)
+    count: int = 0
+    message: str
+
+
+class SecretRevealRequest(BaseModel):
+    category: Literal["ai_provider", "usage_query", "crawler", "storage"]
+    field: str
+    id: int | None = None
+
+
+class SecretRevealResponse(BaseModel):
+    status: Literal["success", "not_found", "empty", "forbidden"]
+    secret: str | None = None

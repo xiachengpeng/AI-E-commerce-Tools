@@ -18,6 +18,7 @@ from services.storage_service import (
     test_storage_connection,
     upload_image_dispatcher,
 )
+from services.app_log_service import app_logs
 
 router = APIRouter()
 
@@ -55,15 +56,39 @@ def set_default_config_endpoint(config_id: int, db: Session = Depends(get_db)):
 async def test_connection_endpoint(payload: StorageTestRequest, db: Session = Depends(get_db)):
     try:
         config_override = payload.resolve_override()
-        return await test_storage_connection(
+        res = await test_storage_connection(
             storage_type=payload.storage_type,
             db=db,
             config_override=config_override,
         )
+        app_logs.emit(
+            level="success" if res.success else "error",
+            source="storage",
+            message={
+                "summary": f"[{payload.storage_type}] 存储连接测试: {'成功' if res.success else '失败'} - {res.message}",
+                "diagnostic": {
+                    "category": "storage_test",
+                    "upstream_message": res.message,
+                },
+            },
+        )
+        return res
     except Exception as e:
+        err_msg = f"测试存储连通性出现未捕获异常: {str(e)}"
+        app_logs.emit(
+            level="error",
+            source="storage",
+            message={
+                "summary": f"[{payload.storage_type}] 存储连接测试异常: {err_msg}",
+                "diagnostic": {
+                    "category": "storage_test_exception",
+                    "upstream_message": err_msg,
+                },
+            },
+        )
         return StorageTestResponse(
             success=False,
-            message=f"测试存储连通性出现未捕获异常: {str(e)}",
+            message=err_msg,
         )
 
 
@@ -71,11 +96,34 @@ async def test_connection_endpoint(payload: StorageTestRequest, db: Session = De
 async def upload_image_endpoint(payload: ImageUploadRequest, db: Session = Depends(get_db)):
     try:
         res = await upload_image_dispatcher(payload, db)
+        app_logs.emit(
+            level="success" if res.success else "error",
+            source="storage",
+            message={
+                "summary": f"[{payload.storage_type}] 图片上传{'成功' if res.success else '失败'}: {payload.filename} ({res.remote_url or res.error or ''})",
+                "diagnostic": {
+                    "category": "storage_upload",
+                    "upstream_message": res.error or res.remote_url or "",
+                },
+            },
+        )
         return res
     except Exception as e:
+        err_msg = f"上传服务发生异常: {str(e)}"
+        app_logs.emit(
+            level="error",
+            source="storage",
+            message={
+                "summary": f"[{payload.storage_type}] 图片上传异常: {payload.filename} -> {err_msg}",
+                "diagnostic": {
+                    "category": "storage_upload_exception",
+                    "upstream_message": err_msg,
+                },
+            },
+        )
         return ImageUploadResponse(
             success=False,
             storage_type=payload.storage_type,
             filename=payload.filename,
-            error=f"上传服务发生异常: {str(e)}",
+            error=err_msg,
         )
