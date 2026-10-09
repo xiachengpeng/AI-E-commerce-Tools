@@ -190,6 +190,10 @@ async function callAI(capability, payload, options = {}) {
  * @param {string} tabId 标签唯一标识
  */
 function switchMainTab(tabId) {
+    if (typeof window.ResearchPanel !== 'undefined') {
+        if (tabId === 'research') window.ResearchPanel.init();
+        else window.ResearchPanel.suspend();
+    }
     // 1. 记录状态到本地存储
     localStorage.setItem('activeMainTab', tabId);
 

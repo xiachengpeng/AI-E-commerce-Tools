@@ -32,6 +32,7 @@
     <link rel="stylesheet" href="css/watermark_removal.css?v=20260917-reset-v1">
 
     <!-- 基础配置与工具 (必须优先加载) -->
+    <link rel="stylesheet" href="css/research.css?v=20261009">
     <script src="js/languages.js?v=20260917-reset-v1"></script>
     <script src="js/config.js?v=20260917-reset-v1"></script>
     <script src="js/utils.js?v=20260921-eyes-v2"></script>
@@ -71,6 +72,9 @@
                     <span class="nav-group-title hidden text-[11px] font-bold text-slate-400 uppercase tracking-wider">核心业务流</span>
                 </div>
                 <div class="nav-group-items flex flex-col items-center gap-1 w-full bg-slate-50/60 p-1 rounded-2xl border border-slate-100">
+                    <button id="tab-research" onclick="switchMainTab('research')" class="side-tab" title="选品研究与事实交接">
+                        <i class="ph ph-magnifying-glass"></i><span>选品研究</span>
+                    </button>
                     <button id="tab-analysis" onclick="switchMainTab('analysis')" class="side-tab" title="竞品分析">
                         <i class="ph ph-chart-bar"></i><span>竞品分析</span>
                     </button>
@@ -146,6 +150,29 @@
 
     <!-- Main Content Area -->
     <div class="flex-1 flex overflow-hidden relative">
+        <div id="view-research" class="hidden flex-1 overflow-hidden">
+            <section id="researchView">
+                <header class="r-header"><div><h2>选品研究</h2><p class="r-muted">研究与核实 → 营销草稿 → 素材交付 → 人工测试复盘</p></div>
+                    <div><a id="researchWorkbenchLink" class="r-link" href="#" target="_blank" rel="noopener noreferrer" hidden>打开完整研究工作台</a><button id="researchRefresh">刷新研究资料</button><button id="researchResolveConfirmation" type="button" hidden>核对上次提交</button>
+                <button id="researchUndo" hidden>撤销本次草稿填充</button></div>
+                </header>
+                <div id="researchStatus" class="r-status" role="status" aria-live="polite">研究入口待加载</div>
+                <div class="r-grid">
+                    <aside class="r-card"><h3>研究项目</h3><div id="researchProjectList"><p class="r-muted">正在读取研究摘要…</p></div><button id="researchMoreProjects" hidden>加载更多项目</button></aside>
+                    <div class="r-card"><h3 id="researchProjectTitle">选择研究项目</h3><div id="researchProducts"></div><div id="researchProductDetail"></div><div id="researchPreview"></div></div>
+                </div>
+                <div class="r-tools">
+                    <form id="researchWeightForm" class="r-card"><h3>物流计费重</h3><p class="r-muted">计费除数由承运商提供；缺失项保持未知。</p>
+                        <div class="r-inputs"><label>实际重量 kg<input name="weight" type="number" step="any" min="0"></label><label>长度 cm<input name="length" type="number" step="any" min="0"></label><label>宽度 cm<input name="width" type="number" step="any" min="0"></label><label>高度 cm<input name="height" type="number" step="any" min="0"></label><label>除数 cm³/kg<input name="divisor" type="number" step="any" min="0"></label></div>
+                        <button type="submit">计算计费重</button><output>填写实际承运商参数后计算</output>
+                    </form>
+                    <form id="researchScenarioForm" class="r-card"><h3>销量情景估算</h3><p class="r-muted">这是情景估算，不是实际销量；客单价按 USD 等值填写。</p>
+                        <div class="r-inputs"><label>月访问量<input name="visits" type="number" step="any" min="0" required></label><label>客单价 USD<input name="aov" type="number" step="any" min="0" required></label><label>流量范围<select name="scope"><option value="domain">整个域名</option><option value="store">整个商店</option><option value="product">单个产品</option><option value="landing_page">落地页</option></select></label><label>低转化率 %<input name="low" type="number" step="any" min="0" max="100" required></label><label>中转化率 %<input name="base" type="number" step="any" min="0" max="100" required></label><label>高转化率 %<input name="high" type="number" step="any" min="0" max="100" required></label></div>
+                        <button type="submit">计算三档情景</button><output>填写来源范围与低中高转化率后计算</output>
+                    </form>
+                </div>
+            </section>
+        </div>
 
         <!-- ============================================== -->
         <!-- 视图：竞品分析 (VIEW: XUANPIN)                  -->
@@ -2177,6 +2204,10 @@
                     <input id="adsProductNameInput" name="ads_product_name" type="text" maxlength="200" autocomplete="off" readonly onfocus="this.removeAttribute('readonly');"
                         placeholder="选填，填写后将结合图片识别（未传图时必填）"
                         class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-orange-500 bg-gray-50 mb-5">
+
+                    <label for="adsSellingPoints" class="block text-xs font-bold text-gray-700 mb-2">已核实产品事实与卖点（选填）</label>
+                    <textarea id="adsSellingPoints" rows="3" placeholder="仅填写已核实的自有产品信息，可从研究工作台逐项交接"
+                        class="w-full text-xs border border-gray-200 rounded-lg p-2.5 outline-none focus:border-orange-500 bg-gray-50 mb-5"></textarea>
 
                     <label class="block text-xs font-bold text-gray-700 mb-2">广告类型</label>
                     <div class="grid grid-cols-2 gap-2 mb-5">
@@ -5211,6 +5242,7 @@
     <script src="js/watermark_removal_core.js"></script>
     <script src="js/watermark_removal.js"></script>
     <script src="js/analysis.js?v=20260917-reset-v1"></script>
+    <script src="js/research.js?v=20261009"></script>
 </body>
 
 </html>

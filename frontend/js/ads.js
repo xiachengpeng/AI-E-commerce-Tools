@@ -678,6 +678,8 @@ function receiveAdsTransferData(data) {
     }
     if (typeof data.sellingPoints === 'string') {
         currentAdsSellingPoints = data.sellingPoints;
+        const factsEl = document.getElementById('adsSellingPoints');
+        if (factsEl) factsEl.value = data.sellingPoints;
     }
     if (typeof data.keywords === 'string') {
         currentAdsKeywords = data.keywords;
@@ -731,7 +733,9 @@ async function generateAdsCopy() {
             marketing_theme_label: themeOpt.options[themeOpt.selectedIndex].text
         };
         if (productName) payload.product_name = productName;
-        if (currentAdsSellingPoints) payload.selling_points = currentAdsSellingPoints;
+        const factsEl = document.getElementById('adsSellingPoints');
+        const sellingPoints = factsEl ? factsEl.value.trim() : currentAdsSellingPoints;
+        if (sellingPoints) payload.selling_points = sellingPoints;
         if (currentAdsKeywords) payload.keywords = currentAdsKeywords;
         const data = await postAdsApi(payload);
         renderAdsData(data);
@@ -750,6 +754,7 @@ function saveAdsDraft() {
     if (typeof localStorage === 'undefined' || typeof document === 'undefined') return;
     const draft = {
         productName: document.getElementById('adsProductNameInput')?.value || '',
+        sellingPoints: document.getElementById('adsSellingPoints')?.value ?? currentAdsSellingPoints,
         region: document.getElementById('adsRegionSelect')?.value || '',
         language: document.getElementById('adsLanguageSelect')?.value || '',
         theme: document.getElementById('adsMarketingThemeSelect')?.value || ''
@@ -767,6 +772,8 @@ function restoreAdsDraft() {
         const draft = JSON.parse(raw);
         if (!draft) return;
         const nameEl = document.getElementById('adsProductNameInput');
+        const factsEl = document.getElementById('adsSellingPoints');
+        if (factsEl && !factsEl.value && typeof draft.sellingPoints === 'string') factsEl.value = draft.sellingPoints;
         const regionEl = document.getElementById('adsRegionSelect');
         const langEl = document.getElementById('adsLanguageSelect');
         const themeEl = document.getElementById('adsMarketingThemeSelect');
@@ -783,7 +790,7 @@ function restoreAdsDraft() {
 function initAdsDraftSync() {
     if (typeof document === 'undefined') return;
     const debouncedSave = typeof debounce === 'function' ? debounce(saveAdsDraft, 400) : saveAdsDraft;
-    ['adsProductNameInput', 'adsRegionSelect', 'adsLanguageSelect', 'adsMarketingThemeSelect'].forEach(id => {
+    ['adsProductNameInput', 'adsSellingPoints', 'adsRegionSelect', 'adsLanguageSelect', 'adsMarketingThemeSelect'].forEach(id => {
         const el = document.getElementById(id);
         if (!el || typeof el.addEventListener !== 'function') return;
         el.addEventListener('input', debouncedSave);
@@ -800,6 +807,7 @@ function clearAdsDraft() {
     const sellingEl = document.getElementById('adsSellingPoints');
     if (nameEl) nameEl.value = '';
     if (sellingEl) sellingEl.value = '';
+    currentAdsSellingPoints = '';
     if (typeof showToast === 'function') showToast('已清空广告输入草稿', 'info');
 }
 

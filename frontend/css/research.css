@@ -1,0 +1,26 @@
+#researchView { flex:1; overflow:auto; padding:24px; color:#334155; background:#f8fafc; }
+#researchView h2 { font-size:24px; font-weight:800; color:#0f172a; }
+#researchView h3 { font-size:18px; font-weight:700; margin-bottom:12px; }
+#researchView h4 { font-size:14px; font-weight:700; margin-bottom:12px; }
+#researchView .r-header { display:flex; justify-content:space-between; gap:16px; align-items:center; margin-bottom:16px; }
+#researchView .r-header div:last-child { display:flex; gap:8px; }
+#researchView button, #researchView .r-link { border:1px solid #cbd5e1; border-radius:9px; padding:8px 12px; background:white; font-size:12px; cursor:pointer; margin:3px; }
+#researchView button:hover, #researchView .r-link:hover { border-color:#6366f1; color:#4f46e5; }
+#researchView button:disabled { opacity:.5; cursor:wait; }
+#researchView .r-status { border:1px solid #c7d2fe; background:#eef2ff; padding:12px; border-radius:10px; font-size:13px; margin-bottom:16px; }
+#researchView .r-error { border-color:#fecaca; background:#fff1f2; color:#9f1239; }
+#researchView .r-grid { display:grid; grid-template-columns:250px minmax(0,1fr); gap:18px; align-items:start; }
+#researchView .r-card { background:white; border:1px solid #e2e8f0; padding:18px; border-radius:14px; margin-bottom:16px; }
+#researchView .r-project { display:flex; flex-direction:column; align-items:flex-start; text-align:left; width:100%; gap:5px; margin:6px 0; }
+#researchView .r-project span, #researchView .r-muted { color:#64748b; font-size:12px; line-height:1.6; }
+#researchView .r-facts > div { display:grid; grid-template-columns:100px minmax(0,1fr) 100px; gap:12px; padding:8px; border-bottom:1px solid #f1f5f9; overflow-wrap:anywhere; }
+#researchView .r-facts small { color:#64748b; }
+#researchView .r-steps { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; font-size:11px; }
+#researchView label { display:flex; flex-direction:column; gap:5px; font-size:12px; margin:10px 0; }
+#researchView input:not([type=checkbox]), #researchView select { border:1px solid #cbd5e1; border-radius:7px; padding:8px; background:white; min-width:0; }
+#researchView input[type=checkbox] { width:14px; height:14px; flex-shrink:0; }
+#researchView .r-check { flex-direction:row; align-items:center; gap:8px; }
+#researchView .r-tools { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:18px; }
+#researchView .r-inputs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+#researchView output { display:block; font-size:12px; line-height:1.7; padding:10px; background:#f8fafc; border-radius:8px; }
+#researchView [hidden] { display:none !important; }

@@ -248,6 +248,8 @@ app = FastAPI(
     lifespan=app_lifespan,
 )
 app.include_router(generation_router)
+from routes.research import router as research_router
+app.include_router(research_router)
 app.include_router(storage_router, prefix="/api/storage")
 app.include_router(storage_router, prefix="/storage")
 app_logs.emit(

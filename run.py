@@ -89,6 +89,15 @@ with socketserver.TCPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) as httpd:
     )
     print(f"✅ 前端服务已启动: http://127.0.0.1:{FRONTEND_PORT}")
 
+    # Optional research transport is independent of the existing app processes.
+    research_process = None
+    research_config = os.environ.get('RESEARCH_INTEGRATION_CONFIG', os.path.expanduser('~/.local/share/ai-ecommerce-merge/research.json'))
+    if os.path.isfile(research_config):
+        research_process = subprocess.Popen(
+            [sys.executable, '-m', 'services.research_tunnel'], cwd=backend_dir,
+            env={**os.environ, 'PYTHONPATH': backend_dir}
+        )
+
     # 3. 等待启动后打开浏览器
     time.sleep(1.5)
     url = f"http://127.0.0.1:{FRONTEND_PORT}/index.html"
@@ -117,6 +126,13 @@ with socketserver.TCPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) as httpd:
     finally:
         backend_process.terminate()
         frontend_process.terminate()
+        if research_process is not None and research_process.poll() is None:
+            research_process.terminate()
+            try:
+                research_process.wait(timeout=7)
+            except subprocess.TimeoutExpired:
+                research_process.kill()
+                research_process.wait()
         print("👋 已安全退出。")
 
 if __name__ == "__main__":
