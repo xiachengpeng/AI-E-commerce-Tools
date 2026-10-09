@@ -1,7 +1,7 @@
 {
   "contract_version": 1,
   "created_date": "2026-10-09",
-  "main_source_commit": "ef7e347807d43d07449393b5dbec8ce65ff2e363",
+  "main_source_commit": "80f0364f2750db9436558d8f4f71e9bf82a8a7b6",
   "main_sources": {
     "backend/main.py": "45b8751b74c1a4f2bce6b0ca15243014846ede2e346c4ac37064ed140eed49a7",
     "backend/migrations/research_links_v1.py": "65aba9c5d2e154437815535abc77a6e54485667e358965a3c8a80626c870e11b",
@@ -31,7 +31,8 @@
     "frontend/tests/research_ads_consumer.test.js": "457ee61ebb65ece6e69baae65e27c9b81dd46f3fd38a9d704083774776daeb62",
     "frontend/tests/research_frame.test.js": "faf6adbe742cbdc79502499b0dbc1c6afd58a2e5599caac8226879c9e549d520",
     "frontend/tests/research_handoff.test.js": "3886120994324a4fad301eaae998605e13545c675bd83e715222f3d35577c9ff",
-    "run.py": "79e70f77269b6a6db99f814a499d3d0357f8f46e51557fa6a60f5373b4c70815"
+    "run.py": "b258e8630982c0974b4e2f133bb968d676e0d3e22b2d5bb5323686b4f8aa76d9",
+    "backend/tests/test_frontend_server.py": "2c7019ca2c37d56d86ed34ba88db37088572b4de4ba38a06e474351453a2347c"
   },
   "main_dependency_hashes": {
     "backend/requirements.txt": "9986cf2f72b78bb7abb68b671f627d2fe03ef53d0e0f287a84a6f373d3cf2d98",
@@ -69,5 +70,15 @@
     "research_mypy_files": 79
   },
   "production_acceptance": "read-only browser/DTO/security/owned-tunnel outage/recovery/data integrity checks; paid external workflows not invoked",
-  "shared_live_ai_proxy_enabled": false
+  "shared_live_ai_proxy_enabled": false,
+  "maintenance_verification": {
+    "date": "2026-10-09",
+    "issue": "frontend idle preconnection starvation",
+    "before_restart_focused_passed": 10,
+    "after_restart_focused_passed": 9,
+    "after_restart_focused_skipped": 1,
+    "skip_reason": "live integration tunnel owns fixed port",
+    "idle_connections_during_http_acceptance": 3,
+    "browser_acceptance": "existing in-app tab: homepage and embedded SOP workbench loaded"
+  }
 }
