@@ -237,3 +237,26 @@ def items(): pass
 ''')
     result = inventory(tmp_path)
     assert {'dynamic_prefix', 'dynamic_user_actions'} <= {e['reason'] for e in result['unresolved']}
+
+
+def test_router_alias_multiple_mounts(tmp_path):
+    (tmp_path / 'routes').mkdir()
+    (tmp_path / 'routes/items.py').write_text('''router = APIRouter(prefix="/v1")
+@router.get("/items")
+def items(): pass
+''')
+    (tmp_path / 'main.py').write_text('''from routes.items import router as item_routes
+app = FastAPI()
+app.include_router(item_routes, prefix="/api")
+app.include_router(item_routes, prefix="/legacy")
+app.include_router(item_routes, prefix=DYNAMIC)
+''')
+    result = inventory(tmp_path)
+    assert {r['path'] for r in result['routes']} == {'/api/v1/items', '/legacy/v1/items'}
+    assert result['route_declarations'][0]['path'] == '/v1/items'
+    assert 'dynamic_include_router' in {u['reason'] for u in result['unresolved']}
+
+
+def test_main_mounted_routes_match_sanitized_runtime():
+    matrix = json.loads((Path(__file__).resolve().parents[2] / 'docs/merge-assessment/full-merge-coverage.json').read_text())
+    assert {tuple(r) for r in matrix['runtime_routes']['main']} == {(r['method'], r['path']) for r in matrix['inventories']['main']['routes']}

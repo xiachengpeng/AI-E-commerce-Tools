@@ -14,6 +14,7 @@ def inventory(root: Path) -> dict:
         raise FileNotFoundError(root)
     result = dict(source_hashes={}, routes=[], user_actions=[], job_kinds=[], pages=[], schema=[], dependencies=[], unresolved=[])
     actions, jobs = set(), set()
+    trees = {}
     for path in sorted(root.rglob('*')):
         relative = path.relative_to(root)
         if any(part in EXCLUDED for part in relative.parts) or path.is_symlink() or not path.is_file():
@@ -33,6 +34,7 @@ def inventory(root: Path) -> dict:
         except (SyntaxError, UnicodeError):
             result['unresolved'].append({'file': name, 'reason': 'parse_error'})
             continue
+        trees[name] = tree
         prefixes = {}
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
@@ -95,9 +97,72 @@ def inventory(root: Path) -> dict:
                         result['unresolved'].append({'file': name, 'line': node.lineno, 'reason': 'dynamic_methods'})
                         continue
                 for verb in methods:
-                    result['routes'].append({'method': verb, 'path': prefixes.get(receiver, '') + argument.value, 'file': name, 'handler': node.name})
+                    result['routes'].append({'method': verb, 'path': prefixes.get(receiver, '') + argument.value, 'file': name, 'handler': node.name, 'receiver': receiver})
+    _resolve_mounts(result, trees)
     result['user_actions'], result['job_kinds'] = sorted(actions), sorted(jobs)
     return result
+
+
+def _resolve_mounts(result, trees):
+    """Resolve literal include_router edges and imported router aliases without imports."""
+    edges = {}
+    prefixes = {}
+    for file, tree in trees.items():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                if isinstance(node.value.func, ast.Name) and node.value.func.id in {'APIRouter', 'FastAPI'}:
+                    prefix = next((k.value.value for k in node.value.keywords if k.arg == 'prefix' and isinstance(k.value, ast.Constant) and isinstance(k.value.value, str)), '')
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            prefixes[(file, target.id)] = prefix
+    for file, tree in trees.items():
+        if any(part in {'tests', 'docs'} for part in Path(file).parts) or Path(file).name.startswith('test_'):
+            continue
+        imports = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                suffix = node.module.replace('.', '/') + '.py'
+                if node.level:
+                    base = Path(file).parent
+                    for _ in range(node.level - 1):
+                        base = base.parent
+                    candidates = [str(base / suffix)] if str(base / suffix) in trees else []
+                else:
+                    candidates = [f for f in trees if f == suffix or f.endswith('/' + suffix)]
+                if len(candidates) == 1:
+                    for alias in node.names:
+                        imports[alias.asname or alias.name] = (candidates[0], alias.name)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) or node.func.attr != 'include_router':
+                continue
+            child = node.args[0] if node.args else next((k.value for k in node.keywords if k.arg == 'router'), None)
+            prefix = next((k.value for k in node.keywords if k.arg == 'prefix'), ast.Constant(value=''))
+            parent = node.func.value
+            if not isinstance(child, ast.Name) or not isinstance(parent, ast.Name) or not isinstance(prefix, ast.Constant) or not isinstance(prefix.value, str):
+                result['unresolved'].append({'file': file, 'line': node.lineno, 'reason': 'dynamic_include_router'})
+                continue
+            identity = imports.get(child.id, (file, child.id))
+            if identity[0] not in trees or identity not in prefixes:
+                result['unresolved'].append({'file': file, 'line': node.lineno, 'reason': 'unresolved_include_router'})
+                continue
+            edges.setdefault(identity, []).append(((file, parent.id), prefix.value, node.lineno))
+    result['route_declarations'] = [dict(r) for r in result['routes']]
+    mounted = []
+    def resolve(identity, visited):
+        if identity in visited:
+            result['unresolved'].append({'file': identity[0], 'reason': 'cyclic_include_router'})
+            return []
+        if identity not in edges:
+            return [('', [])]
+        values = []
+        for parent, prefix, line in edges[identity]:
+            for upstream, mounts in resolve(parent, visited | {identity}):
+                values.append((upstream + prefixes.get(parent, '') + prefix, mounts + [{'file': parent[0], 'line': line, 'prefix': prefix}]))
+        return values
+    for route in result['route_declarations']:
+        for prefix, mounts in resolve((route['file'], route['receiver']), set()):
+            mounted.append({**route, 'path': prefix + route['path'], 'declaration_path': route['path'], 'mounts': mounts})
+    result['routes'] = mounted
 
 
 if __name__ == '__main__':
@@ -123,6 +188,10 @@ def validate_coverage(matrix: dict) -> dict:
                     key = f'{source}:{kind}:{value}'
                     destination = 'backend/history.db:' + value if kind == 'table' else value if source == 'main' else target
                     expected[key] = (source, kind, {'name': value}, 22 if source == 'main' else task, destination)
+        for source, runtime in matrix.get('runtime_routes', {}).items():
+            actual = {(r['method'], r['path']) for r in matrix['inventories'][source]['routes']}
+            if actual != {tuple(route) for route in runtime}:
+                failures.append('runtime_route_mismatch')
         seen = set()
         for entry in matrix['coverage']:
             key = entry['id']
