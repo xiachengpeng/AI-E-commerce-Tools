@@ -260,3 +260,19 @@ app.include_router(item_routes, prefix=DYNAMIC)
 def test_main_mounted_routes_match_sanitized_runtime():
     matrix = json.loads((Path(__file__).resolve().parents[2] / 'docs/merge-assessment/full-merge-coverage.json').read_text())
     assert {tuple(r) for r in matrix['runtime_routes']['main']} == {(r['method'], r['path']) for r in matrix['inventories']['main']['routes']}
+
+
+def test_task1_operational_gates_preserve_later_acceptance():
+    from scripts.full_merge.inventory import validate_coverage
+    import copy
+    matrix = json.loads((Path(__file__).resolve().parents[2] / 'docs/merge-assessment/full-merge-coverage.json').read_text())
+    assert matrix['task1_operational_complete'] is True
+    assert matrix['live_backup_executed'] is True
+    assert matrix['cutover_allowed'] is False
+    assert matrix['source_future_freeze'] is False
+    assert matrix['operational_gates']['research_runtime_route_parity'] == 'passed'
+    assert len(matrix['runtime_routes']['research']) == 49
+    assert all(e['acceptance'].startswith('pending_') for e in matrix['coverage'])
+    invalid = copy.deepcopy(matrix)
+    invalid['runtime_routes']['research'].pop()
+    assert not validate_coverage(invalid)['verified']

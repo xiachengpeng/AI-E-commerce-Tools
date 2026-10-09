@@ -1,18 +1,16 @@
 {
   "version": 1,
-  "status": "inventory_complete_acceptance_pending",
+  "status": "task1_operational_complete_behavior_acceptance_pending",
   "source_revision": {
     "research": "b749491"
   },
-  "live_backup_executed": false,
+  "live_backup_executed": true,
   "cutover_allowed": false,
   "gates": [
-    "controller_review_live_backup",
-    "all_objects_and_keys_private_backup",
-    "git_bundle_restore",
-    "live_snapshot_integrity_and_foreign_keys",
     "behavior_parity_acceptance",
-    "cross_machine_single_writer_barrier"
+    "cross_machine_single_writer_barrier",
+    "source_future_write_freeze",
+    "cutover_validation"
   ],
   "inventories": {
     "main": {
@@ -8239,7 +8237,7 @@
     "Mapping test pointers validate inventory/recovery only; business acceptance remains pending",
     "Remote worker remains active; no cutover permitted",
     "Snapshot verified without externally anchored manifest digest is integrity-only; completeness_verified must be true plus operator gates before cutover",
-    "Literal router include mounts resolved statically; dynamic includes unresolved. Research runtime path parity remains pending; test/docs mounts excluded."
+    "Literal router include mounts resolved statically; dynamic includes unresolved. Main and research runtime route parity verified against sanitized baseline; test/docs mounts excluded."
   ],
   "runtime_routes": {
     "main": [
@@ -8567,6 +8565,254 @@
         "PUT",
         "/api/settings/crawler"
       ]
+    ],
+    "research": [
+      [
+        "DELETE",
+        "/workbench/api/projects/{project_id}"
+      ],
+      [
+        "GET",
+        "/"
+      ],
+      [
+        "GET",
+        "/dashboard/data"
+      ],
+      [
+        "GET",
+        "/favicon.ico"
+      ],
+      [
+        "GET",
+        "/health"
+      ],
+      [
+        "GET",
+        "/integrations"
+      ],
+      [
+        "GET",
+        "/internal/integration/v1/projects"
+      ],
+      [
+        "GET",
+        "/internal/integration/v1/projects/{project_id}"
+      ],
+      [
+        "GET",
+        "/internal/integration/v1/projects/{project_id}/actions"
+      ],
+      [
+        "GET",
+        "/internal/integration/v1/projects/{project_id}/commands/{command_id}"
+      ],
+      [
+        "GET",
+        "/internal/integration/v1/projects/{project_id}/confirmations/{command_id}"
+      ],
+      [
+        "GET",
+        "/internal/integration/v1/projects/{project_id}/products/{product_id}"
+      ],
+      [
+        "GET",
+        "/internal/integration/v1/projects/{project_id}/report"
+      ],
+      [
+        "GET",
+        "/marketing-workbench"
+      ],
+      [
+        "GET",
+        "/metrics"
+      ],
+      [
+        "GET",
+        "/operations"
+      ],
+      [
+        "GET",
+        "/ready"
+      ],
+      [
+        "GET",
+        "/workbench/api/ai-settings"
+      ],
+      [
+        "GET",
+        "/workbench/api/evidence-file"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}/actions"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}/actions/{action_id}/provider-evidence"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}/actions/{action_id}/screenshot"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}/intelligence"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}/live-logs"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}/log-stream"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}/media-download"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}/report"
+      ],
+      [
+        "GET",
+        "/workbench/api/projects/{project_id}/sync"
+      ],
+      [
+        "GET",
+        "/workbench/api/provider-settings"
+      ],
+      [
+        "GET",
+        "/workbench/api/session"
+      ],
+      [
+        "GET",
+        "/workbench/api/sources"
+      ],
+      [
+        "GET",
+        "/workbench/ui-icons/{name}.svg"
+      ],
+      [
+        "GET",
+        "/workbench/{asset}"
+      ],
+      [
+        "POST",
+        "/internal/integration/v1/projects/{project_id}/commands"
+      ],
+      [
+        "POST",
+        "/internal/integration/v1/projects/{project_id}/confirm-fact"
+      ],
+      [
+        "POST",
+        "/workbench/api/ai-settings"
+      ],
+      [
+        "POST",
+        "/workbench/api/project-direction"
+      ],
+      [
+        "POST",
+        "/workbench/api/projects"
+      ],
+      [
+        "POST",
+        "/workbench/api/projects/{project_id}/actions"
+      ],
+      [
+        "POST",
+        "/workbench/api/projects/{project_id}/actions/{action_id}/stop"
+      ],
+      [
+        "POST",
+        "/workbench/api/projects/{project_id}/ads/translate"
+      ],
+      [
+        "POST",
+        "/workbench/api/projects/{project_id}/commands"
+      ],
+      [
+        "POST",
+        "/workbench/api/projects/{project_id}/sync"
+      ],
+      [
+        "POST",
+        "/workbench/api/projects/{project_id}/sync/preview"
+      ],
+      [
+        "POST",
+        "/workbench/api/projects/{project_id}/sync/{run_id}/retry"
+      ],
+      [
+        "POST",
+        "/workbench/api/projects/{project_id}/trends-import"
+      ],
+      [
+        "POST",
+        "/workbench/api/provider-settings"
+      ]
     ]
+  },
+  "task1_operational_complete": true,
+  "source_future_freeze": false,
+  "operational_gates": {
+    "controller_review_live_backup": "passed",
+    "all_objects_and_keys_private_backup": "passed",
+    "git_bundle_restore": "passed",
+    "live_snapshot_integrity_and_foreign_keys": "passed",
+    "main_runtime_route_parity": "passed",
+    "research_runtime_route_parity": "passed",
+    "source_api_and_single_worker_inventory": "passed",
+    "readonly_performance_baseline": "passed"
+  },
+  "operational_evidence": {
+    "attestation": "controller_verified_private_evidence",
+    "main": {
+      "tables": 18,
+      "assets": 120,
+      "configuration_files": 2,
+      "anchored_completeness": true,
+      "restored_copy_verified": true,
+      "runtime_routes": 81
+    },
+    "research": {
+      "core_tables": 14,
+      "translation_cache_tables": 1,
+      "object_version_files": 147,
+      "configuration_files": 5,
+      "anchored_completeness": true,
+      "restored_copy_verified": true,
+      "runtime_routes": 49
+    },
+    "git_bundles": {
+      "main_bare_restore": true,
+      "research_bare_restore": true,
+      "baseline_commit_objects_checked": true
+    },
+    "source_processes": {
+      "api_running": true,
+      "worker_count": 1
+    },
+    "main_readonly_config_baseline": {
+      "samples": 20,
+      "p95_ms": 82.06
+    },
+    "research_runtime_inspection": {
+      "checks_empty": true,
+      "lifespan_started": false,
+      "provider_requests": false
+    }
   }
 }
