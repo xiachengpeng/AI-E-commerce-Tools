@@ -63,9 +63,11 @@ def run_app():
     # 2. 启动前端 HTTP Server - 端口 9502
     frontend_script = f"""
 import http.server
-import socketserver
 
 class MyHandler(http.server.SimpleHTTPRequestHandler):
+    # Browsers can preconnect without sending HTTP bytes; expire idle sockets.
+    timeout = 15
+
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
         super().end_headers()
@@ -80,7 +82,7 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
         return base_type
 
 print("Serving HTTP on 127.0.0.1 port {FRONTEND_PORT} (http://127.0.0.1:{FRONTEND_PORT}/) ...")
-with socketserver.TCPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) as httpd:
+with http.server.ThreadingHTTPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) as httpd:
     httpd.serve_forever()
 """
     frontend_process = subprocess.Popen(
