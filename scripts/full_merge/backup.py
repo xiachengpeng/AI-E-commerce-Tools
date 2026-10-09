@@ -53,10 +53,27 @@ def backup_sqlite(source: Path, destination: Path) -> dict:
 
 def create_snapshot(directory: Path, *, databases=(), object_roots=(), key_files=()) -> dict:
     directory = Path(directory)
+    if not (databases or object_roots or key_files):
+        raise ValueError('Snapshot requires explicit nonempty sources')
     # Validate every requested source before creating a partial recovery set.
     for source in [*databases, *object_roots, *key_files]:
+        if Path(source).is_symlink():
+            raise ValueError('Symlink source roots are unsupported')
         if not Path(source).exists():
             raise FileNotFoundError(source)
+    def source_state():
+        state = {}
+        for index, source in enumerate([*object_roots, *key_files]):
+            source = Path(source)
+            files = sorted(source.rglob('*')) if source.is_dir() else [source]
+            for file in files:
+                if file.is_symlink():
+                    raise ValueError('Symlinks require explicit source resolution')
+                if file.is_file():
+                    stat = file.stat()
+                    state[(index, str(file))] = (stat.st_ino, stat.st_size, stat.st_mtime_ns, hashlib.sha256(file.read_bytes()).hexdigest())
+        return state
+    initial_state = source_state()
     directory.mkdir(mode=0o700, parents=True, exist_ok=False)
     manifest = {'version': 1, 'databases': [], 'objects': [], 'keys': []}
     for index, source in enumerate(databases):
@@ -79,6 +96,8 @@ def create_snapshot(directory: Path, *, databases=(), object_roots=(), key_files
                 shutil.copyfile(file, target)
                 os.chmod(target, 0o600)
                 manifest[category].append({'path': relative, 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(), 'bytes': target.stat().st_size})
+    if source_state() != initial_state:
+        raise ValueError('Sources changed during snapshot; freeze writes before retry')
     target = directory / 'manifest.json'
     target.write_text(json.dumps(manifest, indent=2))
     os.chmod(target, 0o600)

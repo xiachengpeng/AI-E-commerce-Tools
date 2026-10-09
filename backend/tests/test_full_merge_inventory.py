@@ -92,3 +92,51 @@ class JobKind(StrEnum):
     result = inventory(tmp_path)
     assert result['user_actions'] == ['confirm', 'review']
     assert result['job_kinds'] == ['analyze', 'collect']
+
+
+def test_truncated_manifest_fails_closed(tmp_path):
+    (tmp_path / 'manifest.json').write_text('{}')
+    assert verify_snapshot(tmp_path)['verified'] is False
+
+
+def test_corrupt_database_reports_failure(tmp_path):
+    source = tmp_path / 'source.db'
+    with sqlite3.connect(source) as db:
+        db.execute('CREATE TABLE x(id INTEGER)')
+    snapshot = tmp_path / 'snapshot'
+    create_snapshot(snapshot, databases=[source])
+    (snapshot / 'databases/0.db').write_bytes(b'corrupted database')
+    result = verify_snapshot(snapshot)
+    assert result['verified'] is False
+    assert result['failures']
+
+
+def test_empty_snapshot_and_symlink_roots_rejected(tmp_path):
+    import pytest
+    with pytest.raises(ValueError):
+        create_snapshot(tmp_path / 'empty')
+    real = tmp_path / 'real'
+    real.mkdir()
+    (real / 'x').write_bytes(b'x')
+    link = tmp_path / 'link'
+    link.symlink_to(real, target_is_directory=True)
+    with pytest.raises(ValueError):
+        create_snapshot(tmp_path / 'snapshot', object_roots=[link])
+
+
+def test_mutating_copy_is_rejected(tmp_path, monkeypatch):
+    import pytest
+    import scripts.full_merge.backup as module
+    source = tmp_path / 'source'
+    source.mkdir()
+    file = source / 'x'
+    file.write_bytes(b'before')
+    original = module.shutil.copyfile
+    def mutate(src, dst):
+        result = original(src, dst)
+        Path(src).write_bytes(b'after')
+        return result
+    monkeypatch.setattr(module.shutil, 'copyfile', mutate)
+    with pytest.raises(ValueError):
+        create_snapshot(tmp_path / 'snapshot', object_roots=[source])
+    assert not (tmp_path / 'snapshot/manifest.json').exists()
