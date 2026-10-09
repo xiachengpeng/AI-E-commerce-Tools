@@ -116,3 +116,40 @@ class ResearchReport(ResearchModel):
     keyword_count: int = Field(ge=0)
     confirmed_fact_count: int = Field(ge=0)
     truncated: bool
+
+
+class SaveResearchImport(PreviewRequest):
+    import_id: UUID
+    name: str = Field(min_length=1, max_length=200)
+    selected_fields: list[Literal['product_name', 'category', 'material', 'dimensions', 'features', 'warranty']] = Field(min_length=1, max_length=6)
+
+
+class AttachResearchArtifact(ResearchModel):
+    expected_revision: int = Field(ge=1, strict=True)
+    module: Literal['analysis', 'listing', 'ads', 'details']
+    history_id: int = Field(ge=1, strict=True)
+    expected_history_timestamp: str | None = Field(default=None, max_length=64)
+
+
+class ResearchUserCommand(ResearchModel):
+    command_id: UUID
+    expected_version: int = Field(ge=0, strict=True)
+    market: Literal['US', 'GB', 'CA', 'AU', 'DE', 'FR', 'JP']
+    action: str = Field(min_length=1, max_length=60)
+    payload: dict
+
+
+class ResearchAction(ResearchModel):
+    id: UUID
+    kind: str = Field(max_length=60)
+    status: str = Field(max_length=60)
+    attempt: int = Field(ge=0, strict=True)
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+
+
+class ResearchActionPage(ResearchModel):
+    contract_version: Literal[1]
+    project_id: UUID
+    actions: list[ResearchAction] = Field(max_length=50)
+    next_cursor: UUID | None

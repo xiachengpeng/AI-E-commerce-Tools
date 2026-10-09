@@ -186,3 +186,10 @@ async def test_project_projection_cannot_contain_foreign_product_reference():
             'source_version': 2, 'updated_at': '2026-10-09T00:00:00+00:00', 'products': [snapshot()], 'keyword_count': 0}
     with pytest.raises(ResearchError):
         await ResearchClient({'base_url': 'http://127.0.0.1:19503', 'token': 'test'}, transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body))).get_project(project_id)
+
+
+@pytest.mark.parametrize('changes', [{'token': 123}, {'base_url': {}}, {'token': []}])
+def test_malformed_private_config_returns_safe_error(changes):
+    from services.research_client import ResearchClient, ResearchError
+    with pytest.raises(ResearchError):
+        ResearchClient({'base_url': 'http://127.0.0.1:19503', 'token': 'test', **changes})

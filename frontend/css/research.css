@@ -24,3 +24,4 @@
 #researchView .r-inputs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
 #researchView output { display:block; font-size:12px; line-height:1.7; padding:10px; background:#f8fafc; border-radius:8px; }
 #researchView [hidden] { display:none !important; }
+#researchWorkbenchHost iframe { width:100%; height: min(900px,75vh); min-height:560px; border:1px solid #cbd5e1; border-radius:10px; margin-top:12px; background:white; }

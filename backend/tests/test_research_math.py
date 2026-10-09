@@ -55,3 +55,15 @@ def test_market_language_is_independent_of_chinese_interface():
     assert MARKETS['JP'].language == 'Japanese'
     assert MARKETS['DE'].language == 'German'
     assert 'unitedkingdom' in region_labels('GB')
+
+
+def test_calculated_weight_overflow_is_rejected():
+    from modules.research_math.logistics import logistics_weights
+    with pytest.raises(ValueError):
+        logistics_weights(1, (1e308, 1e308, 1e308), 5000)
+
+
+def test_calculated_revenue_overflow_is_rejected():
+    from modules.research_math.estimates import scenario_rows
+    with pytest.raises(ValueError):
+        scenario_rows(1e308, 1e308, 1, 2, 3, 'product')

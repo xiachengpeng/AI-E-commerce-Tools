@@ -2,7 +2,8 @@
 (function (root) {
     'use strict';
     const state = { token: '', enabled: false, project: null, product: null, preview: null,
-        cursor: null, generation: 0, undo: null, pendingConfirmation: null, applying: false };
+        cursor: null, generation: 0, undo: null, pendingConfirmation: null, applying: false, loadingProjects: false,
+        embedUrl: null, frame: null, pendingImport: null, imports: [], importCursor: null, loadingImports: false };
     const labels = { confirmed: '人工核实', inferred: '待人工核实', unknown: '未知', stale: '已失效' };
     const fieldLabels = { product_name: '商品名称', category: '类别', material: '材质', dimensions: '尺寸', features: '特征', warranty: '质保条款' };
     const el = id => typeof document !== 'undefined' ? document.getElementById(id) : null;
@@ -75,6 +76,9 @@
     }
 
     async function loadProjects(append = false) {
+        if (state.loadingProjects || (append && !state.cursor)) return;
+        state.loadingProjects = true;
+        el('researchMoreProjects').disabled = true;
         const generation = state.generation;
         try {
             const page = await request('/projects' + (append && state.cursor ? '?cursor=' + encodeURIComponent(state.cursor) : ''));
@@ -86,6 +90,7 @@
             el('researchMoreProjects').hidden = !state.cursor;
             message('研究资料已同步；导入前仍需人工核实自有产品事实。');
         } catch (error) { if (generation === state.generation) message(error.message, true); }
+        finally { state.loadingProjects = false; el('researchMoreProjects').disabled = false; }
     }
 
     async function openProject(id) {
@@ -93,12 +98,16 @@
         try {
             const project = await request('/projects/' + id);
             if (generation !== state.generation) return;
-            state.project = project; state.product = null; state.preview = null;
-            el('researchProjectTitle').textContent = `${project.title} · ${project.market}`;
-            el('researchProducts').innerHTML = project.products.map(p => `<button class="r-project" data-research-product="${escapeHtml(p.source_ref.product_id)}"><strong>${escapeHtml(p.name)}</strong><span>${p.merged ? '已合并' : '身份版本 ' + p.source_ref.identity_revision} · ${escapeHtml(p.decision || '未决策')}</span></button>`).join('') || '<p class="r-muted">尚无商品，请在研究工作台中添加或采集。</p>';
-            el('researchProductDetail').innerHTML = '';
-            el('researchPreview').innerHTML = '';
+            setProject(project);
         } catch (error) { if (generation === state.generation) message(error.message, true); }
+    }
+
+    function setProject(project) {
+        state.project = project; state.product = null; state.preview = null;
+        el('researchProjectTitle').textContent = `${project.title} · ${project.market}`;
+        el('researchProducts').innerHTML = project.products.map(p => `<button class="r-project" data-research-product="${escapeHtml(p.source_ref.product_id)}"><strong>${escapeHtml(p.name)}</strong><span>${p.merged ? '已合并' : '身份版本 ' + p.source_ref.identity_revision} · ${escapeHtml(p.decision || '未决策')}</span></button>`).join('') || '<p class="r-muted">尚无商品，请在研究工作台中添加或采集。</p>';
+        el('researchProductDetail').innerHTML = '';
+        el('researchPreview').innerHTML = '';
     }
 
     function openProduct(id) {
@@ -175,7 +184,7 @@
             const fields = state.preview.fields;
             el('researchPreview').innerHTML = `<div class="r-card"><h4>选择要交接的已核实事实</h4>${fields.length ? fields.map(f => `<label class="r-check"><input type="checkbox" data-research-field="${escapeHtml(f.key)}">${escapeHtml(f.label)}：${escapeHtml(f.value)}</label>`).join('') : '<p>没有可交接的人工核实事实。请先核实自有产品信息。</p>'}
                 <p class="r-muted">保留现有名称；事实追加到草稿，不启动生成或上传。${state.preview.blocked_count} 个未核实或失效字段未进入交接。</p>
-                ${fields.length ? '<button data-research-apply="details">填入详情页</button><button data-research-apply="listing">填入 Listing</button><button data-research-apply="ads">填入广告草稿</button>' : ''}</div>`;
+                ${fields.length ? '<button data-research-apply="details">填入详情页</button><button data-research-apply="listing">填入 Listing</button><button data-research-apply="ads">填入广告草稿</button><button id="researchSaveImport">保存所选事实为营销档案</button>' : ''}</div>`;
         } catch (error) { message(error.message, true); }
     }
 
@@ -246,32 +255,211 @@
             if (button.id === 'researchRefresh') { if (state.project) openProject(state.project.id); loadProjects(); }
             if (button.id === 'researchResolveConfirmation') resolveConfirmation();
             if (button.id === 'researchMoreProjects') loadProjects(true);
+            if (button.id === 'researchToggleWorkbench') toggleWorkbench();
+            if (button.id === 'researchSaveImport') saveImport();
+            if (button.id === 'researchLoadImports') loadImports();
+            if (button.id === 'researchResolveImport') resolveImport();
+            if (button.id === 'researchRetryImport') retryOriginalImport();
+            if (button.id === 'researchMoreImports') loadImports(true);
+            if (button.hasAttribute('data-research-history')) loadArtifactChoices(button.closest('form'));
+            if (button.dataset.researchImport) reopenImport(button.dataset.researchImport);
             if (button.id === 'researchUndo') { message(`已撤销 ${undoDraft(state.undo)} 项填充；后续人工修改已保留。`); state.undo = null; button.hidden = true; }
         });
         panel.addEventListener('submit', event => {
             event.preventDefault();
             if (event.target.id === 'researchConfirmForm') confirmFact(event.target);
             if (['researchWeightForm', 'researchScenarioForm'].includes(event.target.id)) calculate(event.target);
+            if (event.target.dataset?.researchArtifact) attachArtifact(event.target);
         });
     }
 
     async function init() {
         bind();
+        if (typeof location !== 'undefined' && location.protocol === 'file:') {
+            message('请通过 http://127.0.0.1:9502/index.html 打开主工具，以使用安全研究会话。', true); return;
+        }
         const generation = ++state.generation;
         try {
             const session = await request('/session');
             if (generation !== state.generation) return;
             state.token = session.csrf_token; state.enabled = session.enabled;
+            state.embedUrl = session.embed_url || null;
+            if (el('researchToggleWorkbench')) el('researchToggleWorkbench').disabled = !state.embedUrl;
             const link = el('researchWorkbenchLink');
             if (session.workbench_url) {
                 const url = new URL(session.workbench_url);
                 if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) { link.href = url.href; link.hidden = false; }
             }
+            if (state.embedUrl) link.href = new URL('/',state.embedUrl).href;
+            try {
+                const pending = JSON.parse(sessionStorage.getItem('research_pending_import') || 'null');
+                if (/^\/projects\/[0-9a-f-]{36}\/products\/[0-9a-f-]{36}\/imports$/i.test(pending?.path || '') && /^[0-9a-f-]{36}$/i.test(pending?.body?.import_id || '') && pending.signature === JSON.stringify([pending.path, Object.fromEntries(Object.entries(pending.body).filter(([key]) => key !== 'import_id'))])) {
+                    state.pendingImport = pending;
+                    el('researchResolveImport').hidden = false;
+                    el('researchRetryImport').hidden = false;
+                }
+            } catch (_) { /* Storage is optional; no business call is replayed on load. */ }
             if (state.enabled) await loadProjects(); else message('独立计算工具已就绪；研究服务连接尚未启用。');
         } catch (error) { if (generation === state.generation) message('研究入口加载失败：' + error.message, true); }
     }
 
-    const api = { init, suspend: () => { state.generation++; }, applyDraft, undoDraft, escapeHtml };
+    function closeWorkbench() {
+        if (state.frame) state.frame.remove();
+        state.frame = null;
+        if (el('researchWorkbenchHost')) el('researchWorkbenchHost').hidden = true;
+        if (el('researchToggleWorkbench')) el('researchToggleWorkbench').textContent = '展开完整 SOP 工作台';
+    }
+
+    function toggleWorkbench() {
+        if (state.frame) { closeWorkbench(); return; }
+        if (!state.embedUrl) return;
+        const url = new URL(state.embedUrl);
+        if (url.protocol !== 'http:' || !['127.0.0.1','localhost'].includes(url.hostname) || url.pathname !== '/marketing-workbench') return;
+        const frame = document.createElement('iframe');
+        frame.title = '完整选品研究 SOP 工作台';
+        frame.referrerPolicy = 'no-referrer';
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads');
+        frame.src = url.href;
+        frame.onload = () => frame.contentWindow.postMessage({type:'marketing:hello',version:1},url.origin);
+        state.frame = frame;
+        el('researchWorkbenchHost').replaceChildren(frame);
+        el('researchWorkbenchHost').hidden = false;
+        el('researchToggleWorkbench').textContent = '收起完整 SOP 工作台';
+    }
+
+    async function receiveSource(event) {
+        if (!state.frame || event.source !== state.frame.contentWindow || event.origin !== new URL(state.embedUrl).origin) return;
+        const data = event.data;
+        if (data?.type !== 'research:select' || data.version !== 1) return;
+        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuid.test(data.project_id) || !uuid.test(data.product_id) || !Number.isInteger(data.source_version) || !Number.isInteger(data.identity_revision)) return;
+        const generation = ++state.generation;
+        try {
+            const project = await request('/projects/' + data.project_id);
+            if (generation !== state.generation) return;
+            const product = project.products.find(p => p.source_ref.product_id === data.product_id);
+            if (!product || project.source_version !== data.source_version || product.source_ref.identity_revision !== data.identity_revision || product.market !== data.market) throw new Error('所选研究资料已更新，请在工作台刷新后重新交接');
+            setProject(project);
+            openProduct(data.product_id);
+            await showPreview();
+            el('researchPreview').scrollIntoView?.({block:'center',behavior:'smooth'});
+        } catch (error) { message(error.message,true); }
+    }
+
+    async function saveImport() {
+        const selected = Array.from(el('researchPreview').querySelectorAll('[data-research-field]:checked')).map(input => input.dataset.researchField);
+        if (!selected.length || !state.product) { message('请先勾选要保存的已核实事实。',true); return; }
+        const product = state.product;
+        const path = `/projects/${product.source_ref.project_id}/products/${product.source_ref.product_id}/imports`;
+        const body = {expected_source_version:product.source_ref.source_version,expected_identity_revision:product.source_ref.identity_revision,
+            expected_market:product.market,name:product.name.trim().slice(0,200) || '研究商品档案',selected_fields:selected};
+        const signature = JSON.stringify([path,body]);
+        if (state.pendingImport && state.pendingImport.signature !== signature) { message('上次保存结果尚未确认，请保留原选择重试。',true); return; }
+        const pending = state.pendingImport ||= {signature,path,body:{...body,import_id:crypto.randomUUID()}};
+        try { sessionStorage.setItem('research_pending_import',JSON.stringify(pending)); } catch (_) {}
+        el('researchResolveImport').hidden = false;
+        el('researchRetryImport').hidden = false;
+        const button = el('researchSaveImport'); button.disabled = true;
+        try {
+            await request(pending.path,pending.body);
+            state.pendingImport = null;
+            clearPendingImport();
+            await loadImports();
+            message('营销档案已保存；来源与所选事实可追溯，没有启动生成。');
+        } catch (error) {
+            if ([403,409,422].includes(error.status)) { state.pendingImport = null; clearPendingImport(); }
+            message(error.message + '；没有自动重发。',true);
+        } finally { button.disabled = false; }
+    }
+
+    function clearPendingImport() {
+        try { sessionStorage.removeItem('research_pending_import'); } catch (_) {}
+        el('researchResolveImport').hidden = true;
+        el('researchRetryImport').hidden = true;
+    }
+
+    async function resolveImport() {
+        const pending = state.pendingImport;
+        if (!pending) return;
+        try {
+            await request('/imports/' + encodeURIComponent(pending.body.import_id));
+            if (state.pendingImport === pending) { state.pendingImport = null; clearPendingImport(); }
+            await loadImports(); message('上次档案已保存，已核对原操作编号。');
+        } catch (error) { message(error.status === 404 ? '暂未查到记录；保留原选择可重试同一保存，不会自动提交。' : error.message,true); }
+    }
+
+    async function retryOriginalImport() {
+        const pending = state.pendingImport;
+        if (!pending) return;
+        const button = el('researchRetryImport'); button.disabled = true;
+        try {
+            await request(pending.path,pending.body);
+            if (state.pendingImport === pending) { state.pendingImport = null; clearPendingImport(); }
+            await loadImports(); message('原档案保存已核对；可以继续保存其他商品。');
+        } catch (error) {
+            if ([403,409,422].includes(error.status) && state.pendingImport === pending) { state.pendingImport = null; clearPendingImport(); }
+            message(error.message + ([403,409,422].includes(error.status) ? '；原提交已明确拒绝，请重新预览当前资料。' : '；保留原操作编号。'),true);
+        } finally { button.disabled = false; }
+    }
+
+    async function loadImports(append = false) {
+        if (state.loadingImports || (append && !state.importCursor)) return;
+        state.loadingImports = true;
+        try {
+            const data = await request('/imports' + (append ? '?cursor=' + encodeURIComponent(state.importCursor) : ''));
+            state.imports = append ? [...state.imports,...data.imports] : data.imports;
+            state.importCursor = data.next_cursor;
+            el('researchMoreImports').hidden = !state.importCursor;
+            el('researchImports').innerHTML = state.imports.map(item => `<div class="r-card"><strong>${escapeHtml(item.name)}</strong><p class="r-muted">${escapeHtml(item.snapshot.market)} · 来源版本 ${item.snapshot.source_ref.source_version} · ${escapeHtml(item.created_at)}</p>
+                ${item.snapshot.facts.map(f => `<p>${escapeHtml(fieldLabels[f.key])}：${escapeHtml(f.value)}</p>`).join('')}
+                <button data-research-import="${escapeHtml(item.import_id)}">核对来源并交接</button><p class="r-muted">成果关联：${escapeHtml(item.artifacts.map(a => `${a.module} #${a.history_id}`).join('、') || '尚无')}</p>
+                <form data-research-artifact="${escapeHtml(item.import_id)}"><label>关联已有营销历史<select name="module"><option value="details">详情图片</option><option value="listing">Listing</option><option value="ads">广告</option><option value="analysis">竞品分析</option></select></label><button type="button" data-research-history>读取此类型已有成果</button><label>选择历史<select name="history_id" required><option value="">先读取已有成果</option></select></label><button type="submit">关联已有成果</button></form></div>`).join('') || '<p class="r-muted">暂无档案；在事实预览中勾选并保存。</p>';
+        } catch (error) { message(error.message,true); }
+        finally { state.loadingImports = false; }
+    }
+
+    async function loadArtifactChoices(form) {
+        const module = form.elements.module.value;
+        try {
+            const data = await request('/artifact-choices?module=' + encodeURIComponent(module) + '&limit=50');
+            if (form.elements.module.value !== module) return;
+            form.elements.history_id.dataset.module = module;
+            form._researchChoices = data.items;
+            form.elements.history_id.innerHTML = '<option value="">请选择成果</option>' + data.items.map(item => `<option value="${item.id}">#${item.id} · ${escapeHtml(item.label)} · ${escapeHtml(item.created_at || '')}</option>`).join('');
+            if (!data.items.length) message('此类型暂无已保存的营销历史。');
+        } catch (error) { message(error.message,true); }
+    }
+
+    async function reopenImport(id) {
+        const item = state.imports.find(i => i.import_id === id);
+        if (!item) return;
+        const generation = ++state.generation;
+        try {
+            const project = await request('/projects/' + item.snapshot.source_ref.project_id);
+            if (generation !== state.generation) return;
+            const product = project.products.find(p => p.source_ref.product_id === item.snapshot.source_ref.product_id);
+            if (!product || product.source_ref.source_version !== item.snapshot.source_ref.source_version || product.source_ref.identity_revision !== item.snapshot.source_ref.identity_revision) throw new Error('原档案仍可查阅，但来源已更新或删除；请重新选择并核实当前商品。');
+            setProject(project); openProduct(product.source_ref.product_id); await showPreview();
+        } catch (error) { message(error.message,true); }
+    }
+
+    async function attachArtifact(form) {
+        const item = state.imports.find(i => i.import_id === form.dataset.researchArtifact);
+        if (!item) return;
+        if (form.elements.history_id.dataset.module !== form.elements.module.value || !form.elements.history_id.value) { message('请读取并选择当前类型的已有成果。',true); return; }
+        const choice = form._researchChoices?.find(item => item.id === Number(form.elements.history_id.value));
+        if (!choice) { message('请重新读取并选择已有成果。',true); return; }
+        const button = form.querySelector('button'); button.disabled = true;
+        try {
+            await request('/imports/' + item.import_id + '/artifacts',{expected_revision:item.revision,module:form.elements.module.value,history_id:Number(form.elements.history_id.value),expected_history_timestamp:choice.created_at});
+            await loadImports(); message('已有营销成果已关联；可在完整工作台人工记录测试与复盘。');
+        } catch (error) { message(error.message,true); }
+        finally { button.disabled = false; }
+    }
+
+    if (root.addEventListener) root.addEventListener('message',receiveSource);
+
+    const api = { init, suspend: () => { state.generation++; closeWorkbench(); }, applyDraft, undoDraft, escapeHtml };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     root.ResearchPanel = api;
 })(typeof window !== 'undefined' ? window : globalThis);

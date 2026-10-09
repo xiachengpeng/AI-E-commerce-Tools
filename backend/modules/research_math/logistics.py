@@ -42,6 +42,8 @@ def logistics_weights(
         and height is not None
         else None
     )
+    if volumetric is not None and not isfinite(volumetric):
+        raise ValueError('calculated weight exceeds the numeric range')
     return {
         "actual_weight_kg": actual,
         "volumetric_weight_kg": volumetric,

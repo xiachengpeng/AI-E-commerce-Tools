@@ -43,6 +43,8 @@ def scenario_rows(
         }
         for key, cvr in (("low", low), ("base", base), ("high", high))
     }
+    if any(not isfinite(value) for row in rows.values() for value in row.values()):
+        raise ValueError('calculated scenario exceeds the numeric range')
     return {
         "scope": traffic_scope,
         **rows,

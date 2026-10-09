@@ -41,12 +41,14 @@ class ResearchClient:
         self.token = config.get('token')
         self.base_url = config.get('base_url', '')
         try:
+            if not isinstance(self.token, str) or not isinstance(self.base_url, str):
+                raise ValueError
             p = urlsplit(self.base_url)
             valid = (p.scheme == 'https' or (p.scheme == 'http' and p.hostname in {'127.0.0.1', 'localhost', '::1'}))
             if not valid or not p.hostname or p.username or p.password or p.path not in {'', '/'} or p.query or p.fragment or not self.token:
                 raise ValueError
             _ = p.port
-        except ValueError:
+        except (ValueError, TypeError):
             raise ResearchError('unconfigured', '研究连接配置不可用；请检查本机安全连接') from None
         self.transport = transport
 

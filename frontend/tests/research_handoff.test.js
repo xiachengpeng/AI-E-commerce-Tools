@@ -52,14 +52,14 @@ async function panelFixture() {
     const context = { document: { getElementById: node }, AbortSignal, URL, Event, crypto: require('node:crypto'),
         fetch: async url => ({ ok: true, json: async () => {
             if (url.endsWith('/session')) return { csrf_token: 'test', enabled: true };
-            if (url.endsWith('/projects')) return { projects: [], next_cursor: null };
+            if (url.endsWith('/projects')) return { projects: [], next_cursor: 'cursor' };
             if (url.endsWith('/preview')) return new Promise(resolve => { resolvePreview = resolve; });
             if (url.endsWith('/confirm-fact')) return new Promise(resolve => { resolveConfirmation = resolve; });
             return { id: 'p', title: 'Travel', market: 'US', products: [product, { ...product, source_ref: { ...product.source_ref, product_id: 'two' } }] };
         } }) };
     context.window = context;
     vm.runInNewContext(fs.readFileSync(require.resolve('../js/research.js'), 'utf8'), context);
-    const click = data => handlers.click({ target: { closest: () => ({ dataset: data, hasAttribute: key => key === 'data-research-preview' && data.preview }) } });
+    const click = data => handlers.click({ target: { closest: () => ({ id: data.buttonId, dataset: data, hasAttribute: key => key === 'data-research-preview' && data.preview }) } });
     const settle = () => new Promise(resolve => setImmediate(resolve));
     await context.ResearchPanel.init(); click({ researchProject: 'p' }); await settle(); click({ researchProduct: 'one' });
     return { context, node, click, settle, resolve: value => resolvePreview(value),
@@ -93,4 +93,11 @@ test('late confirmation cannot reset a newly edited form after reselection', asy
     f.node('researchProductDetail').innerHTML = 'New form with user edits';
     f.resolveConfirmation({}); await f.settle();
     assert.equal(f.node('researchProductDetail').innerHTML, 'New form with user edits');
+});
+
+test('double clicking pagination issues only one request for the current cursor', async () => {
+    const f = await panelFixture(); let count = 0;
+    f.context.fetch = async () => { count++; return { ok: true, json: () => new Promise(() => {}) }; };
+    f.click({ buttonId: 'researchMoreProjects' }); f.click({ buttonId: 'researchMoreProjects' });
+    await f.settle(); assert.equal(count, 1);
 });
