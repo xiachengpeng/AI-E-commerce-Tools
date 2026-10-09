@@ -1944,7 +1944,27 @@
           "sha256": "2bfc3a4fc86fb0bbca83624a7b27501493d284fa02121d3c8188cb9deddcc077"
         }
       ],
-      "unresolved": []
+      "unresolved": [],
+      "tables": [
+        "ads_history",
+        "ai_capability_bindings",
+        "ai_provider_configs",
+        "analysis_history",
+        "app_settings",
+        "firecrawl_configs",
+        "listing_history",
+        "render_history",
+        "research_import_events",
+        "research_links",
+        "research_schema",
+        "square_redraw_batches",
+        "square_redraw_history",
+        "square_redraw_items",
+        "storage_configs",
+        "text_translation_history",
+        "translation_history",
+        "watermark_removal_history"
+      ]
     },
     "research": {
       "source_hashes": {
@@ -3454,7 +3474,23 @@
           "sha256": "3b97a3aa2373dbce8ff6b9972be861291f0457401c6a31adeb48f2fdf6bddcc2"
         }
       ],
-      "unresolved": []
+      "unresolved": [],
+      "tables": [
+        "alembic_version",
+        "collector_cache",
+        "daily_usage",
+        "feishu_outbox",
+        "job_checkpoints",
+        "runtime_alerts",
+        "runtime_events",
+        "runtime_health",
+        "runtime_jobs",
+        "workbench_actions",
+        "workbench_events",
+        "workbench_projects",
+        "workbench_provider_logs",
+        "workbench_sync_runs"
+      ]
     }
   },
   "coverage": [
@@ -3468,7 +3504,7 @@
       "handler": "compare",
       "target": "/compare",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3481,7 +3517,7 @@
       "handler": "api_create_ai_provider",
       "target": "/api/settings/ai/providers",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3494,7 +3530,7 @@
       "handler": "api_list_ai_providers",
       "target": "/api/settings/ai/providers",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3507,7 +3543,7 @@
       "handler": "api_update_ai_provider",
       "target": "/api/settings/ai/providers/{provider_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3520,7 +3556,7 @@
       "handler": "api_delete_ai_provider",
       "target": "/api/settings/ai/providers/{provider_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3533,7 +3569,7 @@
       "handler": "api_enable_ai_provider",
       "target": "/api/settings/ai/providers/{provider_id}/enable",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3546,7 +3582,7 @@
       "handler": "api_disable_ai_provider",
       "target": "/api/settings/ai/providers/{provider_id}/disable",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3559,7 +3595,7 @@
       "handler": "api_get_ai_bindings",
       "target": "/api/settings/ai/bindings",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3572,7 +3608,7 @@
       "handler": "api_set_ai_binding",
       "target": "/api/settings/ai/bindings/{capability}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3585,7 +3621,7 @@
       "handler": "api_test_ai_provider",
       "target": "/api/settings/ai/providers/test",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3598,7 +3634,7 @@
       "handler": "api_fetch_provider_models",
       "target": "/api/settings/ai/providers/models/fetch",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3611,7 +3647,7 @@
       "handler": "reveal_saved_secret",
       "target": "/api/settings/secrets/reveal",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3624,7 +3660,7 @@
       "handler": "api_proxy_usage_query",
       "target": "/api/settings/ai/providers/usage-query/proxy",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3637,7 +3673,7 @@
       "handler": "api_test_provider_balance",
       "target": "/api/settings/ai/providers/balance/test",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3650,7 +3686,7 @@
       "handler": "api_test_saved_ai_provider",
       "target": "/api/settings/ai/providers/{provider_id}/test",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3663,7 +3699,7 @@
       "handler": "api_query_provider_balance",
       "target": "/api/settings/ai/providers/{provider_id}/balance",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3676,7 +3712,7 @@
       "handler": "api_record_provider_balance",
       "target": "/api/settings/ai/providers/{provider_id}/balance/record",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3689,7 +3725,7 @@
       "handler": "api_get_provider_usage_query_config",
       "target": "/api/settings/ai/providers/{provider_id}/usage-query",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3702,7 +3738,7 @@
       "handler": "api_update_provider_usage_query_config",
       "target": "/api/settings/ai/providers/{provider_id}/usage-query",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3715,7 +3751,7 @@
       "handler": "api_get_crawler_settings",
       "target": "/api/settings/crawler",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3728,7 +3764,7 @@
       "handler": "api_update_crawler_settings",
       "target": "/api/settings/crawler",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3741,7 +3777,7 @@
       "handler": "api_test_crawler_connection",
       "target": "/api/settings/crawler/test",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3754,7 +3790,7 @@
       "handler": "api_recent_logs",
       "target": "/api/settings/logs/recent",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3767,7 +3803,7 @@
       "handler": "api_stream_logs",
       "target": "/api/settings/logs/stream",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3780,7 +3816,7 @@
       "handler": "get_frontend_config",
       "target": "/config",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3793,7 +3829,7 @@
       "handler": "api_square_redraw_create",
       "target": "/api/square-redraw/batches",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3806,7 +3842,7 @@
       "handler": "api_square_redraw_get",
       "target": "/api/square-redraw/batches/{batch_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3819,7 +3855,7 @@
       "handler": "api_square_redraw_retry_failed",
       "target": "/api/square-redraw/batches/{batch_id}/retry-failed",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3832,7 +3868,7 @@
       "handler": "api_square_redraw_process_item",
       "target": "/api/square-redraw/batches/{batch_id}/items/{item_id}/process",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3845,7 +3881,7 @@
       "handler": "api_square_redraw_delete_item",
       "target": "/api/square-redraw/batches/{batch_id}/items/{item_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3858,7 +3894,7 @@
       "handler": "api_square_redraw_download",
       "target": "/api/square-redraw/batches/{batch_id}/download",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3871,7 +3907,7 @@
       "handler": "api_export_launch_kit",
       "target": "/api/export/launch-kit",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3884,7 +3920,7 @@
       "handler": "api_download_launch_kit",
       "target": "/api/export/launch-kit/{kit_id}/download",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3897,7 +3933,7 @@
       "handler": "get_brand_profiles_endpoint",
       "target": "/api/brand-profiles",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3910,7 +3946,7 @@
       "handler": "save_brand_profiles_endpoint",
       "target": "/api/brand-profiles",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3923,7 +3959,7 @@
       "handler": "save_history",
       "target": "/api/history/{module}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3936,7 +3972,7 @@
       "handler": "get_history",
       "target": "/api/history/{module}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3949,7 +3985,7 @@
       "handler": "get_history_item",
       "target": "/api/history/{module}/{item_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3962,7 +3998,7 @@
       "handler": "batch_delete_history",
       "target": "/api/history/{module}/batch-delete",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3975,7 +4011,7 @@
       "handler": "batch_delete_history",
       "target": "/api/history/{module}/batch-delete",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -3988,7 +4024,7 @@
       "handler": "delete_history",
       "target": "/api/history/{module}/{id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4001,7 +4037,7 @@
       "handler": "api_translate_text",
       "target": "/api/translate-text",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4014,7 +4050,7 @@
       "handler": "api_listing_generate",
       "target": "/api/listing/generate",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4027,7 +4063,7 @@
       "handler": "api_listing_extract",
       "target": "/api/listing/extract",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4040,7 +4076,7 @@
       "handler": "api_listing_compliance",
       "target": "/api/listing/compliance",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4053,7 +4089,7 @@
       "handler": "api_listing_regenerate_section",
       "target": "/api/listing/regenerate-section",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4066,7 +4102,7 @@
       "handler": "api_ads_generate",
       "target": "/api/ads/generate",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4079,7 +4115,7 @@
       "handler": "api_watermark_removal",
       "target": "/api/watermark-removal",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4092,7 +4128,7 @@
       "handler": "api_ai_generate",
       "target": "/api/ai/generate",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4105,7 +4141,7 @@
       "handler": "receive_frontend_log",
       "target": "/log",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4118,7 +4154,7 @@
       "handler": "api_compress_webp",
       "target": "/api/image/compress-webp",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4131,7 +4167,7 @@
       "handler": "session",
       "target": "/api/research/v1/session",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4144,7 +4180,7 @@
       "handler": "markets",
       "target": "/api/research/v1/markets",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4157,7 +4193,7 @@
       "handler": "logistics",
       "target": "/api/research/v1/math/logistics",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4170,7 +4206,7 @@
       "handler": "scenarios",
       "target": "/api/research/v1/math/scenarios",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4183,7 +4219,7 @@
       "handler": "projects",
       "target": "/api/research/v1/projects",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4196,7 +4232,7 @@
       "handler": "project",
       "target": "/api/research/v1/projects/{project_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4209,7 +4245,7 @@
       "handler": "report",
       "target": "/api/research/v1/projects/{project_id}/report",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4222,7 +4258,7 @@
       "handler": "confirmation_status",
       "target": "/api/research/v1/projects/{project_id}/confirmations/{command_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4235,7 +4271,7 @@
       "handler": "preview",
       "target": "/api/research/v1/projects/{project_id}/products/{product_id}/preview",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4248,7 +4284,7 @@
       "handler": "confirm_fact",
       "target": "/api/research/v1/projects/{project_id}/products/{product_id}/confirm-fact",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4261,7 +4297,7 @@
       "handler": "list_imports",
       "target": "/api/research/v1/imports",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4274,7 +4310,7 @@
       "handler": "import_status",
       "target": "/api/research/v1/imports/{import_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4287,7 +4323,7 @@
       "handler": "save_import",
       "target": "/api/research/v1/projects/{project_id}/products/{product_id}/imports",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4300,7 +4336,7 @@
       "handler": "attach_artifact",
       "target": "/api/research/v1/imports/{import_id}/artifacts",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4313,7 +4349,7 @@
       "handler": "artifact_choices",
       "target": "/api/research/v1/artifact-choices",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4326,7 +4362,7 @@
       "handler": "research_command",
       "target": "/api/research/v1/projects/{project_id}/commands",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4339,7 +4375,7 @@
       "handler": "research_command_status",
       "target": "/api/research/v1/projects/{project_id}/commands/{command_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4352,7 +4388,7 @@
       "handler": "research_actions",
       "target": "/api/research/v1/projects/{project_id}/actions",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4365,7 +4401,7 @@
       "handler": "get_configs_endpoint",
       "target": "/configs",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4378,7 +4414,7 @@
       "handler": "save_config_endpoint",
       "target": "/config",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4391,7 +4427,7 @@
       "handler": "delete_config_endpoint",
       "target": "/config/{config_id}",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4404,7 +4440,7 @@
       "handler": "set_default_config_endpoint",
       "target": "/config/{config_id}/default",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4417,7 +4453,7 @@
       "handler": "test_connection_endpoint",
       "target": "/test",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4430,7 +4466,7 @@
       "handler": "upload_image_endpoint",
       "target": "/upload-image",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4440,7 +4476,7 @@
       "name": "frontend/index.html",
       "target": "frontend/index.html",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4450,7 +4486,7 @@
       "name": "ads_history",
       "target": "backend/history.db:ads_history",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4460,7 +4496,7 @@
       "name": "ai_capability_bindings",
       "target": "backend/history.db:ai_capability_bindings",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4470,7 +4506,7 @@
       "name": "ai_provider_configs",
       "target": "backend/history.db:ai_provider_configs",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4480,7 +4516,7 @@
       "name": "analysis_history",
       "target": "backend/history.db:analysis_history",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4490,7 +4526,7 @@
       "name": "app_settings",
       "target": "backend/history.db:app_settings",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4500,7 +4536,7 @@
       "name": "firecrawl_configs",
       "target": "backend/history.db:firecrawl_configs",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4510,7 +4546,7 @@
       "name": "listing_history",
       "target": "backend/history.db:listing_history",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4520,7 +4556,7 @@
       "name": "render_history",
       "target": "backend/history.db:render_history",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4530,7 +4566,7 @@
       "name": "research_import_events",
       "target": "backend/history.db:research_import_events",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4540,7 +4576,7 @@
       "name": "research_links",
       "target": "backend/history.db:research_links",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4550,7 +4586,7 @@
       "name": "research_schema",
       "target": "backend/history.db:research_schema",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4560,7 +4596,7 @@
       "name": "square_redraw_batches",
       "target": "backend/history.db:square_redraw_batches",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4570,7 +4606,7 @@
       "name": "square_redraw_history",
       "target": "backend/history.db:square_redraw_history",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4580,7 +4616,7 @@
       "name": "square_redraw_items",
       "target": "backend/history.db:square_redraw_items",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4590,7 +4626,7 @@
       "name": "storage_configs",
       "target": "backend/history.db:storage_configs",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4600,7 +4636,7 @@
       "name": "text_translation_history",
       "target": "backend/history.db:text_translation_history",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4610,7 +4646,7 @@
       "name": "translation_history",
       "target": "backend/history.db:translation_history",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4620,7 +4656,7 @@
       "name": "watermark_removal_history",
       "target": "backend/history.db:watermark_removal_history",
       "task": 22,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -4633,7 +4669,7 @@
       "handler": "projects",
       "target": "backend/research/api/integration.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4646,7 +4682,7 @@
       "handler": "project",
       "target": "backend/research/api/integration.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4659,7 +4695,7 @@
       "handler": "product",
       "target": "backend/research/api/integration.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4672,7 +4708,7 @@
       "handler": "report",
       "target": "backend/research/api/integration.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4685,7 +4721,7 @@
       "handler": "confirmation_status",
       "target": "backend/research/api/integration.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4698,7 +4734,7 @@
       "handler": "confirm_fact",
       "target": "backend/research/api/integration.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4711,7 +4747,7 @@
       "handler": "command_status",
       "target": "backend/research/api/integration.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4724,7 +4760,7 @@
       "handler": "user_command",
       "target": "backend/research/api/integration.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4737,7 +4773,7 @@
       "handler": "action_statuses",
       "target": "backend/research/api/integration.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4750,7 +4786,7 @@
       "handler": "home",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4763,7 +4799,7 @@
       "handler": "marketing_home",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4776,7 +4812,7 @@
       "handler": "asset_file",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4789,7 +4825,7 @@
       "handler": "ui_icon",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4802,7 +4838,7 @@
       "handler": "live_logs",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4815,7 +4851,7 @@
       "handler": "log_stream",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4828,7 +4864,7 @@
       "handler": "provider_settings",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4841,7 +4877,7 @@
       "handler": "save_provider_settings",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4854,7 +4890,7 @@
       "handler": "ai_settings",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4867,7 +4903,7 @@
       "handler": "save_ai_settings",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4880,7 +4916,7 @@
       "handler": "project_direction",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4893,7 +4929,7 @@
       "handler": "translate_ad",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4906,7 +4942,7 @@
       "handler": "session",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4919,7 +4955,7 @@
       "handler": "projects",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4932,7 +4968,7 @@
       "handler": "create_project",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4945,7 +4981,7 @@
       "handler": "project",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4958,7 +4994,7 @@
       "handler": "delete_project",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4971,7 +5007,7 @@
       "handler": "command",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4984,7 +5020,7 @@
       "handler": "sync_status",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -4997,7 +5033,7 @@
       "handler": "sync_preview",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5010,7 +5046,7 @@
       "handler": "sync_enqueue",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5023,7 +5059,7 @@
       "handler": "sync_retry",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5036,7 +5072,7 @@
       "handler": "sources",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5049,7 +5085,7 @@
       "handler": "intelligence",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5062,7 +5098,7 @@
       "handler": "actions",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5075,7 +5111,7 @@
       "handler": "queue_action",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5088,7 +5124,7 @@
       "handler": "stop_workbench_action",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5101,7 +5137,7 @@
       "handler": "provider_evidence",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5114,7 +5150,7 @@
       "handler": "screenshot",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5127,7 +5163,7 @@
       "handler": "media_download",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5140,7 +5176,7 @@
       "handler": "import_trends",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5153,7 +5189,7 @@
       "handler": "report",
       "target": "backend/research/api/workbench.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5166,7 +5202,7 @@
       "handler": "dashboard",
       "target": "backend/research/runtime/server.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5179,7 +5215,7 @@
       "handler": "dashboard_data",
       "target": "backend/research/runtime/server.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5192,7 +5228,7 @@
       "handler": "evidence_file",
       "target": "backend/research/runtime/server.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5205,7 +5241,7 @@
       "handler": "favicon",
       "target": "backend/research/runtime/server.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5218,7 +5254,7 @@
       "handler": "health",
       "target": "backend/research/runtime/server.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5231,7 +5267,7 @@
       "handler": "ready",
       "target": "backend/research/runtime/server.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5244,7 +5280,7 @@
       "handler": "integrations",
       "target": "backend/research/runtime/server.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5257,7 +5293,7 @@
       "handler": "metrics",
       "target": "backend/research/runtime/server.py",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py::test_inventory_has_every_route_and_action",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5267,7 +5303,7 @@
       "name": "add_creative_reference",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5277,7 +5313,7 @@
       "name": "add_keyword",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5287,7 +5323,7 @@
       "name": "add_product",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5297,7 +5333,7 @@
       "name": "add_sales_estimate",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5307,7 +5343,7 @@
       "name": "approve_keyword",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5317,7 +5353,7 @@
       "name": "archive_keyword",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5327,7 +5363,7 @@
       "name": "configure_collection",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5337,7 +5373,7 @@
       "name": "configure_rules",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5347,7 +5383,7 @@
       "name": "confirm_creatives",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5357,7 +5393,7 @@
       "name": "confirm_product",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5367,7 +5403,7 @@
       "name": "confirm_test_result",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5377,7 +5413,7 @@
       "name": "decide",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5387,7 +5423,7 @@
       "name": "economics",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5397,7 +5433,7 @@
       "name": "edit_keyword",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5407,7 +5443,7 @@
       "name": "evaluate",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5417,7 +5453,7 @@
       "name": "evidence",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5427,7 +5463,7 @@
       "name": "focus_product",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5437,7 +5473,7 @@
       "name": "funnel",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5447,7 +5483,7 @@
       "name": "identify",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5457,7 +5493,7 @@
       "name": "link_product_offers",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5467,7 +5503,7 @@
       "name": "merge_products",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5477,7 +5513,7 @@
       "name": "record_funnel_investigation",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5487,7 +5523,7 @@
       "name": "restore_keyword",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5497,7 +5533,7 @@
       "name": "restore_product",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5507,7 +5543,7 @@
       "name": "review",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5517,7 +5553,7 @@
       "name": "revise_test_result",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5527,7 +5563,7 @@
       "name": "set_logistics_profile",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5537,7 +5573,7 @@
       "name": "split_product_offer",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5547,7 +5583,7 @@
       "name": "test_plan",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5557,7 +5593,7 @@
       "name": "test_result",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5567,7 +5603,7 @@
       "name": "triage_product",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5577,7 +5613,7 @@
       "name": "undo_offer_link",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5587,7 +5623,7 @@
       "name": "undo_triage_product",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5597,7 +5633,7 @@
       "name": "void_test_result",
       "target": "ResearchFacade.command",
       "task": 7,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5607,7 +5643,7 @@
       "name": "evaluate",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5617,7 +5653,7 @@
       "name": "feishu_writeback",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5627,7 +5663,7 @@
       "name": "keyword_scan",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5637,7 +5673,7 @@
       "name": "keyword_seed",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5647,7 +5683,7 @@
       "name": "landing_scan",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5657,7 +5693,7 @@
       "name": "link_validation",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5667,7 +5703,7 @@
       "name": "meta_scan",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5677,7 +5713,7 @@
       "name": "niche_discovery",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5687,7 +5723,7 @@
       "name": "niche_research",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5697,7 +5733,7 @@
       "name": "trends_scan",
       "target": "research worker",
       "task": 5,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5707,7 +5743,7 @@
       "name": "frontend/legacy/dashboard.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5717,7 +5753,7 @@
       "name": "frontend/workbench.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5727,7 +5763,7 @@
       "name": "tests/fixtures/landing/category.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5737,7 +5773,7 @@
       "name": "tests/fixtures/landing/product.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5747,7 +5783,7 @@
       "name": "tests/fixtures/meta/captcha.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5757,7 +5793,7 @@
       "name": "tests/fixtures/meta/empty-smoke.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5767,7 +5803,7 @@
       "name": "tests/fixtures/meta/empty.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5777,7 +5813,7 @@
       "name": "tests/fixtures/meta/results.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5787,7 +5823,7 @@
       "name": "tests/fixtures/meta/reverted-filter.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5797,7 +5833,7 @@
       "name": "tests/fixtures/meta/smoke.html",
       "target": "frontend research workspace",
       "task": 12,
-      "test": "backend/tests/test_full_merge_inventory.py",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_behavior_parity"
     },
     {
@@ -5807,7 +5843,7 @@
       "name": "alembic_version",
       "target": "backend/history.db:alembic_version",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5817,7 +5853,7 @@
       "name": "collector_cache",
       "target": "backend/history.db:collector_cache",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5827,7 +5863,7 @@
       "name": "daily_usage",
       "target": "backend/history.db:daily_usage",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5837,7 +5873,7 @@
       "name": "feishu_outbox",
       "target": "backend/history.db:feishu_outbox",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5847,7 +5883,7 @@
       "name": "job_checkpoints",
       "target": "backend/history.db:job_checkpoints",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5857,7 +5893,7 @@
       "name": "runtime_alerts",
       "target": "backend/history.db:runtime_alerts",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5867,7 +5903,7 @@
       "name": "runtime_events",
       "target": "backend/history.db:runtime_events",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5877,7 +5913,7 @@
       "name": "runtime_health",
       "target": "backend/history.db:runtime_health",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5887,7 +5923,7 @@
       "name": "runtime_jobs",
       "target": "backend/history.db:runtime_jobs",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5897,7 +5933,7 @@
       "name": "workbench_actions",
       "target": "backend/history.db:workbench_actions",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5907,7 +5943,7 @@
       "name": "workbench_events",
       "target": "backend/history.db:workbench_events",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5917,7 +5953,7 @@
       "name": "workbench_projects",
       "target": "backend/history.db:workbench_projects",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5927,7 +5963,7 @@
       "name": "workbench_provider_logs",
       "target": "backend/history.db:workbench_provider_logs",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     },
     {
@@ -5937,7 +5973,7 @@
       "name": "workbench_sync_runs",
       "target": "backend/history.db:workbench_sync_runs",
       "task": 18,
-      "test": "backend/tests/test_full_merge_inventory.py::test_backup_recovers_wal_rows",
+      "test": "backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix",
       "acceptance": "pending_live_restore"
     }
   ],
@@ -5945,6 +5981,7 @@
     "AST routes reflect declaration prefixes; include_router prefixes and runtime mounts require review",
     "Referenced source pages include templates and documentation examples; UI parity requires Task12-16 review",
     "Mapping test pointers validate inventory/recovery only; business acceptance remains pending",
-    "Remote worker remains active; no cutover permitted"
+    "Remote worker remains active; no cutover permitted",
+    "Snapshot verified without externally anchored manifest digest is integrity-only; completeness_verified must be true plus operator gates before cutover"
   ]
 }

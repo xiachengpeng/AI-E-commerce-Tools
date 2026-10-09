@@ -140,3 +140,100 @@ def test_mutating_copy_is_rejected(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         create_snapshot(tmp_path / 'snapshot', object_roots=[source])
     assert not (tmp_path / 'snapshot/manifest.json').exists()
+
+
+def test_backup_refuses_existing_verification_copy(tmp_path):
+    import pytest
+    source = tmp_path / 'live.db'
+    with sqlite3.connect(source) as db:
+        db.execute('CREATE TABLE x(id)')
+    destination = tmp_path / 'snapshot.db'
+    reference = tmp_path / 'snapshot.db.verification-copy'
+    reference.write_bytes(b'preserve')
+    with pytest.raises(FileExistsError):
+        backup_sqlite(source, destination)
+    assert reference.read_bytes() == b'preserve'
+    assert not destination.exists()
+    reference.unlink()
+    reference.symlink_to(source)
+    with pytest.raises(FileExistsError):
+        backup_sqlite(source, destination)
+    assert reference.is_symlink()
+
+
+def test_verification_copy_private_and_cleaned_on_failure(tmp_path, monkeypatch):
+    import pytest
+    import scripts.full_merge.backup as module
+    source = tmp_path / 'live.db'
+    with sqlite3.connect(source) as db:
+        db.execute('CREATE TABLE x(id)')
+    def fail(path):
+        reference = tmp_path / 'snapshot.db.verification-copy'
+        assert reference.stat().st_mode & 0o777 == 0o600
+        raise RuntimeError('fixture failure')
+    monkeypatch.setattr(module, 'database_stats', fail)
+    with pytest.raises(RuntimeError):
+        backup_sqlite(source, tmp_path / 'snapshot.db')
+    assert not (tmp_path / 'snapshot.db.verification-copy').exists()
+
+
+def test_snapshot_requires_anchor_for_completeness(tmp_path):
+    import hashlib
+    source = tmp_path / 'objects'
+    source.mkdir()
+    (source / 'a').write_bytes(b'a')
+    (source / 'b').write_bytes(b'b')
+    snapshot = tmp_path / 'snapshot'
+    create_snapshot(snapshot, object_roots=[source])
+    digest = hashlib.sha256((snapshot / 'manifest.json').read_bytes()).hexdigest()
+    assert verify_snapshot(snapshot)['completeness_verified'] is False
+    assert verify_snapshot(snapshot, expected_digest=digest)['completeness_verified'] is True
+    manifest = json.loads((snapshot / 'manifest.json').read_text())
+    manifest['objects'].pop()
+    (snapshot / 'manifest.json').write_text(json.dumps(manifest))
+    assert not verify_snapshot(snapshot, expected_digest=digest)['verified']
+    assert not verify_snapshot(snapshot)['verified']
+
+
+def test_full_merge_coverage_matrix():
+    from scripts.full_merge.inventory import validate_coverage
+    path = Path(__file__).resolve().parents[2] / 'docs/merge-assessment/full-merge-coverage.json'
+    matrix = json.loads(path.read_text())
+    assert validate_coverage(matrix)['verified']
+    import copy
+    for mutate in [lambda m: m['coverage'].pop(), lambda m: m['coverage'].append(m['coverage'][0]), lambda m: m['coverage'][0].update(task=999), lambda m: m['coverage'][0].update(target=''), lambda m: m['coverage'][0].update(test='missing'), lambda m: m['coverage'][0].update(id='extra')]:
+        invalid = copy.deepcopy(matrix)
+        mutate(invalid)
+        assert not validate_coverage(invalid)['verified']
+
+
+def test_removed_category_and_rewritten_roster_fail_anchor(tmp_path):
+    import hashlib
+    source = tmp_path / 'live.db'
+    with sqlite3.connect(source) as db:
+        db.execute('CREATE TABLE x(id)')
+    key = tmp_path / 'key'
+    key.write_bytes(b'private fixture')
+    snapshot = tmp_path / 'snapshot'
+    create_snapshot(snapshot, databases=[source], key_files=[key])
+    digest = hashlib.sha256((snapshot / 'manifest.json').read_bytes()).hexdigest()
+    manifest = json.loads((snapshot / 'manifest.json').read_text())
+    manifest['keys'] = []
+    (snapshot / 'manifest.json').write_text(json.dumps(manifest))
+    assert not verify_snapshot(snapshot)['verified']
+    manifest['requested_sources'] = [s for s in manifest['requested_sources'] if s['category'] != 'keys']
+    manifest['expected_counts']['keys'] = 0
+    (snapshot / 'manifest.json').write_text(json.dumps(manifest))
+    assert verify_snapshot(snapshot)['integrity_verified']
+    assert not verify_snapshot(snapshot)['completeness_verified']
+    assert not verify_snapshot(snapshot, expected_digest=digest)['verified']
+
+
+def test_dynamic_prefix_and_actions_are_unresolved(tmp_path):
+    (tmp_path / 'app.py').write_text('''router = APIRouter(prefix=PREFIX)
+USER_ACTIONS = build_actions()
+@router.get("/items")
+def items(): pass
+''')
+    result = inventory(tmp_path)
+    assert {'dynamic_prefix', 'dynamic_user_actions'} <= {e['reason'] for e in result['unresolved']}

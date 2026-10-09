@@ -6,17 +6,36 @@ from pathlib import Path
 from scripts.full_merge.backup import database_stats
 
 
-def verify_snapshot(directory: Path) -> dict:
+def verify_snapshot(directory: Path, *, expected_digest: str | None = None) -> dict:
     directory = Path(directory).resolve()
-    result = {'verified': False, 'databases': 0, 'tables': 0, 'objects': 0, 'keys': 0, 'failures': []}
+    result = {'verified': False, 'integrity_verified': False, 'completeness_verified': False, 'databases': 0, 'tables': 0, 'objects': 0, 'keys': 0, 'failures': []}
     try:
-        manifest = json.loads((directory / 'manifest.json').read_text())
+        manifest_bytes = (directory / 'manifest.json').read_bytes()
+        manifest = json.loads(manifest_bytes)
+        if expected_digest is not None and hashlib.sha256(manifest_bytes).hexdigest() != expected_digest:
+            raise ValueError('external manifest anchor mismatch')
         if not isinstance(manifest, dict) or manifest.get('version') != 1:
             raise ValueError('manifest version')
         categories = ('databases', 'objects', 'keys')
         if any(not isinstance(manifest.get(category), list) for category in categories) or not any(manifest[category] for category in categories):
             raise ValueError('manifest categories')
-    except (OSError, ValueError, TypeError):
+        roster = manifest.get('requested_sources')
+        counts = manifest.get('expected_counts')
+        if not isinstance(roster, list) or not roster or not isinstance(counts, dict):
+            raise ValueError('missing source roster')
+        seen_sources = set()
+        for source in roster:
+            category, index = source['category'], source['index']
+            if category not in categories or type(index) is not int or index < 0 or (category, index) in seen_sources or type(source['files']) is not int or source['files'] < 0 or not isinstance(source['source_id'], str) or len(source['source_id']) != 64:
+                raise ValueError('invalid source roster')
+            seen_sources.add((category, index))
+            matching = [e for e in manifest[category] if isinstance(e, dict) and e.get('path', '').startswith(f'{category}/{index}/')] if category != 'databases' else [e for e in manifest[category] if isinstance(e, dict) and e.get('path') == f'databases/{index}.db']
+            if len(matching) != source['files']:
+                raise ValueError('source file count mismatch')
+        for category in categories:
+            if type(counts.get(category)) is not int or counts[category] != len(manifest[category]) or sum(s['files'] for s in roster if s['category'] == category) != counts[category]:
+                raise ValueError('category count mismatch')
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
         result['failures'].append({'category': 'manifest', 'reason': 'invalid_manifest'})
         return result
     result['verified'] = True
@@ -44,4 +63,6 @@ def verify_snapshot(directory: Path) -> dict:
             if not valid:
                 result['verified'] = False
                 result['failures'].append({'category': category, 'index': index})
+    result['integrity_verified'] = result['verified']
+    result['completeness_verified'] = result['verified'] and expected_digest is not None
     return result

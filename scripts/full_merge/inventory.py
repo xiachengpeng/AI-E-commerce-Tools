@@ -38,7 +38,10 @@ def inventory(root: Path) -> dict:
             if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
-                        prefixes[target.id] = next((k.value.value for k in node.value.keywords if k.arg == 'prefix' and isinstance(k.value, ast.Constant) and isinstance(k.value.value, str)), '')
+                        if isinstance(node.value.func, ast.Name) and node.value.func.id in {'APIRouter', 'FastAPI'}:
+                            prefixes[target.id] = next((k.value.value for k in node.value.keywords if k.arg == 'prefix' and isinstance(k.value, ast.Constant) and isinstance(k.value.value, str)), '')
+                            if any(k.arg == 'prefix' and not (isinstance(k.value, ast.Constant) and isinstance(k.value.value, str)) for k in node.value.keywords):
+                                result['unresolved'].append({'file': name, 'line': node.lineno, 'reason': 'dynamic_prefix'})
             if isinstance(node, (ast.Assign, ast.AnnAssign)):
                 targets = node.targets if isinstance(node, ast.Assign) else [node.target]
                 for target in targets:
@@ -46,6 +49,8 @@ def inventory(root: Path) -> dict:
                         value = node.value
                         if isinstance(value, ast.Call) and value.args and isinstance(value.func, ast.Name) and value.func.id in {'frozenset', 'set', 'tuple'}:
                             value = value.args[0]
+                        if not isinstance(value, (ast.Dict, ast.Set, ast.List, ast.Tuple)):
+                            result['unresolved'].append({'file': name, 'line': node.lineno, 'reason': 'dynamic_user_actions'})
                         elements = value.keys if isinstance(value, ast.Dict) else value.elts if isinstance(value, (ast.Set, ast.List, ast.Tuple)) else []
                         actions.update(k.value for k in elements if isinstance(k, ast.Constant) and isinstance(k.value, str))
                     if isinstance(target, (ast.Name, ast.Attribute)) and (target.id if isinstance(target, ast.Name) else target.attr) == 'job_kind' and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
@@ -101,3 +106,37 @@ if __name__ == '__main__':
     parser.add_argument('root', type=Path)
     args = parser.parse_args()
     print(json.dumps(inventory(args.root), indent=2, ensure_ascii=False))
+
+
+def validate_coverage(matrix: dict) -> dict:
+    """Validate stored source identity coverage; business parity remains a separate gate."""
+    expected = {}
+    pointer = 'backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix'
+    failures = []
+    try:
+        for source, data in matrix['inventories'].items():
+            for route in data['routes']:
+                key = f"{source}:route:{route['method']}:{route['path']}:{route['file']}:{route['handler']}"
+                expected[key] = (source, 'route', route, 22 if source == 'main' else 7, route['path'] if source == 'main' else 'backend/research/' + route['file'].removeprefix('src/rabbit_hole/'))
+            for kind, field, task, target in [('action', 'user_actions', 7, 'ResearchFacade.command'), ('job_kind', 'job_kinds', 5, 'research worker'), ('page', 'pages', 12, 'frontend research workspace'), ('table', 'tables', 18, None)]:
+                for value in data[field]:
+                    key = f'{source}:{kind}:{value}'
+                    destination = 'backend/history.db:' + value if kind == 'table' else value if source == 'main' else target
+                    expected[key] = (source, kind, {'name': value}, 22 if source == 'main' else task, destination)
+        seen = set()
+        for entry in matrix['coverage']:
+            key = entry['id']
+            if key in seen or key not in expected:
+                failures.append('duplicate_or_extra_identity')
+                continue
+            seen.add(key)
+            source, kind, identity, task, target = expected[key]
+            if entry.get('source') != source or entry.get('kind') != kind or any(entry.get(k) != v for k, v in identity.items()):
+                failures.append('identity_mismatch')
+            if type(entry.get('task')) is not int or entry['task'] != task or entry.get('target') != target or entry.get('test') != pointer:
+                failures.append('invalid_mapping')
+        if seen != set(expected):
+            failures.append('missing_identity')
+    except (KeyError, TypeError, AttributeError):
+        failures.append('invalid_matrix')
+    return {'verified': not failures, 'expected': len(expected), 'failures': failures}

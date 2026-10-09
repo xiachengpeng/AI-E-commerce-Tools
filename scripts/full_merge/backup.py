@@ -1,4 +1,6 @@
-"""Opt-in private recovery snapshots; SQLite backup includes committed WAL rows."""
+"""Logical row hashes use O(row count) memory per table; freeze sources before backup.
+
+Opt-in private recovery snapshots; SQLite backup includes committed WAL rows."""
 import hashlib
 import json
 import os
@@ -35,20 +37,25 @@ def backup_sqlite(source: Path, destination: Path) -> dict:
     destination.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     os.close(descriptor)
+    reference = destination.with_name(destination.name + '.verification-copy')
+    reference_created = False
     try:
+        descriptor = os.open(reference, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(descriptor)
+        reference_created = True
         with _connect_readonly(source) as live, sqlite3.connect(destination) as restored:
             live.backup(restored)
         # Compare restored copies of the stable snapshot, never a moving live database.
-        reference = destination.with_name(destination.name + '.verification-copy')
         with _connect_readonly(destination) as snapshot, sqlite3.connect(reference) as copy:
             snapshot.backup(copy)
-        os.chmod(reference, 0o600)
         expected, actual = database_stats(destination), database_stats(reference)
-        reference.unlink()
         return {'verified': expected == actual and actual['integrity_ok'] and actual['foreign_key_errors'] == 0, 'stats': actual}
     except BaseException:
         destination.unlink(missing_ok=True)
         raise
+    finally:
+        if reference_created:
+            reference.unlink(missing_ok=True)
 
 
 def create_snapshot(directory: Path, *, databases=(), object_roots=(), key_files=()) -> dict:
@@ -75,7 +82,12 @@ def create_snapshot(directory: Path, *, databases=(), object_roots=(), key_files
         return state
     initial_state = source_state()
     directory.mkdir(mode=0o700, parents=True, exist_ok=False)
-    manifest = {'version': 1, 'databases': [], 'objects': [], 'keys': []}
+    manifest = {'version': 1, 'databases': [], 'objects': [], 'keys': [], 'requested_sources': []}
+    for category, sources in [('databases', databases), ('objects', object_roots), ('keys', key_files)]:
+        for index, source in enumerate(sources):
+            source = Path(source)
+            count = 1 if source.is_file() else sum(f.is_file() for f in source.rglob('*'))
+            manifest['requested_sources'].append({'category': category, 'index': index, 'source_id': hashlib.sha256(str(source.resolve()).encode()).hexdigest(), 'files': count})
     for index, source in enumerate(databases):
         relative = f'databases/{index}.db'
         result = backup_sqlite(source, directory / relative)
@@ -98,6 +110,7 @@ def create_snapshot(directory: Path, *, databases=(), object_roots=(), key_files
                 manifest[category].append({'path': relative, 'sha256': hashlib.sha256(target.read_bytes()).hexdigest(), 'bytes': target.stat().st_size})
     if source_state() != initial_state:
         raise ValueError('Sources changed during snapshot; freeze writes before retry')
+    manifest['expected_counts'] = {category: len(manifest[category]) for category in ('databases', 'objects', 'keys')}
     target = directory / 'manifest.json'
     target.write_text(json.dumps(manifest, indent=2))
     os.chmod(target, 0o600)
