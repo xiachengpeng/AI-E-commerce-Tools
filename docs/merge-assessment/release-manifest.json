@@ -1,0 +1,73 @@
+{
+  "contract_version": 1,
+  "created_date": "2026-10-09",
+  "main_source_commit": "ef7e347807d43d07449393b5dbec8ce65ff2e363",
+  "main_sources": {
+    "backend/main.py": "45b8751b74c1a4f2bce6b0ca15243014846ede2e346c4ac37064ed140eed49a7",
+    "backend/migrations/research_links_v1.py": "65aba9c5d2e154437815535abc77a6e54485667e358965a3c8a80626c870e11b",
+    "backend/models/research.py": "b520f813142e071fc00a7bf4f4aeb44653f479d21c6afe6995226373d346360d",
+    "backend/modules/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "backend/modules/research_math/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "backend/modules/research_math/estimates.py": "faaa04cbb367c437c14659e1389bf92da6982f357bf0e4a5ce0e464ecb49486f",
+    "backend/modules/research_math/logistics.py": "9d0faa76b13e5e5eb47b277e843068a33ab775441b85d8052900f5ff7469bcaf",
+    "backend/modules/research_math/markets.py": "a9f864202cc72c11449d96679fa525485a164eda33783921e36517276089f613",
+    "backend/routes/research.py": "f4e4de5106fb363c29c154dc24655fd8412dccafe30ace3de6417164f23c7507",
+    "backend/services/research_client.py": "8c4333a86b8a7f2b3f153e1de71da5504ed2f0f96fdf0bdabac3287c3b70a031",
+    "backend/services/research_mapper.py": "89b0ecb169ae5dd19c1240195e2ec2d9d1427f4494a3598bfbe7cf77b88fc873",
+    "backend/services/research_repository.py": "7b174844075d4a5c4b34c330b32cb4cdfcbb742af7b0603c3e691a256a42ffb1",
+    "backend/services/research_tunnel.py": "2b8901c22b3a562f48b67a3bec27d29b45652a12308349e38e55e1122e119b0c",
+    "backend/services/structured_ai_service.py": "88c6aa43ed12fd764d3b743e72d20155bec82609a8d913363a75959d2ccfa1f6",
+    "backend/tests/test_research_complete.py": "37c3f88df170d5fa3c22ffaa9953d6c81540a257f55f041364674a4f37bd30df",
+    "backend/tests/test_research_integration.py": "9ba602720c0711d96d2d248e8b292c56361cd38f0ca0d07090a3b5c06e43468a",
+    "backend/tests/test_research_math.py": "6ef85253c88c47a3a877534d2b5324652c3bf0e832e02b8ad885b3db6f356a0c",
+    "backend/tests/test_research_repository.py": "4ed261fbff3745234267c430049422c9fd7af6b2e835049804e0948c058e710d",
+    "backend/tests/test_research_tunnel.py": "4a91b04fba15de7b333b9af4ef60e2a78cf44972ee55a837a0e759c5b786a64d",
+    "backend/tests/test_structured_ai_service.py": "8371ed4e33dbe7e40755da7816334c3248799836cbfd3e39bf6cd3a7124b4606",
+    "frontend/css/research.css": "56d41e9b1bcfcceb587c21989c266cf23eaa8dfb90bd823eaa13db5dcf308186",
+    "frontend/index.html": "880397b6de32036181f8e24a557f1f5b5865fa476f02de0d1fd58a744c9af363",
+    "frontend/js/ads.js": "30d77e73be997c8f9a1824ecfd65385a6a488174646d0a906acc58f0f2a99d7d",
+    "frontend/js/app.js": "62cffb2220aa83834ed5e1b73ea01841e8591b5a3f1157de8e1ec8c3fa44aa17",
+    "frontend/js/research.js": "8a2efa350bb5a269611861c12fa722f9796a81bb92ea073cc57091c7826aa2d5",
+    "frontend/tests/research_ads_consumer.test.js": "457ee61ebb65ece6e69baae65e27c9b81dd46f3fd38a9d704083774776daeb62",
+    "frontend/tests/research_frame.test.js": "faf6adbe742cbdc79502499b0dbc1c6afd58a2e5599caac8226879c9e549d520",
+    "frontend/tests/research_handoff.test.js": "3886120994324a4fad301eaae998605e13545c675bd83e715222f3d35577c9ff",
+    "run.py": "79e70f77269b6a6db99f814a499d3d0357f8f46e51557fa6a60f5373b4c70815"
+  },
+  "main_dependency_hashes": {
+    "backend/requirements.txt": "9986cf2f72b78bb7abb68b671f627d2fe03ef53d0e0f287a84a6f373d3cf2d98",
+    "frontend/package-lock.json": "dc45e6ea9b4e6b61fdbd51938f7d2db4f4a7ebbde328ec45681b25029527bc72"
+  },
+  "research": {
+    "source_commit": "b749491c29fce8ac5bdad613f1ef569cb6df186b",
+    "build_hash": "9bfcfba4adc1e2af7eeaa61219dab55a3c56dfeab7c4433179538439886f0809",
+    "sources": {
+      "frontend/build.mjs": "02d4fff844f0da64ae89bc8c68a9ae818a3e2578bee13ab0d6e6eb32b3db5cc0",
+      "frontend/services/marketing_bridge.js": "8990e7b81f602ec0d18010892cb0cf6dbda37a4ea405741d9c9798948766e678",
+      "frontend/tests/marketing_bridge.test.mjs": "74e4df34a6e1bfb9f722d62cb459b1bc34fa56b97954b96f1dbf71435e800394",
+      "src/rabbit_hole/api/integration.py": "662936b7801103a1b45048774f39779cb2299f3475ca6a96d7c5d0d8dc6edc63",
+      "src/rabbit_hole/api/workbench.py": "751dd789be78a839adce22b1149d31815cd53aa17ecdc4c47a506ff1f692f9c8",
+      "src/rabbit_hole/application/integration_contracts.py": "d45183984c451324cf64d3f0802b48d935e5c404f1a7882a4fbb7690fe4d54e7",
+      "src/rabbit_hole/domain/marketing.py": "a8971e6997c7927dfbf9a00f13e6aeb6628e8c11cc89b1ea67d99967fba73055",
+      "src/rabbit_hole/domain/project.py": "97c127a3c08a5988f696f6a5cdc5baaf8823c99765e84d5dcb941cc05ed3e316",
+      "src/rabbit_hole/integrations/marketing_ai_adapter.py": "e389fe4065028e3788aae91e3e2a78fa275ede3f6d807eee1d1244de4801b9da",
+      "src/rabbit_hole/runtime/server.py": "6cf2c4acd54c2ae2bd1301999736edbb968be42b09cb35214a3d3a92b53ea0b3"
+    },
+    "dependency_hashes": {
+      "pyproject.toml": "9e14711f6bff1352468c0fbb8020b9697197c7420276d10cc37e887438672406",
+      "frontend/package-lock.json": "bb7b9673eef258636abdd260fbab7cda48ce23405e8879fde42545caa71e54a5"
+    }
+  },
+  "research_schema_revision": 1,
+  "queue_owner": "existing native workbench worker; no new consumer",
+  "tests": {
+    "main_backend_passed": 702,
+    "main_backend_skipped": 1,
+    "main_frontend_passed": 496,
+    "research_backend_passed": 1151,
+    "research_backend_skipped": 4,
+    "research_frontend_passed": 10,
+    "research_mypy_files": 79
+  },
+  "production_acceptance": "read-only browser/DTO/security/owned-tunnel outage/recovery/data integrity checks; paid external workflows not invoked",
+  "shared_live_ai_proxy_enabled": false
+}
