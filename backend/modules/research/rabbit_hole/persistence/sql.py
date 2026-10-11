@@ -51,9 +51,11 @@ def create_engine(url: str, *, readonly: bool = False, initialize_file: bool = T
         def configure(dbapi: Any, _: Any) -> None:
             dbapi.isolation_level = None
             cursor = dbapi.cursor()
-            for pragma in (("query_only=ON", "busy_timeout=30000") if readonly else ("busy_timeout=30000", "foreign_keys=ON", "journal_mode=WAL", "synchronous=FULL")):
-                cursor.execute("PRAGMA " + pragma)
-            cursor.close()
+            try:
+                for pragma in (("query_only=ON", "busy_timeout=30000") if readonly else ("busy_timeout=30000", "foreign_keys=ON", "journal_mode=WAL", "synchronous=FULL")):
+                    cursor.execute("PRAGMA " + pragma)
+            finally:
+                cursor.close()
 
         @event.listens_for(engine.sync_engine, "begin")
         def begin(connection: Any) -> None:

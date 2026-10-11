@@ -17,6 +17,6 @@ def test_sqlite_wal_and_pragma_settings(tmp_path):
         foreign_keys = conn.execute(text("PRAGMA foreign_keys;")).scalar()
 
     assert str(journal_mode).lower() == "wal"
-    assert busy_timeout == 5000
-    assert sync_mode == 1  # 1 corresponds to NORMAL in SQLite
+    assert busy_timeout == 30000
+    assert sync_mode == 2  # 2 corresponds to FULL in SQLite
     assert foreign_keys == 1
