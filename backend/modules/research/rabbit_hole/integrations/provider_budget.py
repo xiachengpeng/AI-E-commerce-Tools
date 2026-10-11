@@ -53,7 +53,7 @@ async def reserve(runner: Any, action: dict[str, Any], provider: str, slot: str)
     async with write_transaction(runner.store.engine) as c:
         await transaction_lock(c, "provider-budget:" + provider)
         row = (await c.execute(select(actions).where(actions.c.id == action['id']).with_for_update())).mappings().one()
-        if row['status'] != 'running' or row['attempt'] != action['attempt']:
+        if row['status'] != 'running' or row['attempt'] != action['attempt'] or row['lease_until'] is None or row['lease_until'] <= datetime.now(UTC):
             raise ProviderError('input_changed', '任务租约已变化')
         payload = dict(row['payload'])
         reservations = dict(payload.get('provider_reservations', {}))
@@ -104,12 +104,12 @@ async def meta(runner: Any, action: dict[str, Any], project: dict[str, Any], cli
     state = dict(action['payload'].get('apify_run', {}))
     if not state:
         await reserve(runner, action, 'apify', 'apify-run')
-        await checkpoint(runner, action, apify_run={'submission': 'uncertain'})
+        await checkpoint(runner, action, apify_run={'submission': 'uncertain', 'owner': {'action_id': str(action['id']), 'input_version': action['input_version'], 'fingerprint': action['payload'].get('fingerprint')}})
         await runner.log(action, 'submit', 'Apify API：提交任务，每次费用上限 $0.25，最多读取100条')
         run = (await request_json(client, 'POST', base + 'acts/XtaWFhbtfxyzqrFmd/runs', headers=headers,
             params={'build': '2.7.26', 'timeout': 180, 'memory': 512, 'maxTotalChargeUsd': 0.25},
             json={'urls': [{'url': url}], 'count': 100, 'limitPerSource': 100, 'scrapeAdDetails': False, 'runTag': str(action['id'])}))['data']
-        state = {'id': run['id'], 'dataset': run['defaultDatasetId'], 'started_at': run['startedAt'], 'build_id': run.get('buildId'), 'status': run.get('status', 'READY')}
+        state = {'owner': {'action_id': str(action['id']), 'input_version': action['input_version'], 'fingerprint': action['payload'].get('fingerprint')}, 'id': run['id'], 'dataset': run['defaultDatasetId'], 'started_at': run['startedAt'], 'build_id': run.get('buildId'), 'status': run.get('status', 'READY')}
         await checkpoint(runner, action, apify_run=state)
         await runner.log(action, 'submitted', '云端任务已创建：' + state['id'])
         raise ProviderPending()
@@ -145,6 +145,9 @@ async def meta(runner: Any, action: dict[str, Any], project: dict[str, Any], cli
 
 
 async def trends(runner: Any, action: dict[str, Any], project: dict[str, Any], client: httpx.AsyncClient, key: str) -> dict[str, Any]:
+    submissions = dict(action['payload'].get('trend_submissions', {}))
+    if any(item.get('state') == 'uncertain' for item in submissions.values() if isinstance(item, dict)):
+        raise ProviderError('submission_uncertain', '上次 SerpApi 读取结果尚未确认；请人工核对，未重复收费调用')
     query = action['payload']['query']
     market = project['market']
     saved = dict(action['payload'].get('trend_windows', {}))
@@ -159,6 +162,10 @@ async def trends(runner: Any, action: dict[str, Any], project: dict[str, Any], c
             continue
         await reserve(runner, action, 'serpapi', f'{window}:{action["attempt"]}')
         await runner.log(action, 'trends_' + window, 'SerpApi API：读取' + MARKETS[market].name + ' ' + window + ' 趋势')
+        submissions[window] = {'state': 'uncertain', 'query': query, 'market': market,
+                               'date': date, 'attempt': action['attempt'],
+                               'submitted_at': datetime.now(UTC).isoformat()}
+        await checkpoint(runner, action, trend_submissions=submissions)
         data = await request_json(client, 'GET', 'https://serpapi.com/search.json', params={'engine': 'google_trends', 'q': query, 'date': date, 'geo': market, 'tz': 0, 'data_type': 'TIMESERIES', 'api_key': key})
         series = parse_serpapi_series(data, query, window, market=market)
         classification = classify_trend_window(series)
@@ -173,7 +180,8 @@ async def trends(runner: Any, action: dict[str, Any], project: dict[str, Any], c
         except ValueError:
             raise ProviderError('schema_drift', '接口结果时间格式不兼容') from None
         saved[window] = {'window': window, 'market': market, 'conclusion': classification.label.value, 'classification': classification.model_dump(mode='json'), 'points': series.model_dump(mode='json')['points'], 'source_url': 'https://trends.google.com/trends/explore?' + urlencode({'q': query, 'geo': market, 'date': date}), 'observed_at': observed.isoformat(), 'received_at': datetime.now(UTC).isoformat(), 'search_id': metadata.get('id'), 'raw_timeline': data.get('interest_over_time', {}).get('timeline_data', [])}
-        await checkpoint(runner, action, trend_windows=saved)
+        submissions[window] = {**submissions[window], 'state': 'completed'}
+        await checkpoint(runner, action, trend_windows=saved, trend_submissions=submissions)
         await runner.log(action, 'validated', f'{window} 已校验 {len(series.points)} 个完整周点')
     evidence = [{k: v for k, v in saved[w].items() if k not in {'raw_timeline', 'search_id', 'received_at'}} for w in ['12m', '5y']]
     await checkpoint(runner, action, provider_evidence={'provider': 'serpapi', 'query': query, 'geo': market, 'windows': saved})

@@ -94,6 +94,39 @@ class WorkbenchRunner:
             if not ran:
                 await asyncio.sleep(3)
 
+    async def _can_recover_expired(self, c: Any, action: dict[str, Any]) -> bool:
+        """Recover only committed local receipts or a bound durable cloud job."""
+        from rabbit_hole.persistence.projects import workbench_events
+
+        terminal = {"scan": "collection_result", "landing": "landing_result",
+                    "trends": "trends_result", "verify": "verification_result"}.get(action["kind"])
+        if terminal:
+            receipt = str(uuid5(NAMESPACE_URL, f"{action['id']}:{terminal}:"))
+            if await c.scalar(select(workbench_events.c.id).where(
+                workbench_events.c.project_id == str(action["project_id"]),
+                workbench_events.c.command_id == receipt,
+            )) is not None:
+                return True
+        state = action["payload"].get("apify_run")
+        if action["kind"] != "scan" or action["payload"].get("execution_mode") != "api" or not isinstance(state, dict):
+            return False
+        owner = state.get("owner")
+        if not isinstance(owner, dict) or owner != {
+            "action_id": str(action["id"]), "input_version": action["input_version"],
+            "fingerprint": action["payload"].get("fingerprint"),
+        }:
+            return False
+        if state.get("restart_required") or state.get("submission") == "uncertain":
+            return False
+        for field in ("id", "dataset"):
+            if not isinstance(state.get(field), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", state[field]):
+                return False
+        try:
+            started = datetime.fromisoformat(state["started_at"])
+            return started.tzinfo is not None
+        except (KeyError, TypeError, ValueError):
+            return False
+
     async def run_once(self) -> bool:
         from rabbit_hole.integrations.provider_jobs import (
             ProviderPending,
@@ -110,7 +143,7 @@ class WorkbenchRunner:
                                 and_(actions.c.status == "ready", or_(actions.c.lease_until.is_(None), actions.c.lease_until < now)),
                                 and_(
                                     actions.c.status == "running",
-                                    actions.c.lease_until < now,
+                                    or_(actions.c.lease_until.is_(None), actions.c.lease_until < now),
                                 ),
                             )
                         )
@@ -126,6 +159,19 @@ class WorkbenchRunner:
                 return False
             action = dict(row)
             action["payload"] = dict(action["payload"])
+            if action["status"] == "running" and not await self._can_recover_expired(c, action):
+                action["payload"]["execution_uncertain"] = {
+                    "reason": "lease_lost", "attempt": action["attempt"],
+                    "input_version": action["input_version"],
+                    "recorded_at": now.isoformat(),
+                }
+                action["payload"]["diagnostic"] = ERRORS["submission_uncertain"]
+                await c.execute(update(actions).where(
+                    actions.c.id == action["id"], actions.c.attempt == action["attempt"],
+                    actions.c.status == "running", or_(actions.c.lease_until.is_(None), actions.c.lease_until < now),
+                ).values(status="blocked", error_code="submission_uncertain",
+                         payload=action["payload"], updated_at=now))
+                return True
             if action["kind"] in {"keywords", "expand", "verify"}:
                 action["payload"].setdefault(
                     "ai_usage",

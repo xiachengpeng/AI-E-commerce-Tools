@@ -114,7 +114,7 @@ async def test_new_run_reserves_provider_budget_again(scan_case, monkeypatch):
     new = await retry(store, pid, word)
     monkeypatch.setenv('RABBIT_HOLE_APIFY_DAILY_RUNS', '1')
     async with store.engine.begin() as c:
-        await c.execute(update(actions).where(actions.c.id == UUID(new['id'])).values(status='running', attempt=1))
+        await c.execute(update(actions).where(actions.c.id == UUID(new['id'])).values(status='running', attempt=1, lease_until=datetime.now(UTC) + timedelta(minutes=5)))
         row = dict((await c.execute(select(actions).where(actions.c.id == UUID(new['id'])))).mappings().one())
     with pytest.raises(ProviderError, match='预算'):
         await reserve(WorkbenchRunner(store, SimpleNamespace(), None), row, 'apify', 'apify-run')

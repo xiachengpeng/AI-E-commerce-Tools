@@ -356,3 +356,187 @@ asyncio.run(run())
             if process.poll() is None:
                 process.kill()
                 await asyncio.to_thread(process.communicate, timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_paid_window_cancelled_on_lease_loss_is_never_replayed(paths, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+    from uuid import UUID
+
+    from sqlalchemy import select, update
+    async with open_research_runtime(paths, allow_commands=True) as runtime:
+        from rabbit_hole.application.actions import actions, enqueue_action, get_action
+        from rabbit_hole.application.runner import WorkbenchRunner
+        from rabbit_hole.domain.project import WorkbenchError
+        from rabbit_hole.integrations import provider_budget
+        project, _word, queued = await queued_scan(runtime)
+        async with runtime.engine.begin() as c:
+            payload = dict(await c.scalar(select(actions.c.payload).where(actions.c.id == UUID(queued['id']))))
+            payload['query'] = 'synthetic trend'
+            await c.execute(update(actions).where(actions.c.id == UUID(queued['id'])).values(payload=payload))
+        runner = WorkbenchRunner(runtime.store, runtime.settings, runtime.evidence_store)
+        started = asyncio.Event()
+        dispatches = []
+        async def paid_read(client, method, url, **kwargs):
+            dispatches.append((method, kwargs['params']['date']))
+            started.set()
+            if len(dispatches) > 1:
+                raise RuntimeError('duplicate paid window')
+            await asyncio.Event().wait()
+        async def execute(action, project):
+            return await provider_budget.trends(runner, action, project, None, 'synthetic-key')
+        monkeypatch.setattr(provider_budget, 'request_json', paid_read)
+        monkeypatch.setattr(runner, 'execute', execute)
+        task = asyncio.create_task(runner.run_once())
+        try:
+            await asyncio.wait_for(started.wait(), 2)
+            async with runtime.engine.begin() as c:
+                await c.execute(update(actions).where(actions.c.id == UUID(queued['id'])).values(lease_until=datetime.now(UTC) - timedelta(seconds=1)))
+            assert await asyncio.wait_for(task, 2)
+            await runner.run_once()  # Continue into reclaim, not just intermediate cancellation.
+            assert not await runner.run_once()
+            assert dispatches == [('GET', 'today 12-m')]
+            action = await get_action(runtime.engine, project['id'], queued['id'])
+            assert action['status'] == 'blocked' and action['attempt'] == 1
+            assert action['display_status'] == 'manual_check'
+            assert action['error_code'] == 'submission_uncertain'
+            async with runtime.engine.connect() as c:
+                durable = await c.scalar(select(actions.c.payload).where(actions.c.id == UUID(queued['id'])))
+            assert len(durable['provider_reservations']) == 1
+            assert durable['trend_submissions']['12m']['state'] == 'uncertain'
+            fresh = await runtime.store.get(project['id'])
+            with pytest.raises(WorkbenchError, match='尚未确认'):
+                await enqueue_action(runtime.store, fresh['id'], {'kind': 'scan', 'version': fresh['version'], 'keyword_id': _word})
+            assert dispatches == [('GET', 'today 12-m')]
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('lease', ['expired', 'missing'])
+async def test_missing_submission_proof_blocks_expired_attempt_without_dispatch(paths, monkeypatch, lease):
+    from datetime import UTC, datetime, timedelta
+    from uuid import UUID
+
+    from sqlalchemy import update
+    async with open_research_runtime(paths, allow_commands=True) as runtime:
+        from rabbit_hole.application.actions import actions, get_action
+        from rabbit_hole.application.runner import WorkbenchRunner
+        project, _word, queued = await queued_scan(runtime)
+        async with runtime.engine.begin() as c:
+            await c.execute(update(actions).where(actions.c.id == UUID(queued['id'])).values(status='running', attempt=1, lease_until=datetime.now(UTC) - timedelta(seconds=1) if lease == 'expired' else None))
+        runner = WorkbenchRunner(runtime.store, runtime.settings, runtime.evidence_store)
+        async def forbidden(*_):
+            pytest.fail('unproved expired execution must not be dispatched')
+        monkeypatch.setattr(runner, 'execute', forbidden)
+        assert await runner.run_once()
+        assert not await runner.run_once()
+        action = await get_action(runtime.engine, project['id'], queued['id'])
+        assert action['status'] == 'blocked' and action['attempt'] == 1
+        assert action['display_status'] == 'manual_check'
+
+
+@pytest.mark.asyncio
+async def test_saved_terminal_receipt_recovers_expired_attempt_without_transport(paths, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+    from uuid import UUID
+
+    from sqlalchemy import select, update
+    async with open_research_runtime(paths, allow_commands=True) as runtime:
+        from rabbit_hole.application.actions import actions, get_action
+        from rabbit_hole.application.runner import WorkbenchRunner
+        project, word, queued = await queued_scan(runtime)
+        async with runtime.engine.begin() as c:
+            await c.execute(update(actions).where(actions.c.id == UUID(queued['id'])).values(status='running', attempt=1, lease_until=datetime.now(UTC) + timedelta(minutes=5)))
+            row = dict((await c.execute(select(actions).where(actions.c.id == UUID(queued['id'])))).mappings().one())
+        runner = WorkbenchRunner(runtime.store, runtime.settings, runtime.evidence_store)
+        await runner.save(row, 'collection_result', {'keyword_id': word, 'ads': [], 'status': 'complete'})
+        async with runtime.engine.begin() as c:
+            await c.execute(update(actions).where(actions.c.id == row['id']).values(lease_until=datetime.now(UTC) - timedelta(seconds=1)))
+        async def forbidden(*_):
+            pytest.fail('saved receipt must avoid all transport')
+        monkeypatch.setattr(runner, 'execute', forbidden)
+        assert await runner.run_once()
+        assert not await runner.run_once()
+        action = await get_action(runtime.engine, project['id'], queued['id'])
+        assert action['status'] == 'complete' and action['attempt'] == 2
+        assert action['result']['recovered'] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('damage', [None, 'action', 'version', 'fingerprint', 'dataset'])
+async def test_expired_bound_apify_job_only_polls_original_identity(paths, monkeypatch, damage):
+    from datetime import UTC, datetime, timedelta
+    from uuid import UUID, uuid4
+
+    from sqlalchemy import select, update
+    async with open_research_runtime(paths, allow_commands=True) as runtime:
+        from rabbit_hole.application.actions import actions, enqueue_action, get_action
+        from rabbit_hole.application.runner import WorkbenchRunner
+        from rabbit_hole.integrations import provider_budget
+        project = await runtime.store.create('synthetic cloud', 'fixture', 'US', str(uuid4()))
+        project = await runtime.store.command(project['id'], project['version'], str(uuid4()), 'configure_collection', {'meta': 'api', 'trends': 'ui'})
+        project = await runtime.store.command(project['id'], project['version'], str(uuid4()), 'add_keyword', {'text': 'rare phrase', 'type': 'function'})
+        word = project['keywords'][0]['id']
+        project = await runtime.store.command(project['id'], project['version'], str(uuid4()), 'approve_keyword', {'keyword_id': word, 'approved': True})
+        queued = await enqueue_action(runtime.store, project['id'], {'kind': 'scan', 'version': project['version'], 'keyword_id': word})
+        runner = WorkbenchRunner(runtime.store, runtime.settings, runtime.evidence_store)
+        dispatches = []
+        async def transport(client, method, url, **kwargs):
+            dispatches.append((method, url))
+            if method == 'POST':
+                return {'data': {'id': 'synthetic-run', 'defaultDatasetId': 'synthetic-dataset', 'startedAt': datetime.now(UTC).isoformat(), 'status': 'RUNNING'}}
+            if 'actor-runs/' in url:
+                assert url.endswith('/actor-runs/synthetic-run')
+                return {'data': {'status': 'SUCCEEDED'}}
+            assert url.endswith('/datasets/synthetic-dataset/items')
+            return [{'errorCode': 'ADS_NOT_FOUND'}]
+        async def execute(action, project):
+            return await provider_budget.meta(runner, action, project, None, 'synthetic-key')
+        monkeypatch.setattr(provider_budget, 'request_json', transport)
+        monkeypatch.setattr(runner, 'execute', execute)
+        assert await runner.run_once()  # One paid submission, durable identity stored.
+        async with runtime.engine.begin() as c:
+            payload = dict(await c.scalar(select(actions.c.payload).where(actions.c.id == UUID(queued['id']))))
+            if damage == 'dataset':
+                payload['apify_run']['dataset'] = ''
+            elif damage:
+                field = {'action': 'action_id', 'version': 'input_version', 'fingerprint': 'fingerprint'}[damage]
+                payload['apify_run']['owner'][field] = 'unrelated'
+            await c.execute(update(actions).where(actions.c.id == UUID(queued['id'])).values(status='running', lease_until=datetime.now(UTC) - timedelta(seconds=1), payload=payload))
+        assert await runner.run_once()
+        assert not await runner.run_once()
+        action = await get_action(runtime.engine, project['id'], queued['id'])
+        assert sum(method == 'POST' for method, _ in dispatches) == 1
+        if damage:
+            assert len(dispatches) == 1
+            assert action['status'] == 'blocked' and action['display_status'] == 'manual_check'
+            assert action['attempt'] == 1
+        else:
+            assert len(dispatches) == 3
+            assert action['status'] == 'complete' and action['attempt'] == 2
+
+
+@pytest.mark.asyncio
+async def test_direct_trends_retry_refuses_uncertain_window_before_paid_transport(paths, monkeypatch):
+    from uuid import UUID
+
+    from sqlalchemy import select, update
+    async with open_research_runtime(paths, allow_commands=True) as runtime:
+        from rabbit_hole.application.actions import actions
+        from rabbit_hole.application.runner import WorkbenchRunner
+        from rabbit_hole.integrations import provider_budget
+        from rabbit_hole.integrations.collectors.provider_api import ProviderError
+        project, _word, queued = await queued_scan(runtime)
+        async with runtime.engine.begin() as c:
+            payload = dict(await c.scalar(select(actions.c.payload).where(actions.c.id == UUID(queued['id']))))
+            payload.update(query='synthetic', trend_submissions={'12m': {'state': 'uncertain', 'attempt': 1}})
+            await c.execute(update(actions).where(actions.c.id == UUID(queued['id'])).values(payload=payload))
+            action = dict((await c.execute(select(actions).where(actions.c.id == UUID(queued['id'])))).mappings().one())
+        runner = WorkbenchRunner(runtime.store, runtime.settings, runtime.evidence_store)
+        async def forbidden(*_, **kwargs):
+            pytest.fail('direct adapter retry must not charge again')
+        monkeypatch.setattr(provider_budget, 'request_json', forbidden)
+        with pytest.raises(ProviderError, match='尚未确认'):
+            await provider_budget.trends(runner, action, project, None, 'synthetic-key')

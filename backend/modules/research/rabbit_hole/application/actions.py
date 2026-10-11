@@ -83,7 +83,7 @@ ERRORS = {
     "not_configured": "所选数据源或 AI 配置不完整，请到「数据源与配置」核对后重试。",
     "input_changed": "相关输入已变化，本次结果没有覆盖新输入。请重新执行。",
     "source_error": "来源读取未完成，未生成虚假结果。请查看原页面或补充人工证据。",
-    "submission_uncertain": "提交结果尚未确认，请到 Apify 按任务标签核对，避免重复收费。",
+    "submission_uncertain": "上次执行结果尚未确认，请人工核对来源任务或已保存结果，未自动重复调用。",
     "schema_drift": "来源返回格式发生变化，请核对接口结果或补充人工证据。",
     "cancelled": "服务重启中，动作租约到期后恢复。",
     "stopped": "已由你停止；未完成的采集结果不会保存。",
@@ -299,6 +299,12 @@ def target_signature(
 def _recovery_action(row: Any) -> str:
     if row["status"] != "blocked":
         return ""
+    if row["payload"].get("execution_uncertain") or any(
+        value.get("state") == "uncertain"
+        for value in row["payload"].get("trend_submissions", {}).values()
+        if isinstance(value, dict)
+    ):
+        return "manual"
     if row["kind"] != "scan" or row["payload"].get("execution_mode", "ui") != "api":
         return "retry"
     cloud = row["payload"].get("apify_run") or {}
