@@ -1,5 +1,6 @@
 from decimal import Decimal
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl
@@ -58,3 +59,15 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
+
+
+class OfflineRuntimeSettings(BaseModel):
+    """Local lifecycle configuration with no provider credentials or env lookup."""
+    model_config = {"frozen": True}
+    database: Path
+    evidence_root: Path
+    browser_root: Path
+    lock_root: Path
+    evidence_bucket: str | None = None
+    collector_version: str | None = None
+    allow_external: Literal[False] = False

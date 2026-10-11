@@ -7,7 +7,9 @@ import json
 import os
 import stat
 import sys
+from importlib import import_module
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
@@ -78,6 +80,11 @@ def main() -> int:
         except Exception:  # noqa: BLE001 -- health probes expose no configuration
             return 1
     return worker_main()
+
+
+def unified_runtime_paths(database: Path, data_root: Path) -> Any:
+    """API and worker use the same explicit paths; legacy CLI stays inactive."""
+    return import_module("services.research_runtime").resolve_runtime_paths(database, data_root)
 
 
 if __name__ == "__main__":

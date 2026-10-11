@@ -36,11 +36,11 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def create_engine(url: str, **options: Any) -> AsyncEngine:
+def create_engine(url: str, *, readonly: bool = False, initialize_file: bool = True, lock_root: Path | None = None, **options: Any) -> AsyncEngine:
     engine = create_async_engine(url, connect_args={"timeout": 30} if url.startswith("sqlite") else {}, **options)
     if engine.dialect.name == "sqlite":
         name = engine.url.database
-        if name and name != ":memory:":
+        if initialize_file and not readonly and name and name != ":memory:":
             database = Path(name).absolute()
             if any(part.is_symlink() for part in (database, *database.parents)):
                 raise ValueError("invalid database path")
@@ -51,13 +51,15 @@ def create_engine(url: str, **options: Any) -> AsyncEngine:
         def configure(dbapi: Any, _: Any) -> None:
             dbapi.isolation_level = None
             cursor = dbapi.cursor()
-            for pragma in ("busy_timeout=30000", "foreign_keys=ON", "journal_mode=WAL", "synchronous=FULL"):
+            for pragma in (("query_only=ON", "busy_timeout=30000") if readonly else ("busy_timeout=30000", "foreign_keys=ON", "journal_mode=WAL", "synchronous=FULL")):
                 cursor.execute("PRAGMA " + pragma)
             cursor.close()
 
         @event.listens_for(engine.sync_engine, "begin")
         def begin(connection: Any) -> None:
             connection.exec_driver_sql("BEGIN IMMEDIATE" if connection.get_execution_options().get("local_write") else "BEGIN")
+    if lock_root is not None:
+        engine.update_execution_options(research_lock_root=Path(lock_root))
     return engine
 
 
@@ -92,7 +94,7 @@ async def session_lock(database: AsyncEngine | AsyncConnection, key: str | int, 
         name = engine.url.database
         if not name or name == ":memory:":
             raise ValueError("process ownership requires a file-backed SQLite database")
-        directory = Path(name).absolute().parent / ".locks"
+        directory = engine.get_execution_options().get("research_lock_root", Path(name).absolute().parent / ".locks")
         directory.mkdir(mode=0o700, exist_ok=True)
         if directory.is_symlink():
             raise ValueError("invalid lock directory")

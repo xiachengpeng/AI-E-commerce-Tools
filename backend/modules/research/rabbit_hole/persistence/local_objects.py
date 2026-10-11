@@ -27,11 +27,18 @@ class ObjectError(RuntimeError):
 
 class LocalObjectClient:
     """No public mount or S3 process; stable keys and immutable version records."""
-    def __init__(self, root: Path | str):
+    def __init__(self, root: Path | str, *, initialize: bool = True, signing_key_path: Path | None = None):
         self.root = Path(root).absolute()
+        if not initialize:
+            self._check(self.root)
+            secret = signing_key_path or self.root / ".signing-key"
+            self._secret = self._read(secret)
+            if len(self._secret) != 32:
+                raise ValueError("invalid signing material")
+            return
         self._directory(self.root)
         with self._lock():
-            secret = self.root / ".signing-key"
+            secret = signing_key_path or self.root / ".signing-key"
             if not secret.exists():
                 self._atomic(secret, os.urandom(32))
             self._secret = self._read(secret)
