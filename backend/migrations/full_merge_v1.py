@@ -18,7 +18,7 @@ _BACKEND = Path(__file__).resolve().parents[1]
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 from db import enable_sqlite_foreign_keys
-from models.full_merge import full_merge_schema, metadata
+from models.full_merge import full_merge_schema, metadata, validate_prepared_schema
 
 
 def research_metadata():
@@ -57,12 +57,11 @@ def prepare_schema(database: Path, *, backup_verified: bool) -> dict:
             try:
                 tables = set(inspect(c).get_table_names())
                 if 'full_merge_schema' in tables:
+                    # Reject malformed markers before checking the baseline structures.
                     rows = c.exec_driver_sql('SELECT id,revision FROM full_merge_schema').fetchall()
                     if len(rows) != 1 or rows[0][0] != 1 or type(rows[0][1]) is not int or rows[0][1] not in {1, 2, 3}:
                         raise ValueError('unknown full merge revision')
-                    if not (set(source.tables) | set(metadata.tables)).issubset(tables):
-                        raise ValueError('partial prepared schema')
-                    revision = rows[0][1]
+                    revision = validate_prepared_schema(c, source)
                 else:
                     if set(source.tables).intersection(tables) or 'full_merge_ledger' in tables:
                         raise ValueError('unversioned partial research schema')

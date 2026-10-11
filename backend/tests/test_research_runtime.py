@@ -83,15 +83,10 @@ async def test_api_worker_share_database_across_cwd(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_prepared_fixture_requires_original_key_and_explicit_directories(tmp_path):
-    from services.research_runtime import _research_imports
-    sql = _research_imports()
+    from backend.migrations.full_merge_v1 import prepare_schema
     database = tmp_path / 'history.db'
-    fixture = sql.create_engine(f'sqlite+aiosqlite:///{database}')
-    await sql.initialize_sqlite(fixture)
-    async with fixture.begin() as connection:
-        await connection.execute(text('CREATE TABLE full_merge_schema (id INTEGER PRIMARY KEY, revision INTEGER)'))
-        await connection.execute(text('INSERT INTO full_merge_schema VALUES (1, 1)'))
-    await fixture.dispose()
+    sqlite3.connect(database).close()
+    prepare_schema(database, backup_verified=True)
     root = tmp_path / 'research'
     root.mkdir(mode=0o700)
     paths = resolve_runtime_paths(database, root)
@@ -133,3 +128,38 @@ async def test_marker_alone_cannot_unlock_commands(tmp_path):
     with pytest.raises(ValueError, match='not prepared'):
         async with open_research_runtime(paths, allow_commands=True, allow_external=False):
             pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('damage', ['column', 'unique'])
+async def test_structural_damage_refuses_runtime_commands(tmp_path, damage):
+    from sqlalchemy import MetaData, UniqueConstraint, create_engine
+
+    from backend.migrations.full_merge_v1 import prepare_schema, research_metadata
+
+    database = tmp_path / 'history.db'
+    sqlite3.connect(database).close()
+    prepare_schema(database, backup_verified=True)
+    engine = create_engine(f'sqlite:///{database}')
+    with engine.begin() as c:
+        if damage == 'column':
+            c.exec_driver_sql('ALTER TABLE daily_usage DROP COLUMN scans')
+        else:
+            original = research_metadata().tables['runtime_jobs']
+            clone = original.to_metadata(MetaData())
+            for constraint in list(clone.constraints):
+                if isinstance(constraint, UniqueConstraint):
+                    clone.constraints.remove(constraint)
+            original.drop(c)
+            clone.create(c)
+    engine.dispose()
+    before = database.read_bytes()
+    paths = resolve_runtime_paths(database, tmp_path / 'research')
+    async with open_research_runtime(paths, allow_commands=False) as runtime:
+        assert runtime.diagnostics == ('schema_unprepared',)
+        assert runtime.store is None
+    with pytest.raises(ValueError, match='not prepared'):
+        async with open_research_runtime(paths, allow_commands=True):
+            pass
+    assert database.read_bytes() == before
+    assert not paths.evidence_root.parent.exists()

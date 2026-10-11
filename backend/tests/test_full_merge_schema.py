@@ -259,3 +259,73 @@ def test_synthetic_config_api_performance(candidate, record_property):
         else:
             app.dependency_overrides[get_db] = previous
         engine.dispose()
+
+
+@pytest.mark.parametrize('damage', ['column', 'unique', 'foreign_key', 'index', 'check'])
+def test_existing_revision_rejects_structural_damage(candidate, damage):
+    from models.full_merge import metadata as merge_metadata
+    from sqlalchemy import ForeignKeyConstraint, MetaData, UniqueConstraint
+
+    prepare_schema(candidate, backup_verified=True)
+    engine = create_engine(f'sqlite:///{candidate}')
+    if damage == 'column':
+        with engine.begin() as c:
+            c.exec_driver_sql('ALTER TABLE daily_usage DROP COLUMN scans')
+    elif damage == 'index':
+        with engine.begin() as c:
+            c.exec_driver_sql('DROP INDEX ix_workbench_events_project_created')
+    else:
+        original = merge_metadata.tables['full_merge_ledger'] if damage == 'check' else research_metadata().tables['runtime_jobs' if damage == 'unique' else 'workbench_events']
+        clone = original.to_metadata(MetaData())
+        for constraint in list(clone.constraints):
+            if (damage == 'unique' and isinstance(constraint, UniqueConstraint)) or (damage == 'foreign_key' and isinstance(constraint, ForeignKeyConstraint)) or (damage == 'check' and constraint.__class__.__name__ == 'CheckConstraint'):
+                clone.constraints.remove(constraint)
+        if damage == 'foreign_key':
+            research_metadata().tables['workbench_projects'].to_metadata(clone.metadata)
+        with engine.begin() as c:
+            original.drop(c)
+            clone.create(c)
+            if damage == 'unique':
+                c.exec_driver_sql('CREATE UNIQUE INDEX synthetic_unique ON runtime_jobs(idempotency_key)')
+                c.exec_driver_sql('DROP INDEX synthetic_unique')
+    engine.dispose()
+    before = snapshot(candidate)
+    with pytest.raises(ValueError, match='schema'):
+        prepare_schema(candidate, backup_verified=True)
+    assert snapshot(candidate) == before
+
+
+@pytest.mark.parametrize('revision', [2, 3])
+def test_additive_future_schema_is_allowed(candidate, revision):
+    prepare_schema(candidate, backup_verified=True)
+    with sqlite3.connect(candidate) as c:
+        c.execute('UPDATE full_merge_schema SET revision=?', (revision,))
+        c.execute('ALTER TABLE daily_usage ADD COLUMN synthetic_future TEXT')
+        c.execute('CREATE TABLE synthetic_future (id INTEGER PRIMARY KEY)')
+        c.execute('CREATE INDEX synthetic_extra ON daily_usage(synthetic_future)')
+    before = snapshot(candidate)
+    assert prepare_schema(candidate, backup_verified=True)['revision'] == revision
+    assert snapshot(candidate) == before
+
+
+def test_equivalent_unique_index_preserves_integrity(candidate):
+    from sqlalchemy import MetaData, UniqueConstraint
+
+    prepare_schema(candidate, backup_verified=True)
+    table = research_metadata().tables['runtime_jobs']
+    clone = table.to_metadata(MetaData())
+    for constraint in list(clone.constraints):
+        if isinstance(constraint, UniqueConstraint):
+            clone.constraints.remove(constraint)
+    engine = create_engine(f'sqlite:///{candidate}')
+    with engine.begin() as c:
+        table.drop(c)
+        clone.create(c)
+        c.exec_driver_sql('CREATE UNIQUE INDEX equivalent_key ON runtime_jobs(idempotency_key)')
+    assert prepare_schema(candidate, backup_verified=True)['prepared'] is True
+    with engine.begin() as c:
+        c.exec_driver_sql('DROP INDEX equivalent_key')
+        c.exec_driver_sql("CREATE UNIQUE INDEX partial_key ON runtime_jobs(idempotency_key) WHERE status='synthetic'")
+    with pytest.raises(ValueError, match='unique key'):
+        prepare_schema(candidate, backup_verified=True)
+    engine.dispose()

@@ -11,7 +11,6 @@ from pathlib import Path
 from types import ModuleType
 
 from models.research_runtime import ResearchRuntime, RuntimePaths
-from sqlalchemy import inspect, text
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -79,14 +78,12 @@ async def _prepared(engine: AsyncEngine) -> bool:
         import_module('rabbit_hole.' + name)
     metadata = import_module('rabbit_hole.persistence.database').metadata
     async with engine.connect() as connection:
-        tables = await connection.run_sync(lambda sync: set(inspect(sync).get_table_names()))
-        if 'full_merge_schema' not in tables or not set(metadata.tables).issubset(tables):
-            return False
+        from models.full_merge import validate_prepared_schema
         try:
-            revision = await connection.scalar(text('SELECT revision FROM full_merge_schema WHERE id=1'))
-        except SQLAlchemyError:
+            await connection.run_sync(lambda sync: validate_prepared_schema(sync, metadata))
+        except (SQLAlchemyError, ValueError):
             return False
-        return type(revision) is int and revision in {1, 2, 3}
+        return True
 
 
 @asynccontextmanager
