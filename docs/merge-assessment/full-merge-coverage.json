@@ -8814,5 +8814,83 @@
       "lifespan_started": false,
       "provider_requests": false
     }
+  },
+  "source_test_preservation": {
+    "research_revision": "b749491c29fce8ac5bdad613f1ef569cb6df186b",
+    "source_frontend_assertions": [
+      {
+        "source_file": "frontend/tests/commands.test.mjs",
+        "source_test": "command IDs remain unique and valid on HTTPS",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/commands.test.mjs",
+        "target_task": 12,
+        "migration_status": "source_retained_equivalent_native_assertion_pending"
+      },
+      {
+        "source_file": "frontend/tests/commands.test.mjs",
+        "source_test": "fingerprint detects edits without preserving form content on HTTPS",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/commands.test.mjs",
+        "target_task": 12,
+        "migration_status": "source_retained_equivalent_native_assertion_pending"
+      },
+      {
+        "source_file": "frontend/tests/commands.test.mjs",
+        "source_test": "command IDs remain unique and valid on LAN HTTP",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/commands.test.mjs",
+        "target_task": 12,
+        "migration_status": "source_retained_equivalent_native_assertion_pending"
+      },
+      {
+        "source_file": "frontend/tests/commands.test.mjs",
+        "source_test": "fingerprint detects edits without preserving form content on LAN HTTP",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/commands.test.mjs",
+        "target_task": 12,
+        "migration_status": "source_retained_equivalent_native_assertion_pending"
+      },
+      {
+        "source_file": "frontend/tests/log-session.test.mjs",
+        "source_test": "stream closes on project change and late events cannot contaminate current logs",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/log-session.test.mjs",
+        "target_task": 15,
+        "migration_status": "source_retained_equivalent_native_assertion_pending"
+      },
+      {
+        "source_file": "frontend/tests/log-session.test.mjs",
+        "source_test": "disconnect queries from durable cursor then reconnects without replay",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/log-session.test.mjs",
+        "target_task": 15,
+        "migration_status": "source_retained_equivalent_native_assertion_pending"
+      },
+      {
+        "source_file": "frontend/tests/log-session.test.mjs",
+        "source_test": "late fallback query from previous project is ignored",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/log-session.test.mjs",
+        "target_task": 15,
+        "migration_status": "source_retained_equivalent_native_assertion_pending"
+      },
+      {
+        "source_file": "frontend/tests/log-session.test.mjs",
+        "source_test": "connecting without an open event falls back after ten seconds",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/log-session.test.mjs",
+        "target_task": 15,
+        "migration_status": "source_retained_equivalent_native_assertion_pending"
+      },
+      {
+        "source_file": "frontend/tests/log-session.test.mjs",
+        "source_test": "closed connection cannot emit late logs or close its replacement",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/log-session.test.mjs",
+        "target_task": 15,
+        "migration_status": "source_retained_equivalent_native_assertion_pending"
+      },
+      {
+        "source_file": "frontend/tests/marketing_bridge.test.mjs",
+        "source_test": "embedded bridge sends IDs only after trusted parent handshake",
+        "preserved_file": "backend/modules/research/compat/frontend/tests/marketing_bridge.test.mjs",
+        "target_task": 14,
+        "migration_status": "source_retained_equivalent_native_assertion_pending",
+        "native_equivalent_requirement": "Native handoff accepts IDs only with trusted context; removing postMessage must preserve authorization, payload minimization and deduplicated command assertions."
+      }
+    ],
+    "count": 10,
+    "business_parity_accepted": false
   }
 }

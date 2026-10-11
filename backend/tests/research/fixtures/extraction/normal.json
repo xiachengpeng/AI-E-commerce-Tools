@@ -1,0 +1,18 @@
+{
+  "title": "Glow Lamp | Acme",
+  "body_text": "Portable desk lamp for remote workers. Transform your desk in seconds. Add to cart. Customer reviews and FAQ are available.",
+  "final_url": "https://shop.example/products/glow-lamp?utm_source=meta",
+  "page_type": "product",
+  "json_ld": [
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "Glow Lamp",
+      "offers": {
+        "@type": "Offer",
+        "price": "49.00",
+        "priceCurrency": "USD"
+      }
+    }
+  ]
+}

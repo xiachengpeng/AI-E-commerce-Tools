@@ -1,0 +1,2921 @@
+{
+  "version": 1,
+  "tables": [
+    {
+      "name": "细分领域池",
+      "logical_key": "niche_key",
+      "trigger_states": [
+        "待生成"
+      ],
+      "fields": [
+        {
+          "key": "niche_key",
+          "display": "AUTO｜领域唯一键",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "category",
+          "display": "人工｜大类",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "niche",
+          "display": "AUTO｜细分领域",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "market",
+          "display": "AUTO｜目标市场",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "US"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "priority",
+          "display": "AUTO｜研究优先级",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "高",
+            "中",
+            "低"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "status",
+          "display": "人工｜状态",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "待生成",
+            "待研究",
+            "待人工选择",
+            "已启用",
+            "暂停"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "audience",
+          "display": "AUTO｜目标人群",
+          "type": "select",
+          "owner": "auto",
+          "options": [],
+          "multiple": true,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "pain_points",
+          "display": "AUTO｜核心问题",
+          "type": "select",
+          "owner": "auto",
+          "options": [],
+          "multiple": true,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "recommendation",
+          "display": "AUTO｜AI推荐理由",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "selected_category",
+          "display": "人工｜选择大类",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "research_card",
+          "display": "AUTO｜研究证据卡",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "confirmed_research_card",
+          "display": "人工｜研究证据卡",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "research_confirmed",
+          "display": "人工｜研究证据已确认",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "generate_seeds",
+          "display": "人工｜生成种子词",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "seed_batch",
+          "display": "AUTO｜种子词批次",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "human_conclusion",
+          "display": "人工｜人工结论",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "trend_evidence",
+          "display": "AUTO｜趋势证据",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "证据表",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "competition_evidence",
+          "display": "AUTO｜竞争证据",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "证据表",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supply_evidence",
+          "display": "AUTO｜供应链证据",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "证据表",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supply_availability",
+          "display": "AUTO｜供应链可得性",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "未知",
+            "可得",
+            "受限",
+            "不可得"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "logistics_feasibility",
+          "display": "AUTO｜物流可得性",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "未知",
+            "可行",
+            "不可行"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_feasibility",
+          "display": "AUTO｜素材可得性",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "未知",
+            "可行",
+            "不可行"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        }
+      ]
+    },
+    {
+      "name": "关键词库",
+      "logical_key": "keyword_key",
+      "trigger_states": [
+        "待扫描"
+      ],
+      "fields": [
+        {
+          "key": "keyword_key",
+          "display": "AUTO｜关键词唯一键",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "search_text",
+          "display": "AUTO｜实际搜索词",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "chinese_meaning",
+          "display": "AUTO｜中文含义",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "normalized",
+          "display": "AUTO｜规范词",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "synonym_variants",
+          "display": "AUTO｜同义变体",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "market",
+          "display": "AUTO｜市场",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "locale",
+          "display": "AUTO｜语言地区",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "keyword_type",
+          "display": "AUTO｜关键词类型",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "类目",
+            "功能",
+            "人群",
+            "痛点",
+            "场景/节日",
+            "品牌/产品"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "status",
+          "display": "人工｜状态",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "待审核",
+            "已启用",
+            "待扫描",
+            "扫描中",
+            "降频",
+            "建议暂停",
+            "暂停"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "source_niche",
+          "display": "AUTO｜来源领域",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "细分领域池",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "source_keywords",
+          "display": "AUTO｜来源关键词",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": true,
+          "link_target": "关键词库",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "source_ads",
+          "display": "AUTO｜来源广告",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "广告与素材",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "source_products",
+          "display": "AUTO｜来源产品",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "产品主表",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "scan_count",
+          "display": "AUTO｜扫描次数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "ad_hits",
+          "display": "AUTO｜广告命中数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "relevant_ads",
+          "display": "AUTO｜相关广告数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "ads_30_days",
+          "display": "AUTO｜30天广告数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "products_3_creatives",
+          "display": "AUTO｜三创意产品数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "deep_worthy",
+          "display": "AUTO｜值得深入数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "candidate_count",
+          "display": "AUTO｜候选品数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "test_pool_count",
+          "display": "AUTO｜测试池数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "hard_gate_rejected",
+          "display": "AUTO｜硬门槛淘汰数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "rabbit_hole_depth",
+          "display": "AUTO｜兔子洞深度",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "next_scan",
+          "display": "AUTO｜下次扫描",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        }
+      ]
+    },
+    {
+      "name": "搜索批次",
+      "logical_key": "task_id",
+      "trigger_states": [],
+      "fields": [
+        {
+          "key": "task_id",
+          "display": "AUTO｜任务ID",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "keyword",
+          "display": "AUTO｜关键词",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "关键词库",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "status",
+          "display": "AUTO｜状态",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "待执行",
+            "执行中",
+            "已完成",
+            "待延迟重试",
+            "需人工处理"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "market",
+          "display": "AUTO｜市场",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "filters",
+          "display": "AUTO｜筛选条件",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "query",
+          "display": "AUTO｜实际查询",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "checkpoint",
+          "display": "AUTO｜检查点摘要",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "error",
+          "display": "AUTO｜错误",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "evidence_object_id",
+          "display": "AUTO｜证据对象ID",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "result_count",
+          "display": "AUTO｜结果数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "refreshes",
+          "display": "AUTO｜刷新次数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "retries",
+          "display": "AUTO｜重试次数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "truncated",
+          "display": "AUTO｜已截断",
+          "type": "checkbox",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "stop_reason",
+          "display": "AUTO｜停止原因",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "completeness",
+          "display": "AUTO｜结果完整度",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "完整",
+            "截断",
+            "未知"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "failure_type",
+          "display": "AUTO｜失败类型",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "screenshot_object_id",
+          "display": "AUTO｜截图对象ID",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "started_at",
+          "display": "AUTO｜开始时间",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "ended_at",
+          "display": "AUTO｜结束时间",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "retry_at",
+          "display": "AUTO｜下次重试",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "row_type",
+          "display": "AUTO｜记录类型",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "first_seen",
+          "display": "AUTO｜首次出现",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "last_seen",
+          "display": "AUTO｜最后出现",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "occurrence_count",
+          "display": "AUTO｜累计次数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        }
+      ]
+    },
+    {
+      "name": "产品主表",
+      "logical_key": "product_fingerprint",
+      "trigger_states": [],
+      "fields": [
+        {
+          "key": "product_fingerprint",
+          "display": "AUTO｜产品指纹",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "product_name",
+          "display": "AUTO｜标准产品名称",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "category",
+          "display": "AUTO｜品类",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "niche",
+          "display": "AUTO｜关联领域",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "细分领域池",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "status",
+          "display": "AUTO｜状态",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "待识别具体产品",
+            "待确认创意",
+            "待补充"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "product_url",
+          "display": "人工｜商品链接",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": {
+            "type": "url"
+          }
+        },
+        {
+          "key": "landing_url",
+          "display": "AUTO｜落地页链接",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": {
+            "type": "url"
+          }
+        },
+        {
+          "key": "domain",
+          "display": "AUTO｜标准化域名",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "page_type",
+          "display": "AUTO｜落地页类型",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "商品页",
+            "分类页",
+            "首页",
+            "未知"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "audience",
+          "display": "AUTO｜人群",
+          "type": "select",
+          "owner": "auto",
+          "options": [],
+          "multiple": true,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "pain_points",
+          "display": "AUTO｜痛点",
+          "type": "select",
+          "owner": "auto",
+          "options": [],
+          "multiple": true,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "scenarios",
+          "display": "AUTO｜场景",
+          "type": "select",
+          "owner": "auto",
+          "options": [],
+          "multiple": true,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "angles",
+          "display": "AUTO｜卖点角度",
+          "type": "select",
+          "owner": "auto",
+          "options": [],
+          "multiple": true,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "ads",
+          "display": "AUTO｜关联广告",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "广告与素材",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "keywords",
+          "display": "AUTO｜关联关键词",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "关键词库",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "suppliers",
+          "display": "AUTO｜供应商报价",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "供应商报价",
+          "formula": null,
+          "style": null
+        }
+      ]
+    },
+    {
+      "name": "市场评估表",
+      "logical_key": "product_market_key",
+      "trigger_states": [
+        "开始验证"
+      ],
+      "fields": [
+        {
+          "key": "product_market_key",
+          "display": "AUTO｜产品市场唯一键",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "product",
+          "display": "AUTO｜产品",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "产品主表",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "input_link",
+          "display": "人工｜广告或落地页链接",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": {
+            "type": "url"
+          }
+        },
+        {
+          "key": "product_name",
+          "display": "人工｜产品名称",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "generic_query",
+          "display": "人工｜通用产品词",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "approved_synonyms",
+          "display": "人工｜已审核同义词",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "evidence_confirmed",
+          "display": "人工｜证据已确认",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_formats",
+          "display": "人工｜创意形式",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_scenarios",
+          "display": "人工｜使用场景",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_hooks",
+          "display": "人工｜创意角度",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "ugc_or_demo",
+          "display": "人工｜可持续演示",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "certification_required",
+          "display": "人工｜需要认证",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "certification_verified",
+          "display": "人工｜认证已确认",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "brand_concentration",
+          "display": "人工｜品牌集中度",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "低",
+            "中",
+            "高",
+            "未知"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "differentiation",
+          "display": "人工｜产品差异化",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "低",
+            "中",
+            "高",
+            "未知"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "bundle_justification",
+          "display": "人工｜订单组合依据",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "bundle_confirmed",
+          "display": "人工｜订单组合已确认",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supplier_quote_collected_at",
+          "display": "人工｜供应商报价采集时间",
+          "type": "datetime",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "market",
+          "display": "人工｜市场",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "US"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "status",
+          "display": "人工｜状态",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "待补充",
+            "开始验证",
+            "队列中",
+            "采集中",
+            "待识别具体产品",
+            "待确认创意",
+            "待询价",
+            "待补充证据",
+            "待评分",
+            "输入已变更",
+            "需人工处理",
+            "待人工复核",
+            "测试池",
+            "备选池",
+            "观察池",
+            "淘汰池"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "run_status",
+          "display": "AUTO｜运行状态",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "队列中",
+            "采集中",
+            "输入已变更",
+            "待回写",
+            "已完成"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "expected_order",
+          "display": "人工｜预计订单组合",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "bundle_quantity",
+          "display": "人工｜订单件数",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "price",
+          "display": "人工｜单品售价",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "aov",
+          "display": "人工｜预计客单价",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "goods_cost",
+          "display": "人工｜订单货值",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "shipping_cost",
+          "display": "人工｜订单运费",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "packaging_cost",
+          "display": "人工｜订单包装",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "tax_cost",
+          "display": "人工｜税费关税",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "ad_cost",
+          "display": "人工｜预计广告成本",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "payment_rate",
+          "display": "人工｜支付百分比费率",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "payment_fixed",
+          "display": "人工｜支付固定费",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "loss_reserve_rate",
+          "display": "人工｜损耗准备金率",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "weight",
+          "display": "人工｜订单重量",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supplier_quote_unit_cost",
+          "display": "人工｜供应商单件报价",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supplier_quote_bundle_cost",
+          "display": "人工｜供应商订单报价",
+          "type": "number",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supplier_quote_confirmed",
+          "display": "人工｜供应商报价已确认",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supplier_quote_valid",
+          "display": "人工｜供应商报价有效",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supplier_quote_trust",
+          "display": "人工｜供应商报价可信度",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "verified",
+            "inferred",
+            "unknown"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supplier_quote_source",
+          "display": "人工｜供应商报价来源",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": {
+            "type": "url"
+          }
+        },
+        {
+          "key": "trend_classification",
+          "display": "人工｜趋势分类",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "rising",
+            "stable-high",
+            "seasonal",
+            "declining",
+            "peaked",
+            "insufficient-data"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "logistics_risk",
+          "display": "人工｜物流风险",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "低",
+            "中",
+            "高",
+            "未知"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "compliance_risk",
+          "display": "人工｜合规风险",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "低",
+            "中",
+            "高",
+            "未知"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "ip_risk",
+          "display": "人工｜侵权风险",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "低",
+            "中",
+            "高",
+            "未知"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "usd_conversion",
+          "display": "AUTO｜美元折算",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "human_conclusion",
+          "display": "人工｜人工结论",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "contribution_margin",
+          "display": "AUTO｜贡献毛利率",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "demand_score",
+          "display": "AUTO｜需求趋势分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_score",
+          "display": "AUTO｜素材空间分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "profit_score",
+          "display": "AUTO｜利润物流分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "competition_score",
+          "display": "AUTO｜竞争强度分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "risk_score",
+          "display": "AUTO｜合规风险分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "total_score",
+          "display": "AUTO｜总分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "rule_version",
+          "display": "AUTO｜规则版本",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "current_recommendation",
+          "display": "AUTO｜当前建议",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "evidence",
+          "display": "AUTO｜证据",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "证据表",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "score_history",
+          "display": "AUTO｜评分历史",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "评分记录",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "display_key",
+          "display": "AUTO｜显示键",
+          "type": "formula",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": "[AUTO｜产品市场唯一键]",
+          "style": null
+        }
+      ]
+    },
+    {
+      "name": "广告与素材",
+      "logical_key": "meta_ad_id",
+      "trigger_states": [],
+      "fields": [
+        {
+          "key": "meta_ad_id",
+          "display": "AUTO｜Meta广告ID",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "status",
+          "display": "AUTO｜采集状态",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "已采集"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "advertiser",
+          "display": "AUTO｜广告主",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "page_id",
+          "display": "AUTO｜页面ID",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "ad_text",
+          "display": "AUTO｜文案",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "hook",
+          "display": "AUTO｜前三秒Hook",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_fingerprint",
+          "display": "AUTO｜素材指纹",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "evidence_object_id",
+          "display": "AUTO｜证据对象ID",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "started_at",
+          "display": "AUTO｜开始投放日期",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "observed_at",
+          "display": "AUTO｜观察时间",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "active_days",
+          "display": "AUTO｜可观察活跃天数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "duration",
+          "display": "AUTO｜视频时长",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "rhythm_30s",
+          "display": "AUTO｜前30秒节奏摘要",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "comment_signals",
+          "display": "AUTO｜评论与UGC信号",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "active",
+          "display": "AUTO｜当前活跃",
+          "type": "checkbox",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "distinct_creative",
+          "display": "AUTO｜独立创意",
+          "type": "checkbox",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_type",
+          "display": "AUTO｜创意类型",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "视频",
+            "图片",
+            "UGC",
+            "Before-After",
+            "专家背书",
+            "其他"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_signals",
+          "display": "AUTO｜创意信号",
+          "type": "select",
+          "owner": "auto",
+          "options": [],
+          "multiple": true,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_url",
+          "display": "AUTO｜素材链接",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": {
+            "type": "url"
+          }
+        },
+        {
+          "key": "extractor_version",
+          "display": "AUTO｜提取器版本",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "product",
+          "display": "AUTO｜产品",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "产品主表",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "keywords",
+          "display": "AUTO｜关键词",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "关键词库",
+          "formula": null,
+          "style": null
+        }
+      ]
+    },
+    {
+      "name": "证据表",
+      "logical_key": "evidence_id",
+      "trigger_states": [],
+      "fields": [
+        {
+          "key": "evidence_id",
+          "display": "AUTO｜证据ID",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "evidence_type",
+          "display": "AUTO｜证据类型",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "Meta",
+            "Trends",
+            "落地页",
+            "供应商",
+            "人工"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "trust",
+          "display": "AUTO｜可信等级",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "verified",
+            "inferred",
+            "unknown"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "status",
+          "display": "AUTO｜确认状态",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "待确认",
+            "已确认",
+            "已过期"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "collector_version",
+          "display": "AUTO｜采集器版本",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "model_version",
+          "display": "AUTO｜模型版本",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "evidence_version",
+          "display": "AUTO｜证据版本",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "raw_value",
+          "display": "AUTO｜原始值",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "normalized_value",
+          "display": "AUTO｜标准化值",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "source_url",
+          "display": "AUTO｜来源URL",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": {
+            "type": "url"
+          }
+        },
+        {
+          "key": "snapshot_object_id",
+          "display": "AUTO｜快照对象ID",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "confidence",
+          "display": "AUTO｜置信度",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "collected_at",
+          "display": "AUTO｜采集时间",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "expires_at",
+          "display": "AUTO｜有效期",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "object_reference",
+          "display": "AUTO｜对象引用",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "human_confirmed",
+          "display": "人工｜人工确认",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        }
+      ]
+    },
+    {
+      "name": "供应商报价",
+      "logical_key": "quote_key",
+      "trigger_states": [],
+      "fields": [
+        {
+          "key": "fx_rate_at",
+          "display": "AUTO｜汇率时间",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "status",
+          "display": "AUTO｜状态",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "待人工选择",
+            "已采用",
+            "未采用"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "quote_key",
+          "display": "AUTO｜报价唯一键",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "product",
+          "display": "AUTO｜产品",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "产品主表",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "platform",
+          "display": "AUTO｜来源平台",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "Alibaba",
+            "1688",
+            "AliExpress",
+            "其他"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "supplier",
+          "display": "AUTO｜供应商",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "sku",
+          "display": "AUTO｜SKU",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "currency",
+          "display": "AUTO｜币种",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "shipping_method",
+          "display": "AUTO｜运输方式",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "certification",
+          "display": "AUTO｜认证",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "quantity",
+          "display": "AUTO｜适用数量",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "moq",
+          "display": "AUTO｜MOQ",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "unit_cost",
+          "display": "AUTO｜原币单件报价",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "fx_rate",
+          "display": "AUTO｜汇率",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "usd_unit_cost",
+          "display": "AUTO｜美元单件货值",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "order_goods_cost",
+          "display": "AUTO｜订单货值",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "weight",
+          "display": "AUTO｜包装重量",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "packaging_cost",
+          "display": "AUTO｜订单包装成本",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "us_shipping_cost",
+          "display": "AUTO｜美国订单运费",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "lead_time_days",
+          "display": "AUTO｜交期天数",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "url",
+          "display": "AUTO｜商品链接",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": {
+            "type": "url"
+          }
+        },
+        {
+          "key": "quote_date",
+          "display": "AUTO｜报价日期",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "selected",
+          "display": "人工｜是否采用",
+          "type": "checkbox",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        }
+      ]
+    },
+    {
+      "name": "评分记录",
+      "logical_key": "score_id",
+      "trigger_states": [],
+      "fields": [
+        {
+          "key": "review_result",
+          "display": "人工｜人工复核结果",
+          "type": "select",
+          "owner": "human",
+          "options": [
+            "批准测试",
+            "转备选",
+            "继续观察",
+            "退回补充",
+            "淘汰"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "score_id",
+          "display": "AUTO｜评分ID",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "input_snapshot",
+          "display": "AUTO｜输入证据快照",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "market_evaluation",
+          "display": "AUTO｜市场评估",
+          "type": "link",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": "市场评估表",
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "scored_at",
+          "display": "AUTO｜评分时间",
+          "type": "datetime",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "rule_version",
+          "display": "AUTO｜规则版本",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "reasons",
+          "display": "AUTO｜评分理由",
+          "type": "text",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "completeness",
+          "display": "AUTO｜证据完整度",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "完整",
+            "不完整"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "meta_screen",
+          "display": "AUTO｜Meta粗筛结果",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "通过",
+            "未通过",
+            "证据不足"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "gate_result",
+          "display": "AUTO｜硬门槛结果",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "通过",
+            "未通过",
+            "待补充"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "status",
+          "display": "AUTO｜评分状态",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "待人工复核",
+            "已复核"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "recommendation",
+          "display": "AUTO｜系统建议",
+          "type": "select",
+          "owner": "auto",
+          "options": [
+            "测试",
+            "备选",
+            "淘汰",
+            "待补充"
+          ],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "demand_score",
+          "display": "AUTO｜需求趋势分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "creative_score",
+          "display": "AUTO｜素材空间分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "profit_score",
+          "display": "AUTO｜利润物流分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "competition_score",
+          "display": "AUTO｜竞争强度分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "risk_score",
+          "display": "AUTO｜合规风险分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "total_score",
+          "display": "AUTO｜总分",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "margin",
+          "display": "AUTO｜贡献毛利率",
+          "type": "number",
+          "owner": "auto",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "reviewed_at",
+          "display": "人工｜人工复核时间",
+          "type": "datetime",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        },
+        {
+          "key": "review_reason",
+          "display": "人工｜人工复核理由",
+          "type": "text",
+          "owner": "human",
+          "options": [],
+          "multiple": false,
+          "link_target": null,
+          "formula": null,
+          "style": null
+        }
+      ]
+    }
+  ],
+  "views": [
+    {
+      "table": "细分领域池",
+      "name": "触发｜待研究证据卡",
+      "kind": "trigger",
+      "field_key": "status",
+      "state": "待研究"
+    },
+    {
+      "table": "细分领域池",
+      "name": "触发｜已批准领域种子词",
+      "kind": "trigger",
+      "field_key": "status",
+      "state": "已启用"
+    },
+    {
+      "table": "细分领域池",
+      "name": "触发｜待生成",
+      "kind": "trigger",
+      "field_key": "status",
+      "state": "待生成"
+    },
+    {
+      "table": "关键词库",
+      "name": "触发｜待扫描",
+      "kind": "trigger",
+      "field_key": "status",
+      "state": "待扫描"
+    },
+    {
+      "table": "市场评估表",
+      "name": "触发｜开始验证",
+      "kind": "trigger",
+      "field_key": "status",
+      "state": "开始验证"
+    },
+    {
+      "table": "搜索批次",
+      "name": "运营｜运行告警",
+      "kind": "operation",
+      "field_key": "row_type",
+      "state": "运行告警"
+    },
+    {
+      "table": "市场评估表",
+      "name": "运营｜观察池",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "观察池"
+    },
+    {
+      "table": "市场评估表",
+      "name": "运营｜测试池",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "测试池"
+    },
+    {
+      "table": "市场评估表",
+      "name": "运营｜待确认创意",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待确认创意"
+    },
+    {
+      "table": "市场评估表",
+      "name": "运营｜粗筛通过",
+      "kind": "operation",
+      "field_key": "current_recommendation",
+      "state": "值得深入"
+    },
+    {
+      "table": "细分领域池",
+      "name": "运营｜待研究",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待研究"
+    },
+    {
+      "table": "细分领域池",
+      "name": "运营｜待人工选择",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待人工选择"
+    },
+    {
+      "table": "关键词库",
+      "name": "运营｜待审核",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待审核"
+    },
+    {
+      "table": "关键词库",
+      "name": "运营｜扫描中",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "扫描中"
+    },
+    {
+      "table": "搜索批次",
+      "name": "运营｜待执行",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待执行"
+    },
+    {
+      "table": "搜索批次",
+      "name": "运营｜需人工处理",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "需人工处理"
+    },
+    {
+      "table": "产品主表",
+      "name": "运营｜待识别具体产品",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待识别具体产品"
+    },
+    {
+      "table": "市场评估表",
+      "name": "运营｜待询价",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待询价"
+    },
+    {
+      "table": "市场评估表",
+      "name": "运营｜待补充证据",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待补充证据"
+    },
+    {
+      "table": "市场评估表",
+      "name": "运营｜待评分",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待评分"
+    },
+    {
+      "table": "市场评估表",
+      "name": "运营｜待人工复核",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待人工复核"
+    },
+    {
+      "table": "市场评估表",
+      "name": "运营｜输入已变更",
+      "kind": "operation",
+      "field_key": "run_status",
+      "state": "输入已变更"
+    },
+    {
+      "table": "供应商报价",
+      "name": "运营｜待人工选择",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待人工选择"
+    },
+    {
+      "table": "评分记录",
+      "name": "运营｜待人工复核",
+      "kind": "operation",
+      "field_key": "status",
+      "state": "待人工复核"
+    }
+  ]
+}

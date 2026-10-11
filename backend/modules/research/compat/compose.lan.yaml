@@ -1,0 +1,8 @@
+# Enable only after the backup Mac has a unique, reserved LAN IPv4 address.
+services:
+  api:
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "${RABBIT_HOLE_LAN_IP:?set_the_reserved_backup_mac_ip}:8000:8000"
+    environment:
+      RABBIT_HOLE_LAN_IP: ${RABBIT_HOLE_LAN_IP:?set_the_reserved_backup_mac_ip}

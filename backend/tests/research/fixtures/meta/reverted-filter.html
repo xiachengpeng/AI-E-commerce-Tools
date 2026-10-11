@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <select data-testid="country-filter"><option value="US">US</option></select>
+    <select data-testid="status-filter" onchange="this.value='inactive'">
+      <option value="active">active</option>
+      <option value="inactive">inactive</option>
+    </select>
+    <select data-testid="media-type-filter"><option value="video">video</option></select>
+    <select data-testid="search-mode-filter"><option value="exact_phrase">exact_phrase</option></select>
+    <input data-testid="search-input">
+    <section data-testid="ad-library-results">
+      <article data-meta-ad-card data-ad-id="1001" data-advertiser="Acme Storage" data-active="true" data-active-days="66" data-page-type="product" data-media-accessible="true" data-relevance-verified="true">
+        <p data-role="primary-text">Keep every cable in its place.</p>
+      </article>
+    </section>
+    <div data-testid="ad-library-end">End of results</div>
+  </body>
+</html>

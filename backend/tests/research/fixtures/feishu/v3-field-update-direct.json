@@ -1,0 +1,30 @@
+{
+  "code": 0,
+  "msg": "success",
+  "request_id": "req-field-update",
+  "data": {
+    "id": "fld_status",
+    "name": "AUTO｜键",
+    "type": "select",
+    "multiple": false,
+    "options": [
+      {
+        "id": "opt_a",
+        "name": "A",
+        "color": "blue",
+        "hue": "Blue",
+        "lightness": "Lighter",
+        "custom_option_property": {"source": "fixture"}
+      },
+      {"name": "B"}
+    ],
+    "style": {
+      "type": "plain",
+      "format": "fixture-format",
+      "custom_style_property": true
+    },
+    "description": "keep from GET",
+    "field_setting": {"allowed_roles": ["admin"], "locked": true},
+    "custom_field_property": {"nested": [1, 2, 3]}
+  }
+}

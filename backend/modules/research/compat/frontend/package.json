@@ -1,0 +1,13 @@
+{
+  "name": "rabbit-hole-workbench",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "tailwindcss -i styles/ui.css -o dist/tailwind.css --minify && node build.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.1.14",
+    "tailwindcss": "4.1.14"
+  }
+}

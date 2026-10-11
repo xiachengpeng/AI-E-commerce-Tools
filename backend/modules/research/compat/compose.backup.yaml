@@ -1,0 +1,5 @@
+# The workbench worker runs by default; the old pipeline is opt-in.
+services:
+  worker:
+    profiles:
+      - legacy

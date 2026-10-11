@@ -1,0 +1,234 @@
+"""Run complete suites in separate source-only sandboxes, never live local state."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Literal
+
+ROOT = Path(__file__).resolve().parents[2]
+COMPAT = Path("backend/modules/research/compat")
+
+
+def copy_source(source: Path, destination: Path) -> None:
+    if source.is_symlink():
+        raise ValueError(f"Symlink is not source: {source.name}")
+    if source.is_dir():
+        destination.mkdir(parents=True, exist_ok=True)
+        for child in source.iterdir():
+            if (
+                child.name.startswith((".env", ".venv"))
+                or child.name
+                in {"node_modules", "dist", "__pycache__", ".pytest_cache", "static"}
+                or child.name.endswith(
+                    (
+                        ".db",
+                        ".sqlite",
+                        ".sqlite3",
+                        ".pyc",
+                        ".db-wal",
+                        ".db-shm",
+                        ".db-journal",
+                        ".sqlite-wal",
+                        ".sqlite-shm",
+                        ".sqlite-journal",
+                    )
+                )
+            ):
+                continue
+            copy_source(child, destination / child.name)
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
+def prepare_sandbox(suite: Literal["main", "research"], output: Path) -> Path:
+    if suite not in ("main", "research"):
+        raise ValueError("suite must be main or research")
+    output = output.resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    sandbox = output / "source"
+    if sandbox.exists():
+        raise FileExistsError("Use a new private output directory per run")
+    sandbox.mkdir()
+    if suite == "main":
+        for relative in (
+            "backend",
+            "frontend",
+            "scripts/full_merge",
+            "docs/merge-assessment",
+            "run.py",
+            "pytest.ini",
+        ):
+            copy_source(ROOT / relative, sandbox / relative)
+        if (sandbox / "backend/tests/research").exists():
+            shutil.move(sandbox / "backend/tests/research", sandbox / "_research_tests")
+        else:
+            copy_source(ROOT / "_research_tests", sandbox / "_research_tests")
+    else:
+        copy_source(
+            ROOT
+            / (
+                "backend/tests/research"
+                if (ROOT / "backend/tests/research").exists()
+                else "_research_tests"
+            ),
+            sandbox / "tests",
+        )
+        copy_source(ROOT / COMPAT, sandbox)
+        copy_source(
+            ROOT / "backend/modules/research/rabbit_hole", sandbox / "src/rabbit_hole"
+        )
+    guards = sandbox / "_isolation"
+    guards.mkdir()
+    for name in ("sitecustomize.py", "node_guard.cjs"):
+        shutil.copy2(ROOT / "scripts/full_merge" / name, guards / name)
+    return sandbox
+
+
+def sandbox_environment(sandbox: Path, suite: str) -> dict[str, str]:
+    # Allowlist inherited process settings. No provider credentials, DB endpoints,
+    # proxies, real HOME/config files, or application .env are inherited.
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        in {"PATH", "SYSTEMROOT", "LANG", "LC_ALL", "TERM", "PLAYWRIGHT_BROWSERS_PATH"}
+    }
+    home = sandbox / "_home"
+    home.mkdir(exist_ok=True)
+    env.update(
+        FULL_MERGE_SUITE=suite,
+        HOME=str(home),
+        TMPDIR=str(home),
+        FULL_MERGE_SANDBOX=str(sandbox),
+        PYTHONPATH=os.pathsep.join(
+            [
+                str(sandbox / "_isolation"),
+                str(sandbox / ("src" if suite == "research" else "backend")),
+                str(sandbox),
+            ]
+        ),
+        NODE_OPTIONS="--require="
+        + json.dumps(str(sandbox / "_isolation/node_guard.cjs"), ensure_ascii=False),
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+        SQLITE_DB_PATH=str(home / "main-test.db"),
+        FIRECRAWL_API_KEY="synthetic-isolation-fixture-key",
+        RABBIT_HOLE_TEST_SQLITE="1",
+        RABBIT_HOLE_TEST_FILES="1",
+        RABBIT_HOLE_SKIP_POSTGRES_TESTS="1",
+        AWS_EC2_METADATA_DISABLED="true",
+        RABBIT_HOLE_DATABASE_URL="sqlite+aiosqlite:///"
+        + str(home / "research-test.db"),
+    )
+    return env
+
+
+def build_research_frontend(sandbox: Path, env: dict[str, str]) -> None:
+    cli = ROOT / COMPAT / "frontend/node_modules/@tailwindcss/cli/dist/index.mjs"
+    if not cli.is_file():
+        raise RuntimeError(
+            "Install pinned compat frontend dependencies before research tests"
+        )
+    frontend = sandbox / "frontend"
+    subprocess.run(
+        [
+            "node",
+            str(cli),
+            "-i",
+            str(ROOT / COMPAT / "frontend/styles/ui.css"),
+            "-o",
+            "dist/tailwind.css",
+            "--minify",
+        ],
+        cwd=frontend,
+        env=env,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ["node", "build.mjs"],
+        cwd=frontend,
+        env=env,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+
+
+def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) -> int:
+    if suite not in ("main", "research", "all"):
+        raise ValueError("Unknown suite")
+    statuses = {}
+    for current in ("main", "research") if suite == "all" else (suite,):
+        sandbox = prepare_sandbox(current, output / current)
+        env = sandbox_environment(sandbox, current)
+        if current == "research":
+            build_research_frontend(sandbox, env)
+        command = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-p",
+            "pytest_asyncio.plugin",
+            "--import-mode=prepend",
+        ]
+        if current == "main":
+            command.extend(["-c", "pytest.ini", "backend/tests", "-q"])
+        else:
+            command.extend(["-c", "pyproject.toml", "tests", "-q"])
+        with (output / current / "pytest.log").open("w") as log:
+            result = subprocess.run(
+                command,
+                cwd=sandbox,
+                env=env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+        test_files = sorted((sandbox / "frontend/tests").glob("*.test.*"))
+        with (output / current / "frontend.log").open("w") as log:
+            frontend = subprocess.run(
+                ["node", "--test", *map(str, test_files)],
+                cwd=sandbox,
+                env=env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+        statuses[current] = max(result.returncode, frontend.returncode)
+        if current == "research":
+            tools = [
+                ("ruff", ["check", "src", "--no-respect-gitignore", "--config", "pyproject.toml"]),
+                ("mypy", ["-p", "rabbit_hole", "--config-file", "pyproject.toml"]),
+            ]
+            env["MYPYPATH"] = str(sandbox / "src")
+            for tool, arguments in tools:
+                with (output / current / f"{tool}.log").open("w") as log:
+                    checked = subprocess.run(
+                        [str(Path(sys.executable).parent / tool), *arguments],
+                        cwd=sandbox,
+                        env=env,
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                        check=False,
+                    )
+                statuses[current] = max(statuses[current], checked.returncode)
+        print(
+            f"{current}: exit {statuses[current]}; {output / current / 'pytest.log'}",
+            flush=True,
+        )
+    (output / "result.json").write_text(json.dumps(statuses, indent=2) + "\n")
+    return max(statuses.values())
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--suite", required=True, choices=["main", "research", "all"])
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    raise SystemExit(run_isolated_suite(args.suite, args.output))

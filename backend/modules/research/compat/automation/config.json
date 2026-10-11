@@ -1,0 +1,45 @@
+{
+  "default_market": "US",
+  "markets": {
+    "US": {
+      "currency": "USD",
+      "min_aov": 50,
+      "max_aov": 100,
+      "payment_percent": 2.9,
+      "payment_fixed": 0.30,
+      "loss_reserve_percent": 3.0
+    },
+    "UK": {
+      "currency": "USD",
+      "min_aov": 50,
+      "max_aov": 100,
+      "payment_percent": 2.9,
+      "payment_fixed": 0.30,
+      "loss_reserve_percent": 3.0
+    },
+    "EU": {
+      "currency": "USD",
+      "min_aov": 50,
+      "max_aov": 100,
+      "payment_percent": 2.9,
+      "payment_fixed": 0.30,
+      "loss_reserve_percent": 3.0
+    }
+  },
+  "hard_gates": {
+    "min_contribution_margin_pct": 60,
+    "max_weight_kg": 2,
+    "blocked_risks": ["high"],
+    "blocked_trends": ["declining", "peaked"]
+  },
+  "buckets": {
+    "test_pool_min_score": 18,
+    "watchlist_min_score": 15
+  },
+  "ad_test_policy": {
+    "status": "TBD",
+    "budget_usd": null,
+    "success_rules": null,
+    "stop_rules": null
+  }
+}

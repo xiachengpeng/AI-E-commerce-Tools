@@ -1,0 +1,31 @@
+{
+  "code": 0,
+  "msg": "success",
+  "request_id": "req-field-list-0",
+  "data": {
+    "items": [
+      {
+        "id": "fld_status",
+        "name": "AUTO｜键",
+        "type": "select",
+        "multiple": false,
+        "options": [
+          {
+            "id": "opt_list_a",
+            "name": "A",
+            "color": "list-blue",
+            "hue": "Blue",
+            "lightness": "Light"
+          }
+        ],
+        "style": {"type": "plain"},
+        "list_only_property": "direct-object"
+      }
+    ],
+    "has_more": true,
+    "offset": 100,
+    "total": 2,
+    "directory_metadata": {"source": "fixture"}
+  },
+  "top_level_property": {"trace": "keep-list-envelope"}
+}

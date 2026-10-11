@@ -1,0 +1,2 @@
+function renderEvents(root){if(!S.project.events?.length)return;const d=el('details');d.append(el('summary','','操作与版本历史'));const n=el('div','timeline');for(const e of [...S.project.events].reverse().slice(0,20)){const x=el('div','event',`${time(e.created_at||e.at)} · ${e.action||e.type||'更新'} · ${e.actor||'本机用户'}`);n.append(x);}d.append(n);root.append(d);}
+function closeDialog(){$('dialog').close();$('submit-form').classList.remove('hidden');}

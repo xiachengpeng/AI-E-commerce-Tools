@@ -1,0 +1,21 @@
+{
+  "code": 0,
+  "msg": "success",
+  "request_id": "req-field-list-100",
+  "data": {
+    "items": [
+      {
+        "id": "fld_other",
+        "name": "AUTO｜分页证明",
+        "type": "text",
+        "style": {"type": "plain"},
+        "list_only_property": "second-page-direct-object"
+      }
+    ],
+    "has_more": false,
+    "offset": 200,
+    "total": 2,
+    "directory_metadata": {"source": "fixture"}
+  },
+  "top_level_property": {"trace": "keep-list-envelope"}
+}

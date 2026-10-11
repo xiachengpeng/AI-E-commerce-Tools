@@ -1,3 +1,5 @@
+# Preserve the verified Python 3.12 versions during ordinary installation.
+-c requirements-full-merge.lock
 fastapi
 uvicorn
 httpx
@@ -9,3 +11,15 @@ google-genai
 Pillow>=10.0.0
 pytest
 pytest-asyncio
+
+# Consolidated, inactive research module dependencies (Python 3.12).
+# Reproducible unified runtime/test installation: requirements-full-merge.lock.
+alibabacloud-alimt20181012==1.5.2
+aiosqlite>=0.21,<1
+alembic>=1.13,<2
+boto3>=1.35,<2
+openai>=1.50,<3
+playwright>=1.48,<2
+prometheus-client>=0.21,<1
+psycopg[binary]>=3.2,<4
+pydantic-settings>=2.6,<3

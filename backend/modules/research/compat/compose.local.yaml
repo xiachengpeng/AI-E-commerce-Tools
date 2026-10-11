@@ -1,0 +1,47 @@
+# SQLite + private files on the backup Mac. Original Compose remains rollback-only.
+name: rabbit-hole-phase1
+x-local-application: &local-application
+  image: rabbit-hole-phase1:local
+  restart: unless-stopped
+  env_file:
+    - .env
+  environment:
+    RABBIT_HOLE_DATABASE_URL: sqlite+aiosqlite:////app/data/workbench.db
+    RABBIT_HOLE_STORAGE_BACKEND: files
+    RABBIT_HOLE_STORAGE_PATH: /app/data/evidence
+    RABBIT_HOLE_PROVIDER_SECRETS_PATH: /app/provider-secrets/keys.json
+    RABBIT_HOLE_LAN_IP: ${RABBIT_HOLE_LAN_IP:?set_the_reserved_backup_mac_ip}
+  volumes:
+    - ${RABBIT_HOLE_LOCAL_DATA_PATH:-/Users/xcp/rabbit-hole-data}:/app/data
+    - provider_secrets:/app/provider-secrets
+  networks: [egress]
+services:
+  api:
+    <<: *local-application
+    build: .
+    command: [python, -m, rabbit_hole.runtime.server]
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "${RABBIT_HOLE_LAN_IP:?set_the_reserved_backup_mac_ip}:8000:8000"
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+  workbench-worker:
+    <<: *local-application
+    command: [python, -m, rabbit_hole.runtime.workbench_worker]
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, python, -m, rabbit_hole.runtime.workbench_worker, health]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+networks:
+  egress:
+volumes:
+  provider_secrets:
+    external: true
+    name: rabbit-hole-phase1_provider_secrets

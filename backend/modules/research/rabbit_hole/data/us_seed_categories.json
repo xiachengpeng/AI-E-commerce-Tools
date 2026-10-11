@@ -1,0 +1,37 @@
+[
+  {
+    "key": "pet",
+    "label_zh": "宠物",
+    "canonical_terms": ["dog care", "cat care", "pet grooming", "pet enrichment", "pet travel"]
+  },
+  {
+    "key": "home_organization",
+    "label_zh": "家居收纳",
+    "canonical_terms": ["closet organization", "small space storage", "pantry organization", "bathroom storage", "garage organization"]
+  },
+  {
+    "key": "kitchen",
+    "label_zh": "厨房",
+    "canonical_terms": ["meal prep", "kitchen storage", "coffee accessories", "baking tools", "food preservation"]
+  },
+  {
+    "key": "car_accessories",
+    "label_zh": "汽车配件",
+    "canonical_terms": ["car organization", "car cleaning", "road trip accessories", "phone mounts", "vehicle safety"]
+  },
+  {
+    "key": "outdoor",
+    "label_zh": "户外",
+    "canonical_terms": ["camping gear", "hiking accessories", "backyard recreation", "fishing accessories", "outdoor cooking"]
+  },
+  {
+    "key": "office",
+    "label_zh": "办公",
+    "canonical_terms": ["desk organization", "ergonomic office", "home office", "cable management", "office productivity"]
+  },
+  {
+    "key": "hobbies",
+    "label_zh": "兴趣爱好",
+    "canonical_terms": ["craft supplies", "painting accessories", "music accessories", "model building", "collecting supplies"]
+  }
+]

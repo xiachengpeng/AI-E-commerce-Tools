@@ -1,0 +1,12 @@
+{
+  "code": 0,
+  "msg": "success",
+  "request_id": "req-field-create",
+  "data": {
+    "id": "fld_created",
+    "name": "AUTO｜状态",
+    "type": "select",
+    "multiple": false,
+    "options": []
+  }
+}
