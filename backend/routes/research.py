@@ -1,15 +1,21 @@
 """Research-only session and routes; old business endpoints remain unchanged."""
 import secrets
+from typing import Literal
 from urllib.parse import urlsplit
 from uuid import UUID
-from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
-from models.research import ConfirmFactRequest, LogisticsRequest, PreviewRequest, ScenarioRequest
-from modules.research_math.logistics import logistics_weights
+from models.research import (
+    ConfirmFactRequest,
+    LogisticsRequest,
+    PreviewRequest,
+    ScenarioRequest,
+)
 from modules.research_math.estimates import scenario_rows
+from modules.research_math.logistics import logistics_weights
 from modules.research_math.markets import MARKETS
+from pydantic import ValidationError
 from services.research_client import ResearchClient, ResearchError, load_research_config
 from services.research_mapper import build_marketing_preview
 
@@ -48,19 +54,33 @@ def session(request: Request):
                  if parsed and parsed.scheme == 'http' and parsed.hostname in {'127.0.0.1', 'localhost'}
                  and not parsed.username and not parsed.password and not parsed.query and parsed.path in {'', '/'} else None)
     return JSONResponse({'csrf_token': _session_token, 'enabled': config.get('enabled') is True,
-                         'embed_url': embed_url if config.get('enabled') is True else None,
-                         'workbench_url': config.get('workbench_url') if config.get('enabled') is True else None},
+                         'embed_url': embed_url if config.get('enabled') is True and config.get('mode', 'remote') == 'remote' else None,
+                         'workbench_url': config.get('workbench_url') if config.get('enabled') is True and config.get('mode', 'remote') == 'remote' else None},
                         headers={'Cache-Control': 'no-store'})
 
 
-def client():
-    config = load_research_config()
+def client(*, runtime=None, config=None):
+    config = load_research_config() if config is None else config
     if config.get('enabled') is not True:
         raise HTTPException(503, '研究连接尚未启用，独立计算工具仍可使用')
     try:
+        mode = config.get('mode', 'remote')
+        if mode == 'local':
+            from services.research_facade import ResearchFacade
+            return ResearchFacade(runtime)
+        if mode != 'remote':
+            raise ResearchError('invalid_mode', '研究模式必须明确选择 local 或 remote')
         return ResearchClient(config)
     except ResearchError as e:
         raise HTTPException(e.status, {'code': e.code, 'message': str(e)}) from None
+
+
+def routed_client(request):
+    # Existing default and legacy test adapters retain the zero-argument factory.
+    config = load_research_config()
+    if config.get('mode', 'remote') == 'local':
+        return client(runtime=getattr(request.app.state, 'research_runtime', None), config=config)
+    return client()
 
 
 async def invoke(call):
@@ -92,23 +112,23 @@ def scenarios(payload: ScenarioRequest):
 
 
 @router.get('/projects', dependencies=[Depends(require_session)])
-async def projects(cursor: UUID | None = None, limit: int = Query(20, ge=1, le=50)):
-    return await invoke(client().list_projects(cursor, limit))
+async def projects(request: Request, cursor: UUID | None = None, limit: int = Query(20, ge=1, le=50)):
+    return await invoke(routed_client(request).list_projects(cursor, limit))
 
 
 @router.get('/projects/{project_id}', dependencies=[Depends(require_session)])
-async def project(project_id: UUID):
-    return await invoke(client().get_project(project_id))
+async def project(request: Request, project_id: UUID):
+    return await invoke(routed_client(request).get_project(project_id))
 
 
 @router.get('/projects/{project_id}/report', dependencies=[Depends(require_session)])
-async def report(project_id: UUID):
+async def report(request: Request, project_id: UUID):
     from models.research import ResearchReport
-    return await validated_projection(project_id, '/report', ResearchReport)
+    return await validated_projection(request, project_id, '/report', ResearchReport)
 
 
-async def validated_projection(project_id, suffix, model):
-    data = await invoke(client().request('GET', '/projects/' + str(project_id) + suffix))
+async def validated_projection(request, project_id, suffix, model):
+    data = await invoke(routed_client(request).request('GET', '/projects/' + str(project_id) + suffix))
     try:
         parsed = model.model_validate(data).model_dump(mode='json')
         if parsed['project_id'] != str(project_id):
@@ -119,17 +139,17 @@ async def validated_projection(project_id, suffix, model):
 
 
 @router.get('/projects/{project_id}/confirmations/{command_id}', dependencies=[Depends(require_session)])
-async def confirmation_status(project_id: UUID, command_id: UUID):
+async def confirmation_status(request: Request, project_id: UUID, command_id: UUID):
     from models.research import ConfirmationStatus
-    result = await validated_projection(project_id, '/confirmations/' + str(command_id), ConfirmationStatus)
+    result = await validated_projection(request, project_id, '/confirmations/' + str(command_id), ConfirmationStatus)
     if result['command_id'] != str(command_id):
         raise HTTPException(503, '研究操作响应不匹配')
     return result
 
 
 @router.post('/projects/{project_id}/products/{product_id}/preview', dependencies=[Depends(require_session)])
-async def preview(project_id: UUID, product_id: UUID, payload: PreviewRequest):
-    snapshot = await invoke(client().get_product(project_id, product_id))
+async def preview(request: Request, project_id: UUID, product_id: UUID, payload: PreviewRequest):
+    snapshot = await invoke(routed_client(request).get_product(project_id, product_id))
     ref = snapshot['source_ref']
     if (ref['source_version'] != payload.expected_source_version or ref['identity_revision'] != payload.expected_identity_revision
             or snapshot['market'] != payload.expected_market):
@@ -138,11 +158,11 @@ async def preview(project_id: UUID, product_id: UUID, payload: PreviewRequest):
 
 
 @router.post('/projects/{project_id}/products/{product_id}/confirm-fact', dependencies=[Depends(require_session)])
-async def confirm_fact(project_id: UUID, product_id: UUID, body: ConfirmFactRequest):
+async def confirm_fact(request: Request, project_id: UUID, product_id: UUID, body: ConfirmFactRequest):
     data = body.model_dump(mode='json')
     payload = {key: data[key] for key in ('identity_revision', 'market', 'key', 'value', 'source_url', 'own_product')}
     payload['product_id'] = str(product_id)
-    result = await invoke(client().request('POST', '/projects/' + str(project_id) + '/confirm-fact',
+    result = await invoke(routed_client(request).request('POST', '/projects/' + str(project_id) + '/confirm-fact',
                          {'command_id': str(body.command_id), 'expected_version': body.expected_version, 'payload': payload}))
     from models.research import ProjectSnapshot
     from pydantic import ValidationError
@@ -182,11 +202,11 @@ def import_status(import_id: UUID):
     return result
 
 
-from models.research import SaveResearchImport, AttachResearchArtifact
+from models.research import AttachResearchArtifact, SaveResearchImport
 
 
 @router.post('/projects/{project_id}/products/{product_id}/imports', dependencies=[Depends(require_session)])
-async def save_import(project_id: UUID, product_id: UUID, payload: SaveResearchImport):
+async def save_import(request: Request, project_id: UUID, product_id: UUID, payload: SaveResearchImport):
     from services.research_repository import digest
     if not payload.name.strip():
         raise HTTPException(422, '档案名称不能为空')
@@ -195,7 +215,7 @@ async def save_import(project_id: UUID, product_id: UUID, payload: SaveResearchI
     previous = local_call(lambda: repository().lookup(payload.import_id, request_digest))
     if previous:
         return previous
-    snapshot = await invoke(client().get_product(project_id, product_id))
+    snapshot = await invoke(routed_client(request).get_product(project_id, product_id))
     ref = snapshot['source_ref']
     if (ref['source_version'] != payload.expected_source_version or ref['identity_revision'] != payload.expected_identity_revision
             or snapshot['market'] != payload.expected_market):
@@ -216,7 +236,13 @@ def attach_artifact(import_id: UUID, payload: AttachResearchArtifact):
 @router.get('/artifact-choices', dependencies=[Depends(require_session)])
 def artifact_choices(module: Literal['analysis', 'listing', 'ads', 'details'],
                      cursor: int | None = Query(None, ge=1), limit: int = Query(20, ge=1, le=50)):
-    from db import SessionLocal, AnalysisHistory, ListingHistory, AdsHistory, RenderHistory
+    from db import (
+        AdsHistory,
+        AnalysisHistory,
+        ListingHistory,
+        RenderHistory,
+        SessionLocal,
+    )
     models = {'analysis': (AnalysisHistory, AnalysisHistory.query_url), 'listing': (ListingHistory, ListingHistory.product_name),
               'ads': (AdsHistory, AdsHistory.product_name), 'details': (RenderHistory, RenderHistory.task_name)}
     model, label = models[module]
@@ -235,8 +261,9 @@ from models.research import ResearchUserCommand
 
 
 @router.post('/projects/{project_id}/commands', dependencies=[Depends(require_session)])
-async def research_command(project_id: UUID, payload: ResearchUserCommand):
+async def research_command(request: Request, project_id: UUID, payload: ResearchUserCommand):
     import json
+
     from models.research import ProjectSnapshot
     try:
         size = len(json.dumps(payload.payload, allow_nan=False).encode())
@@ -244,7 +271,7 @@ async def research_command(project_id: UUID, payload: ResearchUserCommand):
         raise HTTPException(422, '不允许非有限数值') from None
     if size > 64000:
         raise HTTPException(413, '研究命令输入过大')
-    result = await invoke(client().request('POST', '/projects/' + str(project_id) + '/commands',payload.model_dump(mode='json')))
+    result = await invoke(routed_client(request).request('POST', '/projects/' + str(project_id) + '/commands',payload.model_dump(mode='json')))
     try:
         parsed = ProjectSnapshot.model_validate(result)
         if parsed.id != project_id or parsed.market != payload.market:
@@ -255,18 +282,18 @@ async def research_command(project_id: UUID, payload: ResearchUserCommand):
 
 
 @router.get('/projects/{project_id}/commands/{command_id}', dependencies=[Depends(require_session)])
-async def research_command_status(project_id: UUID, command_id: UUID):
+async def research_command_status(request: Request, project_id: UUID, command_id: UUID):
     from models.research import ConfirmationStatus
-    result = await validated_projection(project_id,'/commands/' + str(command_id),ConfirmationStatus)
+    result = await validated_projection(request, project_id,'/commands/' + str(command_id),ConfirmationStatus)
     if result['command_id'] != str(command_id):
         raise HTTPException(503, '操作回执编号不匹配')
     return result
 
 
 @router.get('/projects/{project_id}/actions', dependencies=[Depends(require_session)])
-async def research_actions(project_id: UUID, cursor: UUID | None = None, limit: int = Query(20, ge=1, le=50)):
+async def research_actions(request: Request, project_id: UUID, cursor: UUID | None = None, limit: int = Query(20, ge=1, le=50)):
     from models.research import ResearchActionPage
-    data = await invoke(client().request('GET','/projects/' + str(project_id) + '/actions',params={'limit':limit,**({'cursor':str(cursor)} if cursor else {})}))
+    data = await invoke(routed_client(request).request('GET','/projects/' + str(project_id) + '/actions',params={'limit':limit,**({'cursor':str(cursor)} if cursor else {})}))
     try:
         page = ResearchActionPage.model_validate(data)
         if page.project_id != project_id:
