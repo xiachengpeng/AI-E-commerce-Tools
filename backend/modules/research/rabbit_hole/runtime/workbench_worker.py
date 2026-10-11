@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -40,12 +41,12 @@ async def is_worker_live(engine: AsyncEngine, *, max_age: float = 60) -> bool:
 
 
 async def serve_workbench(
-    engine: AsyncEngine, runner: LoopService, sync: LoopService,
-    *, stop: asyncio.Event | None = None, heartbeat_seconds: float = 15,
+    engine: AsyncEngine, runner: LoopService | None = None, sync: LoopService | None = None,
+    *, service_factory: Callable[[], tuple[LoopService, LoopService]] | None = None, stop: asyncio.Event | None = None, heartbeat_seconds: float = 15,
 ) -> None:
     """Hold a session lock and cancel both loops on shutdown or lock failure."""
     if engine.dialect.name == "postgresql":
-        await _serve_postgres(engine, runner, sync, stop=stop, heartbeat_seconds=heartbeat_seconds)
+        await _serve_postgres(engine, runner, sync, service_factory=service_factory, stop=stop, heartbeat_seconds=heartbeat_seconds)
         return
     from rabbit_hole.persistence.sql import (
         dialect_insert,
@@ -56,6 +57,10 @@ async def serve_workbench(
     async with session_lock(engine, LOCK_KEY) as owned:
         if not owned:
             raise WorkerAlreadyRunning("workbench_worker_already_running")
+        if service_factory is not None:
+            runner, sync = service_factory()
+        if runner is None or sync is None:
+            raise ValueError("worker services are required")
         async def heartbeat() -> None:
             async with write_transaction(engine) as c:
                 stmt = dialect_insert(c, runtime_health).values(component=COMPONENT, updated_at=datetime.now(UTC))
@@ -81,8 +86,9 @@ async def serve_workbench(
 
 
 async def _serve_postgres(
-    engine: AsyncEngine, runner: LoopService, sync: LoopService,
-    *, stop: asyncio.Event | None, heartbeat_seconds: float,
+    engine: AsyncEngine, runner: LoopService | None, sync: LoopService | None,
+    *, service_factory: Callable[[], tuple[LoopService, LoopService]] | None,
+    stop: asyncio.Event | None, heartbeat_seconds: float,
 ) -> None:
     stopped = stop if stop is not None else asyncio.Event()
     async with engine.connect() as lock:
@@ -105,6 +111,10 @@ async def _serve_postgres(
                 await heartbeat()
 
         try:
+            if service_factory is not None:
+                runner, sync = service_factory()
+            if runner is None or sync is None:
+                raise ValueError("worker services are required")
             await heartbeat()
             async with asyncio.TaskGroup() as group:
                 tasks = [

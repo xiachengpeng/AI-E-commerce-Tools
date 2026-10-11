@@ -792,7 +792,7 @@ async def test_approved_queue_persists_keyword_state_and_result(db_engine):
         await c.execute(
             update(actions)
             .where(actions.c.id == UUID(queued["id"]))
-            .values(status="running", attempt=1)
+            .values(status="running", attempt=1, lease_until=datetime.now(UTC) + timedelta(minutes=5))
         )
         row = dict(
             (await c.execute(select(actions).where(actions.c.id == UUID(queued["id"]))))

@@ -76,6 +76,7 @@ class WorkbenchRunner:
                     actions.c.id == action["id"],
                     actions.c.attempt == action["attempt"],
                     actions.c.status == "running",
+                    actions.c.lease_until > datetime.now(UTC),
                 )
                 .values(payload=action["payload"])
             )
@@ -181,10 +182,10 @@ class WorkbenchRunner:
                         != action["payload"]["fingerprint"]
                     ):
                         raise SourceFailure("input_changed")
-                    result = await self.execute(action, project)
+                    result = await self._execute_owned(action, project)
         except ProviderPending:
             async with write_transaction(self.store.engine) as c:
-                await c.execute(update(actions).where(actions.c.id == action["id"], actions.c.attempt == action["attempt"], actions.c.status == "running").values(status="ready", lease_until=datetime.now(UTC) + timedelta(seconds=5)))
+                await c.execute(update(actions).where(actions.c.id == action["id"], actions.c.attempt == action["attempt"], actions.c.status == "running", actions.c.lease_until > datetime.now(UTC)).values(status="ready", lease_until=datetime.now(UTC) + timedelta(seconds=5)))
             return True
         except asyncio.CancelledError:
             raise
@@ -214,6 +215,7 @@ class WorkbenchRunner:
                 .where(
                     actions.c.id == action["id"],
                     actions.c.status == "running",
+                    actions.c.lease_until > datetime.now(UTC),
                     actions.c.attempt == action["attempt"],
                 )
                 .values(
@@ -274,7 +276,7 @@ class WorkbenchRunner:
                 await transaction_lock(c, "workbench-action:" + str(action["id"]))
                 live = (
                     await c.execute(
-                        select(actions.c.attempt, actions.c.status).where(
+                        select(actions.c.attempt, actions.c.status, actions.c.lease_until).where(
                             actions.c.id == action["id"]
                         )
                     )
@@ -282,7 +284,8 @@ class WorkbenchRunner:
                 if (
                     live is None
                     or live.attempt != action["attempt"]
-                    or (check_signature and live.status != "running")
+                    or (check_signature and (live.status != "running"
+                        or live.lease_until is None or live.lease_until <= datetime.now(UTC)))
                 ):
                     raise SourceFailure("input_changed")
                 project = await self.store.get(str(action["project_id"]))
@@ -307,6 +310,35 @@ class WorkbenchRunner:
                     if getattr(exc, "status", None) != 409:
                         raise
         raise SourceFailure("input_changed")
+
+    async def _execute_owned(
+        self, action: dict[str, Any], project: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Cancel in-flight transport work as soon as its durable lease is lost."""
+        execution = asyncio.create_task(self.execute(action, project))
+
+        async def watch() -> None:
+            while True:
+                async with self.store.engine.connect() as c:
+                    live = (await c.execute(select(
+                        actions.c.attempt, actions.c.status, actions.c.lease_until
+                    ).where(actions.c.id == action["id"]))).first()
+                if (live is None or live.attempt != action["attempt"]
+                        or live.status != "running" or live.lease_until is None
+                        or live.lease_until <= datetime.now(UTC)):
+                    raise SourceFailure("input_changed")
+                await asyncio.sleep(0.25)
+
+        watcher = asyncio.create_task(watch())
+        try:
+            done, _ = await asyncio.wait((execution, watcher), return_when=asyncio.FIRST_COMPLETED)
+            if watcher in done:
+                await watcher
+            return await execution
+        finally:
+            execution.cancel()
+            watcher.cancel()
+            await asyncio.gather(execution, watcher, return_exceptions=True)
 
     async def execute(
         self, action: dict[str, Any], project: dict[str, Any]
@@ -688,6 +720,7 @@ class WorkbenchRunner:
                             actions.c.id == action["id"],
                             actions.c.attempt == action["attempt"],
                             actions.c.status == "running",
+                            actions.c.lease_until > datetime.now(UTC),
                         )
                         .values(payload=action["payload"])
                     )

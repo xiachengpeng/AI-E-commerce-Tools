@@ -1,5 +1,6 @@
 """External reader must preserve source evidence and never hide paid failures."""
 import json
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx
@@ -133,7 +134,7 @@ async def test_firecrawl_runner_saves_unconfirmed_snapshot_and_fences_repeat(db_
     queued = await enqueue_action(store, project["id"], {
         "kind": "landing", "version": project["version"], "product_id": pid, "landing_mode": "firecrawl"})
     async with db_engine.begin() as c:
-        await c.execute(update(actions).where(actions.c.id == UUID(queued["id"])).values(status="running", attempt=1))
+        await c.execute(update(actions).where(actions.c.id == UUID(queued["id"])).values(status="running", attempt=1, lease_until=datetime.now(UTC) + timedelta(minutes=5)))
         action = dict((await c.execute(select(actions).where(actions.c.id == UUID(queued["id"])))).mappings().one())
     runner = WorkbenchRunner(store, SimpleNamespace(public_dns="google"), None)
     with respx.mock:
