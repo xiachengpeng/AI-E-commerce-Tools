@@ -37,6 +37,9 @@ def copy_source(source: Path, destination: Path) -> None:
                         ".sqlite-wal",
                         ".sqlite-shm",
                         ".sqlite-journal",
+                        ".sqlite3-wal",
+                        ".sqlite3-shm",
+                        ".sqlite3-journal",
                     )
                 )
             ):
@@ -129,14 +132,14 @@ def sandbox_environment(sandbox: Path, suite: str) -> dict[str, str]:
     return env
 
 
-def build_research_frontend(sandbox: Path, env: dict[str, str]) -> None:
+def build_research_frontend(sandbox: Path, env: dict[str, str]) -> dict[str, int]:
     cli = ROOT / COMPAT / "frontend/node_modules/@tailwindcss/cli/dist/index.mjs"
     if not cli.is_file():
         raise RuntimeError(
             "Install pinned compat frontend dependencies before research tests"
         )
     frontend = sandbox / "frontend"
-    subprocess.run(
+    tailwind = subprocess.run(
         [
             "node",
             str(cli),
@@ -148,27 +151,31 @@ def build_research_frontend(sandbox: Path, env: dict[str, str]) -> None:
         ],
         cwd=frontend,
         env=env,
-        check=True,
+        check=False,
         stdout=subprocess.DEVNULL,
     )
-    subprocess.run(
+    build = subprocess.run(
         ["node", "build.mjs"],
         cwd=frontend,
         env=env,
-        check=True,
+        check=False,
         stdout=subprocess.DEVNULL,
     )
+
+    return {"tailwind": tailwind.returncode, "frontend_build": build.returncode}
 
 
 def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) -> int:
     if suite not in ("main", "research", "all"):
         raise ValueError("Unknown suite")
     statuses = {}
+    components = {}
     for current in ("main", "research") if suite == "all" else (suite,):
         sandbox = prepare_sandbox(current, output / current)
         env = sandbox_environment(sandbox, current)
+        components[current] = {}
         if current == "research":
-            build_research_frontend(sandbox, env)
+            components[current].update(build_research_frontend(sandbox, env) or {})
         command = [
             sys.executable,
             "-m",
@@ -193,17 +200,29 @@ def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) 
         test_files = sorted((sandbox / "frontend/tests").glob("*.test.*"))
         with (output / current / "frontend.log").open("w") as log:
             frontend = subprocess.run(
-                ["node", "--test", *map(str, test_files)],
+                ["node", "--test", "--test-isolation=none", *map(str, test_files)],
                 cwd=sandbox,
                 env=env,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 check=False,
             )
-        statuses[current] = max(result.returncode, frontend.returncode)
+        components[current].update(
+            pytest=result.returncode, frontend=frontend.returncode
+        )
+        statuses[current] = int(any(code != 0 for code in components[current].values()))
         if current == "research":
             tools = [
-                ("ruff", ["check", "src", "--no-respect-gitignore", "--config", "pyproject.toml"]),
+                (
+                    "ruff",
+                    [
+                        "check",
+                        "src",
+                        "--no-respect-gitignore",
+                        "--config",
+                        "pyproject.toml",
+                    ],
+                ),
                 ("mypy", ["-p", "rabbit_hole", "--config-file", "pyproject.toml"]),
             ]
             env["MYPYPATH"] = str(sandbox / "src")
@@ -217,11 +236,17 @@ def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) 
                         stderr=subprocess.STDOUT,
                         check=False,
                     )
-                statuses[current] = max(statuses[current], checked.returncode)
+                components[current][tool] = checked.returncode
+                statuses[current] = int(
+                    any(code != 0 for code in components[current].values())
+                )
         print(
             f"{current}: exit {statuses[current]}; {output / current / 'pytest.log'}",
             flush=True,
         )
+    (output / "component-results.json").write_text(
+        json.dumps(components, indent=2) + "\n"
+    )
     (output / "result.json").write_text(json.dumps(statuses, indent=2) + "\n")
     return max(statuses.values())
 

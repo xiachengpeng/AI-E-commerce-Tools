@@ -2,6 +2,7 @@
 
 import hashlib
 import ipaddress
+import json
 import os
 import shlex
 import shutil
@@ -68,20 +69,58 @@ socket.socket.sendto = sendto
 original_popen = subprocess.Popen
 
 
+def validate_python_options(args):
+    for flag in args[1:]:
+        if flag in ("-c", "-m", "--") or not str(flag).startswith("-"):
+            break
+        # Only source-suite interpreter options that preserve site/PYTHONPATH.
+        if not flag.startswith("--") and flag[1:] and set(flag[1:]) <= set("bBuqsv"):
+            continue
+        raise RuntimeError("isolated test subprocess blocks unsafe Python options")
+
+
+def child_sandbox(kwargs):
+    parent = Path(os.environ["FULL_MERGE_SANDBOX"]).resolve()
+    requested = Path(
+        (kwargs.get("env") or {}).get("FULL_MERGE_SANDBOX", str(parent))
+    ).resolve()
+    if not requested.is_relative_to(parent):
+        raise RuntimeError("isolated test subprocess blocks sandbox escape")
+    return requested
+
+
+def inherited_environment(kwargs):
+    env = dict(kwargs.get("env") if kwargs.get("env") is not None else os.environ)
+    env.pop("PYTHONHOME", None)
+    env["PYTHONPATH"] = (
+        str(Path(__file__).parent) + os.pathsep + env.get("PYTHONPATH", "")
+    )
+    env["FULL_MERGE_SANDBOX"] = str(child_sandbox(kwargs))
+    env["NODE_OPTIONS"] = "--require=" + json.dumps(
+        str(Path(__file__).parent / "node_guard.cjs"), ensure_ascii=False
+    )
+    for name in ("PLAYWRIGHT_BROWSERS_PATH", "FULL_MERGE_SUITE"):
+        if name in os.environ:
+            env[name] = os.environ[name]
+    return env
+
+
 class IsolatedPopen(original_popen):
     def __init__(self, args, *positional, **kwargs):
         allowed = False
+        if kwargs.get("executable") is not None:
+            raise RuntimeError("isolated test subprocess blocks executable override")
         if isinstance(args, (list, tuple)) and args:
-            executable = Path(args[0]).resolve()
-            if executable == Path(sys.executable).resolve() and not any(
-                flag in args for flag in ("-I", "-S", "-E")
-            ):
+            executable = Path(
+                shutil.which(
+                    str(args[0]), path=(kwargs.get("env") or os.environ).get("PATH")
+                )
+                or str(args[0])
+            ).resolve()
+            if executable == Path(sys.executable).resolve():
+                validate_python_options(args)
                 allowed = True
-                env = dict(kwargs.get("env") or os.environ)
-                guard = str(Path(__file__).parent)
-                env["PYTHONPATH"] = guard + os.pathsep + env.get("PYTHONPATH", "")
-                env["FULL_MERGE_SANDBOX"] = os.environ["FULL_MERGE_SANDBOX"]
-                kwargs["env"] = env
+                kwargs["env"] = inherited_environment(kwargs)
             elif (
                 executable.name == "python"
                 and executable.is_file()
@@ -92,15 +131,9 @@ class IsolatedPopen(original_popen):
                     os.environ["FULL_MERGE_SANDBOX"] + os.sep
                 ):
                     args = [sys.executable, *args[1:]]
+                    validate_python_options(args)
                     allowed = True
-                    env = dict(kwargs.get("env") or os.environ)
-                    env["PYTHONPATH"] = (
-                        str(Path(__file__).parent)
-                        + os.pathsep
-                        + env.get("PYTHONPATH", "")
-                    )
-                    env["FULL_MERGE_SANDBOX"] = os.environ["FULL_MERGE_SANDBOX"]
-                    kwargs["env"] = env
+                    kwargs["env"] = inherited_environment(kwargs)
             elif str(args[0]) == "ssh":
                 # Replace the retained local SSH test stub with its guarded Python
                 # payload. Real ssh and arbitrary shell scripts remain forbidden.
@@ -125,6 +158,8 @@ class IsolatedPopen(original_popen):
                     + "\n"
                 ):
                     args = [sys.executable, "-c", expected_code]
+                    validate_python_options(args)
+                    kwargs["env"] = inherited_environment(kwargs)
                     allowed = True
             elif (
                 executable.name == "node"
@@ -134,7 +169,22 @@ class IsolatedPopen(original_popen):
                 and Path(args[1]).resolve() == executable.parent / "package/cli.js"
                 and args[2] == "run-driver"
             ):
+                kwargs["env"] = inherited_environment(kwargs)
                 allowed = True
+            elif (
+                executable == Path(shutil.which("node") or "/missing-node").resolve()
+                and len(args) >= 3
+                and args[1] == "--test"
+                and all(
+                    Path(item)
+                    .resolve()
+                    .is_relative_to(child_sandbox(kwargs) / "frontend/tests")
+                    for item in args[2:]
+                    if item != "--test-isolation=none"
+                )
+            ):
+                allowed = True
+                kwargs["env"] = inherited_environment(kwargs)
             elif str(args[0]) == "/bin/sh" and len(args) == 3 and args[1] == "-ec":
                 # The retained Compose test runs ONLY its synthetic mc shell fixture.
                 env = kwargs.get("env", {})

@@ -200,3 +200,94 @@ def test_source_copy_excludes_sqlite_sidecars_and_environment_variants(tmp_path)
     target = tmp_path / "copied"
     module.copy_source(source, target)
     assert sorted(path.name for path in target.iterdir()) == ["module.py"]
+
+
+def test_signal_terminated_components_cannot_be_success(monkeypatch, tmp_path):
+    module = runner()
+    # Terminate only synthetic child processes; never run real suites or network calls.
+    returns = iter((-9, 0, 0, 0, -15, 0))
+    monkeypatch.setattr(
+        module,
+        "prepare_sandbox",
+        lambda suite, output: output.mkdir(parents=True) or output,
+    )
+    monkeypatch.setattr(module, "sandbox_environment", lambda *args: {})
+    monkeypatch.setattr(module, "build_research_frontend", lambda *args: None)
+    original_run = subprocess.run
+
+    def synthetic_component(*args, **kwargs):
+        status = next(returns)
+        code = f"import os; os.kill(os.getpid(), {-status})" if status < 0 else "pass"
+        return original_run([sys.executable, "-c", code], **kwargs)
+
+    monkeypatch.setattr(module.subprocess, "run", synthetic_component)
+    assert module.run_isolated_suite("all", tmp_path) > 0
+    import json
+
+    results = json.loads((tmp_path / "result.json").read_text())
+    assert results["main"] > 0
+    assert results["research"] > 0
+    raw = json.loads((tmp_path / "component-results.json").read_text())
+    assert raw["main"]["pytest"] == -9
+    assert raw["research"]["ruff"] == -15
+
+
+def test_python_options_wrappers_and_forced_executable_cannot_drop_guard(tmp_path):
+    module = runner()
+    sandbox = module.prepare_sandbox("research", tmp_path)
+    code = """import subprocess,sys,pathlib,shlex
+wrapper=pathlib.Path('python');wrapper.write_text('#!/bin/sh\\nexec '+shlex.quote(sys.executable)+' "$@"\\n');wrapper.chmod(0o700)
+probe='import socket; assert socket.socket.connect.__module__ == "sitecustomize"'
+for executable in (sys.executable,str(wrapper.resolve())):
+    subprocess.run([executable,'-Bs','-c',probe],env={},check=True)
+    for flag in ('-Es','-IS','-sE','-Ssu'):
+        try: subprocess.run([executable,flag,'-c','pass'],check=True)
+        except RuntimeError as exc: assert 'isolated test subprocess' in str(exc)
+        else: raise AssertionError('combined option escaped guard: '+flag)
+    try: subprocess.run([executable,'-c','pass'],executable='/usr/bin/true',check=True)
+    except RuntimeError as exc: assert 'isolated test subprocess' in str(exc)
+    else: raise AssertionError('forced executable escaped guard')
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=sandbox,
+        env=module.sandbox_environment(sandbox, "research"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_node_child_process_apis_reject_unguarded_children(tmp_path):
+    module = runner()
+    sandbox = module.prepare_sandbox("main", tmp_path)
+    fixture = sandbox / "frontend/tests/isolation_child_probe.test.cjs"
+    fixture.write_text("""const assert=require('node:assert/strict');const cp=require('node:child_process');
+const calls=[()=>cp.spawn('/usr/bin/true'),()=>cp.spawnSync('/usr/bin/true'),()=>cp.exec('true',()=>{}),()=>cp.execSync('true'),()=>cp.execFile('/usr/bin/true',[],()=>{}),()=>cp.execFileSync('/usr/bin/true'),()=>cp.fork('/does-not-exist.js'),()=>new cp.ChildProcess().spawn({file:'/usr/bin/true',args:['true'],envPairs:[]})];
+for(const call of calls) assert.throws(call,/isolated test subprocess/);
+""")
+    result = subprocess.run(
+        ["node", "--test", "--test-isolation=none", str(fixture)],
+        cwd=sandbox,
+        env=module.sandbox_environment(sandbox, "main"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_source_copy_rejects_all_supported_database_sidecars(tmp_path):
+    module = runner()
+    source = tmp_path / "source"
+    source.mkdir()
+    for ext in (".db", ".sqlite", ".sqlite3"):
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            (source / ("private" + ext + suffix)).write_text(
+                "synthetic private database rows"
+            )
+    (source / "keep.py").write_text("value=1")
+    target = tmp_path / "copied"
+    module.copy_source(source, target)
+    assert sorted(path.name for path in target.iterdir()) == ["keep.py"]
