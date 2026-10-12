@@ -29,7 +29,7 @@ export function render(context) {
         for(const child of children)expansion.append(el(context,'p','',child.text),el(context,'p','rw-muted','提词依据：'+(child.source_quote||'旧记录未保存引用')),keywordControls(context,child));root.append(expansion);
     }else{
         for(const ad of word.ads||[]){const card=panel(context,ad.advertiser||'公开广告','待核验 · 广告采集结果仍需确认具体商品与原文来源。');card.append(el(context,'blockquote','',ad.primary_text||'尚无可核对的广告原文。'),button(context,'添加具体商品',()=>context.openForm({kind:'add_product'})),link(context,'查看原广告','https://www.facebook.com/ads/library/?id='+encodeURIComponent(ad.id)));root.append(card);}
-        if(word.status==='complete'&&!word.ads?.length)root.append(el(context,'p','rw-notice','本次采集 0 条，不代表没有机会。核对地域和精准短语，尝试更短的词或换一个痛点、场景。'),button(context,'换一个搜索入口',()=>context.openForm({kind:'new_search_entry',type:word.type})));
+        if(keywordSearchSummary(word,context.state.keywordActions).startsWith('本次采集 0 条'))root.append(el(context,'p','rw-notice','本次采集 0 条，不代表没有机会。核对地域和精准短语，尝试更短的词或换一个痛点、场景。'),button(context,'换一个搜索入口',()=>context.openForm({kind:'new_search_entry',type:word.type})));
     }
     return root;
 }

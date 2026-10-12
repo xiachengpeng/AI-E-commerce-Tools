@@ -7,6 +7,16 @@ import { render as formPage } from './pages/project-forms.mjs';
 import { el, button, notify } from './components/elements.mjs';
 import { newCommandId, submitCommand, submissionFingerprint, restoreDraft } from './services/commands.mjs';
 
+/** Submission locks belong to the live promise, never to a restored DTO. */
+function snapshotState(state) {
+    const snapshot=structuredClone({...state,busy:false,writeBusy:false,error:''});
+    for(const draft of [...Object.values(snapshot.commands||{}),...Object.values(snapshot.drafts||{})]) {
+        if(draft.submitting)draft.uncertain=true;
+        delete draft.submitting;
+    }
+    return snapshot;
+}
+
 export function createWorkbench() {
     let instance=null;
     const snapshots=new WeakMap();
@@ -95,12 +105,12 @@ export function createWorkbench() {
         finally{current.state.busy=false;}
     }
     function unmount() {
-        if(instance)snapshots.set(instance.root,structuredClone({...instance.state,busy:false,writeBusy:false,error:''}));
+        if(instance)snapshots.set(instance.root,snapshotState(instance.state));
         instance?.life.dispose();instance=null;
     }
     async function mount(root,context={}) {
         if(instance?.root===root)return instance.ready;unmount();
-        const life=createLifecycle(),current={root,life,state:{...createState(),...structuredClone(snapshots.get(root))},context,api:createApi({...context,signal:life.signal}),navigation:0};instance=current;
+        const life=createLifecycle(),current={root,life,state:{...createState(),...(snapshots.has(root)?snapshotState(snapshots.get(root)):{})},context,api:createApi({...context,signal:life.signal}),navigation:0};instance=current;
         root.innerHTML='<div class="rw-header"><h2>选品研究工作台</h2><button type="button" data-rw-refresh>刷新研究资料</button></div><p data-rw-status role="status" aria-live="polite">正在读取研究资料…</p><div class="rw-layout"><nav aria-label="研究项目" data-rw-projects></nav><section data-rw-page></section></div>';
         renderProjects(current);paint(current);life.listen(root,'click',event=>{if(event.target.closest?.('[data-rw-refresh]'))void refresh(current);});
         current.ready=(async()=>{try{await current.api.session();if(active(current))await refresh(current);}catch(_){if(active(current))notify(current,'研究会话暂时不可用，请刷新研究入口。');}})();return current.ready;

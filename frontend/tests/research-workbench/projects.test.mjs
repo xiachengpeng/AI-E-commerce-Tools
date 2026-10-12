@@ -141,3 +141,33 @@ test('manual child keyword emits the original single-source command payload with
  await new Promise(r=>setTimeout(r,0));assert.equal(sent.length,1);assert.equal(sent[0][0],'/projects/p/commands');assert.equal(sent[0][1].version,3);assert.equal(sent[0][1].action,'add_keyword');
  assert.deepEqual(sent[0][1].payload,{text:'dog owners',type:'pain',source_id:'source',source_quote:'For dog owners',source_kind:'ad',parent_id:'parent',product_id:'product'});c.life.dispose();
 });
+
+test('in-flight quick command remount releases only the transient lock and explicitly retries the same identity',async()=>{
+ const root=fixtureRoot(),wb=createWorkbench(),sent=[];let current,rejectFirst,startedResolve;const started=new Promise(r=>startedResolve=r);
+ const project={id:'p',title:'P',version:1,keywords:[{id:'k',text:'pet',status:'ready',approved:true}],products:[]};
+ const fetch=async(url,options)=>{
+  if(options.method==='POST'){sent.push(JSON.parse(options.body));if(sent.length===1){startedResolve();return new Promise((resolve,reject)=>rejectFirst=()=>reject(Error('lost reply')));}return {ok:true,json:async()=>({...project,version:2})};}
+  return {ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?project:{projects:[project]}};
+ };
+ const context={fetch,onSelectProject:(id,c)=>current=c};
+ await wb.mount(root,context);root.querySelector('[data-rw-projects]').find(n=>n.textContent==='P').click();await new Promise(r=>setTimeout(r,0));
+ const pending=current.command('archive_keyword',{keyword_id:'k'});await started;
+ const original=Object.values(wb.state.commands)[0];assert.equal(original.submitting,true);const identity={command_id:original.command_id,submittedHash:original.submittedHash};
+ wb.unmount();rejectFirst();await pending;await wb.mount(root,context);
+ assert.equal(sent.length,1);const restored=Object.values(wb.state.commands)[0];assert.equal(restored.uncertain,true);assert.equal(restored.submitting,undefined);assert.equal(restored.command_id,identity.command_id);assert.equal(restored.submittedHash,identity.submittedHash);
+ root.querySelector('[data-rw-projects]').find(n=>n.textContent==='P').click();await new Promise(r=>setTimeout(r,0));await current.command('archive_keyword',{keyword_id:'k'});
+ assert.equal(sent.length,2);assert.equal(sent[1].command_id,identity.command_id);assert.deepEqual(sent[1].payload,sent[0].payload);assert.equal(wb.state.project.version,2);wb.unmount();
+});
+
+for(const [name,wordStatus,action,expectZero] of [
+ ['unrecorded count','complete',{status:'complete',result:{}},false],
+ ['blocked current run','complete',{status:'blocked'},false],
+ ['running current run','complete',{status:'running'},false],
+ ['queued current run','complete',{status:'ready'},false],
+ ['explicit zero count','ready',{status:'complete',result:{ads:0}},true],
+ ['explicit empty receipt','complete',{status:'complete',result:{empty:true}},true]
+])test('focused zero-result notice respects authoritative summary: '+name,()=>{
+ const project={id:'p',title:'P',keywords:[{id:'k',text:'pet',status:wordStatus,approved:true,ads:[]}],products:[]};const c=pageContext(project);c.state.keywordActions={k:action};
+ const node=renderFocused(c),notice=node.find(n=>n.className==='rw-notice'&&n.textContent.startsWith('本次采集 0 条'));
+ assert.equal(Boolean(notice),expectZero);assert.equal(Boolean(node.find(n=>n.textContent==='换一个搜索入口')),expectZero);c.life.dispose();
+});
