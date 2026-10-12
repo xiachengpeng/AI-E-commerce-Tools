@@ -37,7 +37,19 @@ def deny_activation(runtime: ResearchRuntime) -> bool:
 
 def build_local_worker_services(runtime: ResearchRuntime) -> LocalWorkerServices:
     """Task9/10 wire adapters here; called after authorization and ownership."""
-    raise RuntimeError('research_worker_configuration_not_ready')
+    from models.research_ai import ResearchBusinessSettings
+
+    from services.research_ai_adapter import ResearchAIAdapter
+    if (runtime.worker_readiness or not isinstance(runtime.business_settings, ResearchBusinessSettings)
+            or not isinstance(runtime.ai_adapter, ResearchAIAdapter) or runtime.non_ai_integrations is None
+            or runtime.store is None or runtime.evidence_store is None):
+        raise RuntimeError('research_worker_configuration_not_ready')
+    sync = runtime.workbench_services.get('sync')
+    if sync is None:
+        raise RuntimeError('research_worker_configuration_not_ready')
+    runner = runtime.non_ai_integrations.make_runner(runtime.store, runtime.business_settings,
+                                                    runtime.evidence_store, ai_adapter=runtime.ai_adapter)
+    return LocalWorkerServices(runner, sync)
 
 
 async def serve_local_worker(runtime: ResearchRuntime, *, mode: str,
@@ -71,9 +83,11 @@ async def serve_local_worker(runtime: ResearchRuntime, *, mode: str,
         await serve_workbench(runtime.engine, services.runner, services.sync)
 
 
-async def _run(database: Path, data_root: Path, mode: str) -> None:
+async def _run(database: Path, data_root: Path, mode: str, business_settings_path: Path | None = None) -> None:
     paths = resolve_runtime_paths(database, data_root)
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    from services.research_ai_adapter import read_business_settings
+    business = read_business_settings(business_settings_path) if business_settings_path is not None else None
+    async with open_research_runtime(paths, allow_commands=True, business_settings=business) as runtime:
         task = asyncio.create_task(serve_local_worker(runtime, mode=mode, activation_validator=deny_activation))
         loop = asyncio.get_running_loop()
         installed = []
@@ -93,10 +107,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--database', type=Path, required=True)
     parser.add_argument('--data-root', type=Path, required=True)
+    parser.add_argument('--business-settings', type=Path)
     parser.add_argument('--mode', choices=('paused', 'active'), default='paused')
     args = parser.parse_args()
     try:
-        asyncio.run(_run(args.database, args.data_root, args.mode))
+        asyncio.run(_run(args.database, args.data_root, args.mode, args.business_settings))
         return 0
     except KeyboardInterrupt:
         return 0

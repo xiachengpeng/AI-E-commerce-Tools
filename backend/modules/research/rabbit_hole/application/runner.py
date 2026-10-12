@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from datetime import UTC, datetime, timedelta
@@ -41,11 +40,12 @@ from rabbit_hole.persistence.sql import transaction_lock, write_transaction
 class WorkbenchRunner:
     def __init__(self, store: Any, settings: Any, evidence_store: Any, *,
                  provider_secrets: Any = None, provider_budget_limits: Any = None,
-                 allow_external: bool = True) -> None:
+                 allow_external: bool = True, ai_adapter: Any = None) -> None:
         self.store, self.settings, self.evidence_store = store, settings, evidence_store
         self.provider_secrets = provider_secrets
         self.provider_budget_limits = provider_budget_limits
         self.allow_external = allow_external
+        self.ai_adapter = ai_adapter
 
     def provider_key(self, provider: str) -> str:
         if self.provider_secrets is not None:
@@ -207,41 +207,44 @@ class WorkbenchRunner:
         failure_detail = None
         try:
             await self.log(action, "start", "继续执行" if action["attempt"] > 1 else "开始执行")
-            async with asyncio.timeout(240):
-                project = await self.store.get(str(action["project_id"]))
-                terminal = {
-                    "scan": "collection_result",
-                    "landing": "landing_result",
-                    "trends": "trends_result", "verify": "verification_result",
-                }.get(action["kind"])
-                recovered = False
-                if terminal:
-                    from rabbit_hole.persistence.projects import workbench_events
+            from contextlib import nullcontext
+            deadline = asyncio.get_running_loop().time() + 240
+            with self.ai_adapter.deadline(deadline) if self.ai_adapter is not None else nullcontext():
+                async with asyncio.timeout_at(deadline):
+                    project = await self.store.get(str(action["project_id"]))
+                    terminal = {
+                        "scan": "collection_result",
+                        "landing": "landing_result",
+                        "trends": "trends_result", "verify": "verification_result",
+                    }.get(action["kind"])
+                    recovered = False
+                    if terminal:
+                        from rabbit_hole.persistence.projects import workbench_events
 
-                    command_id = str(
-                        uuid5(NAMESPACE_URL, f"{action['id']}:{terminal}:")
-                    )
-                    async with self.store.engine.connect() as c:
-                        recovered = (
-                            await c.scalar(
-                                select(workbench_events.c.id).where(
-                                    workbench_events.c.project_id == project["id"],
-                                    workbench_events.c.command_id == command_id,
+                        command_id = str(
+                            uuid5(NAMESPACE_URL, f"{action['id']}:{terminal}:")
+                        )
+                        async with self.store.engine.connect() as c:
+                            recovered = (
+                                await c.scalar(
+                                    select(workbench_events.c.id).where(
+                                        workbench_events.c.project_id == project["id"],
+                                        workbench_events.c.command_id == command_id,
+                                    )
                                 )
-                            )
-                        ) is not None
-                if recovered:
-                    result = {
-                        "recovered": True,
-                        "message": "结果此前已保存，本次恢复未重复采集。",
-                    }
-                else:
-                    if (
-                        target_signature(project, action["kind"], action)
-                        != action["payload"]["fingerprint"]
-                    ):
-                        raise SourceFailure("input_changed")
-                    result = await self._execute_owned(action, project)
+                            ) is not None
+                    if recovered:
+                        result = {
+                            "recovered": True,
+                            "message": "结果此前已保存，本次恢复未重复采集。",
+                        }
+                    else:
+                        if (
+                            target_signature(project, action["kind"], action)
+                            != action["payload"]["fingerprint"]
+                        ):
+                            raise SourceFailure("input_changed")
+                        result = await self._execute_owned(action, project)
         except ProviderPending:
             async with write_transaction(self.store.engine) as c:
                 await c.execute(update(actions).where(actions.c.id == action["id"], actions.c.attempt == action["attempt"], actions.c.status == "running", actions.c.lease_until > datetime.now(UTC)).values(status="ready", lease_until=datetime.now(UTC) + timedelta(seconds=5)))
@@ -255,7 +258,8 @@ class WorkbenchRunner:
             error = exc.code
             failure_detail = diagnostic(exc)
         except Exception as exc:  # noqa: BLE001 -- no credentials/raw exception to UI
-            failure_detail = diagnostic(exc)
+            from services.research_ai_adapter import ResearchAIError
+            failure_detail = str(exc) if isinstance(exc, ResearchAIError) else diagnostic(exc)
             error = getattr(exc, "code", "source_error")
             if error not in ERRORS:
                 error = "source_error"
@@ -615,8 +619,6 @@ class WorkbenchRunner:
     async def suggest(
         self, action: dict[str, Any], project: dict[str, Any]
     ) -> dict[str, Any]:
-        from openai import AsyncOpenAI
-
         parent = None
         product = None
         source = ""
@@ -687,58 +689,20 @@ class WorkbenchRunner:
         ):
             raise SourceFailure("source_contract_changed")
         if candidates is None:
-            from rabbit_hole.integrations.ai_settings import AISettings
-
-            ai = AISettings().resolve(self.settings)
-            if not ai.api_key or not ai.model:
+            from models.research_ai import ResearchAIRequest, ResearchKeywords
+            if self.ai_adapter is None:
                 raise SourceFailure("not_configured")
-            client = AsyncOpenAI(
-                api_key=ai.api_key,
-                base_url=ai.base_url or None,
-                timeout=80,
-                max_retries=0,
-            )
-            try:
-                await self._reserve_ai(action, project)
-                result = await client.chat.completions.create(
-                    model=ai.model,
-                    messages=[
-                        {"role": "system", "content": instruction},
-                        {
-                            "role": "user",
-                            "content": json.dumps(
-                                {
-                                    "direction": project["direction"],
-                                    "parent": parent["text"] if parent else None,
-                                    "existing_keywords": [
-                                        word["text"] for word in project.get("keywords", [])
-                                    ],
-                                    "source": (
-                                        [
-                                            {
-                                                "source_id": item.source_id,
-                                                "source_kind": item.source_kind,
-                                                "text": item.text,
-                                            }
-                                            for item in passages
-                                        ]
-                                        if parent
-                                        else source[:25000]
-                                    ),
-                                },
-                                ensure_ascii=False,
-                            ),
-                        },
-                    ],
-                    max_tokens=5000,
-                    response_format={"type": "json_object"},
-                )
-                try:
-                    data = json.loads(result.choices[0].message.content or "{}")
-                except (ValueError, IndexError, AttributeError, TypeError):
-                    raise SourceFailure("invalid_ai_response") from None
-            finally:
-                await client.close()
+            await self._reserve_ai(action, project)
+            result = await self.ai_adapter.generate(ResearchAIRequest(
+                operation="expand" if parent else "keywords", schema=ResearchKeywords,
+                system_instruction=instruction,
+                untrusted_data={"direction":project["direction"],
+                    "parent":parent["text"] if parent else None,
+                    "existing_keywords":[word["text"] for word in project.get("keywords", [])],
+                    "source":[{"source_id":item.source_id,"source_kind":item.source_kind,"text":item.text}
+                              for item in passages] if parent else source},
+                action_id=str(action["id"]), attempt=action["attempt"]))
+            data = result.model_dump()
             candidates, ignored = validated_candidates(
                 data.get("keywords") if isinstance(data, dict) else None,
                 sources=source_map if parent else None,

@@ -24,3 +24,6 @@ class ResearchRuntime:
     settings_store: Any = None
     non_ai_integrations: Any = None
     workbench_services: dict[str, Any] = field(default_factory=dict)
+    business_settings: Any = None
+    ai_adapter: Any = None
+    worker_readiness: tuple[str, ...] = ()

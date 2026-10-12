@@ -8,7 +8,7 @@ import httpx
 
 from db import SessionLocal
 from services.ai_adapters import get_adapter
-from services.ai_config_service import get_snapshot
+from services.ai_config_service import ProviderSnapshot, get_snapshot
 from services.app_log_service import AppLogService, app_logs
 from services.retry_service import (
     AmbiguousOutcomeError,
@@ -475,14 +475,24 @@ class AIRouter:
         capability: str,
         payload: dict,
         db=None,
+        *,
+        snapshot: ProviderSnapshot | None = None,
+        deadline: float | None = None,
     ) -> dict:
-        owns_db = db is None
-        current_db = SessionLocal() if owns_db else db
-        try:
-            snapshot = get_snapshot(current_db, capability)
-        finally:
-            if owns_db:
-                current_db.close()
+        if deadline is not None and asyncio.get_running_loop().time() >= deadline:
+            raise TimeoutError("AI action deadline expired before submission")
+        if snapshot is not None and (
+            not isinstance(snapshot, ProviderSnapshot) or snapshot.capability != capability
+        ):
+            raise ValueError("trusted snapshot capability mismatch")
+        if snapshot is None:
+            owns_db = db is None
+            current_db = SessionLocal() if owns_db else db
+            try:
+                snapshot = get_snapshot(current_db, capability)
+            finally:
+                if owns_db:
+                    current_db.close()
 
         adapter = get_adapter(snapshot.protocol)
         image_generation_mode = None
@@ -544,6 +554,11 @@ class AIRouter:
         if is_mock_sleep:
             policy = dataclasses.replace(policy, jitter="none")
 
+        if deadline is not None:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("AI action deadline expired before submission")
+            policy = dataclasses.replace(policy, max_elapsed_time=min(policy.max_elapsed_time, remaining))
         started = time.monotonic()
         app_logs.emit(
             level="info",
@@ -622,6 +637,8 @@ class AIRouter:
             await asyncio.sleep(seconds)
 
         async def run_op():
+            if deadline is not None and asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError("AI action deadline expired before submission")
             return await adapter.generate(snapshot, payload)
 
         terminal_error = None

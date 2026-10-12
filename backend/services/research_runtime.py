@@ -88,7 +88,11 @@ async def _prepared(engine: AsyncEngine) -> bool:
 
 @asynccontextmanager
 async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = False,
-                                allow_external: bool = False) -> AsyncIterator[ResearchRuntime]:
+                                allow_external: bool = False, business_settings=None) -> AsyncIterator[ResearchRuntime]:
+    if business_settings is not None:
+        from models.research_ai import ResearchBusinessSettings
+        if not isinstance(business_settings, ResearchBusinessSettings):
+            raise ValueError("explicit typed business settings required")
     expected = resolve_runtime_paths(paths.database, paths.evidence_root.parent)
     if paths != expected:
         raise ValueError('runtime paths must use the common private root')
@@ -133,6 +137,7 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
         paths.evidence_root, initialize=False, signing_key_path=key)
     engine = sql.create_engine(str(URL.create('sqlite+aiosqlite', database=str(paths.database))),
                                initialize_file=False, lock_root=paths.lock_root)
+    ai = None
     try:
         store = import_module('rabbit_hole.persistence.projects').WorkbenchStore(engine)
         evidence = import_module('rabbit_hole.persistence.evidence_store').EvidenceStore(
@@ -153,8 +158,27 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
             services = {'provider_settings': integrations.providers,
                         'translator': integrations.translator,
                         'sync': ResearchSync(store, settings_store, allow_external=False)}
+            from rabbit_hole.integrations.project_direction import generate_direction
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+
+            from services.research_ai_adapter import (
+                ResearchAIAdapter,
+                ResearchAISettings,
+            )
+            ai_engine = create_engine(URL.create('sqlite', database='file:' + str(paths.database),
+                                                 query={'mode':'ro','uri':'true'}))
+            ai_sessions = sessionmaker(bind=ai_engine)
+            ai = ResearchAIAdapter(session_factory=ai_sessions, allow_external=False)
+            async def direction(title, market):
+                return await generate_direction(title, market, ai_adapter=ai)
+            services.update(ai_settings=ResearchAISettings(ai_sessions), generate_direction=direction)
         yield ResearchRuntime(engine, store, evidence, settings, paths,
                               settings_store=settings_store, non_ai_integrations=integrations,
-                              workbench_services=services)
+                              workbench_services=services, business_settings=business_settings, ai_adapter=ai,
+                              worker_readiness=(("business_settings_missing",) if business_settings is None else ())
+                              + (("integration_schema_unprepared",) if revision < 2 else ()))
     finally:
+        if ai is not None:
+            ai_engine.dispose()
         await engine.dispose()

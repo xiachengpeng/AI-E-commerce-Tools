@@ -609,10 +609,10 @@ def create_workbench_router() -> APIRouter:
             if vault is not None
             else {"source": "unconfigured", "configured": False}
         )
-        if ai_config["source"] == "saved":
+        if ai_config["source"] in {"saved", "main_binding"}:
             integrations["ai"] = {
                 "status": "configured" if ai_config["configured"] else "unconfigured",
-                "message": "已保存中转站配置，尚未验证本次连接；建议仍需人工审核。",
+                "message": "主AI文本绑定已配置，尚未验证本次连接；建议仍需人工审核。",
             }
 
         def integration_source(key: str) -> dict[str, Any]:
@@ -1007,9 +1007,12 @@ async def research_lifespan(app, *, config=None, database=None, data_root=None):
                     else Path.home() / ".local/share/ai-ecommerce-tools/research"
                 )
                 paths = resolve_runtime_paths(Path(database), data_root)
+                from services.research_ai_adapter import read_business_settings
+                business = read_business_settings(config['business_settings_path']) if config.get('business_settings_path') else None
                 app.state.research_runtime = await resources.enter_async_context(
                     open_research_runtime(
-                        paths, allow_commands=True, allow_external=False
+                        paths, allow_commands=True, allow_external=False,
+                        **({"business_settings":business} if business is not None else {})
                     )
                 )
                 app.state.integration_settings = app.state.research_runtime.settings_store

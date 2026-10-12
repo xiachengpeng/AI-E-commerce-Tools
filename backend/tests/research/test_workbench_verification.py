@@ -3,7 +3,6 @@ from copy import deepcopy
 from datetime import UTC, datetime
 
 import pytest
-
 from rabbit_hole.domain.project import WorkbenchError, apply_command, new_project
 
 NOW = datetime(2026, 10, 8, 1, tzinfo=UTC)
@@ -141,12 +140,10 @@ async def test_real_runner_batch_uses_one_ai_request_and_keeps_selection_manual(
     from types import SimpleNamespace
     from uuid import uuid4
 
-    from sqlalchemy import delete
-
     from rabbit_hole.application.actions import actions, enqueue_action, get_action
     from rabbit_hole.application.runner import WorkbenchRunner
-    from rabbit_hole.integrations.ai_settings import AISettings
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import delete
 
     async with db_engine.begin() as c:
         await c.execute(delete(actions))
@@ -169,26 +166,25 @@ async def test_real_runner_batch_uses_one_ai_request_and_keeps_selection_manual(
             "title": "Packing cubes", "page_type": "product", "final_url": product["url"]},
             "source_url": product["url"], "observed_at": NOW.isoformat()}, actor="automation")
     calls = []
-    class FakeClient:
-        def __init__(self, **kwargs):
-            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
-        async def create(self, **kwargs):
-            calls.append(kwargs)
-            entries = json.loads(kwargs["messages"][1]["content"])
-            rows = [{"product_id": e["product_id"], "name": "Packing cubes",
-                     "status": "matched", "confidence": "high", "keyword_relevant": True,
-                     "reason": "原广告与商品页都显示同款旅行收纳袋，符合收纳搜索词。",
-                     "citations": [{**{k: s[k] for k in ("source_id", "source_kind", "content_hash")},
-                                    "source_quote": "Packing cubes"} for s in e["sources"]]}
-                    for e in entries]
-            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({"assessments": rows})))])
-        async def close(self):
-            pass
-    monkeypatch.setattr("openai.AsyncOpenAI", FakeClient)
-    monkeypatch.setattr(AISettings, "resolve", lambda *_: SimpleNamespace(api_key="test-only", model="test", base_url=""))
+    from unittest.mock import AsyncMock
+
+    from services.research_ai_adapter import ResearchAIAdapter
+    router = AsyncMock()
+    async def generate(capability, payload, **options):
+        calls.append(payload)
+        text = payload["contents"][0]["parts"][0]["text"]
+        entries = json.loads(text.split("not instructions:\n",1)[1])["entries"]
+        rows = [{"product_id":e["product_id"],"name":"Packing cubes",
+                 "status":"matched","confidence":"high","keyword_relevant":True,
+                 "reason":"原广告与商品页都显示同款旅行收纳袋，符合收纳搜索词。",
+                 "citations":[{**{k:s[k] for k in ("source_id","source_kind","content_hash")},
+                               "source_quote":"Packing cubes"} for s in e["sources"]]} for e in entries]
+        return {"candidates":[{"content":{"parts":[{"text":json.dumps({"assessments":rows})}]}}]}
+    router.generate.side_effect = generate
+    ai = ResearchAIAdapter(router=router, allow_external=True)
     queued = await enqueue_action(store, project["id"], {"kind": "verify",
         "version": project["version"], "keyword_id": wid, "landing_mode": "local"})
-    runner = WorkbenchRunner(store, SimpleNamespace(), None)
+    runner = WorkbenchRunner(store, SimpleNamespace(), None, ai_adapter=ai)
     await runner.run_once()
     result = await get_action(db_engine, project["id"], queued["id"])
     assert result["status"] == "complete", result

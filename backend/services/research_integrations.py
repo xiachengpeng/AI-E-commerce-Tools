@@ -23,7 +23,7 @@ class NonAIIntegrations:
             raise ProviderError("not_configured", "采集接口调用预算未配置")
         return value
 
-    def make_runner(self, store, explicit_settings, evidence_store):
+    def make_runner(self, store, explicit_settings, evidence_store, *, ai_adapter=None):
         """Task10 injects AI at this seam; no market/admission/env defaults inferred."""
         from rabbit_hole.application.runner import WorkbenchRunner
 
@@ -34,6 +34,7 @@ class NonAIIntegrations:
             provider_secrets=self.providers,
             provider_budget_limits=self.provider_limit,
             allow_external=self.allow_external,
+            ai_adapter=ai_adapter,
         )
 
 

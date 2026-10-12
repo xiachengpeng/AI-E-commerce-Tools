@@ -33,7 +33,6 @@ from rabbit_hole.domain.legacy import Job
 from rabbit_hole.extraction import (
     ExtractionGenerationError,
     ExtractionInput,
-    OpenAIStructuredGenerator,
     PostgresExtractionCache,
     ProductExtraction,
     extract_product,
@@ -778,59 +777,33 @@ class _MeasuredCollector:
 
 
 class RuntimeExtractor:
-    def __init__(
-        self, settings: Settings, database: Database, telemetry: Telemetry
-    ) -> None:
+    def __init__(self, settings: Settings, database: Database, telemetry: Telemetry, *, ai_adapter=None) -> None:
         self.settings, self.database, self.telemetry = settings, database, telemetry
+        self.ai_adapter = ai_adapter
 
     async def extract(self, source: ExtractionInput) -> ProductExtraction:
-        from openai import AsyncOpenAI
-
+        if self.ai_adapter is None:
+            raise ExtractionGenerationError("research AI adapter is not configured")
         failed = False
         try:
-            async with AsyncOpenAI(
-                api_key=self.settings.openai_api_key,
-                base_url=self.settings.openai_base_url or None,
-                timeout=60,
-                max_retries=2,
-            ) as client:
-                generator = OpenAIStructuredGenerator(
-                    api_key=None,
-                    model_version=self.settings.openai_model,
-                    # The OpenAI SDK has a more precise generic signature
-                    # than the small parser protocol used by extraction.
-                    responses=cast(Any, client.responses),
-                )
-                return await extract_product(
-                    generator, source, cache=PostgresExtractionCache(self.database)
-                )
+            # Snapshot one binding/version for cache key and generation together.
+            with self.ai_adapter.extraction_generator() as generator:
+                return await extract_product(generator, source, cache=PostgresExtractionCache(self.database))
         except (ValidationError, ExtractionGenerationError):
             failed = True
             raise
         finally:
-            await self.telemetry.record(
-                str(uuid4()), source="ai", success=not failed, schema_failure=failed
-            )
+            await self.telemetry.record(str(uuid4()), source="ai", success=not failed, schema_failure=failed)
 
 
 class RuntimeDiscoveryGenerator:
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
+    def __init__(self, settings: Settings, *, ai_adapter=None) -> None:
+        self.settings, self.ai_adapter = settings, ai_adapter
 
     async def generate(self, **kwargs: Any) -> Any:
-        from openai import AsyncOpenAI
-
-        async with AsyncOpenAI(
-            api_key=self.settings.openai_api_key,
-            base_url=self.settings.openai_base_url or None,
-            timeout=60,
-            max_retries=2,
-        ) as client:
-            generator = OpenAIStructuredGenerator(
-                api_key=None,
-                model_version=self.settings.openai_model,
-                responses=cast(Any, client.responses),
-            )
+        if self.ai_adapter is None:
+            raise ExtractionGenerationError("research AI adapter is not configured")
+        with self.ai_adapter.extraction_generator(operation="keywords") as generator:
             return await generator.generate(**kwargs)
 
 
@@ -861,11 +834,12 @@ async def build_worker(
     storage: EvidenceStore | None = None,
     pipeline: Pipeline | None = None,
     telemetry: Telemetry | None = None,
+    ai_adapter=None,
 ) -> Worker:
     """Construct the standard worker from validated settings; no factory env required."""
-    if not settings.openai_model.strip() and pipeline is None:
+    if ai_adapter is None and pipeline is None:
         raise ValueError(
-            "RABBIT_HOLE_OPENAI_MODEL must name an available structured-output model"
+            "ResearchAIAdapter injection is required for legacy AI execution"
         )
     telemetry = telemetry or Telemetry(jobs._database)
     jobs.admission = settings.admission
@@ -901,8 +875,8 @@ async def build_worker(
                 telemetry,
                 "trends",
             ),
-            extractor=RuntimeExtractor(settings, jobs._database, telemetry),
-            discovery_generator=RuntimeDiscoveryGenerator(settings),
+            extractor=RuntimeExtractor(settings, jobs._database, telemetry, ai_adapter=ai_adapter),
+            discovery_generator=RuntimeDiscoveryGenerator(settings, ai_adapter=ai_adapter),
             storage=cast(Any, storage),
             market=settings.market,
         )

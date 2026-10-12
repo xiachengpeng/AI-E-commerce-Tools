@@ -358,8 +358,8 @@ async def test_runtime_owned_dependencies_require_revision_two_and_keep_activati
     ) as runtime:
         assert runtime.settings_store.database == path
         assert "provider_settings" in runtime.workbench_services
-        assert "ai_settings" not in runtime.workbench_services
-        assert "generate_direction" not in runtime.workbench_services
+        assert "ai_settings" in runtime.workbench_services
+        assert "generate_direction" in runtime.workbench_services
         assert runtime.non_ai_integrations.feishu._client is None
         runtime.settings_store.update(
             "feishu",

@@ -501,14 +501,7 @@ class OpenAIStructuredGenerator:
     ) -> None:
         self.model_version = _validate_version(model_version, name="model_version")
         if responses is None:
-            if not api_key:
-                raise ValueError("api_key is required when responses is not supplied")
-            from openai import AsyncOpenAI
-
-            responses = cast(
-                _ResponsesParser,
-                AsyncOpenAI(api_key=api_key, base_url=base_url or None).responses,
-            )
+            raise ValueError("direct provider execution retired; inject ResearchAIAdapter")
         self._responses = responses
 
     @classmethod

@@ -35,8 +35,6 @@ async def test_scan_retry_failure_updates_keyword_after_prior_failure(db_engine,
 async def test_stop_running_scan_fences_result_and_allows_retry(db_engine):
     from uuid import UUID
 
-    from sqlalchemy import update
-
     from rabbit_hole.application.actions import (
         actions,
         enqueue_action,
@@ -44,6 +42,7 @@ async def test_stop_running_scan_fences_result_and_allows_retry(db_engine):
         stop_action,
     )
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import update
 
     store = WorkbenchStore(db_engine)
     project = await store.create('stop scan', 'test', 'US', str(uuid4()))
@@ -121,9 +120,8 @@ async def test_stop_does_not_hide_already_saved_scan_result(db_engine):
     assert (await get_action(db_engine, project['id'], queued['id']))['status'] == 'ready'
     from uuid import UUID
 
-    from sqlalchemy import update
-
     from rabbit_hole.application.actions import actions
+    from sqlalchemy import update
     async with db_engine.begin() as c:
         await c.execute(update(actions).where(actions.c.id == UUID(queued['id'])).values(status='complete'))
 
@@ -207,48 +205,20 @@ async def test_invalid_ai_response_never_becomes_durable_cache(
 ):
     import json
     from types import SimpleNamespace
+    from unittest.mock import AsyncMock
     from uuid import UUID
-
-    import httpx
-    import openai
-    from sqlalchemy import select
 
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.application.runner import WorkbenchRunner
     from rabbit_hole.persistence.projects import WorkbenchStore
-
-    real_client = openai.AsyncOpenAI
-    responses = [
-        content,
-        json.dumps({"keywords": [{"text": "travel pouch", "type": "pain"}]}),
-    ]
-
-    def transport(request):
-        return httpx.Response(
-            200,
-            json={
-                "id": "completion-1",
-                "object": "chat.completion",
-                "created": 1,
-                "model": "test",
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": responses.pop(0)},
-                        "finish_reason": "stop",
-                    }
-                ],
-            },
-        )
-
-    monkeypatch.setattr(
-        openai,
-        "AsyncOpenAI",
-        lambda **kw: real_client(
-            **kw,
-            http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport)),
-        ),
-    )
+    from services.research_ai_adapter import ResearchAIAdapter
+    from sqlalchemy import select
+    outputs = [content, json.dumps({"keywords":[{"text":"travel pouch","type":"pain"}]})]
+    router = AsyncMock()
+    async def generate(*args, **kwargs):
+        return {"candidates":[{"content":{"parts":[{"text":outputs.pop(0)}]}}]}
+    router.generate.side_effect = generate
+    ai = ResearchAIAdapter(router=router, allow_external=True)
     store = WorkbenchStore(db_engine)
     p = await store.create("invalid-ai", "test", "US", str(uuid4()))
     queued = await enqueue_action(store, p["id"], {"kind": "keywords", "version": 0})
@@ -259,7 +229,7 @@ async def test_invalid_ai_response_never_becomes_durable_cache(
             openai_model="test",
             openai_base_url="https://ai.example/v1",
         ),
-        None,
+        None, ai_adapter=ai,
     )
     await runner.run_once()
     async with db_engine.connect() as connection:
@@ -285,11 +255,10 @@ async def test_legacy_invalid_ai_cache_is_removed_before_explicit_retry(db_engin
     from types import SimpleNamespace
     from uuid import UUID
 
-    from sqlalchemy import select, update
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.application.runner import WorkbenchRunner
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import select, update
 
     store = WorkbenchStore(db_engine)
     p = await store.create("invalid-legacy-ai", "test", "US", str(uuid4()))
@@ -505,10 +474,9 @@ async def test_v1_expansion_cache_blocks_without_replaying_candidates(db_engine)
     from types import SimpleNamespace
     from uuid import UUID
 
-    from sqlalchemy import select, update
-
     from rabbit_hole.application.actions import actions
     from rabbit_hole.application.runner import WorkbenchRunner
+    from sqlalchemy import select, update
 
     store, project, root, _product, queued = await _expansion_action_fixture(db_engine)
     async with db_engine.begin() as connection:
@@ -560,11 +528,10 @@ async def test_v2_expansion_cache_resumes_only_with_current_source(db_engine):
     from types import SimpleNamespace
     from uuid import UUID
 
-    from sqlalchemy import select, update
-
     from rabbit_hole.application.actions import actions
     from rabbit_hole.application.runner import WorkbenchRunner
     from rabbit_hole.domain.provenance import source_passages
+    from sqlalchemy import select, update
 
     store, project, _root, product, queued = await _expansion_action_fixture(db_engine)
     passage = source_passages(project, product["id"])[0]
@@ -608,11 +575,10 @@ async def test_legacy_partial_ai_cache_keeps_acknowledged_command_indices(db_eng
     from types import SimpleNamespace
     from uuid import NAMESPACE_URL, UUID, uuid5
 
-    from sqlalchemy import select, update
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.application.runner import WorkbenchRunner
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import select, update
 
     store = WorkbenchStore(db_engine)
     p = await store.create("partial legacy cache", "test", "US", str(uuid4()))
@@ -668,11 +634,10 @@ async def test_ai_resume_uses_durable_suggestions_without_api_credentials(db_eng
     from types import SimpleNamespace
     from uuid import UUID
 
-    from sqlalchemy import select, update
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.application.runner import WorkbenchRunner
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import select, update
 
     store = WorkbenchStore(db_engine)
     p = await store.create("cached-ai", "test", "US", str(uuid4()))
@@ -731,11 +696,10 @@ async def test_queue_cannot_run_unapproved_word_without_creating_action(db_engin
 async def test_ai_retries_count_towards_budget(db_engine):
     from uuid import UUID
 
-    from sqlalchemy import update
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.domain.project import WorkbenchError
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import update
 
     store = WorkbenchStore(db_engine)
     p = await store.create("budget-test", "test", "US", str(uuid4()))
@@ -758,11 +722,10 @@ async def test_ai_retries_count_towards_budget(db_engine):
 async def test_approved_queue_persists_keyword_state_and_result(db_engine):
     from types import SimpleNamespace
 
-    from sqlalchemy import select, update
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.application.runner import WorkbenchRunner
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import select, update
 
     store = WorkbenchStore(db_engine)
     p = await store.create("queue-contract", "test", "US", str(uuid4()))
@@ -830,11 +793,10 @@ async def test_approved_queue_persists_keyword_state_and_result(db_engine):
 async def test_configured_ai_limit_counts_attempts_and_retry_reservations(db_engine):
     from uuid import UUID
 
-    from sqlalchemy import update
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.domain.project import WorkbenchError
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import update
 
     store = WorkbenchStore(db_engine)
     project = await store.create("configured-ai-budget", "test", "US", str(uuid4()))
@@ -866,11 +828,10 @@ async def test_configured_ai_limit_counts_attempts_and_retry_reservations(db_eng
 async def test_configured_daily_scan_budget_is_enforced_by_queue(db_engine):
     from uuid import UUID
 
-    from sqlalchemy import update
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.domain.project import WorkbenchError
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import update
 
     store = WorkbenchStore(db_engine)
     project = await store.create("configured-scan-budget", "test", "US", str(uuid4()))
@@ -923,10 +884,9 @@ async def test_configured_daily_scan_budget_is_enforced_by_queue(db_engine):
 async def test_historical_scan_actions_do_not_lock_future_daily_budget(db_engine):
     from uuid import UUID
 
-    from sqlalchemy import update
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import update
 
     store = WorkbenchStore(db_engine)
     project = await store.create("daily-reset", "test", "US", str(uuid4()))
@@ -1048,9 +1008,8 @@ async def test_batch_scan_returns_partial_outcomes_without_losing_queue(db_engin
     assert len((await list_actions(db_engine, p["id"]))["actions"]) == 1
     from uuid import UUID
 
-    from sqlalchemy import update
-
     from rabbit_hole.application.actions import actions
+    from sqlalchemy import update
 
     async with db_engine.begin() as c:
         await c.execute(
@@ -1064,11 +1023,10 @@ async def test_queued_ai_action_blocks_when_rule_snapshot_changes(db_engine):
     from types import SimpleNamespace
     from uuid import UUID
 
-    from sqlalchemy import select
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.application.runner import WorkbenchRunner
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import select
 
     store = WorkbenchStore(db_engine)
     project = await store.create("stale-rule-action", "test", "US", str(uuid4()))
@@ -1130,10 +1088,9 @@ async def test_legacy_retry_keeps_prior_day_and_cached_recovery_ignores_limit(
     from datetime import UTC, datetime, timedelta
     from uuid import UUID
 
-    from sqlalchemy import select, update
-
     from rabbit_hole.application.actions import actions, enqueue_action
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import select, update
 
     store = WorkbenchStore(db_engine)
     p = await store.create("legacy retry", "test", "US", str(uuid4()))
@@ -1171,10 +1128,9 @@ async def test_legacy_retry_keeps_prior_day_and_cached_recovery_ignores_limit(
 async def test_action_history_uses_stable_cursor_and_project_bound_lookup(db_engine):
     from uuid import UUID
 
-    from sqlalchemy import insert
-
     from rabbit_hole.application.actions import actions, get_action, list_actions
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import insert
 
     store = WorkbenchStore(db_engine)
     first = await store.create("cursor one", "test", "US", str(uuid4()))
@@ -1214,10 +1170,9 @@ async def test_action_history_uses_stable_cursor_and_project_bound_lookup(db_eng
 async def test_scan_action_stats_count_attempts_and_completed_within_one_project(db_engine):
     from uuid import UUID
 
-    from sqlalchemy import insert
-
     from rabbit_hole.application.actions import actions, scan_action_stats
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import insert
 
     store = WorkbenchStore(db_engine)
     first = await store.create("scan stats one", "travel", "US", str(uuid4()))
@@ -1253,10 +1208,9 @@ async def test_action_pages_are_complete_stable_and_strictly_validated(db_engine
     import json
     from uuid import UUID
 
-    from sqlalchemy import insert
-
     from rabbit_hole.application.actions import actions, list_actions
     from rabbit_hole.persistence.projects import WorkbenchStore
+    from sqlalchemy import insert
 
     store = WorkbenchStore(db_engine)
     project = await store.create("long action history", "test", "US", str(uuid4()))
