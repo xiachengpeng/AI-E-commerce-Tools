@@ -1,3 +1,4 @@
+import { fixtureRoot as root } from './dom-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createApi } from '../../js/research-workbench/api.mjs';
@@ -25,7 +26,7 @@ test('lifecycle closes streams, polling, listeners and requests once',()=>{
  target.dispatchEvent(new Event('change'));assert.equal(count,1);assert.equal(closed,1);assert.equal(life.signal.aborted,true);assert.equal(life.active,false);
 });
 
-function root(){ const status={textContent:''},list={replaceChildren(){},textContent:''};const value=new EventTarget();value.innerHTML='';value.querySelector=s=>s==='[data-rw-status]'?status:list;value.ownerDocument={createElement:()=>({dataset:{},append(){},textContent:''})};return value; }
+
 test('mount deduplicates and unmount aborts; failed refresh keeps last successful projects',async()=>{
  const host=root();let calls=0,fail=false;const workbench=createWorkbench();
  const context={fetch:async(url)=>{calls++;if(url.endsWith('/session'))return {ok:true,json:async()=>({csrf_token:'fixture'})};if(fail)throw Error('offline');return {ok:true,json:async()=>({projects:[{id:'a',title:'Saved'}]})};}};

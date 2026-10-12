@@ -292,7 +292,7 @@
         try {
             nativeModule = await import('./research-workbench/index.mjs');
             if (generation !== nativeGeneration) return;
-            await nativeModule.mount(host, { apiBase: base(), onSelectProduct: product => openProduct(product.id) });
+            await nativeModule.mount(host, { apiBase: base() });
         } catch (_) {
             if (generation === nativeGeneration) host.textContent = '原生研究入口暂时不可用，请重新进入研究页。';
         }
