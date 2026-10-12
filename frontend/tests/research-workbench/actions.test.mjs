@@ -78,3 +78,27 @@ test('409 refresh updates only version and explicit next click reuses UUID witho
  const bodies=[];const c=context({request:async(path,options)=>{if(!options?.method)return {id:'p',version:8};bodies.push(options.body);if(bodies.length===1){const e=Error('conflict');e.status=409;throw e;}return {id:'queued'};}}),service=createActionService(c);
  await assert.rejects(service.enqueue({kind:'keywords'}));assert.equal(bodies.length,1);assert.equal(c.state.project.version,8);await service.enqueue({kind:'keywords'});assert.equal(bodies.length,2);assert.equal(bodies[1].command_id,bodies[0].command_id);assert.equal(bodies[1].version,8);c.life.dispose();
 });
+test('Trends retry preserves saved query and actual attempt/version',async()=>{
+ const bodies=[];const c=context({request:async(path,options)=>{bodies.push(options.body);return {id:'queued'};}}),service=createActionService(c);
+ await service.retry({id:'t',kind:'trends',product_id:'product',query:'  dog travel bag  ',attempt:2,status:'blocked',recovery_action:'retry'});
+ assert.equal(bodies[0].query,'dog travel bag');assert.equal(bodies[0].attempt,2);assert.equal(bodies[0].version,7);
+ await service.retry({id:'t2',kind:'trends',product_id:'product2',payload:{query:'saved payload query'},attempt:3,status:'blocked',recovery_action:'retry'});assert.equal(bodies[1].query,'saved payload query');c.life.dispose();
+});
+test('missing or blank Trends query blocks request until explicit nonempty input',async()=>{
+ const bodies=[];const c=context({request:async(path,options)=>{bodies.push(options.body);return {id:'queued'};}}),service=createActionService(c),action={id:'t',kind:'trends',product_id:'product',attempt:2,status:'blocked',recovery_action:'retry'};
+ await assert.rejects(service.retry(action),/查询词/);await assert.rejects(service.retry(action,{query:'  '}),/查询词/);await assert.rejects(service.retry(action,{query:'x'.repeat(201)}),/查询词/);assert.equal(bodies.length,0);
+ await service.retry(action,{query:'  explicit local query  '});assert.equal(bodies[0].query,'explicit local query');c.life.dispose();
+});
+test('Trends query edits cannot silently replace uncertain UUID/hash or known409 identity',async()=>{
+ for(const status of [undefined,409]){
+  const bodies=[];const c=context({request:async(path,options)=>{if(!options?.method)return {id:'p',version:8};bodies.push(options.body);if(bodies.length===1){const e=Error('lost or conflict');if(status)e.status=status;throw e;}return {id:'queued'};}}),service=createActionService(c),action={id:'t',kind:'trends',product_id:'product',attempt:2,status:'blocked',recovery_action:'retry'};
+  await assert.rejects(service.retry(action,{query:'original query'}));await assert.rejects(service.retry(action,{query:'changed query'}),/原输入|提交记录/);assert.equal(bodies.length,1);
+  await service.retry(action,{query:'original query'});assert.equal(bodies[1].command_id,bodies[0].command_id);assert.equal(bodies[1].version,status?8:7);c.life.dispose();
+ }
+});
+test('Trends queue retry exposes explicit labeled query input and blank click sends no POST',async()=>{
+ const calls=[],action={id:'t',kind:'trends',product_id:'product',attempt:2,status:'blocked',recovery_action:'retry'};const c=context({request:async(path,options)=>{calls.push([path,options]);return path==='/sources'?{sources:[]}:options?.method?{id:'queued'}:{actions:[action]};}});c.root=fixtureRoot();c.navigate=()=>{};
+ try{const host=renderActions(c);await new Promise(r=>setImmediate(r));const input=host.find(n=>n.name==='trends_query');assert.ok(input);assert.equal(input.attributes['aria-label'],'当地常用产品搜索词');
+ const retry=host.find(n=>n.textContent==='显式重试失败任务');retry.click();await new Promise(r=>setImmediate(r));assert.equal(calls.filter(([,o])=>o?.method==='POST').length,0);
+ input.value='explicit search';input.dispatchEvent(new Event('input'));retry.click();await new Promise(r=>setTimeout(r,20));assert.equal(calls.find(([,o])=>o?.method==='POST')[1].body.query,'explicit search');}finally{c.life.dispose();}
+});

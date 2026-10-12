@@ -1,6 +1,6 @@
 import { createLifecycle } from '../lifecycle.mjs';
 import { el,button,panel,notify } from '../components/elements.mjs';
-import { createActionService,actionStatus,retryEligible,projectPath } from '../services/actions.mjs';
+import { createActionService,actionStatus,retryEligible,trendsQuery,projectPath } from '../services/actions.mjs';
 import { createActionLogs } from '../components/live-logs.mjs';
 import { renderEvents } from '../components/events.mjs';
 import { renderAds,mediaControl } from '../components/ad-copy.mjs';
@@ -19,7 +19,15 @@ export function renderActions(context){
    if(action.status==='complete')row.append(el(context,'p','rw-muted',Number.isInteger(action.result?.ads)?'本次采集 '+action.result.ads+' 条（限定样本）':'本次条数未记录；不推断为零。'));
    row.append(button(rowContext,'查看任务日志',()=>{void logs.openActionLogs(action.id);}));
    if(['ready','queued','running'].includes(action.status)&&Number.isInteger(action.attempt))row.append(button(rowContext,'停止本次尝试',async()=>{await service.stop(action);if(context.life.active)await refresh();}));
-   if(retryEligible(action))row.append(button(rowContext,action.recovery_action==='resume'?'继续查询结果':'显式重试失败任务',async()=>{await service.retry(action);if(context.life.active)await refresh();}));
+   if(retryEligible(action)){
+    let queryInput;
+    if(action.kind==='trends'){
+     const queryKey=action.id+':'+action.attempt;context.state.actionQueries||={};
+     const label=el(rowContext,'label','','当地常用产品搜索词');queryInput=el(rowContext,'input');queryInput.type='text';queryInput.name='trends_query';queryInput.required=true;queryInput.maxLength=200;queryInput.setAttribute('aria-label','当地常用产品搜索词');
+     queryInput.value=context.state.actionQueries[queryKey]??trendsQuery(action);rowContext.life.listen(queryInput,'input',()=>{context.state.actionQueries[queryKey]=queryInput.value;});label.append(queryInput);row.append(label,el(rowContext,'p','rw-muted','按目标市场输入真实查询词；不自动从商品名推断。'));
+    }
+    row.append(button(rowContext,action.recovery_action==='resume'?'继续查询结果':'显式重试失败任务',async()=>{await service.retry(action,queryInput?{query:queryInput.value}:{});if(context.life.active)await refresh();}));
+   }
    if(action.result?.evidence_id)row.append(mediaControl(rowContext,projectPath(context.state.project.id)+'/actions/'+encodeURIComponent(action.id)+'/screenshot','读取采集截图'));
    if(action.result?.evidence_kind==='json')row.append(button(rowContext,'查看接口证据',async()=>{const proof=await context.api.request(projectPath(context.state.project.id)+'/actions/'+encodeURIComponent(action.id)+'/provider-evidence',{signal:context.life.signal});if(context.life.active)row.append(el(context,'pre','rw-log-lines',JSON.stringify(proof,null,2)));}));
    records.append(row);
