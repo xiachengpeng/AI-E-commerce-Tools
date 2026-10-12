@@ -7,16 +7,17 @@ export function createApi(context = {}) {
     const transport = context.fetch || globalThis.fetch.bind(globalThis);
     let token = '';
     async function send(url, options = {}) {
-        const signal = context.signal && options.signal ? AbortSignal.any([context.signal, options.signal]) : options.signal || context.signal;
+        const signals=[context.signal,options.signal,AbortSignal.timeout(options.responseType==='stream'?70000:25000)].filter(Boolean);
+        const signal=AbortSignal.any(signals);
         const response = await transport(url, {
             method: options.method || 'GET',
             headers: { 'Content-Type': 'application/json', 'X-Research-Token': token },
             ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
             signal, cache: 'no-store', redirect: 'error'
         });
-        const data = await response.json();
+        const data = response.ok && options.responseType === 'blob' ? await response.blob() : response.ok && options.responseType === 'stream' ? response.body : await response.json();
         if (!response.ok) {
-            const error = new Error('研究请求未完成，请刷新状态或核对输入');
+            const error = new Error(response.status===503?'研究能力暂不可用或尚未配置（503），请核对来源状态':response.status===429?'请求达到连接或预算限制（429），请稍后核对':'研究请求未完成，请刷新状态或核对输入');
             error.status = response.status;
             throw error;
         }
@@ -36,6 +37,9 @@ export function createApi(context = {}) {
             if (!token) throw new Error('研究会话不可用');
             // One transport attempt, including commands with ambiguous outcomes.
             return send(url.href, options);
+        },
+        blob(path, options = {}) { return this.request(path, {...options,responseType:'blob'}); },
+        stream(path, options = {}) { return this.request(path, {...options,responseType:'stream'});
         }
     };
 }
