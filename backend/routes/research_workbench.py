@@ -991,6 +991,7 @@ async def research_lifespan(app, *, config=None, database=None, data_root=None):
     from services.research_runtime import open_research_runtime, resolve_runtime_paths
 
     app.state.research_runtime = None
+    app.state.integration_settings = None
     app.state.research_diagnostics = ()
     config = load_research_config() if config is None else config
     async with AsyncExitStack() as resources:
@@ -1011,6 +1012,7 @@ async def research_lifespan(app, *, config=None, database=None, data_root=None):
                         paths, allow_commands=True, allow_external=False
                     )
                 )
+                app.state.integration_settings = app.state.research_runtime.settings_store
             except Exception:  # noqa: BLE001 -- isolate unavailable research from main app
                 # Diagnostics deliberately exclude paths, exception payloads and credentials.
                 app.state.research_diagnostics = ("initialization_failed",)
@@ -1018,3 +1020,4 @@ async def research_lifespan(app, *, config=None, database=None, data_root=None):
             yield
         finally:
             app.state.research_runtime = None
+            app.state.integration_settings = None

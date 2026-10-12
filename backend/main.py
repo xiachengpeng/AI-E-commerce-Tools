@@ -254,6 +254,9 @@ from routes.research import router as research_router
 app.include_router(research_router)
 from routes.research_workbench import router as research_workbench_router
 app.include_router(research_workbench_router)
+from routes.integration_settings import router as integration_settings_router
+
+app.include_router(integration_settings_router)
 app.include_router(storage_router, prefix="/api/storage")
 app.include_router(storage_router, prefix="/storage")
 app_logs.emit(

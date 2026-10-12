@@ -25,7 +25,7 @@ full_merge_ledger = Table(
 )
 
 
-def validate_prepared_schema(connection: Connection, source_metadata: MetaData) -> int:
+def validate_prepared_schema(connection: Connection, source_metadata: MetaData, *, additional_metadata: MetaData | None = None) -> int:
     """Read-only baseline contract for revisions 1/2/3; additive changes are allowed.
 
     Later revisions retain revision1's minimum structures. Inspect columns and
@@ -58,6 +58,8 @@ def validate_prepared_schema(connection: Connection, source_metadata: MetaData) 
 
     inspector = inspect(connection)
     required = {**source_metadata.tables, **metadata.tables}
+    if additional_metadata is not None:
+        required.update(additional_metadata.tables)
     if not set(required).issubset(inspector.get_table_names()):
         raise ValueError('partial prepared schema: missing table')
     for name, table in required.items():

@@ -1,5 +1,5 @@
 """Explicit paths and lifecycle result for the dormant research subsystem."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,3 +21,6 @@ class ResearchRuntime:
     settings: Any
     paths: RuntimePaths
     diagnostics: tuple[str, ...] = ()
+    settings_store: Any = None
+    non_ai_integrations: Any = None
+    workbench_services: dict[str, Any] = field(default_factory=dict)

@@ -66,7 +66,8 @@ async def reserve(runner: Any, action: dict[str, Any], provider: str, slot: str)
             "serpapi": ("RABBIT_HOLE_SERPAPI_DAILY_REQUESTS", "40"),
             "firecrawl": ("RABBIT_HOLE_FIRECRAWL_DAILY_REQUESTS", "20"),
         }[provider]
-        limit = int(os.environ.get(budget_env, default_limit))
+        limits = getattr(runner, 'provider_budget_limits', None)
+        limit = limits(provider) if limits is not None else int(os.environ.get(budget_env, default_limit))
         if count >= limit:
             raise ProviderError('budget', '该接口今日调用预算已用完')
         reservations[slot] = {'provider': provider, 'day': day}
@@ -87,7 +88,10 @@ async def request_json(client: httpx.AsyncClient, method: str, url: str, **kwarg
 
 async def execute_provider(runner: Any, action: dict[str, Any], project: dict[str, Any]) -> dict[str, Any]:
     provider = 'apify' if action['kind'] == 'scan' else 'serpapi'
-    key = ProviderSecrets().get(provider)
+    if getattr(runner, 'allow_external', True) is not True:
+        raise PermissionError('research_external_not_authorized')
+    providers = getattr(runner, 'provider_secrets', None)
+    key = providers.get(provider) if providers is not None else ProviderSecrets().get(provider)
     if not key:
         raise ProviderError('not_configured', f'{provider} API 密钥未配置，请到数据源与配置设置')
     async with httpx.AsyncClient(timeout=45, follow_redirects=False) as client:

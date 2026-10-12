@@ -137,6 +137,24 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
         store = import_module('rabbit_hole.persistence.projects').WorkbenchStore(engine)
         evidence = import_module('rabbit_hole.persistence.evidence_store').EvidenceStore(
             client, bucket=namespace['evidence_bucket'], collector_version=namespace['collector_version'])
-        yield ResearchRuntime(engine, store, evidence, settings, paths)
+        async with engine.connect() as connection:
+            revision = (await connection.exec_driver_sql('SELECT revision FROM full_merge_schema WHERE id=1')).scalar_one()
+        integrations = None
+        services = {}
+        settings_store = None
+        if revision >= 2:
+            from services.integration_settings_service import IntegrationSettingsService
+            from services.research_integrations import (
+                ResearchSync,
+                assemble_non_ai_integrations,
+            )
+            settings_store = IntegrationSettingsService(paths.database)
+            integrations = assemble_non_ai_integrations(settings_store, allow_external=False)
+            services = {'provider_settings': integrations.providers,
+                        'translator': integrations.translator,
+                        'sync': ResearchSync(store, settings_store, allow_external=False)}
+        yield ResearchRuntime(engine, store, evidence, settings, paths,
+                              settings_store=settings_store, non_ai_integrations=integrations,
+                              workbench_services=services)
     finally:
         await engine.dispose()

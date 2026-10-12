@@ -845,16 +845,21 @@ class RecordWriter(Protocol):
 class FeishuClient:
     def __init__(
         self,
-        app_id: str,
-        app_secret: str,
-        base_token: str,
+        app_id: str = "",
+        app_secret: str = "",
+        base_token: str = "",
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         retries: int = 3,
         http_client: httpx.AsyncClient | None = None,
+        credentials_resolver=None,
+        allow_external: bool = True,
     ) -> None:
-        self.app_id, self.app_secret, self.base_token = app_id, app_secret, base_token
-        self._client = http_client or httpx.AsyncClient(timeout=httpx.Timeout(timeout))
+        self.app_id, self.app_secret, self._base_token = app_id, app_secret, base_token
+        self._credentials_resolver = credentials_resolver
+        self._allow_external = allow_external
+        self._timeout = timeout
+        self._client = http_client
         self._owns_client = http_client is None
         self._retries = retries
         self._token: str | None = None
@@ -862,11 +867,35 @@ class FeishuClient:
         self._table_ids: dict[str, str] = {}
         self._view_ids: dict[tuple[str, str], str] = {}
 
+    @property
+    def base_token(self) -> str:
+        if self._credentials_resolver is not None:
+            self._refresh_credentials()
+        return self._base_token
+
+    def _refresh_credentials(self) -> None:
+        data = self._credentials_resolver()
+        current = (data.get("app_id", ""), data.get("app_secret", ""), data.get("base_app_token", ""))
+        if current != (self.app_id, self.app_secret, self._base_token):
+            self.app_id, self.app_secret, self._base_token = current
+            self._token = None
+            self._token_expires_at = 0.0
+            self._table_ids.clear()
+            self._view_ids.clear()
+
     async def aclose(self) -> None:
-        if self._owns_client:
+        if self._owns_client and self._client is not None:
             await self._client.aclose()
 
     async def _tenant_token(self) -> str:
+        if not self._allow_external:
+            raise PermissionError("feishu_external_not_authorized")
+        if self._credentials_resolver is not None:
+            self._refresh_credentials()
+        if not self.app_id or not self.app_secret or not self._base_token:
+            raise ValueError("feishu_unconfigured")
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(self._timeout))
         if self._token is not None and time.monotonic() < self._token_expires_at:
             return self._token
         for attempt in range(self._retries + 1):

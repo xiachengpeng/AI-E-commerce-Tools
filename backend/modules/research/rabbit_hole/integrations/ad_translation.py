@@ -69,11 +69,24 @@ class TranslationSettings:
 
 
 class TranslationService:
-    def __init__(self, path: Path | None = None) -> None:
-        self.path = path or ProviderSecrets().path.with_name("translation-cache.sqlite3")
+    def __init__(self, path: Path | None = None, *, credentials_resolver=None,
+                 cache_store=None, allow_external: bool = True) -> None:
+        self.path = cache_store.database if cache_store is not None else path or ProviderSecrets().path.with_name("translation-cache.sqlite3")
+        self._credentials_resolver = credentials_resolver
+        self._cache_store = cache_store
+        self._allow_external = allow_external
         self._lock = asyncio.Lock()
 
     def _cache(self, key: str, value: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        if self._cache_store is not None:
+            with self._cache_store.connection() as db:
+                if value is not None:
+                    db.execute("INSERT OR REPLACE INTO research_translation_cache VALUES (?, ?, ?)", (key, json.dumps(value), time.time()))
+                    db.execute("DELETE FROM research_translation_cache WHERE key IN (SELECT key FROM research_translation_cache ORDER BY created DESC LIMIT -1 OFFSET 2000)")
+                    db.commit()
+                    return value
+                row = db.execute("SELECT value FROM research_translation_cache WHERE key = ?", (key,)).fetchone()
+                return json.loads(row[0]) if row else None
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         os.close(fd)
@@ -112,14 +125,16 @@ class TranslationService:
             raise TranslationError("翻译缓存暂不可用，请检查后端存储后重试") from None
 
     async def _request(self, text: str) -> dict[str, Any]:
+        if not self._allow_external:
+            raise TranslationError("阿里云翻译尚未授权；原文已保留")
+        credentials = self._credentials_resolver() if self._credentials_resolver is not None else TranslationSettings().resolve()
+        if not credentials.access_key_id or not credentials.access_key_secret:
+            raise TranslationError("尚未配置阿里云机器翻译密钥")
         from alibabacloud_alimt20181012.client import Client  # type: ignore[import-untyped]  # noqa: I001
         from alibabacloud_alimt20181012.models import TranslateGeneralRequest  # type: ignore[import-untyped]
         from alibabacloud_tea_openapi.models import Config  # type: ignore[import-untyped]
         from alibabacloud_tea_util.models import RuntimeOptions  # type: ignore[import-untyped]
 
-        credentials = TranslationSettings().resolve()
-        if not credentials.access_key_id or not credentials.access_key_secret:
-            raise TranslationError("尚未配置阿里云机器翻译密钥")
         client = Client(Config(access_key_id=credentials.access_key_id,
                                access_key_secret=credentials.access_key_secret,
                                endpoint="mt.cn-hangzhou.aliyuncs.com", region_id="cn-hangzhou"))

@@ -11,7 +11,11 @@ from typing import Any
 
 
 class ProviderSecrets:
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Path | None = None, *, unified_store: Any = None, purpose: str = "research") -> None:
+        self._unified_store, self._purpose = unified_store, purpose
+        if unified_store is not None:
+            self.path = None
+            return
         self.path = path or Path(os.environ.get(
             "RABBIT_HOLE_PROVIDER_SECRETS_PATH",
             str(Path.home() / ".local/share/rabbit-hole/providers/keys.json"),
@@ -27,13 +31,20 @@ class ProviderSecrets:
         return {k: v for k, v in data.items() if k in {"apify", "serpapi", "firecrawl"} and isinstance(v, str)}
 
     def get(self, provider: str) -> str:
+        if self._unified_store is not None:
+            return self._unified_store.resolve(provider, self._purpose).get("api_key", "")
         return self._read().get(provider, "")
 
     def status(self) -> dict[str, bool]:
+        if self._unified_store is not None:
+            return {key: bool(self.get(key)) for key in ("apify", "serpapi", "firecrawl")}
         data = self._read()
         return {key: bool(data.get(key)) for key in ("apify", "serpapi", "firecrawl")}
 
     def update(self, changes: dict[str, Any]) -> dict[str, bool]:
+        if self._unified_store is not None:
+            from services.integration_settings_service import ResearchProviderSettings
+            return ResearchProviderSettings(self._unified_store, self._purpose).update(changes)
         if not changes or set(changes) - {"apify", "serpapi", "firecrawl"}:
             raise ValueError("仅支持 Apify、SerpApi 和 Firecrawl 密钥")
         for value in changes.values():

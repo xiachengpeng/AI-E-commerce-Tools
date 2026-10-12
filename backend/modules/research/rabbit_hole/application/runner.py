@@ -39,8 +39,19 @@ from rabbit_hole.persistence.sql import transaction_lock, write_transaction
 
 
 class WorkbenchRunner:
-    def __init__(self, store: Any, settings: Any, evidence_store: Any) -> None:
+    def __init__(self, store: Any, settings: Any, evidence_store: Any, *,
+                 provider_secrets: Any = None, provider_budget_limits: Any = None,
+                 allow_external: bool = True) -> None:
         self.store, self.settings, self.evidence_store = store, settings, evidence_store
+        self.provider_secrets = provider_secrets
+        self.provider_budget_limits = provider_budget_limits
+        self.allow_external = allow_external
+
+    def provider_key(self, provider: str) -> str:
+        if self.provider_secrets is not None:
+            return self.provider_secrets.get(provider)
+        from rabbit_hole.integrations.provider_settings import ProviderSecrets
+        return ProviderSecrets().get(provider)
 
     async def _reserve_ai(
         self, action: dict[str, Any], project: dict[str, Any]
@@ -128,6 +139,8 @@ class WorkbenchRunner:
             return False
 
     async def run_once(self) -> bool:
+        if not self.allow_external:
+            raise PermissionError("research_external_not_authorized")
         from rabbit_hole.integrations.provider_jobs import (
             ProviderPending,
             diagnostic,
@@ -389,6 +402,8 @@ class WorkbenchRunner:
     async def execute(
         self, action: dict[str, Any], project: dict[str, Any]
     ) -> dict[str, Any]:
+        if not self.allow_external:
+            raise PermissionError("research_external_not_authorized")
         kind = action["kind"]
         if kind in {"scan", "trends"} and action["payload"].get("execution_mode") == "api":
             from rabbit_hole.integrations.provider_budget import execute_provider
@@ -419,11 +434,9 @@ class WorkbenchRunner:
                 )
                 from rabbit_hole.integrations.provider_budget import reserve
                 from rabbit_hole.integrations.provider_jobs import checkpoint
-                from rabbit_hole.integrations.provider_settings import ProviderSecrets
-
                 if action["payload"].get("firecrawl_submitted"):
                     raise ProviderError("source_error", "Firecrawl 先前请求结果未确认，可能已计费；为避免重复调用，请核对后手动重试")
-                key = ProviderSecrets().get("firecrawl")
+                key = self.provider_key("firecrawl")
                 if not key:
                     raise ProviderError("not_configured", "Firecrawl 密钥未配置，请到数据源与配置设置")
                 await guard.pinned_address(product["url"])
