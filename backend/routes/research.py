@@ -25,18 +25,13 @@ _origins = {'http://127.0.0.1:9502', 'http://localhost:9502', 'http://127.0.0.1:
 
 
 def guard_origin(request: Request):
-    if request.url.hostname not in {'127.0.0.1', 'localhost', '::1'}:
-        raise HTTPException(403, '研究入口只允许本机访问')
-    if request.headers.get('sec-fetch-site') == 'cross-site' and request.headers.get('origin') not in _origins:
-        raise HTTPException(403, '拒绝跨站研究请求')
-    if request.headers.get('origin') and request.headers['origin'] not in _origins:
-        raise HTTPException(403, '拒绝跨站研究请求')
+    from services.research_security import require_research_session
+    require_research_session(request, write=False, bootstrap=True)
 
 
 def require_session(request: Request):
-    guard_origin(request)
-    if not secrets.compare_digest(request.headers.get('x-research-token', '').encode(), _session_token.encode()):
-        raise HTTPException(401, '研究会话已过期，请刷新研究入口')
+    from services.research_security import require_research_session
+    require_research_session(request, write=request.method not in {'GET', 'HEAD', 'OPTIONS'})
 
 
 @router.get('/session')

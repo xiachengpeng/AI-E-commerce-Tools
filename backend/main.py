@@ -236,8 +236,10 @@ async def app_lifespan(_app):
             logger.info("系统启动：已轮转清理 %d 个过期静态文件，释放 %.2f MB", cleaned_count, freed_bytes / 1024 / 1024)
     except Exception as ex:
         logger.warning("系统启动静态文件自动清理失败: %s", ex)
+    from routes.research_workbench import research_lifespan
     try:
-        yield
+        async with research_lifespan(_app):
+            yield
     finally:
         await close_adapters()
         await close_firecrawl_client()
@@ -250,6 +252,8 @@ app = FastAPI(
 app.include_router(generation_router)
 from routes.research import router as research_router
 app.include_router(research_router)
+from routes.research_workbench import router as research_workbench_router
+app.include_router(research_workbench_router)
 app.include_router(storage_router, prefix="/api/storage")
 app.include_router(storage_router, prefix="/storage")
 app_logs.emit(
