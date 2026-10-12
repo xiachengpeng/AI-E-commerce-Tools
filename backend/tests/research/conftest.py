@@ -65,6 +65,11 @@ async def db_engine(migrated_database: str, tmp_path):
     if engine.dialect.name == 'sqlite':
         from rabbit_hole.persistence.sql import initialize_sqlite
         await initialize_sqlite(engine)
+        # Explicit temporary unified usage schema for source runner regressions;
+        # production creation is exclusively backup-gated revision3 migration.
+        from models.research_ai_usage import metadata as usage_metadata
+        async with engine.begin() as connection:
+            await connection.run_sync(usage_metadata.create_all)
     from rabbit_hole.persistence.database import daily_usage
 
     # Multi-connection concurrency tests commit; isolate the new daily ledger

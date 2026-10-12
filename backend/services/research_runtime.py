@@ -80,7 +80,13 @@ async def _prepared(engine: AsyncEngine) -> bool:
     async with engine.connect() as connection:
         from models.full_merge import validate_prepared_schema
         try:
-            await connection.run_sync(lambda sync: validate_prepared_schema(sync, metadata))
+            revision = await connection.run_sync(lambda sync: validate_prepared_schema(sync, metadata))
+            if revision >= 2:
+                from models.integration_settings import metadata as integrations
+                await connection.run_sync(lambda sync: validate_prepared_schema(sync, metadata, additional_metadata=integrations))
+            if revision >= 3:
+                from models.research_ai_usage import metadata as usage
+                await connection.run_sync(lambda sync: validate_prepared_schema(sync, metadata, additional_metadata=usage))
         except (SQLAlchemyError, ValueError):
             return False
         return True
@@ -169,7 +175,9 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
             ai_engine = create_engine(URL.create('sqlite', database='file:' + str(paths.database),
                                                  query={'mode':'ro','uri':'true'}))
             ai_sessions = sessionmaker(bind=ai_engine)
-            ai = ResearchAIAdapter(session_factory=ai_sessions, allow_external=False)
+            from types import SimpleNamespace
+            usage_runtime = SimpleNamespace(engine=engine, store=store) if revision >= 3 else None
+            ai = ResearchAIAdapter(session_factory=ai_sessions, allow_external=False, usage_runtime=usage_runtime)
             async def direction(title, market):
                 return await generate_direction(title, market, ai_adapter=ai)
             services.update(ai_settings=ResearchAISettings(ai_sessions), generate_direction=direction)
@@ -177,7 +185,8 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
                               settings_store=settings_store, non_ai_integrations=integrations,
                               workbench_services=services, business_settings=business_settings, ai_adapter=ai,
                               worker_readiness=(("business_settings_missing",) if business_settings is None else ())
-                              + (("integration_schema_unprepared",) if revision < 2 else ()))
+                              + (("integration_schema_unprepared",) if revision < 2 else ())
+                              + (("ai_usage_schema_unprepared",) if revision < 3 else ()))
     finally:
         if ai is not None:
             ai_engine.dispose()

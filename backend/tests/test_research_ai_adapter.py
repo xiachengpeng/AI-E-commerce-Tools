@@ -442,7 +442,7 @@ async def test_central_retry_remaining_deadline_stops_before_next_submission(
 
 
 @pytest.mark.asyncio
-async def test_revision2_runtime_and_worker_explicit_business_configuration(
+async def test_revision3_runtime_and_worker_explicit_business_configuration(
     tmp_path, monkeypatch
 ):
     import sqlite3
@@ -455,7 +455,7 @@ async def test_revision2_runtime_and_worker_explicit_business_configuration(
 
     database = tmp_path / "history.db"
     sqlite3.connect(database).close()
-    prepare_schema(database, backup_verified=True, target_revision=2)
+    prepare_schema(database, backup_verified=True, target_revision=3)
     root = tmp_path / "research"
     root.mkdir(mode=0o700)
     paths = resolve_runtime_paths(database, root)

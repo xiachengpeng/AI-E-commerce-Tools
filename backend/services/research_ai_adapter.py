@@ -19,15 +19,32 @@ class ResearchAIError(ValueError):
 
 class ResearchAIAdapter:
     def __init__(
-        self, *, router=None, session_factory=None, allow_external: bool = False
+        self,
+        *,
+        router=None,
+        session_factory=None,
+        allow_external: bool = False,
+        usage_runtime=None,
     ):
         if type(allow_external) is not bool:
             raise ValueError("explicit external authorization required")
         self.router = router if router is not None else AIRouter()
         self.session_factory = session_factory
         self.allow_external = allow_external
+        self.usage_runtime = usage_runtime
+        self._action = ContextVar("research_ai_action", default=None)
         self._deadline = ContextVar("research_ai_deadline", default=None)
         self._snapshot = ContextVar("research_ai_snapshot", default=None)
+
+    @contextmanager
+    def action_context(self, runtime, action):
+        token = self._action.set(
+            (runtime, str(action["id"]), action["attempt"], action)
+        )
+        try:
+            yield
+        finally:
+            self._action.reset(token)
 
     @contextmanager
     def deadline(self, deadline: float):
@@ -41,6 +58,17 @@ class ResearchAIAdapter:
             self._deadline.reset(token)
 
     async def generate(self, request: ResearchAIRequest):
+        context = self._action.get()
+        usage = context[0] if context is not None else self.usage_runtime
+        if context is not None:
+            if (
+                request.action_id is not None
+                and (request.action_id, request.attempt) != context[1:3]
+            ):
+                raise ResearchAIError("研究AI任务上下文不匹配", code="input_changed")
+            request = request.model_copy(
+                update={"action_id": context[1], "attempt": context[2]}
+            )
         data = request.untrusted_data
         try:
             encoded = (
@@ -88,6 +116,54 @@ class ResearchAIAdapter:
                 f"research:{request.action_id}:{request.attempt}:{request.operation}"
             )
         routing = {"deadline": deadline} if deadline is not None else {}
+        reservation_id = None
+        network_attempt = 1
+
+        async def observer(event):
+            nonlocal network_attempt
+            from services.research_ai_usage import ResearchUsageError, record_ai_attempt
+
+            network_attempt = event["network_attempt"]
+            await record_ai_attempt(usage, reservation_id, event)
+            if event["status"] == "uncertain":
+                raise ResearchUsageError("AI提交结果未知，未自动重放或切换提供商")
+
+        if usage is not None and request.action_id is not None:
+            from services.research_ai_usage import reserve_ai
+
+            reservation_id = await reserve_ai(
+                usage, request.action_id, request.attempt, request.operation
+            )
+            if context is not None and "payload" in context[3]:
+                from uuid import UUID
+
+                from rabbit_hole.application.actions import actions
+                from sqlalchemy import select
+
+                async with usage.store.engine.connect() as connection:
+                    reserved_payload = await connection.scalar(
+                        select(actions.c.payload).where(
+                            actions.c.id == UUID(request.action_id)
+                        )
+                    )
+                # Subsequent original checkpoints must not overwrite reserved usage.
+                context[3]["payload"]["ai_usage"] = reserved_payload["ai_usage"]
+            routing["attempt_observer"] = observer
+
+        async def terminal(status):
+            if reservation_id is not None:
+                from services.research_ai_usage import record_ai_attempt
+
+                await record_ai_attempt(
+                    usage,
+                    reservation_id,
+                    {
+                        "status": status,
+                        "network_attempt": network_attempt,
+                        "terminal": True,
+                    },
+                )
+
         try:
             async with asyncio.timeout_at(deadline):
                 snapshot = self._snapshot.get()
@@ -106,7 +182,36 @@ class ResearchAIAdapter:
                     response = await self.router.generate(
                         "text", payload, snapshot=snapshot, **routing
                     )
+        except asyncio.CancelledError:
+            # Router observes in-flight cancellation. Cancellation during central backoff
+            # also leaves a durable unknown record; no new network loop lives here.
+            if reservation_id is not None:
+                from services.research_ai_usage import record_ai_attempt
+
+                try:
+                    await record_ai_attempt(
+                        usage,
+                        reservation_id,
+                        {"status": "cancelled", "network_attempt": network_attempt},
+                    )
+                except Exception:  # noqa: BLE001,S110 -- cleanup must preserve cancellation/timeout
+                    pass
+            raise
+        except TimeoutError:
+            if reservation_id is not None:
+                from services.research_ai_usage import record_ai_attempt
+
+                try:
+                    await record_ai_attempt(
+                        usage,
+                        reservation_id,
+                        {"status": "uncertain", "network_attempt": network_attempt},
+                    )
+                except Exception:  # noqa: BLE001,S110 -- cleanup must preserve cancellation/timeout
+                    pass
+            raise
         except AIProviderRequestError as exc:
+            await terminal("failed")
             if exc.category in {"protocol_incompatible", "model_not_found"}:
                 raise ResearchAIError(
                     "当前模型不支持此操作，请在主AI设置更换text绑定；未切换或重放供应商",
@@ -114,13 +219,16 @@ class ResearchAIAdapter:
                 ) from None
             raise
         try:
-            return request.schema.model_validate_json(
+            parsed = request.schema.model_validate_json(
                 first_text_from_normalized_response(response)
             )
         except (ValueError, TypeError, KeyError, AttributeError):
+            await terminal("failed")
             raise ResearchAIError(
                 "研究AI结果未通过原schema校验；未修复或替换研究事实"
             ) from None
+        await terminal("succeeded")
+        return parsed
 
     @contextmanager
     def extraction_generator(self, *, operation="extract"):

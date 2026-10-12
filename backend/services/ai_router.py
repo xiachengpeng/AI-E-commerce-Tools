@@ -466,6 +466,13 @@ class ExecutionTracker:
             cls._states.clear()
 
 
+class AIObserverError(ValueError):
+    """Trusted durable observer failure; cannot enter provider retry/fallback."""
+    def __init__(self, code="source_error"):
+        self.code = code
+        super().__init__("AI durable attempt observer rejected submission")
+
+
 class AIRouter:
     def __init__(self, base_delay: float = 2):
         self.base_delay = base_delay
@@ -478,6 +485,7 @@ class AIRouter:
         *,
         snapshot: ProviderSnapshot | None = None,
         deadline: float | None = None,
+        attempt_observer=None,
     ) -> dict:
         if deadline is not None and asyncio.get_running_loop().time() >= deadline:
             raise TimeoutError("AI action deadline expired before submission")
@@ -581,6 +589,22 @@ class AIRouter:
         )
         ExecutionTracker.set_state(execution_id, current_state)
 
+        async def observe(status, **fields):
+            if attempt_observer is None:
+                return
+            # Trusted seam only: no payload, prompt, snapshot or raw exception.
+            event = {"status": status, "network_attempt": current_state.attempt,
+                     "duration_ms": round((time.monotonic() - started) * 1000), **fields}
+            try:
+                await attempt_observer(event)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 -- fail closed on any durable observer failure
+                # ValueError is non-retryable in the sole retry controller.
+                # Preserve controlled business error codes without leaking diagnostics.
+                failure = AIObserverError(getattr(exc, "code", "source_error"))
+                raise failure from None
+
         async def on_retry_handler(
             state: ExecutionState,
             decision: RetryDecision,
@@ -592,6 +616,7 @@ class AIRouter:
             current_state.error_category = decision.category
             ExecutionTracker.set_state(execution_id, current_state)
 
+            await observe("retrying", category=decision.category.value, delay_ms=round(decision.delay_seconds * 1000))
             diagnostic = None
             if exc is not None:
                 mapped = map_provider_error(
@@ -639,7 +664,27 @@ class AIRouter:
         async def run_op():
             if deadline is not None and asyncio.get_running_loop().time() >= deadline:
                 raise TimeoutError("AI action deadline expired before submission")
-            return await adapter.generate(snapshot, payload)
+            await observe("submitted")
+            if deadline is not None and asyncio.get_running_loop().time() >= deadline:
+                await observe("failed")
+                raise ValueError("AI action deadline expired after attempt observer")
+            try:
+                result = await adapter.generate(snapshot, payload)
+            except asyncio.CancelledError:
+                try:
+                    await observe("cancelled")
+                except Exception:  # noqa: BLE001,S110 -- persistence failure cannot replace cancellation
+                    # Cancellation remains cancellation even if durable storage is down.
+                    # The pre-submission fence still prevents any replay.
+                    pass
+                raise
+            except Exception as exc:
+                from services.retry_service import classify_error
+                category, reached = classify_error(exc)
+                await observe("uncertain" if reached and category.value in {"NETWORK_TIMEOUT", "CONNECTION_RESET"} else "failed", category=category.value)
+                raise
+            await observe("received")
+            return result
 
         terminal_error = None
         try:
@@ -670,6 +715,10 @@ class AIRouter:
             )
             return result
         except Exception as exc:
+            if isinstance(exc, AIObserverError):
+                current_state.state = "failed"
+                ExecutionTracker.set_state(execution_id, current_state)
+                raise
             current_state.state = (
                 "ambiguous"
                 if isinstance(exc, AmbiguousOutcomeError)

@@ -113,14 +113,14 @@ async def append_log(engine: AsyncEngine, project_id: str, action_id: str, attem
         await c.execute(provider_logs.insert().values(project_id=UUID(project_id), action_id=UUID(action_id), attempt=attempt, stage=stage[:80], message=message[:1000], level=level))
 
 
-async def read_logs(engine: AsyncEngine, project_id: str, after: int) -> list[dict[str, Any]]:
+async def read_logs(engine: AsyncEngine, project_id: str, after: int, *, action_id: str | None = None) -> list[dict[str, Any]]:
     from rabbit_hole.application.actions import actions
     async with engine.connect() as c:
         rows = (await c.execute(select(provider_logs, actions.c.keyword_id, actions.c.kind,
             actions.c.payload["keyword_text"].as_string().label("keyword_text"),
             actions.c.payload["execution_mode"].as_string().label("execution_mode"))
             .select_from(provider_logs.outerjoin(actions, (actions.c.id == provider_logs.c.action_id) & (actions.c.project_id == provider_logs.c.project_id)))
-            .where(provider_logs.c.project_id == UUID(project_id), provider_logs.c.id > after).order_by(provider_logs.c.id).limit(100))).mappings()
+            .where(provider_logs.c.project_id == UUID(project_id), provider_logs.c.id > after, *([provider_logs.c.action_id == UUID(action_id)] if action_id is not None else [])).order_by(provider_logs.c.id).limit(100))).mappings()
         return [{**dict(r), "execution_mode":r["execution_mode"] or "ui", "project_id":str(r["project_id"]), "action_id":str(r["action_id"]), "created_at":r["created_at"].isoformat()} for r in rows]
 
 

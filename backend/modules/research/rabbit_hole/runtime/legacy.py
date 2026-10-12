@@ -784,12 +784,13 @@ class RuntimeExtractor:
     async def extract(self, source: ExtractionInput) -> ProductExtraction:
         if self.ai_adapter is None:
             raise ExtractionGenerationError("research AI adapter is not configured")
+        from services.research_ai_adapter import ResearchAIError
         failed = False
         try:
             # Snapshot one binding/version for cache key and generation together.
             with self.ai_adapter.extraction_generator() as generator:
                 return await extract_product(generator, source, cache=PostgresExtractionCache(self.database))
-        except (ValidationError, ExtractionGenerationError):
+        except (ValidationError, ExtractionGenerationError, ResearchAIError):
             failed = True
             raise
         finally:

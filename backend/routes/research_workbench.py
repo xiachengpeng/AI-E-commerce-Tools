@@ -261,7 +261,7 @@ def create_workbench_router() -> APIRouter:
 
     @router.get("/projects/{project_id}/live-logs")
     async def live_logs(
-        request: Request, project_id: str, after: int = 0
+        request: Request, project_id: str, after: int = Query(default=0, ge=0, le=9223372036854775807), action_id: UUID | None = None
     ) -> JSONResponse:
         guard(request)
         project_id = project_uuid(project_id)
@@ -269,7 +269,7 @@ def create_workbench_router() -> APIRouter:
         await invoke(service.get(project_id))
         from rabbit_hole.integrations.provider_jobs import read_logs
 
-        rows = await invoke(read_logs(service.engine, project_id, max(0, after)))
+        rows = await invoke(read_logs(service.engine, project_id, after, action_id=str(action_id) if action_id else None))
         return JSONResponse(
             {"logs": rows, "cursor": rows[-1]["id"] if rows else after},
             headers={"Cache-Control": "no-store"},
@@ -280,6 +280,7 @@ def create_workbench_router() -> APIRouter:
         request: Request,
         project_id: str,
         after: int = Query(default=0, ge=0, le=9223372036854775807),
+        action_id: UUID | None = None,
     ) -> StreamingResponse:
         from rabbit_hole.api.log_stream import stream_logs
         from rabbit_hole.integrations.provider_jobs import read_logs
@@ -302,7 +303,7 @@ def create_workbench_router() -> APIRouter:
         await log_stream_slots.acquire()
 
         async def read(cursor: int) -> list[dict[str, Any]]:
-            return await read_logs(service.engine, project_id, cursor)
+            return await read_logs(service.engine, project_id, cursor, action_id=str(action_id) if action_id else None)
 
         async def events() -> AsyncIterator[str]:
             try:

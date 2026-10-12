@@ -8,7 +8,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import (
     and_,
@@ -23,7 +23,6 @@ from rabbit_hole.application.actions import (
     SourceFailure,
     actions,
     ad_projection,
-    ai_usage,
     target_signature,
     validated_candidates,
 )
@@ -53,46 +52,23 @@ class WorkbenchRunner:
         from rabbit_hole.integrations.provider_settings import ProviderSecrets
         return ProviderSecrets().get(provider)
 
-    async def _reserve_ai(
-        self, action: dict[str, Any], project: dict[str, Any]
-    ) -> None:
+    async def _reserve_ai(self, action: dict[str, Any], project: dict[str, Any]) -> str:
+        from services.research_ai_usage import ResearchUsageError, reserve_ai
 
-        now = datetime.now(UTC)
-        async with write_transaction(self.store.engine) as connection:
-            await transaction_lock(connection, project["id"])
-            rows = (
-                (
-                    await connection.execute(
-                        select(actions).where(
-                            actions.c.project_id == UUID(project["id"]),
-                            actions.c.kind.in_(["keywords", "expand", "verify"]),
-                        )
-                    )
-                )
-                .mappings()
-                .all()
+        try:
+            reservation = await reserve_ai(
+                self, str(action["id"]), action["attempt"], action["kind"]
             )
-            if (
-                ai_usage(rows, now, reservations=False)
-                >= effective_rules(project)["ai_daily_limit"]
-            ):
-                raise SourceFailure("budget")
-            ledger = dict(action["payload"].get("ai_usage", {}))
-            day = now.date().isoformat()
-            ledger[day] = ledger.get(day, 0) + 1
-            action["payload"]["ai_usage"] = ledger
-            result = await connection.execute(
-                update(actions)
-                .where(
-                    actions.c.id == action["id"],
-                    actions.c.attempt == action["attempt"],
-                    actions.c.status == "running",
-                    actions.c.lease_until > datetime.now(UTC),
-                )
-                .values(payload=action["payload"])
+        except ResearchUsageError as exc:
+            raise SourceFailure(exc.code) from None
+        # Keep the original mutable action snapshot in sync; later checkpoints
+        # must preserve the transactionally persisted legacy daily usage counter.
+        async with self.store.engine.connect() as connection:
+            payload = await connection.scalar(
+                select(actions.c.payload).where(actions.c.id == action["id"])
             )
-            if result.rowcount != 1:
-                raise SourceFailure("input_changed")
+        action["payload"]["ai_usage"] = payload["ai_usage"]
+        return reservation
 
     async def loop(self) -> None:
         while True:
@@ -209,7 +185,11 @@ class WorkbenchRunner:
             await self.log(action, "start", "继续执行" if action["attempt"] > 1 else "开始执行")
             from contextlib import nullcontext
             deadline = asyncio.get_running_loop().time() + 240
-            with self.ai_adapter.deadline(deadline) if self.ai_adapter is not None else nullcontext():
+            with (
+                self.ai_adapter.deadline(deadline) if self.ai_adapter is not None else nullcontext()
+            ), (
+                self.ai_adapter.action_context(self, action) if self.ai_adapter is not None else nullcontext()
+            ):
                 async with asyncio.timeout_at(deadline):
                     project = await self.store.get(str(action["project_id"]))
                     terminal = {
