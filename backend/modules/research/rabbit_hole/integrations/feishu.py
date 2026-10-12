@@ -19,6 +19,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
+from functools import wraps
 from typing import Any, Protocol
 
 import httpx
@@ -842,6 +843,22 @@ class RecordWriter(Protocol):
     ) -> RecordVersion: ...
 
 
+def _credential_operation(method):
+    """Keep one injected credential snapshot across nested public lookups/requests."""
+    @wraps(method)
+    async def operation(self, *args, **kwargs):
+        if self._credentials_resolver is None or self._credential_owner is asyncio.current_task():
+            return await method(self, *args, **kwargs)
+        async with self._credential_lock:
+            self._refresh_credentials(force=True)
+            self._credential_owner = asyncio.current_task()
+            try:
+                return await method(self, *args, **kwargs)
+            finally:
+                self._credential_owner = None
+    return operation
+
+
 class FeishuClient:
     def __init__(
         self,
@@ -857,6 +874,8 @@ class FeishuClient:
     ) -> None:
         self.app_id, self.app_secret, self._base_token = app_id, app_secret, base_token
         self._credentials_resolver = credentials_resolver
+        self._credential_lock = asyncio.Lock()
+        self._credential_owner: asyncio.Task[Any] | None = None
         self._allow_external = allow_external
         self._timeout = timeout
         self._client = http_client
@@ -873,7 +892,9 @@ class FeishuClient:
             self._refresh_credentials()
         return self._base_token
 
-    def _refresh_credentials(self) -> None:
+    def _refresh_credentials(self, *, force: bool = False) -> None:
+        if self._credential_owner is not None and not force:
+            return
         data = self._credentials_resolver()
         current = (data.get("app_id", ""), data.get("app_secret", ""), data.get("base_app_token", ""))
         if current != (self.app_id, self.app_secret, self._base_token):
@@ -978,6 +999,7 @@ class FeishuClient:
             await asyncio.sleep(self._retry_delay(response, attempt))
         raise AssertionError("retry loop exhausted")
 
+    @_credential_operation
     async def resolve_table_id(self, table_name_or_id: str) -> str:
         if table_name_or_id.startswith("tbl"):
             return table_name_or_id
@@ -990,6 +1012,7 @@ class FeishuClient:
         except KeyError as exc:
             raise KeyError(f"Feishu table not found: {table_name_or_id}") from exc
 
+    @_credential_operation
     async def resolve_view_id(self, table_name_or_id: str, view_name: str) -> str:
         table_id = await self.resolve_table_id(table_name_or_id)
         cache_key = (table_id, view_name)
@@ -1005,6 +1028,7 @@ class FeishuClient:
         except KeyError as exc:
             raise KeyError(f"Feishu view not found: {view_name}") from exc
 
+    @_credential_operation
     async def list_records(
         self, table_id: str, *, view_id: str | None = None, view_name: str | None = None
     ) -> list[Json]:
@@ -1074,6 +1098,7 @@ class FeishuClient:
             )
         return items
 
+    @_credential_operation
     async def list_tables(self) -> list[Json]:
         items: list[Json] = []
         offset = 0
@@ -1101,6 +1126,7 @@ class FeishuClient:
                 raise FeishuAPIError(200, body)
             offset = next_offset
 
+    @_credential_operation
     async def create_table(self, table_name: str) -> str:
         body = await self._request(
             "POST",
@@ -1114,11 +1140,13 @@ class FeishuClient:
         self._table_ids[table_name] = table_id
         return table_id
 
+    @_credential_operation
     async def list_views(self, table_id: str) -> list[Json]:
         return await self._list_directory(
             API_VIEW_LIST.format(base_token=self.base_token, table_id=table_id)
         )
 
+    @_credential_operation
     async def create_view(self, table_id: str, name: str, filter_payload: Json) -> str:
         # Base v3 rejects `filter` on the create-view payload.  The filter is
         # applied through the dedicated endpoint immediately after creation.
@@ -1134,6 +1162,7 @@ class FeishuClient:
         self._view_ids[(table_id, name)] = view_id
         return view_id
 
+    @_credential_operation
     async def update_view(
         self, table_id: str, view_id: str, filter_payload: Json
     ) -> None:
@@ -1145,6 +1174,7 @@ class FeishuClient:
             json=filter_payload,
         )
 
+    @_credential_operation
     async def get_view_filter(self, table_id: str, view_id: str) -> Json:
         body = await self._request(
             "GET",
@@ -1161,6 +1191,7 @@ class FeishuClient:
             raise FeishuAPIError(200, body)
         return {"logic": logic, "conditions": conditions}
 
+    @_credential_operation
     async def list_fields(self, table_id: str) -> list[Json]:
         return await self._list_directory(
             API_FIELD_LIST.format(base_token=self.base_token, table_id=table_id)
@@ -1192,6 +1223,7 @@ class FeishuClient:
                 raise FeishuAPIError(200, body)
             offset = next_offset
 
+    @_credential_operation
     async def get_field(self, table_id: str, field_id: str) -> Json:
         body = await self._request(
             "GET",
@@ -1205,6 +1237,7 @@ class FeishuClient:
             raise FeishuAPIError(200, body)
         return field_data
 
+    @_credential_operation
     async def create_field(self, table_id: str, payload: Json) -> str:
         body = await self._request(
             "POST",
@@ -1217,6 +1250,7 @@ class FeishuClient:
             raise FeishuAPIError(200, body)
         return field_id
 
+    @_credential_operation
     async def update_field(self, table_id: str, field_id: str, payload: Json) -> str:
         """Additive select-option update; callers must preserve current options."""
         body = await self._request(
@@ -1232,6 +1266,7 @@ class FeishuClient:
             raise FeishuAPIError(200, body)
         return updated_id
 
+    @_credential_operation
     async def get_record(self, table_id: str, record_id: str) -> RecordVersion:
         resolved_table_id = await self.resolve_table_id(table_id)
         body = await self._request(
@@ -1324,6 +1359,7 @@ class FeishuClient:
             )
         return RecordVersion(record_id, str(version), normalized)
 
+    @_credential_operation
     async def write_workflow_record(
         self, mutation: Any, *, record_id: str | None = None
     ) -> str:
@@ -1389,10 +1425,12 @@ class FeishuClient:
             raise FeishuAPIError(200, {"code": "workflow_fields_ignored"})
         return record_id
 
+    @_credential_operation
     async def probe_token(self) -> bool:
         await self._tenant_token()
         return True
 
+    @_credential_operation
     async def update_record(
         self, table_id: str, record_id: str, fields: Mapping[str, Any]
     ) -> RecordVersion:
@@ -1429,6 +1467,7 @@ class FeishuClient:
                 f"Feishu automation cannot write human/protected fields: {invalid}"
             )
 
+    @_credential_operation
     async def list_trigger_records(self) -> list[TriggerRecord]:
         records: list[TriggerRecord] = []
         for trigger in TRIGGER_VIEWS:

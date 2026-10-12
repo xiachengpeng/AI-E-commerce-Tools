@@ -592,3 +592,109 @@ def test_partial_revision_one_upgrade_rolls_back_and_retains_existing_values(tmp
         assert not db.execute(
             "SELECT name FROM sqlite_master WHERE name='integration_settings'"
         ).fetchall()
+
+
+@pytest.mark.asyncio
+async def test_feishu_warm_named_table_view_rotation_uses_current_base_ids(tmp_path):
+    import httpx
+    from services.integration_settings_service import IntegrationSettingsService
+    from services.research_integrations import assemble_non_ai_integrations
+
+    store = IntegrationSettingsService(prepared(tmp_path))
+    store.update(
+        "feishu",
+        "research",
+        {
+            "app_id": "synthetic-id",
+            "app_secret": "synthetic-secret",
+            "base_app_token": "base-old",
+        },
+    )
+    calls = []
+
+    def transport(request):
+        calls.append(request)
+        if request.url.path.endswith("/internal"):
+            return httpx.Response(
+                200, json={"tenant_access_token": "synthetic-token", "expire": 7200}
+            )
+        suffix = "New" if "/bases/base-new/" in request.url.path else "Old"
+        if request.url.path.endswith("/tables"):
+            data = {
+                "items": [{"name": "Products", "id": "tbl" + suffix}],
+                "has_more": False,
+            }
+        elif request.url.path.endswith("/views"):
+            data = {
+                "items": [{"name": "Active", "id": "view" + suffix}],
+                "has_more": False,
+            }
+        else:
+            data = {"records": [], "has_more": False}
+        return httpx.Response(200, json={"code": 0, "data": data})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as http:
+        client = assemble_non_ai_integrations(
+            store, allow_external=True, feishu_http_client=http
+        ).feishu
+        assert await client.resolve_table_id("Products") == "tblOld"
+        assert await client.resolve_view_id("Products", "Active") == "viewOld"
+        store.update("feishu", "research", {"base_app_token": "base-new"})
+        assert await client.list_records("Products", view_name="Active") == []
+        request = calls[-1]
+        assert (
+            request.url.path
+            == "/open-apis/base/v3/bases/base-new/tables/tblNew/records"
+        )
+        assert request.url.params["view_id"] == "viewNew"
+
+
+@pytest.mark.asyncio
+async def test_feishu_rotation_during_lookup_is_next_operation_snapshot(tmp_path):
+    import httpx
+    from services.integration_settings_service import IntegrationSettingsService
+    from services.research_integrations import assemble_non_ai_integrations
+
+    store = IntegrationSettingsService(prepared(tmp_path))
+    store.update(
+        "feishu",
+        "research",
+        {
+            "app_id": "synthetic-id",
+            "app_secret": "synthetic-secret",
+            "base_app_token": "base-old",
+        },
+    )
+    paths = []
+
+    def transport(request):
+        paths.append(request.url.path)
+        if request.url.path.endswith("/internal"):
+            return httpx.Response(
+                200, json={"tenant_access_token": "synthetic-token", "expire": 7200}
+            )
+        suffix = "New" if "/bases/base-new/" in request.url.path else "Old"
+        if request.url.path.endswith("/tables"):
+            if suffix == "Old":
+                store.update("feishu", "research", {"base_app_token": "base-new"})
+            data = {
+                "items": [{"name": "Products", "id": "tbl" + suffix}],
+                "has_more": False,
+            }
+        elif request.url.path.endswith("/views"):
+            data = {
+                "items": [{"name": "Active", "id": "view" + suffix}],
+                "has_more": False,
+            }
+        else:
+            data = {"records": [], "has_more": False}
+        return httpx.Response(200, json={"code": 0, "data": data})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as http:
+        client = assemble_non_ai_integrations(
+            store, allow_external=True, feishu_http_client=http
+        ).feishu
+        await client.list_records("Products", view_name="Active")
+        assert paths[-1] == "/open-apis/base/v3/bases/base-old/tables/tblOld/records"
+        await client.list_records("Products", view_name="Active")
+        assert paths[-1] == "/open-apis/base/v3/bases/base-new/tables/tblNew/records"
