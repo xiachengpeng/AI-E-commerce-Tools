@@ -198,6 +198,8 @@ def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) 
                 check=False,
             )
         test_files = sorted((sandbox / "frontend/tests").glob("*.test.*"))
+        if current == "main":
+            test_files += sorted((sandbox / "frontend/tests/research-workbench").glob("*.test.mjs"))
         with (output / current / "frontend.log").open("w") as log:
             frontend = subprocess.run(
                 ["node", "--test", "--test-isolation=none", *map(str, test_files)],

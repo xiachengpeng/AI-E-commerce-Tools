@@ -273,6 +273,39 @@
         });
     }
 
+    // Transitional opt-in until Tasks 13–16 provide all native pages; Task 21
+    // retires the iframe. Never replay commands while switching views.
+    let nativeModule = null;
+    let nativeGeneration = 0;
+    function nativeEnabled() {
+        try { return localStorage.getItem('research_native_workbench') === '1'; }
+        catch (_) { return false; }
+    }
+    async function mountPanel() {
+        const generation = ++nativeGeneration;
+        if (!nativeEnabled()) { unmountPanel(); await init(); return; }
+        closeWorkbench();
+        const host = el('researchNativeRoot');
+        if (!host) return;
+        el('researchView').hidden = true;
+        host.hidden = false;
+        try {
+            nativeModule = await import('./research-workbench/index.mjs');
+            if (generation !== nativeGeneration) return;
+            await nativeModule.mount(host, { apiBase: base(), onSelectProduct: product => openProduct(product.id) });
+        } catch (_) {
+            if (generation === nativeGeneration) host.textContent = '原生研究入口暂时不可用，请重新进入研究页。';
+        }
+    }
+    function unmountPanel() {
+        nativeGeneration++;
+        nativeModule?.unmount();
+        state.generation++;
+        closeWorkbench();
+        if (el('researchNativeRoot')) el('researchNativeRoot').hidden = true;
+        if (el('researchView')) el('researchView').hidden = false;
+    }
+
     async function init() {
         bind();
         if (typeof location !== 'undefined' && location.protocol === 'file:') {
@@ -459,7 +492,7 @@
 
     if (root.addEventListener) root.addEventListener('message',receiveSource);
 
-    const api = { init, suspend: () => { state.generation++; closeWorkbench(); }, applyDraft, undoDraft, escapeHtml };
+    const api = { init, mount: mountPanel, unmount: unmountPanel, suspend: unmountPanel, applyDraft, undoDraft, escapeHtml };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     root.ResearchPanel = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -33,6 +33,7 @@
 
     <!-- 基础配置与工具 (必须优先加载) -->
     <link rel="stylesheet" href="css/research.css?v=20261009">
+    <link rel="stylesheet" href="css/research-workbench.css?v=20261012">
     <script src="js/languages.js?v=20260917-reset-v1"></script>
     <script src="js/config.js?v=20260917-reset-v1"></script>
     <script src="js/utils.js?v=20260921-eyes-v2"></script>
@@ -151,6 +152,7 @@
     <!-- Main Content Area -->
     <div class="flex-1 flex overflow-hidden relative">
         <div id="view-research" class="hidden flex-1 overflow-hidden">
+            <section id="researchNativeRoot" class="research-workbench" aria-label="原生选品研究工作台" hidden></section>
             <section id="researchView">
                 <header class="r-header"><div><h2>选品研究</h2><p class="r-muted">研究与核实 → 营销草稿 → 素材交付 → 人工测试复盘</p></div>
                     <div><a id="researchWorkbenchLink" class="r-link" href="#" target="_blank" rel="noopener noreferrer" hidden>打开完整研究工作台</a><button id="researchRefresh">刷新研究资料</button><button id="researchResolveConfirmation" type="button" hidden>核对上次提交</button>

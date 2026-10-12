@@ -191,8 +191,8 @@ async function callAI(capability, payload, options = {}) {
  */
 function switchMainTab(tabId) {
     if (typeof window.ResearchPanel !== 'undefined') {
-        if (tabId === 'research') window.ResearchPanel.init();
-        else window.ResearchPanel.suspend();
+        if (tabId === 'research') (window.ResearchPanel.mount || window.ResearchPanel.init)();
+        else (window.ResearchPanel.unmount || window.ResearchPanel.suspend)();
     }
     // 1. 记录状态到本地存储
     localStorage.setItem('activeMainTab', tabId);
