@@ -715,20 +715,21 @@ class AIRouter:
             )
             return result
         except Exception as exc:
-            if isinstance(exc, AIObserverError):
+            target_exc = exc
+            if isinstance(exc, RetryServiceError) and exc.last_error:
+                target_exc = exc.last_error
+            # The sole controller wraps failures on its final attempt. Observer
+            # rejection must retain its classification before provider mapping.
+            if isinstance(target_exc, AIObserverError):
                 current_state.state = "failed"
                 ExecutionTracker.set_state(execution_id, current_state)
-                raise
+                raise target_exc from None
             current_state.state = (
                 "ambiguous"
                 if isinstance(exc, AmbiguousOutcomeError)
                 else "failed"
             )
             ExecutionTracker.set_state(execution_id, current_state)
-
-            target_exc = exc
-            if isinstance(exc, RetryServiceError) and exc.last_error:
-                target_exc = exc.last_error
 
             mapped = map_provider_error(
                 exc if isinstance(exc, AmbiguousOutcomeError) else target_exc,

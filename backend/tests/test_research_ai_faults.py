@@ -638,3 +638,110 @@ async def test_exhausted_budget_adapter_does_not_invoke_router(
         )
     assert exc.value.code == "budget"
     router.generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_retries", [0, 1])
+@pytest.mark.parametrize("failed_event", ["received", "uncertain"])
+async def test_final_attempt_observer_storage_failure_never_reopens_paid_replay(
+    usage_runtime, monkeypatch, max_retries, failed_event
+):
+    from models.research_ai import ResearchAIRequest
+    from models.research_ai_usage import network_attempts, reservations
+    from rabbit_hole.application.actions import actions, ai_usage
+    from rabbit_hole.persistence.sql import write_transaction
+    from services.ai_config_service import ProviderSnapshot
+    from services.ai_router import AIObserverError, AIProviderRequestError, AIRouter
+    from services.research_ai_adapter import ResearchAIAdapter
+    from services.research_ai_usage import ResearchUsageError, record_ai_attempt
+
+    r = usage_runtime
+    snapshot = ProviderSnapshot(
+        id=1,
+        incarnation_id="synthetic",
+        capability="text",
+        name="synthetic",
+        protocol="gemini",
+        base_url=None,
+        api_key="synthetic-secret",
+        vertex_project_id=None,
+        vertex_location=None,
+        vertex_key_path=None,
+        model="synthetic",
+        timeout_seconds=30,
+        max_retries=max_retries,
+        config_version=1,
+    )
+    monkeypatch.setattr("services.ai_router.get_snapshot", lambda *args: snapshot)
+    submissions = []
+
+    class Transport:
+        async def generate(self, snapshot, payload):
+            submissions.append(1)
+            if len(submissions) <= max_retries:
+                request = httpx.Request("POST", "https://synthetic.test")
+                raise httpx.HTTPStatusError(
+                    "synthetic rate limit",
+                    request=request,
+                    response=httpx.Response(
+                        429, headers={"Retry-After": "0"}, request=request
+                    ),
+                )
+            if failed_event == "uncertain":
+                raise httpx.ReadTimeout("synthetic response timeout")
+            return {
+                "candidates": [
+                    {"content": {"parts": [{"text": '{"answer":"verified"}'}]}}
+                ]
+            }
+
+    monkeypatch.setattr("services.ai_router.get_adapter", lambda _: Transport())
+    failures = []
+
+    async def transient_storage(runtime, reservation_id, event):
+        if event["status"] == failed_event and not failures:
+            failures.append(1)
+            raise ResearchUsageError("synthetic durable write unavailable")
+        await record_ai_attempt(runtime, reservation_id, event)
+
+    monkeypatch.setattr(
+        "services.research_ai_usage.record_ai_attempt", transient_storage
+    )
+    adapter = ResearchAIAdapter(
+        router=AIRouter(base_delay=0), allow_external=True, usage_runtime=r
+    )
+    req = ResearchAIRequest(
+        operation="keywords",
+        schema=ValidResult,
+        system_instruction="Only verified data",
+        untrusted_data="synthetic input",
+        action_id=r.action_id,
+        attempt=1,
+    )
+    with pytest.raises((AIObserverError, AIProviderRequestError)) as failure:
+        await adapter.generate(req)
+    # Assert the durable state before the exception classification: the previous
+    # defect mapped provider failure and cleanup overwrote submitted with failed.
+    async with r.engine.connect() as c:
+        ledger = (await c.execute(select(reservations))).mappings().all()
+        networks = (await c.execute(select(network_attempts))).mappings().all()
+    assert len(ledger) == 1 and ledger[0]["status"] == "submitted"
+    assert len(networks) == max_retries + 1
+    assert isinstance(failure.value, AIObserverError)
+    assert failure.value.code == "submission_uncertain"
+    async with write_transaction(r.engine) as c:
+        await c.execute(
+            update(actions).where(actions.c.id == UUID(r.action_id)).values(attempt=2)
+        )
+    with pytest.raises(ResearchUsageError) as replay:
+        await adapter.generate(req.model_copy(update={"attempt": 2}))
+    assert replay.value.code == "submission_uncertain"
+    assert len(submissions) == max_retries + 1
+    async with r.engine.connect() as c:
+        assert len((await c.execute(select(reservations))).all()) == 1
+        row = (
+            (await c.execute(select(actions).where(actions.c.id == UUID(r.action_id))))
+            .mappings()
+            .one()
+        )
+    assert ai_usage([row], datetime.now(UTC), reservations=False) == 1
