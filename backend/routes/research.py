@@ -202,15 +202,36 @@ from models.research import AttachResearchArtifact, SaveResearchImport
 
 @router.post('/projects/{project_id}/products/{product_id}/imports', dependencies=[Depends(require_session)])
 async def save_import(request: Request, project_id: UUID, product_id: UUID, payload: SaveResearchImport):
-    from services.research_repository import digest
+    from services.research_unit_of_work import confirm_and_import, import_request_digest
     if not payload.name.strip():
         raise HTTPException(422, '档案名称不能为空')
-    request_digest = digest({'project_id': str(project_id), 'product_id': str(product_id), **payload.model_dump(mode='json')})
-    # A committed operation remains reconcilable even when research is offline or newer.
+    data = {'project_id': str(project_id), 'product_id': str(product_id), **payload.model_dump(mode='json')}
+    request_digest = import_request_digest(data)
+    config = load_research_config()
+    runtime = getattr(request.app.state, 'research_runtime', None)
+    if (config.get('enabled') is True and config.get('mode', 'remote') == 'local'
+            and runtime is not None and runtime.engine is not None and runtime.store is not None
+            and runtime.evidence_store is not None and not runtime.diagnostics):
+        owner = client(runtime=runtime, config=config)
+        from services.research_repository import RepositoryError
+        try:
+            return await invoke(confirm_and_import(owner.runtime, data, payload.import_id))
+        except RepositoryError as exc:
+            raise HTTPException(exc.status, str(exc)) from None
+    # Preserve reconciliation of committed remote receipts with research offline.
     previous = local_call(lambda: repository().lookup(payload.import_id, request_digest))
     if previous:
         return previous
-    snapshot = await invoke(routed_client(request).get_product(project_id, product_id))
+    if payload.confirmation is not None and config.get('mode', 'remote') != 'local':
+        raise HTTPException(422, '确认并导入仅支持本地研究运行时')
+    owner = routed_client(request)
+    if config.get('mode', 'remote') == 'local':
+        from services.research_repository import RepositoryError
+        try:
+            return await invoke(confirm_and_import(owner.runtime, data, payload.import_id))
+        except RepositoryError as exc:
+            raise HTTPException(exc.status, str(exc)) from None
+    snapshot = await invoke(owner.get_product(project_id, product_id))
     ref = snapshot['source_ref']
     if (ref['source_version'] != payload.expected_source_version or ref['identity_revision'] != payload.expected_identity_revision
             or snapshot['market'] != payload.expected_market):

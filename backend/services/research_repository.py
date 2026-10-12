@@ -102,7 +102,7 @@ class ResearchRepository:
                     'next_cursor': rows[limit-1]['id'] if len(rows) > limit else None}
 
     def attach(self, import_id, expected_revision, module, history_id, expected_history_timestamp=None):
-        from db import AnalysisHistory, ListingHistory, AdsHistory, RenderHistory
+        from db import AdsHistory, AnalysisHistory, ListingHistory, RenderHistory
         tables = {'analysis': AnalysisHistory.__tablename__, 'listing': ListingHistory.__tablename__,
                   'ads': AdsHistory.__tablename__, 'details': RenderHistory.__tablename__}
         if module not in tables:
@@ -129,3 +129,35 @@ class ResearchRepository:
             revision = row['revision'] + 1
             connection.execute('UPDATE research_links SET artifacts=?,revision=? WHERE id=?', (canonical(artifacts), revision, row['id']))
             return {'revision': revision, 'artifacts': artifacts}
+
+
+    async def lookup_async(self, connection, import_id, request_digest=None):
+        """Borrow the UnitOfWork connection; never commit or open another one."""
+        from sqlalchemy import text
+        if not connection.in_transaction():
+            raise ValueError('archive connection requires an active transaction')
+        revisions = (await connection.execute(text('SELECT revision FROM research_schema'))).scalars().all()
+        if revisions != [SCHEMA_REVISION]:
+            raise RepositoryError(503, '研究关联数据库版本不兼容')
+        row = (await connection.execute(text('SELECT * FROM research_import_events WHERE id=:id'),
+                                       {'id': str(import_id)})).mappings().first()
+        if row is None:
+            return None
+        if request_digest is not None and row['digest'] != request_digest:
+            raise RepositoryError(409, '导入编号已用于其他内容，请核对已有记录')
+        return self.event(row)
+
+    async def save_async(self, connection, import_id, request_digest, name, snapshot):
+        from sqlalchemy import text
+        previous = await self.lookup_async(connection, import_id, request_digest)
+        if previous:
+            return previous
+        link_id = str(uuid4())
+        created_at = datetime.now(timezone.utc).isoformat()
+        await connection.execute(text('INSERT INTO research_links VALUES (:id,:name,:ref,:market,1,:artifacts)'),
+                                 {'id': link_id, 'name': name, 'ref': canonical(snapshot['source_ref']),
+                                  'market': snapshot['market'], 'artifacts': '[]'})
+        await connection.execute(text('INSERT INTO research_import_events VALUES (:id,:digest,:link,:snapshot,:created)'),
+                                 {'id': str(import_id), 'digest': request_digest, 'link': link_id,
+                                  'snapshot': canonical(snapshot), 'created': created_at})
+        return await self.lookup_async(connection, import_id, request_digest)

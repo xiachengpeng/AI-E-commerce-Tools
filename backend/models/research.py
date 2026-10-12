@@ -1,7 +1,15 @@
 """Versioned research DTOs: no raw project state or provider settings."""
 from typing import Literal
 from uuid import UUID
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictFloat, model_validator
+
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictFloat,
+    model_validator,
+)
 
 
 class ResearchModel(BaseModel):
@@ -119,6 +127,7 @@ class ResearchReport(ResearchModel):
 
 
 class SaveResearchImport(PreviewRequest):
+    confirmation: ConfirmFactRequest | None = None
     import_id: UUID
     name: str = Field(min_length=1, max_length=200)
     selected_fields: list[Literal['product_name', 'category', 'material', 'dimensions', 'features', 'warranty']] = Field(min_length=1, max_length=6)
