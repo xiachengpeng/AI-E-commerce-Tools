@@ -72,3 +72,13 @@ roster checks do not provide an atomic cross-database/object freeze. These are
 rehearsal snapshots. Final freeze, a fresh final snapshot, activation, external
 capabilities, retirement and observation remain separate gates. Both
 `source_freeze_attested` and `cutover_allowed` remain false.
+
+Review hardening now requires every research archive row to carry raw integer
+`enabled=0`; missing, nonzero or differently typed flags fail before insertion.
+Every imported archive ID must remain unbound and disabled after insertion,
+before/after commit and on reentry. Invalid or bound inputs roll back without
+changing main providers or bindings. The existing Task 4 schema and ledger are
+intentionally reused; no modification to `full_merge_v1.py` was needed. This
+narrow review fix passed 120 related tests (33 data cases), with the same three
+existing warnings; the earlier full-suite and private rehearsal evidence above
+was not rerun or relabeled as a new run.

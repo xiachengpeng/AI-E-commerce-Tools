@@ -78,6 +78,17 @@ def _insert_rows(target, table, rows):
         target.execute('INSERT INTO ' + quote(table) + '(' + ','.join(map(quote,columns)) + ') VALUES(' + ','.join('?' for _ in columns) + ')', [row[name] for name in columns])
 
 
+def _verify_research_archives(target, configuration):
+    for row in configuration.get('research_ai_providers', []):
+        if not isinstance(row, dict) or type(row.get('enabled')) is not int or row['enabled'] != 0:
+            raise ValueError('explicit disabled archive provider required')
+        current = target.execute('SELECT enabled FROM ai_provider_configs WHERE id=?',(row['id'],)).fetchone()
+        if current != (0,):
+            raise ValueError('disabled archive provider required')
+        if target.execute('SELECT 1 FROM ai_capability_bindings WHERE provider_config_id=?',(row['id'],)).fetchone():
+            raise ValueError('unbound archive provider required')
+
+
 def _import_configuration(target, configuration):
     from services.ai_config_service import PROVIDER_FIELDS, validate_provider_data
     from services.integration_settings_service import FIELDS, IntegrationSettingsService
@@ -97,11 +108,14 @@ def _import_configuration(target, configuration):
         # Existing rows always take priority. A stale default snapshot cannot overwrite them.
         raise ValueError('effective main defaults conflict with existing settings')
     for row in research:
+        if not isinstance(row, dict) or type(row.get('enabled')) is not int or row['enabled'] != 0:
+            raise ValueError('explicit disabled archive provider required')
         try:
             validate_provider_data({k:row[k] for k in PROVIDER_FIELDS})
         except (KeyError, ValueError, TypeError):
             raise ValueError('explicit legacy AI mapping required') from None
     _insert_rows(target,'ai_provider_configs',research)
+    _verify_research_archives(target,configuration)
     if research:
         additions.add('ai_provider_configs')
     for row in configuration.get('integrations', []):
@@ -202,6 +216,7 @@ def import_research(source_snapshot: Path, candidate_db: Path, manifest: dict) -
             receipt = target.execute('SELECT manifest_sha256,candidate_sha256 FROM full_merge_import_receipt WHERE source_snapshot_id=?',(snapshot_id,)).fetchone()
             if receipt is None or receipt[0] != migration_hash:
                 raise ValueError('migration manifest mismatch')
+            _verify_research_archives(target,manifest.get('configuration', {}))
             if receipt[1] != _candidate_content(target):
                 raise ValueError('imported candidate content mismatch')
             checked = database_stats(candidate_db)
@@ -248,10 +263,12 @@ def import_research(source_snapshot: Path, candidate_db: Path, manifest: dict) -
                 current = _rows(target,name)
                 if any(current[k] < count for k,count in old.items()) or (name not in additions and current != old):
                     raise ValueError('main historical row mismatch')
+            _verify_research_archives(target,manifest.get('configuration', {}))
             target.execute('CREATE TABLE full_merge_import_receipt(source_snapshot_id TEXT PRIMARY KEY,manifest_sha256 TEXT NOT NULL,candidate_sha256 TEXT NOT NULL)')
             target.execute('INSERT INTO full_merge_import_receipt VALUES(?,?,?)',(snapshot_id,migration_hash,_candidate_content(target)))
             target.execute('INSERT INTO full_merge_ledger VALUES(?,?,?,?,?,?)', (snapshot_id, anchor, source_hash, manifest.get('source_alembic_revision'), 'imported', datetime.now(timezone.utc).isoformat()))
             target.commit()
+            _verify_research_archives(target,manifest.get('configuration', {}))
         except BaseException:
             target.rollback()
             raise

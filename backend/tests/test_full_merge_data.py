@@ -181,7 +181,7 @@ def test_empty_main_materializes_exact_effective_defaults_before_research(migrat
     from scripts.full_merge.import_data import import_research
     source, candidate, manifest = migration
     defaults = provider_rows(tmp_path,monkeypatch)
-    legacy = dict(defaults['providers'][0], id=29, incarnation_id='legacy-fixture',name='Legacy research',protocol='openai_compatible',base_url='https://fixture.test/v1',text_model='legacy-model',supports_image=0,image_model=None)
+    legacy = dict(defaults['providers'][0], id=29, incarnation_id='legacy-fixture',name='Legacy research',enabled=0,protocol='openai_compatible',base_url='https://fixture.test/v1',text_model='legacy-model',supports_image=0,image_model=None)
     manifest['configuration'] = {'main_effective_defaults':defaults,'research_ai_providers':[legacy], 'integrations':[{'provider':'apify','purpose':'research','value':'{ "api_key":"fixture", "daily_limit":19 }','version':1}], 'provenance':[{'kind':'legacy-alias','name':'fixture','value':'{ "legacy_name" : "kept" }'}]}
     assert import_research(source,candidate,manifest)['verified']
     assert raw_rows(candidate,'ai_capability_bindings') == defaults['bindings']
@@ -198,7 +198,7 @@ def test_empty_main_missing_defaults_and_purpose_conflicts_refuse_atomically(mig
     from scripts.full_merge.import_data import import_research
     source,candidate,manifest = migration
     defaults = provider_rows(tmp_path,monkeypatch)
-    legacy = dict(defaults['providers'][0],id=29,incarnation_id='legacy-fixture',name='Legacy research')
+    legacy = dict(defaults['providers'][0],id=29,incarnation_id='legacy-fixture',name='Legacy research',enabled=0)
     manifest['configuration'] = {'research_ai_providers':[legacy]}
     before = database_stats(candidate)
     with pytest.raises(ValueError,match='effective main'):
@@ -222,10 +222,10 @@ def test_existing_main_providers_and_bindings_not_overwritten(migration, tmp_pat
             for row in rows:
                 columns = list(row)
                 c.execute('INSERT INTO '+table+'('+','.join(columns)+') VALUES('+','.join('?' for _ in columns)+')',list(row.values()))
-    legacy = dict(defaults['providers'][0],id=29,incarnation_id='legacy-fixture',name='Legacy research')
+    legacy = dict(defaults['providers'][0],id=29,incarnation_id='legacy-fixture',name='Legacy research',enabled=0)
     manifest['configuration'] = {'research_ai_providers':[legacy]}
     assert import_research(source,candidate,manifest)['verified']
-    assert raw_rows(candidate,'ai_provider_configs')[0] == defaults['providers'][0]
+    assert raw_rows(candidate,'ai_provider_configs') == [defaults['providers'][0],legacy]
     assert raw_rows(candidate,'ai_capability_bindings') == defaults['bindings']
 
 
@@ -423,3 +423,50 @@ def test_reentry_refuses_changed_main_rows(migration):
         connection.execute("UPDATE analysis_history SET data='changed' WHERE id=71")
     with pytest.raises(ValueError,match='candidate content'):
         import_research(source,candidate,manifest)
+
+
+@pytest.mark.parametrize('enabled', [1, -1, 2, None, '0', False, 'missing'])
+def test_archive_provider_requires_explicit_disabled_integer_atomically(migration, tmp_path, monkeypatch, enabled):
+    from scripts.full_merge.import_data import import_research
+    source,candidate,manifest = migration
+    defaults = provider_rows(tmp_path,monkeypatch)
+    legacy = dict(defaults['providers'][0],id=29,incarnation_id='archive-fixture',name='Archive',enabled=enabled)
+    if enabled == 'missing':
+        legacy.pop('enabled')
+    manifest['configuration'] = {'main_effective_defaults':defaults,'research_ai_providers':[legacy]}
+    before = database_stats(candidate)
+    with pytest.raises(ValueError,match='disabled archive'):
+        import_research(source,candidate,manifest)
+    assert database_stats(candidate) == before
+
+
+def test_archive_provider_cannot_receive_effective_default_binding(migration, tmp_path, monkeypatch):
+    from scripts.full_merge.import_data import import_research
+    source,candidate,manifest = migration
+    defaults = provider_rows(tmp_path,monkeypatch)
+    legacy = dict(defaults['providers'][0],id=29,incarnation_id='archive-fixture',name='Archive',enabled=0)
+    defaults['bindings'][0]['provider_config_id'] = 29
+    manifest['configuration'] = {'main_effective_defaults':defaults,'research_ai_providers':[legacy]}
+    before = database_stats(candidate)
+    with pytest.raises(ValueError,match='unbound archive'):
+        import_research(source,candidate,manifest)
+    assert database_stats(candidate) == before
+
+
+@pytest.mark.parametrize('change', ['enabled','bound'])
+def test_reentry_explicitly_refuses_activated_archive(migration, tmp_path, monkeypatch, change):
+    from scripts.full_merge.import_data import import_research
+    source,candidate,manifest = migration
+    defaults = provider_rows(tmp_path,monkeypatch)
+    legacy = dict(defaults['providers'][0],id=29,incarnation_id='archive-fixture',name='Archive',enabled=0)
+    manifest['configuration'] = {'main_effective_defaults':defaults,'research_ai_providers':[legacy]}
+    import_research(source,candidate,manifest)
+    with sqlite3.connect(candidate) as connection:
+        if change == 'enabled':
+            connection.execute('UPDATE ai_provider_configs SET enabled=1 WHERE id=29')
+        else:
+            connection.execute("UPDATE ai_capability_bindings SET provider_config_id=29 WHERE capability='text'")
+    before = digest(candidate)
+    with pytest.raises(ValueError,match='archive'):
+        import_research(source,candidate,manifest)
+    assert digest(candidate) == before
