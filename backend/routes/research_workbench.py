@@ -656,6 +656,33 @@ def create_workbench_router() -> APIRouter:
             headers={"Cache-Control": "no-store"},
         )
 
+    @router.get("/projects/{project_id}/commands/{command_id}")
+    async def draft_command_receipt(request: Request, project_id: str, command_id: str) -> JSONResponse:
+        # The source command ledger is the idempotency receipt, not a client hash
+        # or a bounded project-view event list. No payload or replay is exposed.
+        from sqlalchemy import select
+        from rabbit_hole.persistence.projects import workbench_events
+
+        guard(request)
+        project_id, command_id = project_uuid(project_id), project_uuid(command_id)
+        service = store(request)
+        await invoke(service.get(project_id))
+        async def read():
+            async with service.engine.connect() as connection:
+                return (await connection.execute(
+                    select(workbench_events.c.action, workbench_events.c.digest).where(
+                        workbench_events.c.project_id == project_id,
+                        workbench_events.c.command_id == command_id,
+                    )
+                )).mappings().first()
+        receipt = await invoke(read())
+        data = {"contract_version": 1, "project_id": project_id, "command_id": command_id,
+                "state": "committed" if receipt else "not_observed"}
+        if receipt:
+            data.update(action=receipt["action"] if receipt["action"] in USER_ACTIONS | {"create_project"} else "unknown",
+                        digest=receipt["digest"])
+        return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
     @router.post("/projects/{project_id}/commands")
     async def command(request: Request, project_id: str) -> JSONResponse:
         data = await body(request)

@@ -48,7 +48,7 @@ def test_original_business_route_inventory():
     actual = {
         (method, route.path) for route in router.routes for method in route.methods
     }
-    assert actual == expected | {("GET", PREFIX + "/history")}
+    assert actual == expected | {("GET", PREFIX + "/history"), ("GET", PREFIX + "/projects/{project_id}/commands/{command_id}")}
 
 
 @pytest.mark.parametrize(
@@ -839,3 +839,34 @@ def test_native_settings_patch_seen_by_next_worker_resolution(tmp_path):
     assert client.patch(path, json={"api_key": ""}).json()["version"] == 3
     assert worker.providers.get("apify") == "synthetic-next"
     assert worker.settings_store.public("apify", "research")["version"] == 3
+
+@pytest.mark.asyncio
+async def test_native_draft_receipt_is_scoped_read_only_and_private(tmp_path):
+    from services.research_runtime import _research_imports
+    _research_imports()
+    from sqlalchemy import insert
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from rabbit_hole.persistence.projects import metadata, workbench_projects, workbench_events
+    from datetime import datetime, UTC
+    engine = create_async_engine('sqlite+aiosqlite:///' + str(tmp_path / 'receipt.db'))
+    project, other, command = str(uuid4()), str(uuid4()), str(uuid4())
+    now = datetime.now(UTC)
+    async with engine.begin() as connection:
+        await connection.run_sync(metadata.create_all)
+        await connection.execute(insert(workbench_projects), [dict(id=pid, title='fixture', direction='fixture', market='US', version=9, state={}, create_command_id=str(uuid4()), create_digest='0'*64, created_at=now, updated_at=now) for pid in (project, other)])
+        await connection.execute(insert(workbench_events), dict(id=str(uuid4()), project_id=project, command_id=command, digest='a'*64, action='add_keyword', payload={'private':'not public'}, actor='local_user', created_at=now))
+    store = SimpleNamespace(engine=engine, get=AsyncMock(return_value={'id':project,'version':9}))
+    try:
+        client = make_client(SimpleNamespace(store=store, diagnostics=()))
+        path = PREFIX + f'/projects/{project}/commands/{command}'
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers['cache-control'] == 'no-store'
+        assert response.json() == {'contract_version':1,'project_id':project,'command_id':command,'state':'committed','action':'add_keyword','digest':'a'*64}
+        assert client.get(PREFIX + f'/projects/{other}/commands/{command}').json()['state'] == 'not_observed'
+        assert client.get(PREFIX + f'/projects/{project}/commands/not-uuid').status_code == 404
+        assert client.get(path, headers={'Origin':'https://evil.test'}).status_code == 403
+        assert client.get(path, headers={'X-Research-Token':'bad'}).status_code == 401
+        assert client.post(path,json={}).status_code == 405
+    finally:
+        await engine.dispose()

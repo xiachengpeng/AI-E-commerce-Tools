@@ -1,3 +1,4 @@
+import { exportDrafts, importDrafts } from './drafts.mjs';
 import { el, button, panel, notify } from './components/elements.mjs';
 import { createActionLogs } from './components/live-logs.mjs';
 export const integrationFields = Object.freeze({apify:['api_key','daily_limit'],serpapi:['api_key','daily_limit'],firecrawl:['api_key','daily_limit'],aliyun:['access_key_id','access_key_secret'],feishu:['app_id','app_secret','base_app_token']});
@@ -29,7 +30,7 @@ export function renderSettings(context) {
  const binding=panel(context,'主 AI text 绑定','研究使用主 AI 设置的 text 绑定。当前模型不支持操作时请更换主绑定；不会建立独立研究 AI 配置。');
  binding.append(button(context,'打开主 AI 设置',()=>context.context.openMainSettings?.('ai')));host.append(binding);
  const body=el(context,'div','rw-integration-grid');host.append(body);
- host.append(button(context,'重置本地表单草稿',()=>resetResearchDrafts(context)));
+ host.append(button(context,'重置本地表单草稿',()=>resetResearchDrafts(context)),renderDraftControls(context));
  const logPanel=panel(context,'研究持久任务日志','按项目和任务筛选；本入口只拥有一个推送连接，关闭页面即释放。主进程日志仍在主设置页。');
  const projects=el(context,'select'),actions=el(context,'select'),logBody=el(context,'div');projects.setAttribute('aria-label','日志项目');actions.setAttribute('aria-label','日志任务');
  const placeholder=el(context,'option','','选择研究项目');placeholder.value='';projects.append(placeholder);
@@ -62,4 +63,30 @@ export function renderSettings(context) {
   }
   const sourcePanel=panel(context,'来源状态','配置存在不代表来源已授权或健康。');for(const source of data.sources||[])sourcePanel.append(el(context,'p','rw-muted',(source.name||source.id||'来源')+' · '+(source.integration_message||source.status||'未知')));body.append(sourcePanel);
  }).catch(()=>{if(context.life.active)notify(context,'研究设置暂不可读；请稍后重试。');});return host;
+}
+
+/** Explicit local-file handoff; imported source DTOs never become live form input. */
+export function renderDraftControls(context) {
+ const host=panel(context,'旧来源草稿导入 / 导出','用户主动导出旧标签页草稿包，再在此选择文件核对。未导出的旧标签页草稿未迁移。只读保留原提交身份，不自动保存、采集或重发。');
+ const storage=context.context.storage||context.root.ownerDocument.defaultView?.sessionStorage;
+ const file=el(context,'input');file.type='file';file.accept='.json,application/json';file.setAttribute('aria-label','选择 version 1 研究草稿包');
+ const status=el(context,'p','rw-muted'),preview=el(context,'div');status.setAttribute('role','status');let generation=0;
+ function paint(){preview.replaceChildren();for(const entry of context.state.importedDrafts||[]){const row=panel(context,entry.mode==='receipt_only'?'已提交 · 仅保留回执':'只读草稿 · 需人工核对',entry.reason?'待核对：'+entry.reason:'核对完成；仍不自动提交');const raw=el(context,'pre','',JSON.stringify(entry.receipt||entry.draft,null,2));raw.setAttribute('style','white-space:pre-wrap;overflow-wrap:anywhere');row.append(el(context,'p','rw-muted','来源：'+entry.source_origin),raw);preview.append(row);}}
+ const exportButton=button(context,'导出本标签页研究草稿',()=>{
+  try{const win=context.root.ownerDocument.defaultView,bundle=exportDrafts(storage,{sourceOrigin:win.location.origin});const url=win.URL.createObjectURL(new Blob([JSON.stringify(bundle,null,2)],{type:'application/json'}));const release=context.life.track(()=>win.URL.revokeObjectURL(url));const link=el(context,'a');link.href=url;link.download='research-drafts-v1.json';host.append(link);try{link.click();}finally{link.remove();release();}status.textContent='已主动导出 '+bundle.drafts.length+' 项；其他未导出状态未迁移。';}catch{status.textContent='草稿导出未完成：存在未知、超限或不安全字段；请在旧标签页人工核对。';}
+ });
+ const importButton=button(context,'读取并核对草稿包',async()=>{
+  const selected=file.files?.[0];if(!selected){status.textContent='请先主动选择草稿包。';return;}
+  if(selected.size>1048576){status.textContent='草稿包超过 1 MiB 上限，已拒绝。';return;}
+  const current=++generation;importButton.disabled=true;
+  const isCurrent=()=>context.life.active&&current===generation;
+  try{const raw=await selected.text();if(!isCurrent())return;
+   const result=await importDrafts(raw,{state:context.state,storage,signal:context.life.signal,isCurrent,
+    readReceipt:(id,command,signal)=>context.api.request('/projects/'+encodeURIComponent(id)+'/commands/'+encodeURIComponent(command),{signal}),
+    readProject:(id,signal)=>context.api.request('/projects/'+encodeURIComponent(id),{signal})});
+   if(!isCurrent())return;status.textContent='只读接收 '+result.accepted.length+' 项，待核对 '+result.needs_review.length+' 项，拒绝 '+result.rejected.length+' 项。未重发任何命令。';paint();
+  }catch{if(isCurrent())status.textContent='草稿包读取未完成，已有内容保留；请人工核对。';}
+  finally{if(isCurrent())importButton.disabled=false;}
+ });
+ paint();host.append(exportButton,file,importButton,status,preview);return host;
 }
