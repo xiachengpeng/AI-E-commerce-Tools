@@ -82,3 +82,12 @@ test('import review archive is bounded across multiple explicit files',async()=>
 test('import preview wraps long JSON text in narrow native settings',async()=>{
  const c=uiContext();c.state.importedDrafts=[{mode:'read_only_draft',source_origin:'https://source.example',draft:record()}];const page=renderSettings(c);const pre=page.find(n=>n.tagName==='PRE');assert.equal(pre.attributes.style,'white-space:pre-wrap;overflow-wrap:anywhere');c.life.dispose();
 });
+
+test('standalone artifact is deterministically generated from the entire authoritative validator',async()=>{
+ const generator=await import('../../../scripts/full_merge/generate-draft-export.mjs').catch(()=>({}));assert.equal(typeof generator.renderStandaloneDraftExport,'function');
+ const source=await readFile(new URL('../../js/research-workbench/drafts.mjs',import.meta.url),'utf8');const artifact=await readFile(new URL('../../../scripts/full_merge/draft-export.js',import.meta.url),'utf8');
+ assert.equal(generator.renderStandaloneDraftExport(source),artifact);assert.equal(generator.renderStandaloneDraftExport(source),generator.renderStandaloneDraftExport(source));
+ // Ordinary-keyword parity cannot detect these changes; full-artifact comparison does.
+ for(const [old,replacement] of [['MAX_DRAFTS=100','MAX_DRAFTS=99'],['certification_verified','certification_verified_changed'],['unsafe_text','unsafe_text_changed'],['换一个搜索入口','另一个搜索入口']]){assert.ok(source.includes(old));assert.notEqual(generator.renderStandaloneDraftExport(source.replace(old,replacement)),artifact);}
+ assert.throws(()=>generator.renderStandaloneDraftExport(source.replace('// END STANDALONE DRAFT EXPORT','// missing boundary')));
+});

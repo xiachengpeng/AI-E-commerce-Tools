@@ -1,3 +1,4 @@
+// BEGIN STANDALONE DRAFT EXPORT
 /** Version 1 source form DTOs. No live form restoration or command replay. */
 const MAX_BUNDLE_BYTES=1048576,MAX_DRAFT_BYTES=65536,MAX_DRAFTS=100;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -65,7 +66,6 @@ function decodeBundle(input){
  if(!plain(input))throw Error('invalid_bundle');
  for(const descriptor of Object.values(Object.getOwnPropertyDescriptors(input)))if(!Object.hasOwn(descriptor,'value'))throw Error('invalid_bundle');
  if(Object.keys(input).some(k=>!['version','source_origin','drafts'].includes(k))||input.version!==1||!Array.isArray(input.drafts)||input.drafts.length>MAX_DRAFTS)throw Error('invalid_bundle');
- for(const descriptor of Object.values(Object.getOwnPropertyDescriptors(input)))if(!Object.hasOwn(descriptor,'value'))throw Error('invalid_bundle');
  origin(input.source_origin);checkTree(input.drafts);if(new TextEncoder().encode(JSON.stringify(input)).length>MAX_BUNDLE_BYTES)throw Error('bundle_too_large');return input;
 }
 export function exportDrafts(storage,{sourceOrigin=globalThis.location?.origin}={}){
@@ -77,6 +77,7 @@ export function exportDrafts(storage,{sourceOrigin=globalThis.location?.origin}=
  }
  return decodeBundle({version:1,source_origin:sourceOrigin,drafts});
 }
+// END STANDALONE DRAFT EXPORT
 export async function importDrafts(input,context){
  const result={accepted:[],needs_review:[],rejected:[]};let bundle;
  try{bundle=decodeBundle(input);for(const record of bundle.drafts)validateRecord(record);}catch{result.rejected.push({reason:'invalid_or_unsafe_bundle'});return result;}
