@@ -48,7 +48,7 @@ def test_original_business_route_inventory():
     actual = {
         (method, route.path) for route in router.routes for method in route.methods
     }
-    assert actual == expected
+    assert actual == expected | {("GET", PREFIX + "/history")}
 
 
 @pytest.mark.parametrize(
@@ -309,7 +309,10 @@ async def test_actual_store_commands_report_and_project_ownership(
         assert client.post(url + "/commands", json=body).json() == changed.json()
         body["command_id"] = str(uuid4())
         assert client.post(url + "/commands", json=body).status_code == 409
+        history_before = client.get(PREFIX + "/history?kind=activity").json()
         assert client.get(url + "/report").status_code == 200
+        assert client.get(PREFIX + "/history?kind=activity").json() == history_before
+        assert client.get(PREFIX + "/history?kind=report").json()["items"] == []
         assert client.get(url + "/intelligence").status_code == 200
         assert client.get(url + "/actions").status_code == 200
         assert client.get(url + "/live-logs").json()["logs"] == []
@@ -640,3 +643,199 @@ def test_framework_validation_errors_are_not_cached():
     response = client.get(PREFIX + "/evidence-file")
     assert response.status_code == 422
     assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_native_history_canonical_projection_cursor_and_private_payload(tmp_path):
+    import sqlite3
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from backend.migrations.full_merge_v1 import prepare_schema
+
+    database = tmp_path / "history.db"
+    sqlite3.connect(database).close()
+    prepare_schema(database, backup_verified=True)
+    from services.research_repository import migrate
+
+    migrate(database)
+    project, other, product = map(str, (uuid4(), uuid4(), uuid4()))
+    with sqlite3.connect(database) as db:
+        for pid in (project, other):
+            db.execute(
+                "INSERT INTO workbench_projects VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    pid,
+                    "fixture",
+                    "private direction",
+                    "US",
+                    1,
+                    "{}",
+                    str(uuid4()),
+                    "digest",
+                    "2026-01-01",
+                    "2026-01-01",
+                ),
+            )
+        for pid in (project, project, other):
+            db.execute(
+                "INSERT INTO workbench_events VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    str(uuid4()),
+                    pid,
+                    str(uuid4()),
+                    "digest",
+                    "review",
+                    json.dumps({"api_key": "PRIVATE", "prompt": "PRIVATE"}),
+                    "human",
+                    "2026-01-01",
+                ),
+            )
+        ref = {
+            "project_id": project,
+            "product_id": product,
+            "source_version": 1,
+            "identity_revision": 1,
+            "system": "rabbit_hole",
+        }
+        db.execute(
+            "INSERT INTO research_links VALUES (?,?,?,?,?,?)",
+            (
+                "link",
+                "private name",
+                json.dumps(ref),
+                "US",
+                1,
+                json.dumps(
+                    [
+                        {
+                            "module": "listing",
+                            "history_id": 7,
+                            "timestamp": "2026-01-01T00:00:00+00:00",
+                            "created_at": "PRIVATE",
+                            "secret": "PRIVATE",
+                        }
+                    ]
+                ),
+            ),
+        )
+        db.execute(
+            "INSERT INTO research_import_events VALUES (?,?,?,?,?)",
+            (
+                str(uuid4()),
+                "digest",
+                "link",
+                json.dumps({"source_ref": ref, "facts": [{"value": "PRIVATE"}]}),
+                "2026-01-01",
+            ),
+        )
+    engine = create_async_engine("sqlite+aiosqlite:///" + str(database))
+    store = SimpleNamespace(engine=engine, get=AsyncMock(return_value={"id": project}))
+    try:
+        client = make_client(SimpleNamespace(store=store, diagnostics=()))
+        route = PREFIX + "/history"
+        response = client.get(
+            route, params={"kind": "activity", "project_id": project, "limit": 1}
+        )
+        assert response.status_code == 200
+        page = response.json()
+        assert len(page["items"]) == 1 and page["next_cursor"]
+        assert "PRIVATE" not in response.text and "payload" not in response.text
+        assert page["items"][0]["action"] == "review"
+        assert client.get(route, params={"cursor": "!!!"}).status_code == 422
+        assert (
+            client.get(route, headers={"Origin": "https://outside.invalid"}).status_code
+            == 403
+        )
+        assert client.get(route, headers={"Host": "outside.invalid"}).status_code == 403
+        assert response.headers["cache-control"] == "no-store"
+        assert client.get(
+            route,
+            params={
+                "kind": "activity",
+                "project_id": project,
+                "cursor": page["next_cursor"],
+            },
+        ).json()["items"]
+        assert (
+            client.get(
+                route,
+                params={
+                    "kind": "import",
+                    "project_id": project,
+                    "cursor": page["next_cursor"],
+                },
+            ).status_code
+            == 422
+        )
+        assert (
+            client.get(
+                route,
+                params={
+                    "kind": "activity",
+                    "project_id": other,
+                    "cursor": page["next_cursor"],
+                },
+            ).status_code
+            == 422
+        )
+        imports = client.get(
+            route, params={"kind": "import", "project_id": project}
+        ).json()["items"]
+        assert imports[0]["product_id"] == product
+        assert imports[0]["artifacts"] == [
+            {
+                "module": "listing",
+                "history_id": 7,
+                "timestamp": "2026-01-01T00:00:00+00:00",
+                "created_at": None,
+            }
+        ]
+        assert "PRIVATE" not in json.dumps(imports)
+        assert (
+            client.get(route, params={"kind": "report", "project_id": project}).json()[
+                "items"
+            ]
+            == []
+        )
+        assert client.get(route, params={"kind": "bad"}).status_code == 422
+        assert client.get(route, params={"limit": 51}).status_code == 422
+        assert client.delete(route).status_code == 405
+        client.headers["X-Research-Token"] = "wrong"
+        assert client.get(route).status_code == 401
+    finally:
+        await engine.dispose()
+
+
+def test_native_settings_patch_seen_by_next_worker_resolution(tmp_path):
+    import sqlite3
+
+    from routes.integration_settings import create_integration_settings_router
+    from services.integration_settings_service import IntegrationSettingsService
+    from services.research_integrations import assemble_non_ai_integrations
+
+    from backend.migrations.full_merge_v1 import prepare_schema
+
+    database = tmp_path / "history.db"
+    sqlite3.connect(database).close()
+    prepare_schema(database, backup_verified=True, target_revision=2)
+    api_store = IntegrationSettingsService(database)
+    worker = assemble_non_ai_integrations(
+        IntegrationSettingsService(database), allow_external=False
+    )
+    api_store.update(
+        "apify", "research", {"api_key": "synthetic-first", "daily_limit": 10}
+    )
+    assert worker.providers.get("apify") == "synthetic-first"
+    client = make_client()
+    client.app.state.integration_settings = api_store
+    client.app.include_router(create_integration_settings_router())
+    path = "/api/settings/integrations/apify/research"
+    saved = client.patch(path, json={"api_key": "synthetic-next", "daily_limit": 20})
+    assert saved.status_code == 200 and saved.json()["version"] == 2
+    assert "synthetic-next" not in saved.text
+    assert worker.providers.get("apify") == "synthetic-next"
+    assert worker.provider_limit("apify") == 20
+    assert client.patch(path, json={"api_key": ""}).json()["version"] == 3
+    assert worker.providers.get("apify") == "synthetic-next"
+    assert worker.settings_store.public("apify", "research")["version"] == 3

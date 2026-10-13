@@ -56,3 +56,7 @@
 .research-workbench .rw-triage .triage-preview { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; }
 .research-workbench .rw-product .notice, .research-workbench .rw-triage .notice, .research-workbench .rw-reports .notice { background: #fffbeb; color: #92400e; padding: 8px; border-radius: 6px; }
 @media(max-width:760px) { .research-workbench .rw-product .workspace, .research-workbench .rw-triage .triage-preview { grid-template-columns: 1fr; } .research-workbench .rw-product .steps { flex-direction: row; flex-wrap: wrap; } }
+
+.research-workbench .rw-integration-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px; }
+.research-workbench .rw-field { display:flex;flex-direction:column;gap:6px;margin:10px 0; }
+.research-workbench .rw-field input { max-width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px; }

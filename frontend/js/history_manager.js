@@ -81,6 +81,10 @@ function toggleGlobalHistory(forceState) {
 }
 
 function switchHistoryTab(module) {
+    if (['research-activity','research-report','research-import'].includes(module)) {
+        toggleGlobalHistory(false);
+        return window.ResearchPanel?.openNativePage('history', module.replace('research-', ''));
+    }
     currentHistoryModule = module;
     selectedHistoryIds.clear();
     isHistoryBatchMode = false;

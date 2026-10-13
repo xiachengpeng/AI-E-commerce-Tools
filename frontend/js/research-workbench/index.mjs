@@ -1,3 +1,5 @@
+import { renderSettings } from './settings.mjs';
+import { renderHistory } from './history.mjs';
 import { renderProduct } from './pages/product.mjs';
 import { renderTriage } from './pages/triage.mjs';
 import { renderReport } from './pages/reports.mjs';
@@ -32,7 +34,7 @@ export function createWorkbench() {
         const list=current.root.querySelector('[data-rw-projects]');
         const nodes=current.state.projects.map(project=>{
             const node=button(navContext,project.title||'未命名项目',()=>openProject(current,project.id));node.dataset.rwProject=project.id;return node;
-        });list.replaceChildren(button(navContext,'全部项目',()=>navigate(current,'projects')),button(navContext,'结论与复盘',()=>navigate(current,'reports')),button(navContext,'＋ 新建研究',()=>openForm(current,{kind:'new_project'})),...nodes);
+        });list.replaceChildren(button(navContext,'全部项目',()=>navigate(current,'projects')),button(navContext,'结论与复盘',()=>navigate(current,'reports')),button(navContext,'研究与集成',()=>navigate(current,'settings')),button(navContext,'研究历史',()=>navigate(current,'history')),button(navContext,'＋ 新建研究',()=>openForm(current,{kind:'new_project'})),...nodes);
     }
     function pageContext(current,life) {
         const navigation=current.navigation;
@@ -42,6 +44,7 @@ export function createWorkbench() {
             showQueue:selection=>{current.state.queueSelection=selection||null;navigate(current,'actions');},
             selectProduct:id=>openProduct(current,current.state.project?.id,id),
             openProduct:(projectId,productId,step)=>openProduct(current,projectId,productId,step),
+            openHistoryProduct:(projectId,productId)=>origin.isCurrent()?openHistoryProduct(current,projectId,productId):undefined,
             onSelectProduct:selection=>{if(origin.isCurrent())return current.context.onSelectProduct?.(selection,origin);},
             command:(action,payload)=>command(current,action,payload),acceptProject:project=>{if(!active(current))return;current.state.project=project;navigate(current,'project');}
         };
@@ -54,6 +57,8 @@ export function createWorkbench() {
         else if(current.state.view==='actions'&&current.state.project)page=renderActions(c);
         else if(current.state.view==='product'&&current.state.project)page=renderProduct(c);
         else if(current.state.view==='triage'&&current.state.project)page=renderTriage(c);
+        else if(current.state.view==='settings')page=renderSettings(c);
+        else if(current.state.view==='history')page=renderHistory(c);
         else if(current.state.view==='reports')page=renderReport(c);
         else if(current.state.view==='paths')page=renderPaths(c);
         else if(current.state.view==='form')page=formPage(c);
@@ -61,6 +66,15 @@ export function createWorkbench() {
         else page=projectsPage(c);
         current.root.querySelector('[data-rw-page]').replaceChildren(page);
         if(focus)page.querySelector('h1')?.focus({preventScroll:true});
+    }
+    async function openHistoryProduct(current,projectId,productId) {
+        if(!active(current))return;const generation=++current.navigation;
+        try {
+            const project=await current.api.request('/projects/'+encodeURIComponent(projectId));
+            if(!active(current)||generation!==current.navigation)return;
+            if(!project.products?.some(p=>p.id===productId&&!p.merged_into))throw Error('来源商品已更新或移除，请重新核对。');
+            current.state.project=project;openProduct(current,projectId,productId);
+        }catch(error){if(active(current)&&generation===current.navigation)notify(current,error.message);}
     }
     function openProduct(current,projectId,productId,step='identification') {
         if(!active(current)||current.state.project?.id!==projectId||!current.state.project.products?.some(product=>product.id===productId&&!product.merged_into))return;
@@ -124,6 +138,8 @@ export function createWorkbench() {
         renderProjects(current);paint(current);life.listen(root,'click',event=>{if(event.target.closest?.('[data-rw-refresh]'))void refresh(current);});
         current.ready=(async()=>{try{await current.api.session();if(active(current))await refresh(current);}catch(_){if(active(current))notify(current,'研究会话暂时不可用，请刷新研究入口。');}})();return current.ready;
     }
-    return {mount,unmount,refresh,openProduct:(projectId,productId,step)=>openProduct(instance,projectId,productId,step),get state(){return instance?.state||null;}};
+    return {mount,unmount,refresh,navigate:(view,kind)=>{if(!active(instance)||!['settings','history','reports'].includes(view))return;if(kind)instance.state.historyKind=kind;navigate(instance,view);},openProduct:(projectId,productId,step)=>openProduct(instance,projectId,productId,step),get state(){return instance?.state||null;}};
 }
 const workbench=createWorkbench();export const mount=workbench.mount;export const unmount=workbench.unmount;export const openProduct=workbench.openProduct;
+
+export const navigate=workbench.navigate;

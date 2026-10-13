@@ -3801,3 +3801,5 @@ if (typeof module !== "undefined") {
         saveUsageQueryConfig
     };
 }
+
+function openResearchSettings() { return window.ResearchPanel?.openNativePage('settings'); }

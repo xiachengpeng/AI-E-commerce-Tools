@@ -134,11 +134,12 @@ test('committed receipt replay uses the same submitted content hash after a back
 });
 test('manual child keyword emits the original single-source command payload without inferred facts',async()=>{
  const project={id:'p',version:3,title:'P',keywords:[{id:'parent',text:'pet',depth:0}],products:[]};
- const product={id:'product',expansion_sources:[{source_id:'source',source_kind:'ad',ad_id:'ad',identity_revision:2}]};const c=pageContext(project),sent=[];
- c.api={request:async(path,options)=>{sent.push([path,options.body]);return {...project,version:4};}};
+ const product={id:'product',expansion_sources:[{source_id:'source',source_kind:'ad',ad_id:'ad',identity_revision:2}]};const c=pageContext(project),sent=[];let received;const posted=new Promise(resolve=>{received=resolve;});
+ c.api={request:async(path,options)=>{sent.push([path,options.body]);received();return {...project,version:4};}};
  const node=renderForm(c,{kind:'add_keyword',parent:project.keywords[0],product});const form=node.querySelector('form');
  form.elements.namedItem('text').value='dog owners';form.elements.namedItem('source_quote').value='For dog owners';form.dispatchEvent(new Event('submit',{cancelable:true}));
- await new Promise(r=>setTimeout(r,0));assert.equal(sent.length,1);assert.equal(sent[0][0],'/projects/p/commands');assert.equal(sent[0][1].version,3);assert.equal(sent[0][1].action,'add_keyword');
+ let timeout;try{await Promise.race([posted,new Promise((_,reject)=>{timeout=setTimeout(()=>reject(Error('Expected submitted command after asynchronous fingerprint')),2000);})]);}finally{clearTimeout(timeout);c.life.dispose();}
+ assert.equal(sent.length,1);assert.equal(sent[0][0],'/projects/p/commands');assert.equal(sent[0][1].version,3);assert.equal(sent[0][1].action,'add_keyword');
  assert.deepEqual(sent[0][1].payload,{text:'dog owners',type:'pain',source_id:'source',source_quote:'For dog owners',source_kind:'ad',parent_id:'parent',product_id:'product'});c.life.dispose();
 });
 

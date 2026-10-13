@@ -4244,6 +4244,10 @@
 
                     <!-- TAB 2: 外部服务与存储集成 -->
                     <div id="settingsPaneIntegrations" class="settings-tab-pane custom-scrollbar hidden">
+                        <section class="settings-card">
+                            <h2>研究与集成</h2><p>研究采集、原阿里阅读辅助与飞书同步配置；研究使用主 AI text 绑定。</p>
+                            <button type="button" class="settings-button settings-button-secondary" onclick="openResearchSettings()">打开研究设置与持久任务日志</button>
+                        </section>
                         <!-- 网页爬虫配置 (Firecrawl) -->
                         <section class="settings-card settings-crawler-card" id="settingsCrawlerCard" aria-labelledby="settingsCrawlerTitle">
                             <div class="settings-card-header">
@@ -4463,6 +4467,10 @@
 
                     <!-- TAB 3: 实时运行日志与观测 -->
                     <div id="settingsPaneLogs" class="settings-tab-pane custom-scrollbar hidden">
+                        <section class="settings-card">
+                            <h2>研究持久任务日志</h2><p>以下主进程日志仅保留于当前进程；研究 worker 的持久任务日志按项目查询。</p>
+                            <button type="button" class="settings-button settings-button-secondary" onclick="openResearchSettings()">打开研究持久日志</button>
+                        </section>
                         <section id="settingsLogPanel" class="settings-log-panel settings-log-panel-fullscreen">
                             <div class="settings-log-header">
                                 <div>
@@ -5195,6 +5203,9 @@
                 <div onclick="switchHistoryTab('ads')" id="hist-tab-ads" class="history-tab-btn">广告文案</div>
                 <div onclick="switchHistoryTab('square-redraw')" id="hist-tab-square-redraw" class="history-tab-btn">尺寸重绘</div>
                 <div onclick="switchHistoryTab('watermark-removal')" id="hist-tab-watermark-removal" class="history-tab-btn">AI 消除</div>
+                <button type="button" onclick="switchHistoryTab('research-activity')" class="history-tab-btn">研究活动</button>
+                <button type="button" onclick="switchHistoryTab('research-report')" class="history-tab-btn">已保存研究报告</button>
+                <button type="button" onclick="switchHistoryTab('research-import')" class="history-tab-btn">营销档案导入</button>
                 <div onclick="switchHistoryTab('render')" id="hist-tab-render" class="history-tab-btn">详情渲染</div>
             </div>
             <!-- 工具栏与批量操作栏 -->

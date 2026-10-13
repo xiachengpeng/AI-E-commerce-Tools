@@ -182,6 +182,161 @@ def create_workbench_router() -> APIRouter:
                 ) from None
             raise HTTPException(503, "操作未完成，请刷新确认状态后重试") from None
 
+    @router.get("/history")
+    async def history(
+        request: Request,
+        kind: str = "activity",
+        project_id: str | None = None,
+        cursor: str | None = Query(default=None, max_length=512),
+        limit: int = Query(default=20, ge=1, le=50),
+    ) -> JSONResponse:
+        guard(request)
+        from base64 import urlsafe_b64decode, urlsafe_b64encode
+        from binascii import Error as Base64Error
+
+        from rabbit_hole.persistence.projects import (
+            workbench_events,
+            workbench_projects,
+        )
+        from sqlalchemy import select, text
+
+        if kind not in {"activity", "report", "import"}:
+            raise HTTPException(422, "研究历史类型无效")
+        service = store(request)
+        scope = str(project_uuid(project_id)) if project_id else None
+        if scope:
+            await invoke(service.get(scope))
+        after = ""
+        if cursor:
+            try:
+                value = json.loads(
+                    urlsafe_b64decode(cursor + "=" * ((-len(cursor)) % 4))
+                )
+                if (
+                    set(value) != {"kind", "project_id", "id"}
+                    or value["kind"] != kind
+                    or value["project_id"] != scope
+                ):
+                    raise ValueError()
+                after = str(UUID(value["id"]))
+            except (ValueError, TypeError, KeyError, UnicodeDecodeError, Base64Error):
+                raise HTTPException(422, "历史游标与分类或项目不匹配") from None
+        items = []
+        if kind == "activity":
+            # Never SELECT event payload/digest or aggregate private project state.
+            query = (
+                select(
+                    workbench_events.c.id,
+                    workbench_events.c.project_id,
+                    workbench_events.c.action,
+                    workbench_events.c.created_at,
+                )
+                .join(
+                    workbench_projects,
+                    workbench_projects.c.id == workbench_events.c.project_id,
+                )
+                .where(workbench_events.c.id > after)
+                .order_by(workbench_events.c.id)
+                .limit(limit + 1)
+            )
+            if scope:
+                query = query.where(workbench_events.c.project_id == scope)
+            async with service.engine.connect() as connection:
+                rows = (await connection.execute(query)).mappings().all()
+            items = [
+                {
+                    "id": r["id"],
+                    "project_id": r["project_id"],
+                    "action": r["action"]
+                    if r["action"] in USER_ACTIONS | {"create_project"}
+                    else "unknown",
+                    "created_at": r["created_at"].isoformat(),
+                }
+                for r in rows
+            ]
+        elif kind == "import":
+            # Existing immutable receipts and artifacts, never name/facts/raw selected inputs.
+            async with service.engine.connect() as connection:
+                try:
+                    rows = (
+                        (
+                            await connection.execute(
+                                text(
+                                    "SELECT e.id,e.created_at,e.snapshot,l.artifacts FROM research_import_events e "
+                                    "JOIN research_links l ON l.id=e.link_id JOIN workbench_projects p "
+                                    "ON p.id=json_extract(e.snapshot,'$.source_ref.project_id') "
+                                    "WHERE e.id>:after AND (:scope IS NULL OR p.id=:scope) ORDER BY e.id LIMIT :limit"
+                                ),
+                                {"after": after, "scope": scope, "limit": limit + 1},
+                            )
+                        )
+                        .mappings()
+                        .all()
+                    )
+                except Exception:  # noqa: BLE001 -- no raw SQLite/path diagnostics
+                    raise HTTPException(503, "研究档案存储尚未就绪") from None
+            for row in rows:
+                ref = json.loads(row["snapshot"]).get("source_ref", {})
+                try:
+                    pid, product = (
+                        str(UUID(ref["project_id"])),
+                        str(UUID(ref["product_id"])),
+                    )
+                except (KeyError, ValueError, TypeError):
+                    raise HTTPException(503, "研究档案引用需核对") from None
+                artifacts = []
+                for artifact in json.loads(row["artifacts"]):
+                    if (
+                        artifact.get("module")
+                        in {"analysis", "listing", "ads", "details"}
+                        and type(artifact.get("history_id")) is int
+                    ):
+                        public = {
+                            "module": artifact["module"],
+                            "history_id": artifact["history_id"],
+                        }
+                        for name in ("timestamp", "history_timestamp", "created_at"):
+                            if name in artifact:
+                                try:
+                                    public[name] = datetime.fromisoformat(
+                                        artifact[name]
+                                    ).isoformat()
+                                except (ValueError, TypeError):
+                                    public[name] = None
+                        artifacts.append(public)
+                items.append(
+                    {
+                        "id": row["id"],
+                        "project_id": pid,
+                        "product_id": product,
+                        "created_at": row["created_at"],
+                        "artifacts": artifacts,
+                    }
+                )
+        # Source reports are derived GETs; no report artifact table or REPORT job kind exists.
+        more = len(items) > limit
+        items = items[:limit]
+        next_cursor = (
+            urlsafe_b64encode(
+                json.dumps(
+                    {"kind": kind, "project_id": scope, "id": items[-1]["id"]}
+                ).encode()
+            )
+            .decode()
+            .rstrip("=")
+            if more
+            else None
+        )
+        return JSONResponse(
+            {
+                "kind": kind,
+                "project_id": scope,
+                "items": items,
+                "next_cursor": next_cursor,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
     @router.get("/evidence-file")
     async def evidence_file(
         request: Request, token: str, project_id: str = ""

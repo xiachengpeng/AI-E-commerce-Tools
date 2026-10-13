@@ -282,9 +282,9 @@
         try { return localStorage.getItem('research_native_workbench') === '1'; }
         catch (_) { return false; }
     }
-    async function mountPanel() {
+    async function mountPanel(options = {}) {
         const generation = ++nativeGeneration;
-        if (!nativeEnabled()) { unmountPanel(); await init(); return; }
+        if (!nativeEnabled() && !options.native) { unmountPanel(); await init(); return; }
         closeWorkbench();
         const host = el('researchNativeRoot');
         if (!host) return;
@@ -293,10 +293,16 @@
         try {
             nativeModule = await import('./research-workbench/index.mjs');
             if (generation !== nativeGeneration) return;
-            await nativeModule.mount(host, { apiBase: base(), onSelectProduct: selectSource });
+            await nativeModule.mount(host, { apiBase: base(), onSelectProduct: selectSource, openMainSettings: tab => { root.switchMainTab?.('settings'); root.switchSettingsTab?.(tab); } });
         } catch (_) {
             if (generation === nativeGeneration) host.textContent = '原生研究入口暂时不可用，请重新进入研究页。';
         }
+    }
+    async function openNativePage(view, kind) {
+        if (!['settings','history','reports'].includes(view)) return;
+        root.switchMainTab?.('research');
+        await mountPanel({native:true});
+        if (el('researchNativeRoot')?.hidden === false) nativeModule?.navigate(view, kind);
     }
     function unmountPanel() {
         nativeGeneration++;
@@ -511,7 +517,7 @@
 
     if (root.addEventListener) root.addEventListener('message',receiveSource);
 
-    const api = { init, mount: mountPanel, unmount: unmountPanel, suspend: unmountPanel, applyDraft, undoDraft, escapeHtml, selectSource };
+    const api = { init, openNativePage, mount: mountPanel, unmount: unmountPanel, suspend: unmountPanel, applyDraft, undoDraft, escapeHtml, selectSource };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     root.ResearchPanel = api;
 })(typeof window !== 'undefined' ? window : globalThis);

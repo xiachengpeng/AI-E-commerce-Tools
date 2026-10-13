@@ -38,6 +38,11 @@ export function createApi(context = {}) {
             // One transport attempt, including commands with ambiguous outcomes.
             return send(url.href, options);
         },
+        async integration(provider, purpose, options = {}) {
+            if (!['apify','serpapi','firecrawl','aliyun','feishu'].includes(provider) || purpose !== 'research' || !['GET','PATCH'].includes(options.method || 'GET')) throw new Error('Invalid integration destination');
+            if (!token) throw new Error('研究会话不可用');
+            return send(base.origin + '/api/settings/integrations/' + provider + '/' + purpose, options);
+        },
         blob(path, options = {}) { return this.request(path, {...options,responseType:'blob'}); },
         stream(path, options = {}) { return this.request(path, {...options,responseType:'stream'});
         }
