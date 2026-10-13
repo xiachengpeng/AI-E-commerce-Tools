@@ -1,3 +1,6 @@
+import { renderProduct } from './pages/product.mjs';
+import { renderTriage } from './pages/triage.mjs';
+import { renderReport } from './pages/reports.mjs';
 import { renderActions } from './pages/actions.mjs';
 import { createState } from './state.mjs';
 import { createApi } from './api.mjs';
@@ -29,13 +32,15 @@ export function createWorkbench() {
         const list=current.root.querySelector('[data-rw-projects]');
         const nodes=current.state.projects.map(project=>{
             const node=button(navContext,project.title||'未命名项目',()=>openProject(current,project.id));node.dataset.rwProject=project.id;return node;
-        });list.replaceChildren(button(navContext,'全部项目',()=>navigate(current,'projects')),button(navContext,'＋ 新建研究',()=>openForm(current,{kind:'new_project'})),...nodes);
+        });list.replaceChildren(button(navContext,'全部项目',()=>navigate(current,'projects')),button(navContext,'结论与复盘',()=>navigate(current,'reports')),button(navContext,'＋ 新建研究',()=>openForm(current,{kind:'new_project'})),...nodes);
     }
     function pageContext(current,life) {
         return {...current,life,
             navigate:view=>navigate(current,view), openProject:(id,form)=>openProject(current,id,form), openForm:spec=>openForm(current,spec),
             showQueue:selection=>{current.state.queueSelection=selection||null;navigate(current,'actions');},
-            selectProduct:id=>{if(!active(current)||!current.state.project?.products?.some(product=>product.id===id))return;const projectId=current.state.project.id;current.state.product=id;navigate(current,'product');current.context.onSelectProduct?.({projectId,productId:id},current);},
+            selectProduct:id=>openProduct(current,current.state.project?.id,id),
+            openProduct:(projectId,productId,step)=>openProduct(current,projectId,productId,step),
+            onSelectProduct:selection=>{if(active(current))return current.context.onSelectProduct?.(selection);},
             command:(action,payload)=>command(current,action,payload),acceptProject:project=>{if(!active(current))return;current.state.project=project;navigate(current,'project');}
         };
     }
@@ -45,16 +50,20 @@ export function createWorkbench() {
         let page;
         if(current.state.view==='projects')page=projectsPage(c);
         else if(current.state.view==='actions'&&current.state.project)page=renderActions(c);
+        else if(current.state.view==='product'&&current.state.project)page=renderProduct(c);
+        else if(current.state.view==='triage'&&current.state.project)page=renderTriage(c);
+        else if(current.state.view==='reports')page=renderReport(c);
         else if(current.state.view==='paths')page=renderPaths(c);
         else if(current.state.view==='form')page=formPage(c);
         else if(current.state.view==='project'&&current.state.project)page=projectPage(c);
-        else {
-            page=el(c,'section');const heading=el(c,'h1','',current.state.view==='product'?'产品档案':'动作队列');heading.tabIndex=-1;
-            page.append(heading,el(c,'p','rw-muted',current.state.view==='product'?'产品档案页面将在后续迁入步骤接入；已保存事实和待核验状态保留。':'队列执行与媒体页面尚未接入。当前只显示已保存任务，不提交或自动重放采集。'),button(c,'返回探索',()=>navigate(current,'project')));
-
-        }
+        else page=projectsPage(c);
         current.root.querySelector('[data-rw-page]').replaceChildren(page);
         if(focus)page.querySelector('h1')?.focus({preventScroll:true});
+    }
+    function openProduct(current,projectId,productId,step='identification') {
+        if(!active(current)||current.state.project?.id!==projectId||!current.state.project.products?.some(product=>product.id===productId&&!product.merged_into))return;
+        current.state.product=productId;current.state.step=step;navigate(current,'product');
+        current.context.onProductNavigate?.({projectId,productId});
     }
     function navigate(current,view) {if(!active(current))return;current.navigation++;current.state.view=view;paint(current,true);}
     function openForm(current,spec) {if(!active(current))return;current.state.form=structuredClone(spec);navigate(current,'form');}
@@ -113,6 +122,6 @@ export function createWorkbench() {
         renderProjects(current);paint(current);life.listen(root,'click',event=>{if(event.target.closest?.('[data-rw-refresh]'))void refresh(current);});
         current.ready=(async()=>{try{await current.api.session();if(active(current))await refresh(current);}catch(_){if(active(current))notify(current,'研究会话暂时不可用，请刷新研究入口。');}})();return current.ready;
     }
-    return {mount,unmount,refresh,get state(){return instance?.state||null;}};
+    return {mount,unmount,refresh,openProduct:(projectId,productId,step)=>openProduct(instance,projectId,productId,step),get state(){return instance?.state||null;}};
 }
-const workbench=createWorkbench();export const mount=workbench.mount;export const unmount=workbench.unmount;
+const workbench=createWorkbench();export const mount=workbench.mount;export const unmount=workbench.unmount;export const openProduct=workbench.openProduct;

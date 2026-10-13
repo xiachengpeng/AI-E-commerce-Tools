@@ -131,6 +131,12 @@ async def test_all_local_v1_routes_reuse_lifecycle_and_session(local, monkeypatc
         project_path = base + '/projects/' + project['id']
         product_id = project['products'][0]['source_ref']['product_id']
         product_path = project_path + '/products/' + product_id
+        owned = browser.get(product_path, headers=headers)
+        assert owned.status_code == 200
+        assert owned.json() == await facade.get_product(project['id'], product_id)
+        assert browser.get(product_path).status_code == 401
+        assert browser.get(project_path + '/products/' + str(uuid4()), headers=headers).status_code == 404
+        assert browser.get(base + '/projects/' + str(uuid4()) + '/products/' + product_id, headers=headers).status_code == 404
         for suffix in ('', '/report', '/actions'):
             assert browser.get(project_path + suffix, headers=headers).status_code == 200
         preview_payload = {'expected_source_version': project['source_version'], 'expected_identity_revision': 1, 'expected_market': 'US', 'existing': {'productNameInput': 'Merchant name'}}
@@ -154,6 +160,7 @@ async def test_all_local_v1_routes_reuse_lifecycle_and_session(local, monkeypatc
         assert browser.get(project_path + '/commands/' + command_id, headers=headers).json()['state'] == 'committed'
         app.state.research_runtime = None
         assert browser.get(project_path, headers=headers).status_code == 503
+        assert browser.get(product_path, headers=headers).status_code == 503
 
 
 @pytest.mark.asyncio

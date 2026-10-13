@@ -91,12 +91,12 @@ test('native form renders with browser read-only select and textarea type proper
 test('market selector has a field-only accessible name independent of option text',()=>{
  const c=pageContext();const node=renderForm(c,{kind:'new_project'});assert.equal(node.querySelector('select').attributes['aria-label'],'目标市场');c.life.dispose();
 });
-test('product selection stays native and passes only validated IDs to the optional future handler',async()=>{
- const root=fixtureRoot(),wb=createWorkbench(),selected=[];const project={id:'p',title:'P',keywords:[],products:[{id:'product',name:'Product'}]};let current;
- await wb.mount(root,{onSelectProject:(id,c)=>current=c,onSelectProduct:(selection,c)=>selected.push(selection),fetch:async url=>({ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?project:{projects:[project]}})});
+test('product navigation stays native and passes only membership-validated IDs to navigation notification',async()=>{
+ const root=fixtureRoot(),wb=createWorkbench(),selected=[],handed=[];const project={id:'p',title:'P',keywords:[],products:[{id:'product',name:'Product'}]};let current;
+ await wb.mount(root,{onSelectProject:(id,c)=>current=c,onProductNavigate:(selection,c)=>selected.push(selection),onSelectProduct:selection=>handed.push(selection),fetch:async url=>({ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?project:{projects:[project]}})});
  root.querySelector('[data-rw-projects]').find(n=>n.textContent==='P').click();await new Promise(r=>setTimeout(r,0));
  current.selectProduct('unknown');assert.equal(selected.length,0);assert.equal(wb.state.view,'project');
- current.showQueue({kind:'scan',keyword_id:'k'});current.selectProduct('product');assert.equal(wb.state.view,'product');assert.equal(root.querySelector('[data-rw-page]').querySelector('h1').textContent,'产品档案');assert.deepEqual(selected,[{projectId:'p',productId:'product'}]);assert.equal(root.querySelector('[data-rw-page]').querySelector('pre'),null);wb.unmount();
+ current.showQueue({kind:'scan',keyword_id:'k'});current.selectProduct('product');assert.equal(wb.state.view,'product');assert.equal(root.querySelector('[data-rw-page]').querySelector('h1').textContent,'Product');assert.deepEqual(selected,[{projectId:'p',productId:'product'}]);assert.equal(handed.length,0);assert.equal(root.ownerDocument.activeElement?.tagName,'H1');wb.unmount();
 });
 test('LAN HTTP fallback detects edits and creates valid command identities without subtle crypto',async()=>{
  const cryptoProvider={getRandomValues:array=>globalThis.crypto.getRandomValues(array)};

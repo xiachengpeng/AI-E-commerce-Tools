@@ -116,6 +116,21 @@ async def project(request: Request, project_id: UUID):
     return await invoke(routed_client(request).get_project(project_id))
 
 
+@router.get('/projects/{project_id}/products/{product_id}', dependencies=[Depends(require_session)])
+async def product(request: Request, project_id: UUID, product_id: UUID):
+    # Read the requested owned product directly; project summaries are bounded.
+    from models.research import ProductSnapshot
+    snapshot = await invoke(routed_client(request).get_product(project_id, product_id))
+    try:
+        value = ProductSnapshot.model_validate(snapshot).model_dump(mode='json')
+        ref = value['source_ref']
+        if ref['project_id'] != str(project_id) or ref['product_id'] != str(product_id):
+            raise ValueError
+        return value
+    except (ValidationError, ValueError):
+        raise HTTPException(503, '研究商品响应身份或格式不匹配') from None
+
+
 @router.get('/projects/{project_id}/report', dependencies=[Depends(require_session)])
 async def report(request: Request, project_id: UUID):
     from models.research import ResearchReport

@@ -42,3 +42,17 @@
 .research-workbench .rw-log-lines { max-height: 22rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: .75rem; border: 1px solid var(--rw-border, #334155); border-radius: .5rem; font-size: .8rem; }
 .research-workbench [data-rw-action] { overflow-wrap: anywhere; }
 .research-workbench [data-rw-page] img, .research-workbench [data-rw-page] video { display: block; max-width: 100%; max-height: 24rem; object-fit: contain; }
+.research-workbench .rw-product .workspace { display: grid; grid-template-columns: minmax(140px,180px) minmax(0,1fr); gap: 16px; margin-top: 16px; }
+.research-workbench .rw-product .steps { display: flex; flex-direction: column; gap: 8px; }
+.research-workbench .rw-product .steps .active { background: #eef2ff; border-color: #6366f1; }
+.research-workbench .rw-product .steps button { text-align: left; }
+.research-workbench .rw-product .actions, .research-workbench .rw-triage .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.research-workbench .rw-product .evidence, .research-workbench .rw-triage .evidence { border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; margin-top: 12px; }
+.research-workbench .rw-product .health-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; padding: 12px 0; }
+.research-workbench .rw-product .health-item { display: flex; flex-direction: column; gap: 4px; }
+.research-workbench .rw-product .kv { display: grid; grid-template-columns: minmax(100px,1fr) minmax(0,3fr); gap: 6px 12px; }
+.research-workbench .rw-product dd, .research-workbench .rw-product p, .research-workbench .rw-triage p, .research-workbench .rw-reports p { overflow-wrap: anywhere; }
+.research-workbench .rw-triage .queue-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+.research-workbench .rw-triage .triage-preview { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 16px; }
+.research-workbench .rw-product .notice, .research-workbench .rw-triage .notice, .research-workbench .rw-reports .notice { background: #fffbeb; color: #92400e; padding: 8px; border-radius: 6px; }
+@media(max-width:760px) { .research-workbench .rw-product .workspace, .research-workbench .rw-triage .triage-preview { grid-template-columns: 1fr; } .research-workbench .rw-product .steps { flex-direction: row; flex-wrap: wrap; } }

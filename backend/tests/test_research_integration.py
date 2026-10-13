@@ -193,3 +193,28 @@ def test_malformed_private_config_returns_safe_error(changes):
     from services.research_client import ResearchClient, ResearchError
     with pytest.raises(ResearchError):
         ResearchClient({'base_url': 'http://127.0.0.1:19503', 'token': 'test', **changes})
+
+
+def test_direct_product_route_is_guarded_and_ownership_validated(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from routes import research
+    data=snapshot();ref=data['source_ref'];calls=[]
+    class Stub:
+        async def get_product(self, project_id, product_id):
+            calls.append((str(project_id),str(product_id)))
+            return data
+    monkeypatch.setattr(research,'client',lambda:Stub())
+    app=FastAPI();app.include_router(research.router)
+    with TestClient(app,base_url='http://127.0.0.1:9503') as client:
+        path=f"/api/research/v1/projects/{ref['project_id']}/products/{ref['product_id']}"
+        assert client.get(path).status_code==401
+        assert calls==[]
+        client.headers['X-Research-Token']=client.get('/api/research/v1/session').json()['csrf_token']
+        response=client.get(path)
+        assert response.status_code==200
+        from models.research import ProductSnapshot
+        assert response.json()==ProductSnapshot.model_validate(data).model_dump(mode='json')
+        assert calls==[(ref['project_id'],ref['product_id'])]
+        assert client.get(f"/api/research/v1/projects/{uuid4()}/products/{ref['product_id']}").status_code==503
+        assert client.get(f"/api/research/v1/projects/{ref['project_id']}/products/{uuid4()}").status_code==503

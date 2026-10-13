@@ -101,3 +101,18 @@ test('double clicking pagination issues only one request for the current cursor'
     f.click({ buttonId: 'researchMoreProjects' }); f.click({ buttonId: 'researchMoreProjects' });
     await f.settle(); assert.equal(count, 1);
 });
+
+test('native selection re-reads server DTO and checks version identity and merged fences without trusting browser facts',async()=>{
+ const nodes={},calls=[];let version=7,identity=3,merged=false,truncated=false;
+ const id='11111111-1111-4111-8111-111111111111',pid='22222222-2222-4222-8222-222222222222';
+ const node=id=>nodes[id]||=( {value:'',hidden:false,innerHTML:'',textContent:'',dataset:{},classList:{toggle(){}},addEventListener(){},scrollIntoView(){}} );
+ const context={URL,AbortSignal,Event,crypto:require('node:crypto'),document:{getElementById:node},fetch:async(url,options)=>{calls.push({url,body:options.body&&JSON.parse(options.body)});return {ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fake',enabled:true}:url.endsWith('/preview')?{fields:[],blocked_count:2}:url.includes('/products/')?{name:'Widget',market:'US',merged,source_ref:{project_id:id,product_id:pid,source_version:version,identity_revision:identity},facts:[],steps:[]}:{id,title:'Fake',market:'US',source_version:version,products:truncated?[]:[{name:'Widget',market:'US',merged,source_ref:{project_id:id,product_id:pid,source_version:version,identity_revision:identity},facts:[],steps:[]}]}};}};context.window=context;
+ vm.runInNewContext(fs.readFileSync(require.resolve('../js/research.js'),'utf8'),context);
+ assert.equal(typeof context.ResearchPanel.selectSource,'function');
+ const selection={project_id:id,product_id:pid,source_version:7,identity_revision:3,material:'Forged cotton'};
+ await context.ResearchPanel.selectSource(selection);assert.equal(calls.filter(c=>c.url.endsWith('/preview')).length,1);assert.ok(calls.filter(c=>c.body).every(c=>!('material' in c.body)));
+ truncated=true;await context.ResearchPanel.selectSource(selection);assert.equal(calls.filter(c=>c.url.endsWith('/preview')).length,2);version=8;await context.ResearchPanel.selectSource(selection);assert.equal(calls.filter(c=>c.url.endsWith('/preview')).length,2);assert.match(node('researchStatus').textContent,/更新/);
+ version=7;identity=4;await context.ResearchPanel.selectSource(selection);assert.equal(calls.filter(c=>c.url.endsWith('/preview')).length,2);
+ identity=3;merged=true;await context.ResearchPanel.selectSource(selection);assert.equal(calls.filter(c=>c.url.endsWith('/preview')).length,2);
+ await context.ResearchPanel.selectSource({...selection,product_id:'not-a-member'});assert.equal(calls.filter(c=>c.url.endsWith('/preview')).length,2);
+});

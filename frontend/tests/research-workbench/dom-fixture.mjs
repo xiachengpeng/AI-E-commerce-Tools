@@ -2,7 +2,7 @@
 export function fixtureRoot() {
  const doc={activeElement:null};
  class Node extends EventTarget {
-  constructor(tag='div'){super();this.tagName=tag.toUpperCase();this.dataset={};this.children=[];this.attributes={};this.className='';this.textContent='';this.ownerDocument=doc;this.value='';this.disabled=false;this.elements={namedItem:key=>this.find(n=>n.name===key)};}
+  constructor(tag='div'){super();this.tagName=tag.toUpperCase();this.dataset={};this.children=[];this.attributes={};this.className='';this.classList={add:(...names)=>{this.className+=' '+names.join(' ');},remove:()=>{},toggle:()=>{}};this.textContent='';this.ownerDocument=doc;this.value='';this.disabled=false;this.elements={namedItem:key=>this.find(n=>n.name===key)};}
   append(...nodes){for(const n of nodes){n.parentElement=this;this.children.push(n);}}
   replaceChildren(...nodes){this.children=[];this.append(...nodes);}
   setAttribute(k,v){this.attributes[k]=v;if(k.startsWith('data-'))this.dataset[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=v;}

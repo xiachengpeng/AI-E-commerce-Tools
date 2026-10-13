@@ -256,6 +256,7 @@
             if (button.id === 'researchResolveConfirmation') resolveConfirmation();
             if (button.id === 'researchMoreProjects') loadProjects(true);
             if (button.id === 'researchToggleWorkbench') toggleWorkbench();
+            if (button.id === 'researchReturnNative') mountPanel();
             if (button.id === 'researchSaveImport') saveImport();
             if (button.id === 'researchLoadImports') loadImports();
             if (button.id === 'researchResolveImport') resolveImport();
@@ -292,7 +293,7 @@
         try {
             nativeModule = await import('./research-workbench/index.mjs');
             if (generation !== nativeGeneration) return;
-            await nativeModule.mount(host, { apiBase: base() });
+            await nativeModule.mount(host, { apiBase: base(), onSelectProduct: selectSource });
         } catch (_) {
             if (generation === nativeGeneration) host.textContent = '原生研究入口暂时不可用，请重新进入研究页。';
         }
@@ -364,19 +365,35 @@
         if (!state.frame || event.source !== state.frame.contentWindow || event.origin !== new URL(state.embedUrl).origin) return;
         const data = event.data;
         if (data?.type !== 'research:select' || data.version !== 1) return;
+        await selectSource(data);
+    }
+
+    // Native handoff carries IDs/fences only. Main v1 reads the authoritative DTO.
+    async function selectSource(data) {
         const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!uuid.test(data.project_id) || !uuid.test(data.product_id) || !Number.isInteger(data.source_version) || !Number.isInteger(data.identity_revision)) return;
+        if (!uuid.test(data?.project_id) || !uuid.test(data?.product_id) || !Number.isInteger(data?.source_version) || data.source_version < 0 || !Number.isInteger(data?.identity_revision) || data.identity_revision < 1) return;
         const generation = ++state.generation;
         try {
+            if (!state.token) {
+                const session = await request('/session');
+                if (generation !== state.generation) return;
+                state.token = session.csrf_token; state.enabled = session.enabled;
+            }
             const project = await request('/projects/' + data.project_id);
             if (generation !== state.generation) return;
-            const product = project.products.find(p => p.source_ref.product_id === data.product_id);
-            if (!product || project.source_version !== data.source_version || product.source_ref.identity_revision !== data.identity_revision || product.market !== data.market) throw new Error('所选研究资料已更新，请在工作台刷新后重新交接');
-            setProject(project);
-            openProduct(data.product_id);
+            const product = await request('/projects/' + data.project_id + '/products/' + data.product_id);
+            if (generation !== state.generation) return;
+            if (!product || product.merged || product.merged_into || project.id !== data.project_id || product.source_ref.project_id !== data.project_id || product.source_ref.product_id !== data.product_id || project.source_version !== data.source_version || product.source_ref.source_version !== data.source_version || product.source_ref.identity_revision !== data.identity_revision || product.market !== project.market || (data.market !== undefined && product.market !== data.market)) throw new Error('所选研究资料已更新，请在工作台刷新后重新交接');
+            bind();setProject({...project,products:[...(project.products||[]).filter(p=>p.source_ref.product_id!==data.product_id),product]});openProduct(data.product_id);
+            // Preview/import enforce stale, identity, quotes, hashes and own-product
+            // human confirmation server-side; no browser field becomes truth here.
             await showPreview();
+            if (generation + 1 !== state.generation) return;
+            if (el('researchView')) el('researchView').hidden = false;
+            if (el('researchNativeRoot')) el('researchNativeRoot').hidden = true;
+            if (el('researchReturnNative')) el('researchReturnNative').hidden = false;
             el('researchPreview').scrollIntoView?.({block:'center',behavior:'smooth'});
-        } catch (error) { message(error.message,true); }
+        } catch (error) { if (generation === state.generation || generation + 1 === state.generation) message(error.message,true); }
     }
 
     async function saveImport() {
@@ -492,7 +509,7 @@
 
     if (root.addEventListener) root.addEventListener('message',receiveSource);
 
-    const api = { init, mount: mountPanel, unmount: unmountPanel, suspend: unmountPanel, applyDraft, undoDraft, escapeHtml };
+    const api = { init, mount: mountPanel, unmount: unmountPanel, suspend: unmountPanel, applyDraft, undoDraft, escapeHtml, selectSource };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     root.ResearchPanel = api;
 })(typeof window !== 'undefined' ? window : globalThis);
