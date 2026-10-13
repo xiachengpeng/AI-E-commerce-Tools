@@ -36,3 +36,16 @@ test('saved unchecked human-confirmation draft stays unchecked even when prior s
 test('failed report refresh preserves last successfully read report and its original project identity',async()=>{const {renderReport}=await import('../../js/research-workbench/pages/reports.mjs');const c=context('review');c.state.projects=[c.state.project];const previous={keywords:[],calibration:[],window:{},discovery_sources:[]};c.state.researchReview=previous;c.state.researchReviewId='previous';c.api.request=async()=>{throw Error('Offline');};const page=renderReport(c);nodes(page).find(n=>n.textContent==='查看研究复盘').click();await new Promise(r=>setTimeout(r,0));assert.equal(c.state.researchReview,previous);assert.equal(c.state.researchReviewId,'previous');c.life.dispose();});
 
 test('triage exposes saved product images with controlled selectors, never source URLs',async()=>{const {renderTriage}=await import('../../js/research-workbench/pages/triage.mjs');const c=context('identification');c.state.project.keywords=[{id:'k',text:'packing',ads:[]}];c.state.project.products[0].source_keyword_ids=['k'];c.state.project.products[0].landing_snapshot={images:['https://outside.invalid/image']};const page=renderTriage(c);assert.ok(nodes(page).some(n=>n.textContent==='读取商品页图片 1'));assert.equal(nodes(page).filter(n=>n.src==='https://outside.invalid/image').length,0);c.life.dispose();});
+
+test('successful duplicate merge returns to the actual project page with surviving target',async()=>{
+ const {createWorkbench}=await import('../../js/research-workbench/index.mjs');const root=fixtureRoot(),wb=createWorkbench();
+ const project={id:'r',title:'Merge project',market:'US',version:4,keywords:[],products:[{id:'source',name:'Source',identity_key:'same',identity_revision:1,steps:[]},{id:'target',name:'Target',identity_key:'same',identity_revision:1,steps:[]}]};
+ let submittedResolve;const submitted=new Promise(r=>submittedResolve=r);
+ await wb.mount(root,{fetch:async(url,options)=>({ok:true,json:async()=>{
+  if(url.endsWith('/session'))return {csrf_token:'fake'};
+  if(options.method==='POST'){assert.equal(JSON.parse(options.body).action,'merge_products');submittedResolve();return {...project,version:5,products:[project.products[1]]};}
+  return url.endsWith('/projects/r')?project:url.includes('/actions')?{actions:[]}:{projects:[project]};
+ }})});root.querySelector('[data-rw-projects]').find(n=>n.dataset.rwProject==='r').click();await new Promise(r=>setImmediate(r));wb.openProduct('r','source');
+ nodes(root).find(n=>n.textContent==='合并重复档案').click();nodes(root).find(n=>n.name==='reason').value='Confirmed same identity';nodes(root).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await submitted;await new Promise(r=>setImmediate(r));
+ assert.equal(wb.state.view,'project');assert.equal(wb.state.product,null);assert.equal(root.querySelector('[data-rw-page]').querySelector('h1').textContent,'Merge project');assert.equal(nodes(root).some(n=>n.textContent==='产品不存在'),false);assert.ok(nodes(root).some(n=>n.textContent==='Target'));wb.unmount();
+});

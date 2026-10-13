@@ -116,3 +116,33 @@ test('native selection re-reads server DTO and checks version identity and merge
  identity=3;merged=true;await context.ResearchPanel.selectSource(selection);assert.equal(calls.filter(c=>c.url.endsWith('/preview')).length,2);
  await context.ResearchPanel.selectSource({...selection,product_id:'not-a-member'});assert.equal(calls.filter(c=>c.url.endsWith('/preview')).length,2);
 });
+
+for (const boundary of ['product navigation during direct read','product navigation during preview','unmount during direct read']) test('native handoff origin fence: '+boundary,async()=>{
+ const {createWorkbench}=await import('../js/research-workbench/index.mjs');
+ const {fixtureRoot}=await import('./research-workbench/dom-fixture.mjs');
+ const native=fixtureRoot(),nodes={},calls=[];native.hidden=false;
+ const projectId='11111111-1111-4111-8111-111111111111',a='22222222-2222-4222-8222-222222222222',b='33333333-3333-4333-8333-333333333333';
+ const product=id=>({id,name:id===a?'A':'B',identity_revision:1,steps:[],identification:{}});
+ const project={id:projectId,title:'Origin',market:'US',version:7,keywords:[],products:[product(a),product(b)]};
+ const snapshot=id=>({name:id===a?'A':'B',market:'US',merged:false,source_ref:{project_id:projectId,product_id:id,source_version:7,identity_revision:1},facts:[],steps:[]});
+ const node=id=>nodes[id]||={value:'',hidden:true,innerHTML:'',textContent:'',dataset:{},classList:{toggle(){}},addEventListener(){},scrollIntoView(){}};
+ let release,startedResolve,finishedResolve;const started=new Promise(r=>startedResolve=r),finished=new Promise(r=>finishedResolve=r);
+ const context={URL,AbortSignal,Event,crypto:require('node:crypto'),document:{getElementById:id=>id==='researchNativeRoot'?native:node(id)},fetch:async url=>{calls.push(url);return {ok:true,json:async()=>{
+  if(url.endsWith('/session'))return {csrf_token:'fixture',enabled:true};
+  const preview=url.endsWith('/preview');
+  if((boundary.includes('preview')&&preview)||(!boundary.includes('preview')&&url.endsWith('/products/'+a))){startedResolve();return new Promise(r=>release=r);}
+  if(preview)return {fields:[{key:'material',label:'Material',target:'productFactsText',value:'A facts'}],blocked_count:0};
+  if(url.includes('/products/'))return snapshot(a);
+  return {...project,source_version:7,products:project.products.map(p=>snapshot(p.id))};
+ }}}};context.window=context;
+ vm.runInNewContext(fs.readFileSync(require.resolve('../js/research.js'),'utf8'),context);
+ const wb=createWorkbench();await wb.mount(native,{fetch:async url=>({ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/'+projectId)?project:url.includes('/actions')?{actions:[]}:{projects:[project]}}),onSelectProduct:(selection,origin)=>{assert.deepEqual(Object.keys(selection).sort(),['identity_revision','product_id','project_id','source_version']);return context.ResearchPanel.selectSource(selection,origin).finally(finishedResolve);}});
+ native.querySelector('[data-rw-projects]').find(n=>n.dataset.rwProject===projectId).click();await new Promise(r=>setImmediate(r));wb.openProduct(projectId,a);
+ native.querySelector('[data-product-handoff]').click();await started;
+ if(boundary.startsWith('unmount'))wb.unmount();else wb.openProduct(projectId,b);
+ release(boundary.includes('preview')?{fields:[{key:'material',label:'Material',target:'productFactsText',value:'A facts'}],blocked_count:0}:snapshot(a));await finished;
+ if(!boundary.startsWith('unmount'))assert.equal(wb.state.product,b);
+ assert.equal(native.hidden,false);assert.equal(node('researchView').hidden,true);assert.equal(node('researchPreview').innerHTML,'');assert.equal(node('productFactsText').value,'');
+ if(!boundary.includes('preview'))assert.equal(calls.filter(url=>url.endsWith('/preview')).length,0);
+ wb.unmount();
+});

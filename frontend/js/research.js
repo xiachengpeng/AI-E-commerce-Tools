@@ -175,17 +175,17 @@
         });
     }
 
-    async function showPreview() {
+    async function showPreview(origin) {
         const generation = state.generation;
         try {
             const preview = await fetchPreview();
-            if (generation !== state.generation) return;
+            if (generation !== state.generation || (origin && !origin.isCurrent())) return;
             state.preview = preview;
             const fields = state.preview.fields;
             el('researchPreview').innerHTML = `<div class="r-card"><h4>选择要交接的已核实事实</h4>${fields.length ? fields.map(f => `<label class="r-check"><input type="checkbox" data-research-field="${escapeHtml(f.key)}">${escapeHtml(f.label)}：${escapeHtml(f.value)}</label>`).join('') : '<p>没有可交接的人工核实事实。请先核实自有产品信息。</p>'}
                 <p class="r-muted">保留现有名称；事实追加到草稿，不启动生成或上传。${state.preview.blocked_count} 个未核实或失效字段未进入交接。</p>
                 ${fields.length ? '<button data-research-apply="details">填入详情页</button><button data-research-apply="listing">填入 Listing</button><button data-research-apply="ads">填入广告草稿</button><button id="researchSaveImport">保存所选事实为营销档案</button>' : ''}</div>`;
-        } catch (error) { message(error.message, true); }
+        } catch (error) { if (!origin || origin.isCurrent()) message(error.message, true); }
     }
 
     async function handoff(module) {
@@ -369,31 +369,33 @@
     }
 
     // Native handoff carries IDs/fences only. Main v1 reads the authoritative DTO.
-    async function selectSource(data) {
+    async function selectSource(data, origin) {
+        const originCurrent = () => !origin || origin.isCurrent();
+        if (!originCurrent()) return;
         const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuid.test(data?.project_id) || !uuid.test(data?.product_id) || !Number.isInteger(data?.source_version) || data.source_version < 0 || !Number.isInteger(data?.identity_revision) || data.identity_revision < 1) return;
         const generation = ++state.generation;
         try {
             if (!state.token) {
                 const session = await request('/session');
-                if (generation !== state.generation) return;
+                if (generation !== state.generation || !originCurrent()) return;
                 state.token = session.csrf_token; state.enabled = session.enabled;
             }
             const project = await request('/projects/' + data.project_id);
-            if (generation !== state.generation) return;
+            if (generation !== state.generation || !originCurrent()) return;
             const product = await request('/projects/' + data.project_id + '/products/' + data.product_id);
-            if (generation !== state.generation) return;
+            if (generation !== state.generation || !originCurrent()) return;
             if (!product || product.merged || product.merged_into || project.id !== data.project_id || product.source_ref.project_id !== data.project_id || product.source_ref.product_id !== data.product_id || project.source_version !== data.source_version || product.source_ref.source_version !== data.source_version || product.source_ref.identity_revision !== data.identity_revision || product.market !== project.market || (data.market !== undefined && product.market !== data.market)) throw new Error('所选研究资料已更新，请在工作台刷新后重新交接');
             bind();setProject({...project,products:[...(project.products||[]).filter(p=>p.source_ref.product_id!==data.product_id),product]});openProduct(data.product_id);
             // Preview/import enforce stale, identity, quotes, hashes and own-product
             // human confirmation server-side; no browser field becomes truth here.
-            await showPreview();
-            if (generation + 1 !== state.generation) return;
+            await showPreview(origin);
+            if (generation + 1 !== state.generation || !originCurrent()) return;
             if (el('researchView')) el('researchView').hidden = false;
             if (el('researchNativeRoot')) el('researchNativeRoot').hidden = true;
             if (el('researchReturnNative')) el('researchReturnNative').hidden = false;
             el('researchPreview').scrollIntoView?.({block:'center',behavior:'smooth'});
-        } catch (error) { if (generation === state.generation || generation + 1 === state.generation) message(error.message,true); }
+        } catch (error) { if (originCurrent() && (generation === state.generation || generation + 1 === state.generation)) message(error.message,true); }
     }
 
     async function saveImport() {

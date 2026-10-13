@@ -35,12 +35,14 @@ export function createWorkbench() {
         });list.replaceChildren(button(navContext,'全部项目',()=>navigate(current,'projects')),button(navContext,'结论与复盘',()=>navigate(current,'reports')),button(navContext,'＋ 新建研究',()=>openForm(current,{kind:'new_project'})),...nodes);
     }
     function pageContext(current,life) {
+        const navigation=current.navigation;
+        const origin={signal:life.signal,isCurrent:()=>active(current)&&life.active&&current.navigation===navigation&&current.pageLife===life};
         return {...current,life,
             navigate:view=>navigate(current,view), openProject:(id,form)=>openProject(current,id,form), openForm:spec=>openForm(current,spec),
             showQueue:selection=>{current.state.queueSelection=selection||null;navigate(current,'actions');},
             selectProduct:id=>openProduct(current,current.state.project?.id,id),
             openProduct:(projectId,productId,step)=>openProduct(current,projectId,productId,step),
-            onSelectProduct:selection=>{if(active(current))return current.context.onSelectProduct?.(selection);},
+            onSelectProduct:selection=>{if(origin.isCurrent())return current.context.onSelectProduct?.(selection,origin);},
             command:(action,payload)=>command(current,action,payload),acceptProject:project=>{if(!active(current))return;current.state.project=project;navigate(current,'project');}
         };
     }

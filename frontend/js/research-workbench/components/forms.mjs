@@ -5,7 +5,7 @@ export function keywordPreview(value) {
     const phrase=String(value||'').replace(/[“”"]/g,' ').replace(/\s+/g,' ').trim();return phrase?`实际搜索："${phrase}"`:'实际搜索：待输入';
 }
 /** Forms own only DTO drafts; callbacks and DOM stay in this page's closure. */
-export function createForm(context, { title, help, defs, initial = {}, key, submit, projectId = context.state.project?.id, version = context.state.project?.version, returnView, onDiscard }) {
+export function createForm(context, { title, help, defs, initial = {}, key, submit, projectId = context.state.project?.id, version = context.state.project?.version, returnView, successView, onDiscard }) {
     const host=el(context,'section','rw-form-page'),heading=el(context,'h1','',title);heading.tabIndex=-1;
     host.append(heading,el(context,'p','rw-muted',help));
     const form=el(context,'form','rw-form'),error=el(context,'p','rw-error'),note=el(context,'p','rw-muted');error.setAttribute('role','alert');note.setAttribute('role','status');
@@ -44,7 +44,7 @@ export function createForm(context, { title, help, defs, initial = {}, key, subm
             const data={};for(const def of defs){const input=inputs.get(def.key);if(def.type==='checkbox')data[def.key]=input.checked;else if(def.type==='number'){if(input.value!=='')data[def.key]=Number(input.value);}else if(def.type==='array')data[def.key]=input.value.split(/[,，、\n]/).map(x=>x.trim()).filter(Boolean);else if(def.type==='datetime')data[def.key]=input.value?new Date(input.value).toISOString():null;else if(def.type==='file')data[def.key]=input.files?.[0]?await input.files[0].text():'';else if(input.value!==''||def.required)data[def.key]=input.value.trim();}
             persist();await submit(data,draft,persist);
             if(!context.life.active)return;
-            try{storage?.removeItem(key);}catch{}delete context.state.drafts[key];notify(context,'已保存。');context.navigate(returnView||(context.state.project?'project':'projects'));
+            try{storage?.removeItem(key);}catch{}delete context.state.drafts[key];notify(context,'已保存。');context.navigate(successView||returnView||(context.state.project?'project':'projects'));
         }catch(err){
             if(!context.life.active)return;error.textContent=err.message;
             if(err.status===409&&projectId){
