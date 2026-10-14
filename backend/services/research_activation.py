@@ -134,17 +134,18 @@ def external_services(paths, integrations, business_settings):
             raise PermissionError('research_activation_denied')
         from rabbit_hole.application.actions import stop_action as stop
         async def abort(engine, project_id, action_id, attempt, run_id):
+            import asyncio
             import httpx
             from rabbit_hole.integrations.provider_jobs import append_log
             key = integrations.providers.get('apify')
             message = '本地已停止；云端停止结果未知，请人工核对'
             if key:
                 try:
-                    async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
+                    async with asyncio.timeout(10), httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
                         response = await client.post(f'https://api.apify.com/v2/actor-runs/{run_id}/abort', headers={'Authorization': 'Bearer ' + key})
                         response.raise_for_status()
                     message = '停止请求已提交；云端最终状态仍须核对'
-                except httpx.HTTPError:
+                except (httpx.HTTPError, TimeoutError):
                     pass
             await append_log(engine, project_id, action_id, attempt, 'cloud_abort', message)
         return await stop(store, project_id, action_id, attempt, version=version, cloud_abort=abort)
@@ -219,7 +220,30 @@ def _check_quarantine(connection, report, *, first_use):
         if row['status'] not in {'blocked', 'needs_human', 'manual_check'} or _resource_entry(item['kind'], row) != item:
             return False
     if first_use:
-        return sorted(listed, key=lambda item: (item['kind'], item['id'])) == _inventory(connection)
+        resolutions = report.get('resolutions', [])
+        if not isinstance(resolutions, list):
+            return False
+        released = set()
+        terminal = {'succeeded': {'complete', 'completed', 'succeeded', 'sent'},
+                    'aborted': {'aborted'}, 'not_submitted': {'not_submitted'}}
+        fields = {'kind', 'id', 'attempt', 'payload_sha256'}
+        for resolution in resolutions:
+            if not isinstance(resolution, dict) or set(resolution) != fields | {'outcome', 'proof_sha256', 'evidence_sha256'}:
+                return False
+            identity = resolution['kind'], resolution['id']
+            if identity in identities or identity in released or identity not in actual:
+                return False
+            row = actual[identity]
+            if (_resource_entry(identity[0], row) != {key: resolution[key] for key in fields}
+                    or row['status'] not in terminal.get(resolution['outcome'], set())):
+                return False
+            for key in ('proof_sha256', 'evidence_sha256'):
+                digest = resolution[key]
+                if not isinstance(digest, str) or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest):
+                    return False
+            released.add(identity)
+        remaining = [item for item in _inventory(connection) if (item['kind'], item['id']) not in released]
+        return sorted(listed, key=lambda item: (item['kind'], item['id'])) == remaining
     return True
 
 

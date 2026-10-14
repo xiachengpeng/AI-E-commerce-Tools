@@ -487,7 +487,8 @@ def test_new_generation_cannot_drop_quarantine_without_private_resolution(tmp_pa
                               'unresolved_nonidempotent':0,'keys_root':str(paths.keys_root)},source_frozen=True)
 
 
-def test_new_generation_release_requires_exact_private_proofs_and_terminal_rows(tmp_path):
+@pytest.mark.parametrize('damage', [None, 'deleted', 'ready', 'attempt', 'payload', 'outcome'])
+def test_new_generation_release_requires_exact_private_proofs_and_terminal_rows(tmp_path, damage):
     import hashlib
     from scripts.full_merge.ownership import issue_activation
     from services.research_activation import claim_activation, candidate_hash, validate_activation
@@ -508,8 +509,21 @@ def test_new_generation_release_requires_exact_private_proofs_and_terminal_rows(
     with sqlite3.connect(paths.database) as c:
         c.execute("UPDATE runtime_jobs SET status='succeeded'")
         c.execute("UPDATE feishu_outbox SET status='succeeded'")
+    with sqlite3.connect(paths.database) as c:
+        if damage == 'deleted': c.execute('DELETE FROM runtime_jobs')
+        if damage == 'ready': c.execute("UPDATE runtime_jobs SET status='ready',attempt=0")
+        if damage == 'attempt': c.execute('UPDATE runtime_jobs SET attempt=0')
+        if damage == 'payload': c.execute("UPDATE runtime_jobs SET payload='{" + '\"changed\":true' + "}'")
+    if damage == 'outcome':
+        proof = __import__('pathlib').Path(proofs[0])
+        value = json.loads(proof.read_text()); value['outcome'] = 'aborted'
+        proof.write_text(json.dumps(value))
     signed=issue_activation({**proposal,'target_db_hash':candidate_hash(paths.database)},source_frozen=True)
     assert len(signed['resolutions'])==2
+    if damage:
+        assert not validate_activation(paths, signed)
+        with pytest.raises(PermissionError): claim_activation(paths, signed)
+        return
     claim_activation(paths,signed)
     assert validate_activation(paths,signed)
     assert not validate_activation(paths,old)
@@ -530,3 +544,43 @@ async def test_context_with_unconsumed_credential_cannot_write(tmp_path):
             await OutboxRepository(engine).enqueue('new','v1',{'fixture':1})
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('streaming', [False, True])
+async def test_actual_abort_factory_overall_deadline(monkeypatch, streaming):
+    import asyncio
+    from types import SimpleNamespace
+    import httpx
+    from services import research_activation as activation
+    from services.research_runtime import _research_imports
+    _research_imports()
+    from rabbit_hole.application import actions
+    from rabbit_hole.integrations import provider_jobs
+    calls, logs, ticks = [], [], []
+    deadline = asyncio.timeout
+    monkeypatch.setattr(activation, 'validate_activation', lambda paths: True)
+    def short_deadline(seconds):
+        assert seconds == 10
+        return deadline(0.025)
+    monkeypatch.setattr(asyncio, 'timeout', short_deadline)
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs):
+            calls.append('abort')
+            while True:
+                await asyncio.sleep(0.002 if streaming else 60)
+                ticks.append('chunk')
+    monkeypatch.setattr(httpx, 'AsyncClient', Client)
+    async def fake_stop(store, project, action, attempt, *, version, cloud_abort):
+        await cloud_abort(None, project, action, attempt, 'bound-run')
+    async def append_log(*args): logs.append(args[-1])
+    monkeypatch.setattr(actions, 'stop_action', fake_stop)
+    monkeypatch.setattr(provider_jobs, 'append_log', append_log)
+    services = activation.external_services(None, SimpleNamespace(providers={'apify':'synthetic'}), None)
+    await asyncio.wait_for(services['stop_action'](None, 'p', 'a', 1), timeout=0.3)
+    assert calls == ['abort']
+    assert len(logs) == 1 and '未知' in logs[0]
+    if streaming: assert ticks
