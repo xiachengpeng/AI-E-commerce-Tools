@@ -75,7 +75,9 @@ async def write_transaction(engine: AsyncEngine) -> AsyncIterator[AsyncConnectio
         if engine.dialect.name == "sqlite":
             await c.execution_options(local_write=True)
         async with c.begin():
+            await ownership_guard(c)
             yield c
+            await ownership_guard(c)
 
 
 async def transaction_lock(connection: AsyncConnection, key: str | int) -> None:
@@ -161,7 +163,23 @@ async def command_transaction(engine: AsyncEngine, connection: AsyncConnection |
     if connection is not None:
         if not connection.in_transaction():
             raise ValueError("command connection requires an active transaction")
+        await ownership_guard(connection)
         yield connection
+        await ownership_guard(connection)
     else:
         async with write_transaction(engine) as c:
             yield c
+
+
+async def ownership_guard(connection, *, kind=None, identifier=None, payload=None):
+    # Original source databases have no ownership marker and retain old behavior.
+    if connection.dialect.name != 'sqlite':
+        return
+    marker = await connection.exec_driver_sql("SELECT 1 FROM sqlite_master WHERE type='table' AND name='full_merge_schema'")
+    if marker.first() is None:
+        return
+    revision = (await connection.exec_driver_sql('SELECT revision FROM full_merge_schema WHERE id=1')).scalar_one()
+    if revision < 4:
+        return
+    from services.research_activation import guard_connection
+    await guard_connection(connection, kind=kind, identifier=identifier, payload=payload)

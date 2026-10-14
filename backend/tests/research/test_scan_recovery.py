@@ -39,7 +39,7 @@ async def scan_case(db_engine):
 async def set_cloud(store, action_id, *, status='FAILED', error='source_error', uncertain=False):
     async with store.engine.begin() as c:
         row = (await c.execute(select(actions).where(actions.c.id == UUID(action_id)))).mappings().one()
-        cloud = {'submission': 'uncertain'} if uncertain else {'id': 'old-run', 'dataset': 'old-data', 'status': status, 'started_at': datetime.now(UTC).isoformat()}
+        cloud = {'submission': 'uncertain'} if uncertain else {'id': 'old-run', 'dataset': 'old-data', 'status': status, 'started_at': datetime.now(UTC).isoformat(), 'owner': {'action_id': str(row['id']), 'input_version': row['input_version'], 'fingerprint': row['payload'].get('fingerprint')}}
         payload = {**row['payload'], 'apify_run': cloud, 'provider_reservations': {'apify-run': {'provider': 'apify', 'day': datetime.now(UTC).date().isoformat()}}}
         await c.execute(update(actions).where(actions.c.id == UUID(action_id)).values(status='blocked', error_code=error, payload=payload))
 
@@ -146,7 +146,7 @@ async def test_stopped_api_search_submits_new_cloud_run_once_and_saves_bounded_e
             return {'data': {'id': 'new-run', 'defaultDatasetId': 'new-dataset', 'startedAt': datetime.now(UTC).isoformat(), 'status': 'READY'}}
         if 'actor-runs/' in url:
             assert url.endswith('/new-run')
-            return {'data': {'status': 'SUCCEEDED'}}
+            return {'data': {'id': 'new-run', 'defaultDatasetId': 'new-dataset', 'status': 'SUCCEEDED'}}
         assert '/new-dataset/' in url
         return [{'errorCode': 'ADS_NOT_FOUND'}]
 

@@ -482,7 +482,7 @@ async def test_revision3_runtime_and_worker_explicit_business_configuration(
     monkeypatch.setattr(
         "services.ai_router.SessionLocal", lambda: pytest.fail("default DB")
     )
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         assert runtime.ai_adapter is not None
         assert runtime.worker_readiness == ("business_settings_missing",)
         assert "ai_settings" in runtime.workbench_services
@@ -494,7 +494,7 @@ async def test_revision3_runtime_and_worker_explicit_business_configuration(
             build_local_worker_services(runtime)
     async with open_research_runtime(
         paths,
-        allow_commands=True,
+        allow_commands=True, offline_commands=True,
         business_settings=ResearchBusinessSettings.model_validate(business_values()),
     ) as runtime:
         assert runtime.worker_readiness == ()
@@ -513,7 +513,7 @@ async def test_revision3_runtime_and_worker_explicit_business_configuration(
         "rabbit_hole.persistence.evidence_store.EvidenceStore", failed_evidence
     )
     with pytest.raises(ValueError, match="synthetic evidence initialization failure"):
-        async with open_research_runtime(paths, allow_commands=True):
+        async with open_research_runtime(paths, allow_commands=True, offline_commands=True):
             pass
 
 

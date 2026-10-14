@@ -63,7 +63,7 @@ async def test_unprepared_schema_is_readonly_and_refuses_commands(tmp_path):
     assert database.read_bytes() == before
     assert not paths.evidence_root.parent.exists()
     with pytest.raises(ValueError, match='not prepared'):
-        async with open_research_runtime(paths, allow_commands=True, allow_external=False):
+        async with open_research_runtime(paths, allow_commands=True, offline_commands=True, allow_external=False):
             pass
 
 
@@ -93,20 +93,20 @@ async def test_prepared_fixture_requires_original_key_and_explicit_directories(t
     for directory in (paths.evidence_root, paths.keys_root, paths.browser_root, paths.lock_root):
         directory.mkdir(mode=0o700)
     with pytest.raises(ValueError, match='namespace configuration'):
-        async with open_research_runtime(paths, allow_commands=True, allow_external=False):
+        async with open_research_runtime(paths, allow_commands=True, offline_commands=True, allow_external=False):
             pass
     namespace = paths.keys_root / 'evidence-namespace.json'
     namespace.write_text(json.dumps({'version': 1, 'evidence_bucket': 'fixture-bucket',
                                      'collector_version': 'fixture-collector'}))
     namespace.chmod(0o600)
     with pytest.raises(ValueError, match='signing material'):
-        async with open_research_runtime(paths, allow_commands=True, allow_external=False):
+        async with open_research_runtime(paths, allow_commands=True, offline_commands=True, allow_external=False):
             pass
     key = paths.keys_root / 'evidence-signing.key'
     key.write_bytes(b'x' * 32)
     key.chmod(0o600)
     before = set(root.rglob('*'))
-    async with open_research_runtime(paths, allow_commands=True, allow_external=False) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True, allow_external=False) as runtime:
         assert runtime.store is not None
         assert runtime.evidence_store is not None
         assert runtime.engine.get_execution_options()["research_lock_root"] == paths.lock_root
@@ -126,7 +126,7 @@ async def test_marker_alone_cannot_unlock_commands(tmp_path):
         connection.execute('INSERT INTO full_merge_schema VALUES (1, 1)')
     paths = resolve_runtime_paths(database, tmp_path / 'research')
     with pytest.raises(ValueError, match='not prepared'):
-        async with open_research_runtime(paths, allow_commands=True, allow_external=False):
+        async with open_research_runtime(paths, allow_commands=True, offline_commands=True, allow_external=False):
             pass
 
 
@@ -159,7 +159,7 @@ async def test_structural_damage_refuses_runtime_commands(tmp_path, damage):
         assert runtime.diagnostics == ('schema_unprepared',)
         assert runtime.store is None
     with pytest.raises(ValueError, match='not prepared'):
-        async with open_research_runtime(paths, allow_commands=True):
+        async with open_research_runtime(paths, allow_commands=True, offline_commands=True):
             pass
     assert database.read_bytes() == before
     assert not paths.evidence_root.parent.exists()

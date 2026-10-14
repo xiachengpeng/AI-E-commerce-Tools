@@ -124,6 +124,9 @@ def create_workbench_router() -> APIRouter:
 
     def guard(request: Request, *, write: bool = False) -> None:
         require_research_session(request, write=write)
+        current = getattr(request.app.state, 'research_runtime', None)
+        if write and getattr(current, 'commands_enabled', True) is not True:
+            raise HTTPException(503, '研究所有权尚未移交，仅允许读取')
 
     def runtime(request: Request) -> Any:
         value = getattr(request.app.state, "research_runtime", None)
@@ -946,6 +949,9 @@ def create_workbench_router() -> APIRouter:
         data = await body(request)
         from rabbit_hole.application.actions import stop_action
 
+        version = data.get("version")
+        if "version" in data and type(version) is not int:
+            raise HTTPException(422, "项目版本无效")
         attempt = data.get("attempt")
         if isinstance(attempt, bool) or not isinstance(attempt, int):
             raise HTTPException(422, "任务次数无效")
@@ -1002,7 +1008,7 @@ def create_workbench_router() -> APIRouter:
                     pending.extend(payload.get("owned_dependencies") or [])
         return JSONResponse(
             await invoke(
-                (injected or stop_action)(service, validated_id, action_id, attempt)
+                (injected or stop_action)(service, validated_id, action_id, attempt, **({"version": version} if version is not None else {}))
             ),
             headers={"Cache-Control": "no-store"},
         )
@@ -1192,9 +1198,11 @@ async def research_lifespan(app, *, config=None, database=None, data_root=None):
                 paths = resolve_runtime_paths(Path(database), data_root)
                 from services.research_ai_adapter import read_business_settings
                 business = read_business_settings(config['business_settings_path']) if config.get('business_settings_path') else None
+                from services.research_activation import validate_activation
+                authorized = validate_activation(paths)
                 app.state.research_runtime = await resources.enter_async_context(
                     open_research_runtime(
-                        paths, allow_commands=True, allow_external=False,
+                        paths, allow_commands=authorized, allow_external=authorized,
                         **({"business_settings":business} if business is not None else {})
                     )
                 )

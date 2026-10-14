@@ -299,7 +299,7 @@ def target_signature(
 def _recovery_action(row: Any) -> str:
     if row["status"] != "blocked":
         return ""
-    if row["payload"].get("execution_uncertain") or any(
+    if row["payload"].get("abort_pending") or row["payload"].get("execution_uncertain") or any(
         value.get("state") == "uncertain"
         for value in row["payload"].get("trend_submissions", {}).values()
         if isinstance(value, dict)
@@ -403,12 +403,14 @@ async def get_action(
 
 
 async def stop_action(
-    store: Any, project_id: str, action_id: str, attempt: int
+    store: Any, project_id: str, action_id: str, attempt: int, *, version: int | None = None, cloud_abort=None
 ) -> dict[str, Any]:
     """Fence a queued/running action before letting its keyword be retried."""
     from rabbit_hole.domain.project import WorkbenchError
     from rabbit_hole.integrations.provider_jobs import append_log
 
+    if version is not None and type(version) is not int:
+        raise WorkbenchError("invalid_version", "项目版本无效", 422)
     if type(attempt) is not int or attempt < 0:
         raise WorkbenchError("invalid_attempt", "任务次数无效")
     try:
@@ -426,6 +428,11 @@ async def stop_action(
         ).mappings().first()
         if not row:
             raise WorkbenchError("not_found", "任务不存在", 404)
+        if version is not None:
+            from rabbit_hole.persistence.projects import workbench_projects
+            current_version = await c.scalar(select(workbench_projects.c.version).where(workbench_projects.c.id == project_id))
+            if current_version != version:
+                raise WorkbenchError("conflict", "项目已变化，请刷新后重试", 409)
         if row["attempt"] != attempt:
             raise WorkbenchError("conflict", "任务已经进入新的一次执行，请刷新后重试", 409)
         if row["status"] not in {"ready", "running"}:
@@ -442,8 +449,20 @@ async def stop_action(
             )
             if saved:
                 raise WorkbenchError("conflict", "结果已保存，不能停止；请刷新后核对", 409)
+        cloud = row['payload'].get('apify_run') or {}
+        if cloud_abort is not None and cloud:
+            import re
+            expected_owner = {'action_id': action_id, 'input_version': row['input_version'], 'fingerprint': row['payload'].get('fingerprint')}
+            if (cloud.get('owner') != expected_owner or any(not isinstance(cloud.get(field), str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', cloud[field]) for field in ('id', 'dataset'))):
+                raise WorkbenchError('submission_uncertain', '云任务归属未确认，请人工核对', 409)
         now = datetime.now(UTC)
         payload = {**row["payload"], "diagnostic": ERRORS["stopped"]}
+        if cloud_abort is not None and cloud:
+            # Durable claim prevents enqueue/recovery while the network call is outside
+            # SQLite's short transaction. Unknown or accepted abort stays manual-check;
+            # never retry abort automatically after process loss.
+            payload['abort_pending'] = {'attempt': attempt, 'run_id': cloud['id'], 'dataset': cloud['dataset']}
+
         await c.execute(
             update(actions).where(actions.c.id == action_uuid).values(
                 status="blocked", error_code="stopped", lease_until=None,
@@ -488,14 +507,14 @@ async def stop_action(
             dependent = await get_action(store.engine, project_id, dependency_id)
             if dependent and dependent["status"] in {"ready", "running"}:
                 try:
-                    await stop_action(store, project_id, dependency_id, dependent["attempt"])
+                    await stop_action(store, project_id, dependency_id, dependent["attempt"], cloud_abort=cloud_abort)
                 except WorkbenchError as exc:
                     if exc.status != 409:
                         raise
     if cloud_run:
         from rabbit_hole.integrations.provider_budget import abort_apify_run
 
-        await abort_apify_run(store.engine, project_id, action_id, attempt, cloud_run)
+        await (cloud_abort or abort_apify_run)(store.engine, project_id, action_id, attempt, cloud_run)
     return (await get_action(store.engine, project_id, action_id)) or {}
 
 
@@ -778,6 +797,9 @@ async def enqueue_action(
                 .mappings()
                 .first()
             )
+        if existing:
+            from rabbit_hole.persistence.sql import ownership_guard
+            await ownership_guard(c, kind='actions', identifier=existing['id'])
         explicit_verification_retry = bool(kind == "verify" and data.get("retry_review") is True
                                            and existing and existing["status"] == "complete")
         if existing and existing["status"] != "blocked" and not explicit_verification_retry:

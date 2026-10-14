@@ -90,7 +90,7 @@ def validate_prepared_schema(connection: Connection, source_metadata: MetaData, 
                             for f in fks)
                 if not valid:
                     raise ValueError(f'partial prepared schema: foreign key {name}')
-            if isinstance(constraint, CheckConstraint) and tokens(constraint.sqltext) not in checks:
+            if isinstance(constraint, CheckConstraint) and tokens(constraint.sqltext) not in checks and not (name == 'full_merge_schema' and tokens(constraint.sqltext) == tokens('revision IN (1, 2, 3)') and tokens('revision IN (1,2,3,4)') in checks):
                 raise ValueError(f'partial prepared schema: check constraint {name}')
         for index in table.indexes:
             columns = tuple(c.name for c in index.columns)
@@ -98,6 +98,11 @@ def validate_prepared_schema(connection: Connection, source_metadata: MetaData, 
                        and i.get('dialect_options', {}).get('sqlite_where') is None for i in indexes):
                 raise ValueError(f'partial prepared schema: index {name}')
     rows = connection.exec_driver_sql('SELECT id,revision FROM full_merge_schema').fetchall()
-    if len(rows) != 1 or rows[0][0] != 1 or type(rows[0][1]) is not int or rows[0][1] not in {1, 2, 3}:
+    if len(rows) != 1 or rows[0][0] != 1 or type(rows[0][1]) is not int or rows[0][1] not in {1, 2, 3, 4}:
         raise ValueError('unknown full merge revision')
+    if rows[0][1] >= 4:
+        columns = {c['name']: c for c in inspector.get_columns('full_merge_ledger')}
+        for field, kind in [('dataset_id', 'text'), ('owner_generation', 'integer'), ('activation_digest', 'text')]:
+            if field not in columns or affinity(columns[field]['type']) != kind:
+                raise ValueError('partial ownership schema')
     return rows[0][1]

@@ -229,7 +229,7 @@ def test_existing_main_providers_and_bindings_not_overwritten(migration, tmp_pat
     assert raw_rows(candidate,'ai_capability_bindings') == defaults['bindings']
 
 
-@pytest.mark.parametrize("fault", ["none", "auxiliary", "schema-interrupt"])
+@pytest.mark.parametrize("fault", ["none", "auxiliary", "schema-interrupt", "revision4"])
 def test_rehearse_anchored_snapshots_and_runtime_material(migration, objects, tmp_path, monkeypatch, fault):
     from scripts.full_merge.backup import create_snapshot
     from scripts.full_merge.rehearse import rehearse
@@ -263,6 +263,8 @@ def test_rehearse_anchored_snapshots_and_runtime_material(migration, objects, tm
     plan = {'version':1,'source_database':'databases/0.db','main_database':'databases/0.db','evidence_root':'objects/0','namespace_file':'keys/0/key','business_settings_file':'keys/1/key','original_evidence_root':'/original/private/root','configuration':{}}
     if fault == 'auxiliary':
         plan['auxiliary_databases'] = [{'database':'databases/1.db','active_table_mapping':{'translations':'research_translation_cache'}}]
+    if fault == 'revision4':
+        plan['target_revision'] = 4
     plan_file = source_snapshot.with_suffix('.plan.json')
     plan_file.write_text(json.dumps(plan))
     plan_file.chmod(0o600)

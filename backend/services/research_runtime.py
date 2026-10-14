@@ -94,7 +94,7 @@ async def _prepared(engine: AsyncEngine) -> bool:
 
 @asynccontextmanager
 async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = False,
-                                allow_external: bool = False, business_settings=None) -> AsyncIterator[ResearchRuntime]:
+                                allow_external: bool = False, business_settings=None, offline_commands: bool = False) -> AsyncIterator[ResearchRuntime]:
     if business_settings is not None:
         from models.research_ai import ResearchBusinessSettings
         if not isinstance(business_settings, ResearchBusinessSettings):
@@ -107,8 +107,20 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
     config = config or import_module('rabbit_hole.config')
     settings = config.OfflineRuntimeSettings(database=paths.database, evidence_root=paths.evidence_root,
                                             browser_root=paths.browser_root, lock_root=paths.lock_root)
+    if offline_commands and allow_external:
+        raise PermissionError('offline commands cannot enable external capabilities')
     if allow_external:
-        raise ValueError('external execution is unavailable in the dormant runtime')
+        from services.research_activation import validate_activation
+        if not allow_commands or not validate_activation(paths):
+            raise ValueError('external execution requires validated activation')
+    if allow_commands and not allow_external:
+        import tempfile
+        from services.research_activation import validate_activation
+        if offline_commands:
+            if not all(path.is_relative_to(Path(tempfile.gettempdir()).resolve()) for path in (paths.database, paths.evidence_root.parent)):
+                raise PermissionError('offline commands require disposable temporary database')
+        elif not validate_activation(paths):
+            raise PermissionError('research_activation_denied')
     if not paths.database.is_file():
         if allow_commands:
             raise ValueError('research database is not prepared')
@@ -123,7 +135,8 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
         if namespace is not None:
             settings = settings.model_copy(update=namespace)
         if not allow_commands:
-            yield ResearchRuntime(engine, None, None, settings, paths,
+            readonly_store = import_module('rabbit_hole.persistence.projects').WorkbenchStore(engine) if prepared else None
+            yield ResearchRuntime(engine, readonly_store, None, settings, paths,
                                   (('evidence_namespace_missing',) if namespace is None else ()) if prepared else ('schema_unprepared',))
             return
         if not prepared:
@@ -139,10 +152,14 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
     _validate_path(key, private=True)
     if not key.is_file() or key.stat().st_size != 32:
         raise ValueError('existing evidence signing material is required')
+    if allow_commands and not offline_commands:
+        from services.research_activation import claim_activation
+        claim_activation(paths)
     client = import_module('rabbit_hole.persistence.local_objects').LocalObjectClient(
         paths.evidence_root, initialize=False, signing_key_path=key)
     engine = sql.create_engine(str(URL.create('sqlite+aiosqlite', database=str(paths.database))),
                                initialize_file=False, lock_root=paths.lock_root)
+    engine.update_execution_options(research_ownership_paths=paths, research_offline_commands=offline_commands)
     ai = None
     try:
         store = import_module('rabbit_hole.persistence.projects').WorkbenchStore(engine)
@@ -160,10 +177,10 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
                 assemble_non_ai_integrations,
             )
             settings_store = IntegrationSettingsService(paths.database)
-            integrations = assemble_non_ai_integrations(settings_store, allow_external=False)
+            integrations = assemble_non_ai_integrations(settings_store, allow_external=allow_external)
             services = {'provider_settings': integrations.providers,
                         'translator': integrations.translator,
-                        'sync': ResearchSync(store, settings_store, allow_external=False)}
+                        'sync': ResearchSync(store, settings_store, allow_external=allow_external)}
             from rabbit_hole.integrations.project_direction import generate_direction
             from sqlalchemy import create_engine
             from sqlalchemy.orm import sessionmaker
@@ -177,12 +194,15 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
             ai_sessions = sessionmaker(bind=ai_engine)
             from types import SimpleNamespace
             usage_runtime = SimpleNamespace(engine=engine, store=store) if revision >= 3 else None
-            ai = ResearchAIAdapter(session_factory=ai_sessions, allow_external=False, usage_runtime=usage_runtime)
+            ai = ResearchAIAdapter(session_factory=ai_sessions, allow_external=allow_external, usage_runtime=usage_runtime)
             async def direction(title, market):
                 return await generate_direction(title, market, ai_adapter=ai)
             services.update(ai_settings=ResearchAISettings(ai_sessions), generate_direction=direction)
+        if allow_external:
+            from services.research_activation import external_services
+            services.update(external_services(paths, integrations, business_settings))
         yield ResearchRuntime(engine, store, evidence, settings, paths,
-                              settings_store=settings_store, non_ai_integrations=integrations,
+                              settings_store=settings_store, non_ai_integrations=integrations, commands_enabled=True,
                               workbench_services=services, business_settings=business_settings, ai_adapter=ai,
                               worker_readiness=(("business_settings_missing",) if business_settings is None else ())
                               + (("integration_schema_unprepared",) if revision < 2 else ())

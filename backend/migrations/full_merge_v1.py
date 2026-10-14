@@ -46,7 +46,7 @@ def _regular_absolute(path: Path, *, private: bool = False) -> Path:
 def prepare_schema(database: Path, *, backup_verified: bool, target_revision: int = 1) -> dict:
     if backup_verified is not True:
         raise ValueError('verified backup is required')
-    if type(target_revision) is not int or target_revision not in (1, 2, 3):
+    if type(target_revision) is not int or target_revision not in (1, 2, 3, 4):
         raise ValueError('unsupported target revision')
     database = _regular_absolute(database)
     source = research_metadata()
@@ -61,7 +61,7 @@ def prepare_schema(database: Path, *, backup_verified: bool, target_revision: in
                 if 'full_merge_schema' in tables:
                     # Reject malformed markers before checking the baseline structures.
                     rows = c.exec_driver_sql('SELECT id,revision FROM full_merge_schema').fetchall()
-                    if len(rows) != 1 or rows[0][0] != 1 or type(rows[0][1]) is not int or rows[0][1] not in {1, 2, 3}:
+                    if len(rows) != 1 or rows[0][0] != 1 or type(rows[0][1]) is not int or rows[0][1] not in {1, 2, 3, 4}:
                         raise ValueError('unknown full merge revision')
                     revision = validate_prepared_schema(c, source)
                 else:
@@ -80,7 +80,7 @@ def prepare_schema(database: Path, *, backup_verified: bool, target_revision: in
                         c.execute(full_merge_schema.update().where(full_merge_schema.c.id == 1).values(revision=2))
                         revision = 2
                     validate_prepared_schema(c, source, additional_metadata=integrations)
-                if target_revision == 3:
+                if target_revision >= 3:
                     from models.research_ai_usage import metadata as usage
                     if revision == 2:
                         if set(usage.tables).intersection(inspect(c).get_table_names()):
@@ -89,6 +89,19 @@ def prepare_schema(database: Path, *, backup_verified: bool, target_revision: in
                         c.execute(full_merge_schema.update().where(full_merge_schema.c.id == 1).values(revision=3))
                         revision = 3
                     validate_prepared_schema(c, source, additional_metadata=usage)
+                if target_revision >= 4 and revision == 3:
+                    columns = {item['name'] for item in inspect(c).get_columns('full_merge_ledger')}
+                    if columns & {'dataset_id', 'owner_generation', 'activation_digest'}:
+                        raise ValueError('partial ownership schema')
+                    c.exec_driver_sql('ALTER TABLE full_merge_ledger ADD COLUMN dataset_id TEXT')
+                    c.exec_driver_sql('ALTER TABLE full_merge_ledger ADD COLUMN owner_generation INTEGER')
+                    c.exec_driver_sql('ALTER TABLE full_merge_ledger ADD COLUMN activation_digest TEXT')
+                    c.exec_driver_sql('ALTER TABLE full_merge_schema RENAME TO full_merge_schema_old')
+                    c.exec_driver_sql('CREATE TABLE full_merge_schema (id INTEGER NOT NULL PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL CHECK(revision IN (1,2,3,4)))')
+                    c.exec_driver_sql('INSERT INTO full_merge_schema VALUES (1,4)')
+                    c.exec_driver_sql('DROP TABLE full_merge_schema_old')
+                    revision = 4
+                validate_prepared_schema(c, source)
                 c.commit()
             except BaseException:
                 c.rollback()
@@ -131,7 +144,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--database', required=True, type=Path)
     parser.add_argument('--prepare-schema', required=True, action='store_true')
-    parser.add_argument('--target-revision', type=int, choices=(1, 2, 3), default=1)
+    parser.add_argument('--target-revision', type=int, choices=(1, 2, 3, 4), default=1)
     parser.add_argument('--backup-report', required=True, type=Path)
     args = parser.parse_args()
     try:

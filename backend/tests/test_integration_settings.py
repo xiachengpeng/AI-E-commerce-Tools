@@ -348,13 +348,13 @@ async def test_runtime_owned_dependencies_require_revision_two_and_keep_activati
         target.write_bytes(content)
         target.chmod(0o600)
     async with open_research_runtime(
-        paths, allow_commands=True, allow_external=False
+        paths, allow_commands=True, offline_commands=True, allow_external=False
     ) as legacy:
         assert legacy.workbench_services == {}
         assert legacy.settings_store is None
     prepare_schema(path, backup_verified=True, target_revision=2)
     async with open_research_runtime(
-        paths, allow_commands=True, allow_external=False
+        paths, allow_commands=True, offline_commands=True, allow_external=False
     ) as runtime:
         assert runtime.settings_store.database == path
         assert "provider_settings" in runtime.workbench_services

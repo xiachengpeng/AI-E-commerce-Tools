@@ -30,7 +30,7 @@ from rabbit_hole.persistence.database import (
     job_checkpoints,
     runtime_jobs,
 )
-from rabbit_hole.persistence.sql import dialect_insert, write_transaction
+from rabbit_hole.persistence.sql import dialect_insert, write_transaction, ownership_guard
 
 
 def idempotency_key(payload: JobPayload) -> str:
@@ -184,6 +184,7 @@ class JobRepository:
                 .first()
             )
             if existing is not None:
+                await ownership_guard(connection, kind='jobs', identifier=existing['id'])
                 return EnqueueReceipt(job=_job_from_row(existing), created=False)
             if not payload.input_error:
                 scans = int(
@@ -420,6 +421,7 @@ class JobRepository:
 
         now = self._clock.now()
         async with self._transaction() as connection:
+            await ownership_guard(connection, kind='jobs', identifier=job_id)
             selected = await connection.execute(
                 select(runtime_jobs)
                 .where(runtime_jobs.c.id == job_id)
@@ -487,7 +489,9 @@ class JobRepository:
     @asynccontextmanager
     async def _transaction(self) -> AsyncIterator[AsyncConnection]:
         if isinstance(self._database, AsyncConnection):
+            await ownership_guard(self._database)
             yield self._database
+            await ownership_guard(self._database)
         else:
             async with write_transaction(self._database) as connection:
                 yield connection
@@ -522,6 +526,7 @@ class OutboxRepository:
         now = self._clock.now()
         event_id = uuid4()
         async with write_transaction(self._engine) as connection:
+            await ownership_guard(connection, kind='outbox', payload=payload)
             await connection.execute(
                 insert(feishu_outbox).values(
                     id=event_id,

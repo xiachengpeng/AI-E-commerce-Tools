@@ -47,7 +47,7 @@ class IntegrationSettingsService:
             if (
                 len(revision) != 1
                 or revision[0][0] != 1
-                or revision[0][1] not in (2, 3)
+                or revision[0][1] not in (2, 3, 4)
             ):
                 raise ValueError("integration schema unprepared")
             from models.full_merge import validate_prepared_schema

@@ -188,7 +188,7 @@ async def test_lifecycle_is_explicit_and_isolates_failure(tmp_path, monkeypatch)
     ):
         assert app.state.research_runtime is None
         assert app.state.research_diagnostics == ("initialization_failed",)
-    assert calls[0][1] == {"allow_commands": True, "allow_external": False}
+    assert calls[0][1] == {"allow_commands": False, "allow_external": False}
     assert not (tmp_path / "db").exists()
 
 
@@ -284,7 +284,7 @@ async def test_actual_store_commands_report_and_project_ownership(
         path = paths.keys_root / name
         path.write_bytes(data)
         path.chmod(0o600)
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         client = make_client(runtime)
         created = client.post(
             PREFIX + "/projects",

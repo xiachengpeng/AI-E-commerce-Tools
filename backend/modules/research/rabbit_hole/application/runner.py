@@ -94,6 +94,8 @@ class WorkbenchRunner:
                 workbench_events.c.command_id == receipt,
             )) is not None:
                 return True
+        if action["payload"].get("abort_pending"):
+            return False
         state = action["payload"].get("apify_run")
         if action["kind"] != "scan" or action["payload"].get("execution_mode") != "api" or not isinstance(state, dict):
             return False

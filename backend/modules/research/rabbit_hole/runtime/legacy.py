@@ -66,6 +66,7 @@ from rabbit_hole.persistence.legacy_jobs import JobRepository
 from rabbit_hole.persistence.sql import (
     dialect_insert,
     session_lock,
+    ownership_guard,
     write_transaction,
 )
 from rabbit_hole.persistence.storage_factory import create_storage_client
@@ -86,10 +87,14 @@ Database = AsyncEngine | AsyncConnection
 async def _transaction(database: Database) -> AsyncIterator[AsyncConnection]:
     if isinstance(database, AsyncConnection):
         if database.in_transaction():
+            await ownership_guard(database)
             yield database
+            await ownership_guard(database)
         else:
             async with database.begin():
+                await ownership_guard(database)
                 yield database
+                await ownership_guard(database)
         return
     async with write_transaction(database) as connection:
         yield connection
@@ -154,6 +159,7 @@ class FeishuWorkflowAdapter:
             json.dumps(request, sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
         async with _transaction(self.database) as connection:
+            await ownership_guard(connection, kind='outbox', identifier=event_id)
             row = (
                 (
                     await connection.execute(
@@ -291,6 +297,7 @@ class FeishuWorkflowAdapter:
 
     async def _finish(self, event_id: UUID, record_id: str, status: str) -> None:
         async with _transaction(self.database) as connection:
+            await ownership_guard(connection, kind='outbox', identifier=event_id)
             result = await connection.execute(
                 update(feishu_outbox)
                 .where(feishu_outbox.c.id == event_id)
@@ -317,6 +324,8 @@ class FeishuWorkflowAdapter:
     async def _reconcile(
         self, event_id: UUID, mutation: FeishuMutation, intent: Mapping[str, Any]
     ) -> str:
+        async with _transaction(self.database) as connection:
+            await ownership_guard(connection, kind='outbox', identifier=event_id)
         record = (
             await self.client.get_record(mutation.table, mutation.record_id)
             if mutation.record_id

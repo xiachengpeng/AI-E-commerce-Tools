@@ -124,7 +124,7 @@ async def test_apify_run_resumes_original_id_and_empty_is_not_failure(db_engine,
             assert filters['q'] == ['"rare phrase"']
             return {'data': {'id': 'run-one', 'defaultDatasetId': 'dataset-one', 'startedAt': '2026-10-02T00:00:00Z', 'buildId': 'build-one'}}
         if 'actor-runs/' in url:
-            return {'data': {'status': 'SUCCEEDED', 'usageTotalUsd': 0.001}}
+            return {'data': {'id': 'run-one', 'defaultDatasetId': 'dataset-one', 'status': 'SUCCEEDED', 'usageTotalUsd': 0.001}}
         assert 'dataset-one' in url
         return [{'errorCode': 'ADS_NOT_FOUND'}]
     monkeypatch.setattr(provider, 'request_json', fake_request)

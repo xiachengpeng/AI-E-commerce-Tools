@@ -106,8 +106,11 @@ def rehearse(snapshot: Path, main_snapshot: Path, destination: Path) -> dict:
     plan_bytes = _private_file(snapshot.with_suffix('.plan.json')).read_bytes()
     plan = json.loads(plan_bytes)
     required = {'version','source_database','main_database','evidence_root','namespace_file','business_settings_file','original_evidence_root','configuration'}
-    if not isinstance(plan,dict) or not required.issubset(plan) or set(plan) - required - {'auxiliary_databases'} or plan['version'] != 1:
+    if not isinstance(plan,dict) or not required.issubset(plan) or set(plan) - required - {'auxiliary_databases', 'target_revision'} or plan['version'] != 1:
         raise ValueError('explicit complete migration plan required')
+    target_revision = plan.get('target_revision', 3)
+    if type(target_revision) is not int or target_revision not in (3, 4):
+        raise ValueError('explicit supported candidate revision required')
     for root,manifest,relative in ((snapshot,source_manifest,plan['source_database']),(main_snapshot,main_manifest,plan['main_database'])):
         if relative not in {e['path'] for e in manifest['databases']}:
             raise ValueError('planned database not in anchored backup')
@@ -175,11 +178,11 @@ def rehearse(snapshot: Path, main_snapshot: Path, destination: Path) -> dict:
             reference = Path(temporary)/'history.db'
             backup_sqlite(_snapshot_file(main_snapshot,plan['main_database']),reference)
             verify_backup_report(reference,report_path)
-            prepared = prepare_schema(reference,backup_verified=True,target_revision=3)
+            prepared = prepare_schema(reference,backup_verified=True,target_revision=target_revision)
             current_stats = database_stats(candidate)
             if current_stats == database_stats(_snapshot_file(main_snapshot,plan['main_database'])):
                 verify_backup_report(candidate,report_path)
-                prepare_schema(candidate,backup_verified=True,target_revision=3)
+                prepare_schema(candidate,backup_verified=True,target_revision=target_revision)
             if database_stats(candidate) != database_stats(reference):
                 raise ValueError('interrupted schema candidate mismatch')
         _write_private(destination/'schema-prepared.json',json.dumps(prepared,sort_keys=True).encode())

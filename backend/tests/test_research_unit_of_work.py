@@ -51,7 +51,7 @@ async def local(candidate, tmp_path, monkeypatch):  # noqa: F811
         )
     )
     namespace.chmod(0o600)
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         state = await runtime.store.create(
             "Fixture project", "Fixture direction", "US", str(uuid4())
         )

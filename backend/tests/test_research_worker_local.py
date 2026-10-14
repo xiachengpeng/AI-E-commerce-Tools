@@ -32,7 +32,7 @@ def paths(tmp_path):
 async def test_paused_does_not_validate_or_claim(paths):
     def forbidden(_):
         raise AssertionError('paused must not activate')
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         project, _word, queued = await queued_scan(runtime)
         from rabbit_hole.application.actions import get_action
         before = await get_action(runtime.engine, project['id'], queued['id'])
@@ -52,14 +52,14 @@ async def test_paused_does_not_validate_or_claim(paths):
 async def test_active_rejection_precedes_service_construction(paths):
     def reject(_):
         raise PermissionError('activation denied')
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         with pytest.raises(PermissionError, match='activation denied'):
             await serve_local_worker(runtime, mode='active', activation_validator=reject)
 
 
 @pytest.mark.asyncio
 async def test_invalid_mode_is_rejected(paths):
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         with pytest.raises(ValueError, match='mode'):
             await serve_local_worker(runtime, mode='unsafe', activation_validator=lambda _: None)
 
@@ -69,14 +69,14 @@ async def test_invalid_mode_is_rejected(paths):
 async def test_only_exact_true_authorizes(paths, monkeypatch, authorized):
     from services import research_worker
     monkeypatch.setattr(research_worker, 'build_local_worker_services', lambda _: pytest.fail('factory before authorization'))
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         with pytest.raises(PermissionError):
             await serve_local_worker(runtime, mode='active', activation_validator=lambda _: authorized)
 
 
 @pytest.mark.asyncio
 async def test_true_without_configured_dependencies_fails_closed(paths):
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         with pytest.raises(RuntimeError, match='configuration_not_ready'):
             await serve_local_worker(runtime, mode='active', activation_validator=lambda _: True)
 
@@ -100,7 +100,7 @@ async def test_expired_lease_stops_inflight_fake_browser_and_cannot_commit(paths
     from uuid import UUID
 
     from sqlalchemy import update
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.actions import actions, get_action
         from rabbit_hole.application.runner import WorkbenchRunner
         project, _word, queued = await queued_scan(runtime)
@@ -134,7 +134,7 @@ async def test_stale_attempt_and_cancellation_preserve_project(paths, monkeypatc
     from uuid import UUID
 
     from sqlalchemy import update
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.actions import actions, get_action, stop_action
         from rabbit_hole.application.runner import WorkbenchRunner
         project, word, queued = await queued_scan(runtime)
@@ -171,7 +171,7 @@ async def test_active_uses_existing_runner_and_sync_and_closes_fake_browser(path
     from types import SimpleNamespace
 
     from services import research_worker
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.runner import WorkbenchRunner
         from rabbit_hole.application.sync import WorkbenchSync
         from rabbit_hole.runtime.workbench_worker import (
@@ -214,11 +214,11 @@ async def test_two_owned_processes_across_cwd_health_stop_and_restart(paths, tmp
     from pathlib import Path
     backend = Path(__file__).resolve().parents[1]
     env = dict(os.environ, PYTHONPATH=os.pathsep.join((str(backend), str(backend.parent), os.environ.get('PYTHONPATH', ''))))
-    command = [sys.executable, '-m', 'services.research_worker', '--database', str(paths.database), '--data-root', str(paths.evidence_root.parent), '--mode', 'paused']
+    command = [sys.executable, '-c', "import asyncio,sys; from pathlib import Path; from services.research_worker import _run; asyncio.run(_run(Path(sys.argv[1]),Path(sys.argv[2]),'paused',offline_commands=True))", str(paths.database), str(paths.evidence_root.parent)]
     first_cwd, second_cwd = tmp_path / 'first', tmp_path / 'second'
     first_cwd.mkdir()
     second_cwd.mkdir()
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.runtime.workbench_worker import is_worker_live
         async def live():
             for _ in range(100):
@@ -261,7 +261,7 @@ async def test_save_itself_fences_missing_or_expired_lease(paths, lease):
     from uuid import UUID
 
     from sqlalchemy import select, update
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.actions import SourceFailure, actions
         from rabbit_hole.application.runner import WorkbenchRunner
         project, word, queued = await queued_scan(runtime)
@@ -286,7 +286,7 @@ async def test_readonly_runtime_refuses_even_true_authorization(paths):
 
 @pytest.mark.asyncio
 async def test_missing_common_lock_root_refuses_before_authorization(paths):
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         runtime.engine.update_execution_options(research_lock_root=None)
         with pytest.raises(ValueError, match='common worker lock root'):
             await serve_local_worker(runtime, mode='active', activation_validator=lambda _: pytest.fail('wrong root'))
@@ -309,7 +309,7 @@ from services.research_runtime import open_research_runtime, resolve_runtime_pat
 from services import research_worker
 async def run():
     paths = resolve_runtime_paths(Path(sys.argv[1]), Path(sys.argv[2]))
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.runner import WorkbenchRunner
         from rabbit_hole.application.sync import WorkbenchSync
         runner = WorkbenchRunner(runtime.store, runtime.settings, runtime.evidence_store)
@@ -332,7 +332,7 @@ async def run():
 asyncio.run(run())
 ''')
     started, closed = tmp_path / 'fake-browser-started', tmp_path / 'fake-browser-closed'
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.actions import get_action
         from rabbit_hole.runtime.workbench_worker import is_worker_live
         project, _word, queued = await queued_scan(runtime)
@@ -364,7 +364,7 @@ async def test_paid_window_cancelled_on_lease_loss_is_never_replayed(paths, monk
     from uuid import UUID
 
     from sqlalchemy import select, update
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.actions import actions, enqueue_action, get_action
         from rabbit_hole.application.runner import WorkbenchRunner
         from rabbit_hole.domain.project import WorkbenchError
@@ -420,7 +420,7 @@ async def test_missing_submission_proof_blocks_expired_attempt_without_dispatch(
     from uuid import UUID
 
     from sqlalchemy import update
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.actions import actions, get_action
         from rabbit_hole.application.runner import WorkbenchRunner
         project, _word, queued = await queued_scan(runtime)
@@ -443,7 +443,7 @@ async def test_saved_terminal_receipt_recovers_expired_attempt_without_transport
     from uuid import UUID
 
     from sqlalchemy import select, update
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.actions import actions, get_action
         from rabbit_hole.application.runner import WorkbenchRunner
         project, word, queued = await queued_scan(runtime)
@@ -471,7 +471,7 @@ async def test_expired_bound_apify_job_only_polls_original_identity(paths, monke
     from uuid import UUID, uuid4
 
     from sqlalchemy import select, update
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.actions import actions, enqueue_action, get_action
         from rabbit_hole.application.runner import WorkbenchRunner
         from rabbit_hole.integrations import provider_budget
@@ -489,7 +489,7 @@ async def test_expired_bound_apify_job_only_polls_original_identity(paths, monke
                 return {'data': {'id': 'synthetic-run', 'defaultDatasetId': 'synthetic-dataset', 'startedAt': datetime.now(UTC).isoformat(), 'status': 'RUNNING'}}
             if 'actor-runs/' in url:
                 assert url.endswith('/actor-runs/synthetic-run')
-                return {'data': {'status': 'SUCCEEDED'}}
+                return {'data': {'id': 'synthetic-run', 'defaultDatasetId': 'synthetic-dataset', 'status': 'SUCCEEDED'}}
             assert url.endswith('/datasets/synthetic-dataset/items')
             return [{'errorCode': 'ADS_NOT_FOUND'}]
         async def execute(action, project):
@@ -523,7 +523,7 @@ async def test_direct_trends_retry_refuses_uncertain_window_before_paid_transpor
     from uuid import UUID
 
     from sqlalchemy import select, update
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         from rabbit_hole.application.actions import actions
         from rabbit_hole.application.runner import WorkbenchRunner
         from rabbit_hole.integrations import provider_budget

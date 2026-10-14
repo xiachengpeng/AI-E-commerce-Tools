@@ -119,8 +119,14 @@ async def meta(runner: Any, action: dict[str, Any], project: dict[str, Any], cli
         raise ProviderPending()
     if not state.get('id'):
         raise ProviderError('submission_uncertain', '上次提交结果不确定；请在 Apify 按任务标签核对，未自动重复收费')
+    expected_owner = {'action_id': str(action['id']), 'input_version': action['input_version'], 'fingerprint': action['payload'].get('fingerprint')}
+    if (state.get('owner') != expected_owner or action['payload'].get('abort_pending') or
+            any(not isinstance(state.get(field), str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', state[field]) for field in ('id', 'dataset'))):
+        raise ProviderError('submission_uncertain', '云任务归属未确认；请人工核对')
     await runner.log(action, 'poll', '正在查询 Apify 云端任务状态')
     run = (await request_json(client, 'GET', base + 'actor-runs/' + state['id'], headers=headers))['data']
+    if run.get('id') != state['id'] or run.get('defaultDatasetId') != state['dataset']:
+        raise ProviderError('submission_uncertain', '云任务返回身份不一致；请人工核对')
     status = run['status']
     state['status'] = status
     await checkpoint(runner, action, apify_run=state)
@@ -130,9 +136,7 @@ async def meta(runner: Any, action: dict[str, Any], project: dict[str, Any], cli
         if (datetime.now(UTC) - started).total_seconds() > 240:
             state['restart_required'] = True
             await checkpoint(runner, action, apify_run=state)
-            await runner.log(action, 'cloud_abort', '云端任务超过截止时间，正在请求停止')
-            await request_json(client, 'POST', base + 'actor-runs/' + state['id'] + '/abort', headers=headers)
-            raise ProviderError('timeout', '云端任务超过截止时间，已请求停止；重新搜索会创建新任务并计入预算')
+            raise ProviderError('submission_uncertain', '云端任务超过截止时间；请核对或明确请求停止，未自动取消或重发')
         raise ProviderPending()
     if status != 'SUCCEEDED':
         raise ProviderError('source_error', '云端任务结束：' + str(status) + '；未导入为成功结果')

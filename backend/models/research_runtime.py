@@ -27,3 +27,4 @@ class ResearchRuntime:
     business_settings: Any = None
     ai_adapter: Any = None
     worker_readiness: tuple[str, ...] = ()
+    commands_enabled: bool = False

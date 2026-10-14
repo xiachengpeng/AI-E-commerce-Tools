@@ -34,7 +34,7 @@ async def local(tmp_path, monkeypatch):
     namespace = paths.keys_root / 'evidence-namespace.json'
     namespace.write_text(json.dumps({'version': 1, 'evidence_bucket': 'fixture-bucket', 'collector_version': 'fixture-collector'}))
     namespace.chmod(0o600)
-    async with open_research_runtime(paths, allow_commands=True) as runtime:
+    async with open_research_runtime(paths, allow_commands=True, offline_commands=True) as runtime:
         state = await runtime.store.create('Fixture project', 'Fixture direction', 'US', str(uuid4()))
         facade = ResearchFacade(runtime)
         project = await facade.command(state['id'], state['version'], str(uuid4()), 'add_product', {'name': 'Pouch', 'url': 'https://example.com/p'})
@@ -228,7 +228,7 @@ async def test_confirmed_preview_matches_readonly_without_writes(local):
     expected = build_marketing_preview(product, {'productNameInput': 'Merchant name'})
     async with open_research_runtime(paths) as runtime:
         reader = ResearchFacade(runtime)
-        assert runtime.store is None
+        assert runtime.commands_enabled is False
         assert build_marketing_preview(await reader.get_product(project['id'], product_id), {'productNameInput': 'Merchant name'}) == expected
         from sqlalchemy import text
         async with runtime.engine.connect() as connection:

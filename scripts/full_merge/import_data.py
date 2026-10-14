@@ -205,8 +205,8 @@ def import_research(source_snapshot: Path, candidate_db: Path, manifest: dict) -
     migration_hash = hashlib.sha256(json.dumps(manifest,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
     with closing(sqlite3.connect(source_snapshot.as_uri() + '?mode=ro', uri=True)) as source, closing(sqlite3.connect(candidate_db)) as target:
         target.execute('PRAGMA foreign_keys=ON')
-        if target.execute('SELECT id,revision FROM full_merge_schema').fetchall() != [(1, 3)]:
-            raise ValueError('explicit revision3 candidate required')
+        if target.execute('SELECT id,revision FROM full_merge_schema').fetchall() not in ([(1, 3)], [(1, 4)]):
+            raise ValueError('explicit revision3/4 candidate required')
         ledger = target.execute('SELECT source_snapshot_id,source_snapshot_sha256,source_database_sha256,cutover_state FROM full_merge_ledger').fetchall()
         if ledger:
             if len(ledger) != 1 or ledger[0][:3] != (snapshot_id, anchor, source_hash):
@@ -266,7 +266,7 @@ def import_research(source_snapshot: Path, candidate_db: Path, manifest: dict) -
             _verify_research_archives(target,manifest.get('configuration', {}))
             target.execute('CREATE TABLE full_merge_import_receipt(source_snapshot_id TEXT PRIMARY KEY,manifest_sha256 TEXT NOT NULL,candidate_sha256 TEXT NOT NULL)')
             target.execute('INSERT INTO full_merge_import_receipt VALUES(?,?,?)',(snapshot_id,migration_hash,_candidate_content(target)))
-            target.execute('INSERT INTO full_merge_ledger VALUES(?,?,?,?,?,?)', (snapshot_id, anchor, source_hash, manifest.get('source_alembic_revision'), 'imported', datetime.now(timezone.utc).isoformat()))
+            target.execute('INSERT INTO full_merge_ledger(source_snapshot_id,source_snapshot_sha256,source_database_sha256,source_alembic_revision,cutover_state,captured_at) VALUES(?,?,?,?,?,?)', (snapshot_id, anchor, source_hash, manifest.get('source_alembic_revision'), 'imported', datetime.now(timezone.utc).isoformat()))
             target.commit()
             _verify_research_archives(target,manifest.get('configuration', {}))
         except BaseException:

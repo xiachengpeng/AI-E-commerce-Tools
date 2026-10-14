@@ -83,12 +83,13 @@ async def serve_local_worker(runtime: ResearchRuntime, *, mode: str,
         await serve_workbench(runtime.engine, services.runner, services.sync)
 
 
-async def _run(database: Path, data_root: Path, mode: str, business_settings_path: Path | None = None) -> None:
+async def _run(database: Path, data_root: Path, mode: str, business_settings_path: Path | None = None, *, offline_commands: bool = False) -> None:
+    from services.research_activation import validate_runtime_activation
     paths = resolve_runtime_paths(database, data_root)
     from services.research_ai_adapter import read_business_settings
     business = read_business_settings(business_settings_path) if business_settings_path is not None else None
-    async with open_research_runtime(paths, allow_commands=True, business_settings=business) as runtime:
-        task = asyncio.create_task(serve_local_worker(runtime, mode=mode, activation_validator=deny_activation))
+    async with open_research_runtime(paths, allow_commands=(mode == 'active' or offline_commands), allow_external=(mode == 'active'), business_settings=business, offline_commands=offline_commands) as runtime:
+        task = asyncio.create_task(serve_local_worker(runtime, mode=mode, activation_validator=validate_runtime_activation) if mode == 'active' or offline_commands else asyncio.Event().wait())
         loop = asyncio.get_running_loop()
         installed = []
         for sig in (signal.SIGINT, signal.SIGTERM):
