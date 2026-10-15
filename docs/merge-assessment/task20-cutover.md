@@ -1,6 +1,6 @@
 # Task 20: recoverable local cutover
 
-Status: Phase A implementation and read-only operational preflight. The user has authorized the merge; the independent controller code and concrete-plan review must pass before Phase B operations. No source service has been stopped, no live database has been replaced, and no production ownership credential has been issued.
+Status: Phase B paused for scoped review of the frozen database capture fix. The reviewed source API and worker jobs have been disabled and stopped; fresh observations confirmed zero holders and in-flight operations. The first guarded source backup failed without a manifest or anchor. The canonical primary database remains unchanged and no production ownership credential has been issued. Earlier Phase A paragraphs below describe historical checkpoints.
 
 ## Tool contract
 
@@ -43,3 +43,8 @@ Post-fix affected verification: 75 collector/cutover/isolation tests passed; foc
 
 
 The first actual Phase B preflight stopped before staging or outage: macOS returned status 1 with valid known-holder PIDs for a mixed selection of open database and closed configuration files. Review fix round 2 preserves these PIDs as blockers while continuing to reject inspector errors and malformed output. The snapshot guard still refuses any holder. The affected suite passed 79 tests. Updated private wrappers and pins await fresh scoped review; the full operational inventory and all cutover actions remain pending.
+
+
+Actual Phase B preparation installed 44 missing runtime packages under the accepted lock without changing 41 existing package versions, passed primary import/dependency checks, and built frontend CSS. The original worktree static directory was preserved privately and its replacement links only to canonical primary assets. A fresh primary backup was independently anchored and restored. An approved one-time extension of exactly 120 reviewed marketing file modification times prevents immediate deletion by the existing startup cleanup; file bytes, paths, modes, owners and access times were verified, with private per-file recovery records. Change times naturally changed; the existing 24-hour cleanup policy still applies.
+
+The failed source backup remains untouched. Disposable WAL tests showed that SQLite read-only backup can change its own source SHM reader metadata. Review fix round 3 therefore captures the entire closed database group into immutable private raw provenance, creates separate working copies for SQLite reads, and includes an explicit original-to-staging hash map in the snapshot. Original source guards and generic snapshot guards remain strict. The affected capture/collector/inventory/data suite passed 89 tests with one existing warning; nine capture tests passed after a fixture alias adjustment. The updated private programs use a fresh destination and safe failure-stage labels, and await review before execution. No local database replacement, activation, paid probe or final code handoff has occurred.

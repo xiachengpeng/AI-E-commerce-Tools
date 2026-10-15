@@ -8,6 +8,9 @@ errors/warnings never count as an empty inventory. All subprocesses are bounded.
 from contextlib import contextmanager
 import hashlib
 import json
+import os
+import shutil
+import stat
 from pathlib import Path
 import re
 import plistlib
@@ -226,3 +229,76 @@ def collect_local(plan, *, run=subprocess.run):
             (not lines or any(not re.fullmatch(r'[1-9][0-9]*',line) for line in lines))):
         raise ValueError('listener inspection malformed')
     return sorted(set(writers)|{int(line) for line in lines})
+
+
+
+def stage_frozen_databases(roster,destination, *, expected_files,run=subprocess.run):
+    """Raw capture ONLY of a closed reviewed group; SQLite opens working copies.
+
+    The caller MUST retain snapshot_guard over the complete original roster and
+    recorded frozen/effective-state digest. Raw provenance is separate from the
+    mutable SQLite working group. No checkpoint or SQLite read touches a source.
+    Failure leaves a private partial directory without its success mapping.
+    """
+    destination=_path(destination)
+    roots=[_path(roster['source_root']),
+           *[_path(p).parent for role in ('databases','config_files','signing_files','optional_config_files') for p in roster.get(role,[])],
+           *[_path(p) for p in roster['object_roots']+roster['config_roots']+roster['service_roots']]]
+    if any(destination==p or p in destination.parents or destination in p.parents for p in roots):
+        raise ValueError('staging must be disjoint from reviewed source roots')
+    parent=destination.parent.stat()
+    if parent.st_uid!=os.getuid() or parent.st_mode&0o077:
+        raise ValueError('private staging parent required')
+    expected=sorted({_path(p) for p in expected_files})
+    before,files,_=fingerprint(roster)
+    if files!=expected:raise ValueError('expected frozen source roster changed')
+    if file_holders(files,run=run):raise ValueError('frozen source holders remain')
+    destination.mkdir(mode=0o700,exist_ok=False)
+    for role in ('original','working'):(destination/role).mkdir(mode=0o700)
+    mapping={'version':1,'source_fingerprint':before,'groups':[]}
+    provenance=[];working=[];originals=[]
+    def copy_private(source,target):
+        _path(source);_path(target)
+        info=source.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1:
+            raise ValueError('single-link regular database group file required')
+        raw_hash=hashlib.sha256(source.read_bytes()).hexdigest()
+        target.parent.mkdir(mode=0o700,parents=True,exist_ok=True)
+        fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+        os.close(fd)
+        shutil.copyfile(source,target)
+        with target.open('rb') as stream:os.fsync(stream.fileno())
+        after=source.stat()
+        if (info.st_ino,info.st_size,info.st_mtime_ns)!=(after.st_ino,after.st_size,after.st_mtime_ns):
+            raise ValueError('database group changed during raw copy')
+        if hashlib.sha256(target.read_bytes()).hexdigest()!=raw_hash:
+            raise ValueError('database raw copy hash mismatch')
+        _path(source);_path(target)
+        return raw_hash,info.st_size
+    for index,raw in enumerate(roster['databases']):
+        database=_path(raw);group={'source_database':str(database),'files':[]}
+        for suffix in ('','-wal','-shm','-journal'):
+            source=_path(str(database)+suffix)
+            if source not in expected:
+                if not suffix:raise ValueError('expected database absent')
+                continue
+            name='database.db'+suffix
+            captured=destination/'original'/str(index)/name
+            mutable=destination/'working'/str(index)/name
+            digest,size=copy_private(source,captured)
+            copied,_=copy_private(captured,mutable)
+            if copied!=digest:raise ValueError('working group disagrees with raw provenance')
+            originals.append(source);provenance.append(captured)
+            group['files'].append({'source':str(source),'provenance':str(captured),
+                                   'working':str(mutable),'sha256':digest,'bytes':size})
+            if not suffix:working.append(mutable);group['working_database']=str(mutable)
+        mapping['groups'].append(group)
+    after,after_files,_=fingerprint(roster)
+    if before!=after or after_files!=expected:raise ValueError('frozen source changed during group capture')
+    if file_holders(after_files,run=run):raise ValueError('source holder appeared during group capture')
+    path=destination/'source-map.json'
+    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'w') as stream:
+        json.dump(mapping,stream,sort_keys=True);stream.flush();os.fsync(stream.fileno())
+    return {'databases':working,'provenance_files':provenance,
+            'mapping_file':path,'source_group_files':originals}
