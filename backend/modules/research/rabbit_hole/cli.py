@@ -66,7 +66,7 @@ class DefaultOperatorRuntime:
     worker-factory variables cannot activate a second queue consumer.
     """
 
-    def __init__(self, settings: Settings | None = None, *, local_runtime=None) -> None:
+    def __init__(self, settings: Settings | None = None, *, local_runtime: Any = None) -> None:
         # Standalone legacy consumers may not infer a second database or owner
         # from old source environment variables. The sole main worker injects it.
         if local_runtime is None:
@@ -290,7 +290,7 @@ async def _operator_command(
             connection.execute('PRAGMA query_only=ON')
             rows = connection.execute('SELECT kind,status,COUNT(*),MAX(attempt) FROM runtime_jobs GROUP BY kind,status ORDER BY kind,status').fetchall()
         return {'ok': True, 'command': 'queue-report', 'result': {'jobs': [
-            dict(kind=kind, status=status, count=count, max_attempt=attempt)
+            {'kind': kind, 'status': status, 'count': count, 'max_attempt': attempt}
             for kind, status, count, attempt in rows]}}
     selected = runtime or DefaultOperatorRuntime()
     try:

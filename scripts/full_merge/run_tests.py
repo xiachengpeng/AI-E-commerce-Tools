@@ -69,17 +69,27 @@ def prepare_sandbox(suite: Literal["main", "research"], output: Path) -> Path:
             "pytest.ini",
         ):
             copy_source(ROOT / relative, sandbox / relative)
-        if (sandbox / "backend/tests/research").exists():
-            shutil.move(sandbox / "backend/tests/research", sandbox / "_research_tests")
-        else:
+        if (ROOT / "_research_tests").exists():
+            if (sandbox / "backend/tests/research").exists():
+                shutil.rmtree(sandbox / "backend/tests/research")
             copy_source(ROOT / "_research_tests", sandbox / "_research_tests")
+        else:
+            shutil.move(sandbox / "backend/tests/research", sandbox / "_research_tests")
+        # Source-only fixture imports retain their original tests.research name,
+        # without exposing the research conftest to main collection.
+        fixture_package = sandbox / "backend/tests/research"
+        fixture_package.mkdir()
+        (fixture_package / "__init__.py").write_text(
+            "from pathlib import Path\n"
+            "__path__ = [str(Path(__file__).resolve().parents[3] / '_research_tests')]\n"
+        )
     else:
         copy_source(
             ROOT
             / (
-                "backend/tests/research"
-                if (ROOT / "backend/tests/research").exists()
-                else "_research_tests"
+                "_research_tests"
+                if (ROOT / "_research_tests").exists()
+                else "backend/tests/research"
             ),
             sandbox / "tests",
         )
@@ -87,6 +97,10 @@ def prepare_sandbox(suite: Literal["main", "research"], output: Path) -> Path:
         copy_source(
             ROOT / "backend/modules/research/rabbit_hole", sandbox / "src/rabbit_hole"
         )
+        # Source tests now exercise the unified adapters/usage schema. Copy only
+        # explicit source modules; never import the live checkout or its state.
+        for relative in ("models", "services", "migrations", "db.py", "config.py"):
+            copy_source(ROOT / "backend" / relative, sandbox / "main" / relative)
     guards = sandbox / "_isolation"
     guards.mkdir()
     for name in ("sitecustomize.py", "node_guard.cjs"):
@@ -114,6 +128,7 @@ def sandbox_environment(sandbox: Path, suite: str) -> dict[str, str]:
             [
                 str(sandbox / "_isolation"),
                 str(sandbox / ("src" if suite == "research" else "backend")),
+                str(sandbox / "main"),
                 str(sandbox),
             ]
         ),
@@ -183,9 +198,10 @@ def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) 
             "-p",
             "pytest_asyncio.plugin",
             "--import-mode=prepend",
+            "--junitxml=" + str((output / current / "pytest.xml").resolve()),
         ]
         if current == "main":
-            command.extend(["-c", "pytest.ini", "backend/tests", "-q"])
+            command.extend(["-c", "pytest.ini", "backend/tests", "--ignore=backend/tests/research", "-q"])
         else:
             command.extend(["-c", "pyproject.toml", "tests", "-q"])
         with (output / current / "pytest.log").open("w") as log:
@@ -202,7 +218,7 @@ def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) 
             test_files += sorted((sandbox / "frontend/tests/research-workbench").glob("*.test.mjs"))
         with (output / current / "frontend.log").open("w") as log:
             frontend = subprocess.run(
-                ["node", "--test", "--test-isolation=none", *map(str, test_files)],
+                ["node", "--test", "--test-isolation=none", "--test-reporter=tap", *map(str, test_files)],
                 cwd=sandbox,
                 env=env,
                 stdout=log,
@@ -227,7 +243,7 @@ def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) 
                 ),
                 ("mypy", ["-p", "rabbit_hole", "--config-file", "pyproject.toml"]),
             ]
-            env["MYPYPATH"] = str(sandbox / "src")
+            env["MYPYPATH"] = os.pathsep.join([str(sandbox / "src"), str(sandbox / "main")])
             for tool, arguments in tools:
                 with (output / current / f"{tool}.log").open("w") as log:
                     checked = subprocess.run(
@@ -242,6 +258,8 @@ def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) 
                 statuses[current] = int(
                     any(code != 0 for code in components[current].values())
                 )
+        (output / "component-results.json").write_text(json.dumps(components, indent=2) + "\n")
+        (output / "result.json").write_text(json.dumps(statuses, indent=2) + "\n")
         print(
             f"{current}: exit {statuses[current]}; {output / current / 'pytest.log'}",
             flush=True,

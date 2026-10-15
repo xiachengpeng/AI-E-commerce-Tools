@@ -194,7 +194,7 @@ def test_operator_command_fails_closed_without_complete_settings() -> None:
     assert completed.returncode == 2
     assert json.loads(completed.stdout) == {
         "ok": False,
-        "error": {"type": "configuration", "code": "invalid_settings"},
+        "error": {"type": "configuration", "code": "owned_local_runtime_required"},
     }
 
 
@@ -219,5 +219,5 @@ def test_production_worker_main_fails_closed_without_settings() -> None:
     assert completed.returncode == 2
     assert json.loads(completed.stdout) == {
         "ok": False,
-        "error": {"type": "configuration", "code": "invalid_settings"},
+        "error": {"type": "configuration", "code": "owned_local_runtime_required"},
     }

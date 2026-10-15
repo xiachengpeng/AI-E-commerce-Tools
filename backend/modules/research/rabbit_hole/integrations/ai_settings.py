@@ -35,7 +35,11 @@ def validate_base_url(value: str) -> str:
 
 class AISettings:
     def __init__(self, path: Path | None = None) -> None:
-        self.path = path or ProviderSecrets().path.with_name("ai.json")
+        if path is None:
+            provider_path = ProviderSecrets().path
+            assert provider_path is not None
+            path = provider_path.with_name("ai.json")
+        self.path = path
 
     def _read(self) -> dict[str, str]:
         try:

@@ -65,6 +65,15 @@ def stop_owned_child(process):
         print('⚠️ 子进程仍在结束当前操作，请核对后再重启。')
 
 
+def backend_command(backend_dir):
+    # SSE connections can otherwise keep Uvicorn waiting after SIGTERM forever.
+    # Cancel outstanding API responses within the launcher's 10-second child wait;
+    # worker shutdown and unknown external outcome handling remain independent.
+    return [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1",
+            "--port", str(BACKEND_PORT), "--app-dir", backend_dir,
+            "--timeout-graceful-shutdown", "5"]
+
+
 def backend_ready(process, *, timeout=15):
     from urllib.request import urlopen
     deadline=time.monotonic()+timeout
@@ -112,8 +121,7 @@ def run_app():
 
     # 1. 启动后端 (Uvicorn) - 端口 9503
     backend_process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", str(BACKEND_PORT),
-         "--app-dir", backend_dir],
+        backend_command(backend_dir),
         cwd=backend_dir,
         env={**os.environ, "PYTHONPATH": backend_dir}
     )

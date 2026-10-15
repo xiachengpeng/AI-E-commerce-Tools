@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
@@ -264,12 +265,12 @@ class WorkbenchStore:
 
     @staticmethod
     @asynccontextmanager
-    async def _borrow(connection: AsyncConnection):
+    async def _borrow(connection: AsyncConnection) -> AsyncIterator[AsyncConnection]:
         if not connection.in_transaction():
             raise ValueError("read connection requires an active transaction")
         yield connection
 
-    def read_connection(self, connection: AsyncConnection | None):
+    def read_connection(self, connection: AsyncConnection | None) -> AbstractAsyncContextManager[AsyncConnection]:
         return self._borrow(connection) if connection is not None else self.engine.connect()
 
     async def get(self, project_id: str, *, _connection: AsyncConnection | None = None) -> dict[str, Any]:

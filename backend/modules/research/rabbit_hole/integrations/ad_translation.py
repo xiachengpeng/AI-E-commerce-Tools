@@ -28,7 +28,11 @@ class TranslationCredentials:
 
 class TranslationSettings:
     def __init__(self, path: Path | None = None) -> None:
-        self.path = path or ProviderSecrets().path.with_name("translation.json")
+        if path is None:
+            provider_path = ProviderSecrets().path
+            assert provider_path is not None
+            path = provider_path.with_name("translation.json")
+        self.path = path
 
     def resolve(self) -> TranslationCredentials:
         try:
@@ -69,9 +73,16 @@ class TranslationSettings:
 
 
 class TranslationService:
-    def __init__(self, path: Path | None = None, *, credentials_resolver=None,
-                 cache_store=None, allow_external: bool = True) -> None:
-        self.path = cache_store.database if cache_store is not None else path or ProviderSecrets().path.with_name("translation-cache.sqlite3")
+    def __init__(self, path: Path | None = None, *, credentials_resolver: Any = None,
+                 cache_store: Any = None, allow_external: bool = True) -> None:
+        if cache_store is not None:
+            self.path = cache_store.database
+        else:
+            if path is None:
+                provider_path = ProviderSecrets().path
+                assert provider_path is not None
+                path = provider_path.with_name("translation-cache.sqlite3")
+            self.path = path
         self._credentials_resolver = credentials_resolver
         self._cache_store = cache_store
         self._allow_external = allow_external

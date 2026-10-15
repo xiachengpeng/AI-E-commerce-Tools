@@ -245,7 +245,8 @@ def test_launcher_local_worker_requires_consumed_handoff_and_stops_only_child(tm
     command=run.local_worker_command(config,paths.database)
     assert command[1:3]==['-m','services.research_worker']
     assert str(paths.database) in command
-    assert run.local_worker_command(dict(config,mode='remote'),paths.database) is None
+    # Task21 forces saved legacy remote configs onto the same owned local runtime.
+    assert run.local_worker_command(dict(config,mode='remote'),paths.database) == command
     assert run.local_worker_command(dict(config,worker_mode='paused'),paths.database) is None
     class Child:
         def __init__(self): self.events=[]

@@ -65,8 +65,8 @@ from rabbit_hole.persistence.evidence_store import EvidenceStore
 from rabbit_hole.persistence.legacy_jobs import JobRepository
 from rabbit_hole.persistence.sql import (
     dialect_insert,
-    session_lock,
     ownership_guard,
+    session_lock,
     write_transaction,
 )
 from rabbit_hole.persistence.storage_factory import create_storage_client
@@ -786,20 +786,21 @@ class _MeasuredCollector:
 
 
 class RuntimeExtractor:
-    def __init__(self, settings: Settings, database: Database, telemetry: Telemetry, *, ai_adapter=None) -> None:
+    def __init__(self, settings: Settings, database: Database, telemetry: Telemetry, *, ai_adapter: Any = None) -> None:
         self.settings, self.database, self.telemetry = settings, database, telemetry
         self.ai_adapter = ai_adapter
 
     async def extract(self, source: ExtractionInput) -> ProductExtraction:
         if self.ai_adapter is None:
             raise ExtractionGenerationError("research AI adapter is not configured")
+        from services.ai_router import AIObserverError, AIProviderRequestError
         from services.research_ai_adapter import ResearchAIError
         failed = False
         try:
             # Snapshot one binding/version for cache key and generation together.
             with self.ai_adapter.extraction_generator() as generator:
                 return await extract_product(generator, source, cache=PostgresExtractionCache(self.database))
-        except (ValidationError, ExtractionGenerationError, ResearchAIError):
+        except (ValidationError, ExtractionGenerationError, ResearchAIError, AIObserverError, AIProviderRequestError):
             failed = True
             raise
         finally:
@@ -807,7 +808,7 @@ class RuntimeExtractor:
 
 
 class RuntimeDiscoveryGenerator:
-    def __init__(self, settings: Settings, *, ai_adapter=None) -> None:
+    def __init__(self, settings: Settings, *, ai_adapter: Any = None) -> None:
         self.settings, self.ai_adapter = settings, ai_adapter
 
     async def generate(self, **kwargs: Any) -> Any:
@@ -818,7 +819,7 @@ class RuntimeDiscoveryGenerator:
 
 
 class _MeasuredPipeline:
-    def __init__(self, pipeline: Pipeline, telemetry: Telemetry, *, jobs=None, ai_adapter=None) -> None:
+    def __init__(self, pipeline: Pipeline, telemetry: Telemetry, *, jobs: Any = None, ai_adapter: Any = None) -> None:
         self.pipeline, self.telemetry = pipeline, telemetry
         self.jobs, self.ai_adapter = jobs, ai_adapter
 
@@ -835,9 +836,9 @@ class _MeasuredPipeline:
         except ValueError as exc:
             if self.ai_adapter is None:
                 raise
-            from services.research_legacy_ai import LegacyAIError
-            from services.research_ai_usage import ResearchUsageError
             from services.ai_router import AIObserverError
+            from services.research_ai_usage import ResearchUsageError
+            from services.research_legacy_ai import LegacyAIError
             if not isinstance(exc, (LegacyAIError, ResearchUsageError, AIObserverError)):
                 raise
             from rabbit_hole.pipeline import TerminalPipelineError
@@ -867,7 +868,7 @@ async def build_worker(
     storage: EvidenceStore | None = None,
     pipeline: Pipeline | None = None,
     telemetry: Telemetry | None = None,
-    ai_adapter=None,
+    ai_adapter: Any = None,
     consume_only: bool = False,
 ) -> Worker:
     """Construct the standard worker from validated settings; no factory env required."""

@@ -30,7 +30,11 @@ from rabbit_hole.persistence.database import (
     job_checkpoints,
     runtime_jobs,
 )
-from rabbit_hole.persistence.sql import dialect_insert, write_transaction, ownership_guard
+from rabbit_hole.persistence.sql import (
+    dialect_insert,
+    ownership_guard,
+    write_transaction,
+)
 
 
 def idempotency_key(payload: JobPayload) -> str:

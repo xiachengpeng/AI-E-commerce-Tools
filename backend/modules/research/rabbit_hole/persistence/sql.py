@@ -9,7 +9,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
+from uuid import UUID
 
 from sqlalchemy import DateTime, event, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -171,7 +172,12 @@ async def command_transaction(engine: AsyncEngine, connection: AsyncConnection |
             yield c
 
 
-async def ownership_guard(connection, *, kind=None, identifier=None, payload=None):
+class _OwnershipGuard(Protocol):
+    async def __call__(self, connection: AsyncConnection, *, kind: str | None,
+                       identifier: str | UUID | None, payload: Any) -> None: ...
+
+
+async def ownership_guard(connection: AsyncConnection, *, kind: str | None = None, identifier: str | UUID | None = None, payload: Any = None) -> None:
     # Original source databases have no ownership marker and retain old behavior.
     if connection.dialect.name != 'sqlite':
         return
@@ -182,4 +188,5 @@ async def ownership_guard(connection, *, kind=None, identifier=None, payload=Non
     if revision < 4:
         return
     from services.research_activation import guard_connection
-    await guard_connection(connection, kind=kind, identifier=identifier, payload=payload)
+    guard = cast(_OwnershipGuard, guard_connection)
+    await guard(connection, kind=kind, identifier=identifier, payload=payload)

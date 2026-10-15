@@ -42,7 +42,7 @@ def test_suite_copies_have_separate_databases_and_no_live_assets(tmp_path):
         assert not list(sandbox.rglob("*.db"))
         assert not list(sandbox.rglob(".env"))
         assert not (sandbox / "backend/static").exists()
-    assert not (main / "backend/tests/research").exists()
+    assert not (main / "backend/tests/research/conftest.py").exists()
     assert not (research / "backend/tests/conftest.py").exists()
     assert (research / "tests/conftest.py").exists()
 
@@ -309,3 +309,20 @@ c.close()
 '''
     result=subprocess.run([sys.executable,'-c',code],cwd=sandbox,env=module.sandbox_environment(sandbox,'main'),capture_output=True,text=True)
     assert result.returncode==0,result.stderr
+
+
+def test_research_sandbox_imports_unified_modules_from_source_only_copy(tmp_path):
+    module = runner()
+    sandbox = module.prepare_sandbox('research', tmp_path)
+    code = """from pathlib import Path
+import models.research_ai_usage, services.research_ai_adapter, migrations.full_merge_v1, db, config
+root=Path.cwd().resolve()
+for module in (models.research_ai_usage, services.research_ai_adapter, migrations.full_merge_v1, db, config):
+    assert Path(module.__file__).resolve().is_relative_to(root), module.__file__
+"""
+    result = subprocess.run([sys.executable, '-c', code], cwd=sandbox,
+        env=module.sandbox_environment(sandbox, 'research'), capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert not list(sandbox.rglob('history.db'))
+    assert not list(sandbox.rglob('.env*'))
+    assert not list(sandbox.rglob('*.pem'))

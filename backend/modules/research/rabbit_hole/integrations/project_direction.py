@@ -18,7 +18,7 @@ class DirectionError(RuntimeError):
         super().__init__(message)
 
 
-async def generate_direction(title: Any, market: Any, *, ai_adapter=None) -> str:
+async def generate_direction(title: Any, market: Any, *, ai_adapter: Any = None) -> str:
     if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
         raise DirectionError(422, "请先填写项目名称，最多200字")
     if not isinstance(market, str) or market not in MARKETS:
@@ -41,7 +41,7 @@ async def generate_direction(title: Any, market: Any, *, ai_adapter=None) -> str
                         "Do not imply scientific or medical efficacy of crystals. Do not claim research has already been completed."
                     + " Return JSON with direction field containing that plain text."),
                 untrusted_data={"project_title":title.strip()}, action_id=None, attempt=0))
-    except (TimeoutError, asyncio.TimeoutError):
+    except TimeoutError:
         raise DirectionError(504, "AI 响应超时，原输入已保留，可稍后再次帮写") from None
     except AIProviderRequestError as exc:
         status = 429 if exc.category == "rate_limit" else 504 if exc.category == "timeout" else 503

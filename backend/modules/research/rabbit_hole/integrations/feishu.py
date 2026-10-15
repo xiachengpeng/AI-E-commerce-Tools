@@ -15,12 +15,12 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from functools import wraps
-from typing import Any, Protocol
+from typing import Any, Concatenate, Protocol
 
 import httpx
 
@@ -843,10 +843,10 @@ class RecordWriter(Protocol):
     ) -> RecordVersion: ...
 
 
-def _credential_operation(method):
+def _credential_operation[**P, R](method: Callable[Concatenate[FeishuClient, P], Coroutine[Any, Any, R]]) -> Callable[Concatenate[FeishuClient, P], Coroutine[Any, Any, R]]:
     """Keep one injected credential snapshot across nested public lookups/requests."""
     @wraps(method)
-    async def operation(self, *args, **kwargs):
+    async def operation(self: FeishuClient, /, *args: P.args, **kwargs: P.kwargs) -> R:
         if self._credentials_resolver is None or self._credential_owner is asyncio.current_task():
             return await method(self, *args, **kwargs)
         async with self._credential_lock:
@@ -869,7 +869,7 @@ class FeishuClient:
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         retries: int = 3,
         http_client: httpx.AsyncClient | None = None,
-        credentials_resolver=None,
+        credentials_resolver: Callable[[], Mapping[str, str]] | None = None,
         allow_external: bool = True,
     ) -> None:
         self.app_id, self.app_secret, self._base_token = app_id, app_secret, base_token
@@ -895,6 +895,7 @@ class FeishuClient:
     def _refresh_credentials(self, *, force: bool = False) -> None:
         if self._credential_owner is not None and not force:
             return
+        assert self._credentials_resolver is not None
         data = self._credentials_resolver()
         current = (data.get("app_id", ""), data.get("app_secret", ""), data.get("base_app_token", ""))
         if current != (self.app_id, self.app_secret, self._base_token):
@@ -981,6 +982,7 @@ class FeishuClient:
         retry: bool = True,
     ) -> Json:
         token = await self._tenant_token()
+        assert self._client is not None  # _tenant_token initializes the transport.
         attempts = self._retries if retry else 0
         for attempt in range(attempts + 1):
             response = await self._client.request(

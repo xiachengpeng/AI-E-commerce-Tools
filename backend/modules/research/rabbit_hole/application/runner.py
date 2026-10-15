@@ -6,7 +6,7 @@ import asyncio
 import logging
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 from uuid import NAMESPACE_URL, uuid5
 
@@ -48,7 +48,7 @@ class WorkbenchRunner:
 
     def provider_key(self, provider: str) -> str:
         if self.provider_secrets is not None:
-            return self.provider_secrets.get(provider)
+            return cast(str, self.provider_secrets.get(provider))
         from rabbit_hole.integrations.provider_settings import ProviderSecrets
         return ProviderSecrets().get(provider)
 

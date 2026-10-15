@@ -65,23 +65,41 @@ async def test_runner_uses_saved_relay_for_next_ai_request(tmp_path, monkeypatch
     from rabbit_hole.application.runner import WorkbenchRunner
     from rabbit_hole.integrations.ai_settings import AISettings
 
-    monkeypatch.setenv("RABBIT_HOLE_PROVIDER_SECRETS_PATH", str(tmp_path / "keys.json"))
-    AISettings().update({"api_key": "runtime-private-key", "base_url": "https://new-relay.example/v1", "model": "runtime-model"})
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from db import Base
+    from services.ai_config_service import create_provider, set_binding
+    from services.research_ai_adapter import ResearchAIAdapter
+    from uuid import uuid4
+    # Saved main settings replace the retired private AISettings fallback. Keep
+    # per-market prompt and saved key/base/model assertions at the actual seam.
+    engine = create_engine('sqlite:///' + str(tmp_path / 'main.db'))
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    with sessions() as db:
+        row = create_provider(db, {'name':'fixture','protocol':'openai_compatible',
+            'base_url':'https://new-relay.example/v1','api_key':'runtime-private-key',
+            'text_model':'runtime-model','supports_text':True,'supports_image':False,
+            'timeout_seconds':60,'max_retries':0,'enabled':True})
+        set_binding(db, 'text', row.id)
     calls = {}
-    async def create(**kwargs):
-        calls.update(kwargs)
-        raise RuntimeError("isolated-stop-before-network")
-    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)), close=AsyncMock())
-    def factory(**kwargs):
-        calls.update(kwargs)
-        return client
-    monkeypatch.setattr(openai, "AsyncOpenAI", factory)
-    runner = WorkbenchRunner(None, SimpleNamespace(openai_api_key="old-key", openai_base_url="https://old.example/v1", openai_model="old-model"), None)
-    monkeypatch.setattr(runner, "_reserve_ai", AsyncMock())
-    with pytest.raises(RuntimeError, match="isolated-stop-before-network"):
-        await runner.suggest({"kind": "keywords", "payload": {}}, {"direction": "travel", "market": market, "rules": {}, "limits": {}})
-    assert f"Use {language} search phrases for {country}" in calls["messages"][0]["content"]
-    assert calls["api_key"] == "runtime-private-key"
-    assert calls["base_url"] == "https://new-relay.example/v1"
-    assert calls["model"] == "runtime-model"
-    client.close.assert_awaited_once()
+    async def generate(_capability, payload, *, snapshot, **_kwargs):
+        calls.update(api_key=snapshot.api_key, base_url=snapshot.base_url, model=snapshot.model,
+                     messages=[{'content':payload['contents'][0]['parts'][0]['text']}])
+        raise RuntimeError('isolated-stop-before-network')
+    router = SimpleNamespace(generate=generate)
+    forbidden_sdk = AsyncMock(side_effect=AssertionError('direct SDK construction'))
+    monkeypatch.setattr(openai, 'AsyncOpenAI', forbidden_sdk)
+    ai = ResearchAIAdapter(router=router, session_factory=sessions, allow_external=True)
+    runner = WorkbenchRunner(None, SimpleNamespace(openai_api_key='old-key',openai_base_url='https://old.example/v1',openai_model='old-model'), None, ai_adapter=ai)
+    monkeypatch.setattr(runner, '_reserve_ai', AsyncMock())
+    try:
+        with pytest.raises(RuntimeError, match='isolated-stop-before-network'):
+            await runner.suggest({'id':str(uuid4()),'attempt':1,'kind':'keywords','payload':{}}, {'direction':'travel','market':market,'rules':{},'limits':{}})
+        assert f'Use {language} search phrases for {country}' in calls['messages'][0]['content']
+        assert calls['api_key'] == 'runtime-private-key'
+        assert calls['base_url'] == 'https://new-relay.example/v1'
+        assert calls['model'] == 'runtime-model'
+        forbidden_sdk.assert_not_called()
+    finally:
+        engine.dispose()

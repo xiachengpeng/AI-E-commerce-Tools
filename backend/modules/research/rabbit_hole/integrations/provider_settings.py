@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 class ProviderSecrets:
@@ -22,6 +22,7 @@ class ProviderSecrets:
         ))
 
     def _read(self) -> dict[str, str]:
+        assert self.path is not None  # Only standalone compatibility uses file storage.
         try:
             data = json.loads(self.path.read_text())
         except FileNotFoundError:
@@ -32,7 +33,7 @@ class ProviderSecrets:
 
     def get(self, provider: str) -> str:
         if self._unified_store is not None:
-            return self._unified_store.resolve(provider, self._purpose).get("api_key", "")
+            return cast(str, self._unified_store.resolve(provider, self._purpose).get("api_key", ""))
         return self._read().get(provider, "")
 
     def status(self) -> dict[str, bool]:
@@ -50,6 +51,7 @@ class ProviderSecrets:
         for value in changes.values():
             if value is not None and (not isinstance(value, str) or not 1 <= len(value) <= 512 or any(c.isspace() for c in value)):
                 raise ValueError("密钥不能为空、含空格或超过512字符")
+        assert self.path is not None
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         lock = os.open(str(self.path) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
         try:

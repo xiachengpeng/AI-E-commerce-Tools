@@ -10,6 +10,7 @@ import base64
 import hashlib
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -403,7 +404,7 @@ async def get_action(
 
 
 async def stop_action(
-    store: Any, project_id: str, action_id: str, attempt: int, *, version: int | None = None, cloud_abort=None
+    store: Any, project_id: str, action_id: str, attempt: int, *, version: int | None = None, cloud_abort: Callable[[Any, str, str, int, Any], Awaitable[None]] | None = None
 ) -> dict[str, Any]:
     """Fence a queued/running action before letting its keyword be retried."""
     from rabbit_hole.domain.project import WorkbenchError
