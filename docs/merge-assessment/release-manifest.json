@@ -80,5 +80,208 @@
     "skip_reason": "live integration tunnel owns fixed port",
     "idle_connections_during_http_acceptance": 3,
     "browser_acceptance": "existing in-app tab: homepage and embedded SOP workbench loaded"
+  },
+  "full_consolidation_acceptance": {
+    "recorded_date": "2026-10-15",
+    "code_commit": "ad0554909da71cb58b3dd888f95608536fa9a242",
+    "code_tree": "38503378a7651323f2f958b4a38f514ccfcc484c",
+    "base_commit": "62c2e590328dba9eeabc30614abd114f4d3f67ca",
+    "recording_policy": "Separate manifest-only commit after code commit; historical fields above remain their original checkpoints.",
+    "local_code_accepted": true,
+    "coverage_count": 221,
+    "coverage_status_counts": {
+      "local_contract_verified": 197,
+      "baseline_unsupported_verified": 5,
+      "preserved_test_fixture_inventory_verified": 8,
+      "retired_transport_inventory_verified": 11
+    },
+    "scope": "local automated contracts; inventory-only row proof is not exhaustive per-endpoint behavior proof",
+    "python_actual": "3.12.15",
+    "dependency_hashes": {
+      "backend/requirements.txt": "f47d237a77dbd8569206e4054aaa6192d84819977202f73972b230b094a6871d",
+      "backend/requirements-full-merge.lock": "e04e6c9140395df9bacf79d60de095eca0afbaef5c8a0b3545a1f6a7fbe4553a",
+      "frontend/package-lock.json": "dc45e6ea9b4e6b61fdbd51938f7d2db4f4a7ebbde328ec45681b25029527bc72",
+      "backend/modules/research/compat/pyproject.toml": "9e14711f6bff1352468c0fbb8020b9697197c7420276d10cc37e887438672406",
+      "backend/modules/research/compat/frontend/package-lock.json": "bb7b9673eef258636abdd260fbab7cda48ce23405e8879fde42545caa71e54a5"
+    },
+    "schema": {
+      "full_merge_revision": 4,
+      "original_main_database_location": "backend/history.db",
+      "migration_policy": "explicit backup-gated; no startup migration"
+    },
+    "owner": {
+      "dataset_id": "full-sop-20261014",
+      "generation": 1,
+      "proof_basis": "Accepted Task20 signed activation/quarantine + Task21 actual single-owner/noSSH proof; not re-observed in Task22",
+      "unknown_resources": {
+        "legacy_jobs": 3,
+        "outbox": 3,
+        "not_proven_distinct_external_submissions": true
+      }
+    },
+    "verification": {
+      "main_full": {
+        "passed": 1137,
+        "warnings": 6,
+        "seconds": 69.72,
+        "phase": "before final bounded typing/focus changes; covered by subsequent safety suffix/source full"
+      },
+      "main_safety_suffix": {
+        "passed": 309,
+        "warnings": 3,
+        "seconds": 45.95
+      },
+      "acceptance_final": {
+        "passed": 13,
+        "warnings": 1,
+        "seconds": 6.29
+      },
+      "acceptance_report_gates_suffix": {
+        "passed": 9,
+        "deselected": 4
+      },
+      "research_full_final": {
+        "passed": 1151,
+        "skipped": 4,
+        "warnings": 5,
+        "seconds": 161.71
+      },
+      "main_frontend": {
+        "passed": 609,
+        "includes": "original JS and native research-workbench MJS"
+      },
+      "research_frontend": {
+        "passed": 10
+      },
+      "ruff": {
+        "exit": 0
+      },
+      "mypy": {
+        "exit": 0,
+        "source_files": 80
+      },
+      "frontend_syntax": {
+        "branch_changed_files": 35,
+        "compat_focus_files": 2,
+        "exit": 0
+      },
+      "main_tailwind3": {
+        "exit": 0
+      },
+      "compat_tailwind4_build": {
+        "exit": 0
+      },
+      "source_baseline": {
+        "commit": "5356dea",
+        "ruff_exit": 0,
+        "mypy_exit": 0,
+        "integration_debt_before_fix": {
+          "ruff": 6,
+          "mypy": 80,
+          "files": 14
+        },
+        "not_baseline_noise": true
+      },
+      "focus_browser_regression": {
+        "unchanged_test": true,
+        "bounded_passes": 3,
+        "seconds": [
+          2.02,
+          2.95,
+          1.34
+        ]
+      },
+      "new_recovery_measurement": {
+        "main_seconds": 0.116975,
+        "research_seconds": 0.079643,
+        "scope": "new private full snapshot copy + complete verify, local single warm-cache sample; not outage/SLA",
+        "original_snapshot_byte_rosters_unchanged": true
+      }
+    },
+    "evidence_artifacts": {
+      "final-evidence/acceptance.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/final-evidence/acceptance.json",
+        "sha256": "40d9baf6a2a300879a43187e7828b19c8ce05dfb7310e7ade7287ab8040d4120"
+      },
+      "final-evidence/component-results.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/final-evidence/component-results.json",
+        "sha256": "8db4afcad352e72c5d2c4fb5f418285f445afcbd8a0353724e790c388c1ddc18"
+      },
+      "final-evidence/main/pytest.xml": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/final-evidence/main/pytest.xml",
+        "sha256": "e4a7359f3b85c454cb14c0cf34f6ef1e6feb85da8b5126dbcaadeaeb2b03dbcf"
+      },
+      "final-evidence/main/frontend.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/final-evidence/main/frontend.log",
+        "sha256": "be65ccc2b809d8e0b775fe08d0c81b7f9ae8174bc438a255b054a429e3115a5e"
+      },
+      "final-evidence/research/pytest.xml": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/final-evidence/research/pytest.xml",
+        "sha256": "6ff3ba911133120c2aaa706aeb81d7932f3703f6e086d60ca54725300ade1aa7"
+      },
+      "final-evidence/research/frontend.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/final-evidence/research/frontend.log",
+        "sha256": "ff623ba3aac68c21e6cbd1a14f9be1d5b97328bc69c4338e8973b7c3649794a2"
+      },
+      "final-evidence/supplemental-evidence.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/final-evidence/supplemental-evidence.json",
+        "sha256": "54327634984357d6948ea5a2b011282d9527b8cc4a4d6555f03afc00b359b97f"
+      },
+      "main-safety-suffix/pytest.xml": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/main-safety-suffix/pytest.xml",
+        "sha256": "81fff03c281ed7501f80e021124eebd3103159d8a7a48a3ecc54c52b9ce399d6"
+      },
+      "acceptance-focused-final-13.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/acceptance-focused-final-13.log",
+        "sha256": "49a5c00497adcc956110df146617d528345a7fee408077874e2912577c99432d"
+      },
+      "acceptance-gates-final.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/acceptance-gates-final.log",
+        "sha256": "23ce337faaac8c13048b05e519eda4000955a584d5e57d1d008cf65bac7955dc"
+      },
+      "research-final-focus/research/ruff.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/research-final-focus/research/ruff.log",
+        "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+      },
+      "research-final-focus/research/mypy.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/research-final-focus/research/mypy.log",
+        "sha256": "2ee1bfc13507fda246a3220aaeaa3f3dd56dcc26a996aa35567c2871279b5ecd"
+      },
+      "js-syntax.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/js-syntax.json",
+        "sha256": "6939f2afef7aec21e03d42e6f5dea293e9b26dc06bb937692583ee7a4a5a6be9"
+      },
+      "tailwind3.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/tailwind3.log",
+        "sha256": "b9197d630b66db6b05e4b9a290c4387e6991a83a97960f53308ae5dbdb5ca768"
+      },
+      "timed-independent-recovery/recovery-timing.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/timed-independent-recovery/recovery-timing.json",
+        "sha256": "9ce18f12f29c8d8e249ab4c42ea429650369b5b962e1007d7657ea999f445e5a"
+      }
+    },
+    "limitations": [
+      "Final whole-branch review and primary source handoff pending controller; Task22 code not restarted into actual runtime.",
+      "Real provider, translation, collection, sync, cloud upload/publication/cancellation chains unverified; fake transports only.",
+      "Seven actual use days pending: verified_days=0, required_days=7.",
+      "Five original enum-only legacy kinds remain explicit unsupported/needs_human, not invented handlers.",
+      "Eight source HTML entries are preserved test fixtures; eleven old transport/shell/operations routes are inventoried native equivalents, not unchanged public URLs.",
+      "Source-origin unsaved browser drafts not certified migrated/exported; existing user drafts/profiles retained.",
+      "Official exact browser revisions/versions restored; no pre-removal hashes, original byte identity unproven; no Task22 browser installation or GC.",
+      "Dependency deprecations/schema warning and JUnit record_property/xunit2 warnings retained.",
+      "New SQLAlchemy unchecked aiosqlite GC warning in temporary browser quick_triage[1324] fixture remains diagnostic minor; no production leak established.",
+      "Task20 one-time mtime extension affected exactly120 reviewed marketing files; unchanged24h TTL is not indefinite retention.",
+      "Actual Task20 source-stop-to-active-worker interval2h25m14s exceeded provisional10–20min; no SLA claim."
+    ],
+    "observation": {
+      "status": "pending_actual_use_days",
+      "required_days": 7,
+      "verified_days": 0
+    },
+    "external": {
+      "status": "not_verified"
+    },
+    "chronological_rulings_disclosed": 44,
+    "guide": "docs/merge-assessment/11-完整归并验收与运行说明.md"
   }
 }
