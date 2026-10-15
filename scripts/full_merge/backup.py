@@ -1,6 +1,7 @@
 """Logical row hashes use O(row count) memory per table; freeze sources before backup.
 
 Opt-in private recovery snapshots; SQLite backup includes committed WAL rows."""
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -14,7 +15,7 @@ def _connect_readonly(path):
 
 
 def database_stats(path):
-    with _connect_readonly(path) as connection:
+    with closing(_connect_readonly(path)) as connection:
         integrity = [r[0] for r in connection.execute('PRAGMA integrity_check')]
         foreign_key_errors = len(connection.execute('PRAGMA foreign_key_check').fetchall())
         tables = {}
@@ -43,10 +44,10 @@ def backup_sqlite(source: Path, destination: Path) -> dict:
         descriptor = os.open(reference, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(descriptor)
         reference_created = True
-        with _connect_readonly(source) as live, sqlite3.connect(destination) as restored:
+        with closing(_connect_readonly(source)) as live, closing(sqlite3.connect(destination)) as restored:
             live.backup(restored)
         # Compare restored copies of the stable snapshot, never a moving live database.
-        with _connect_readonly(destination) as snapshot, sqlite3.connect(reference) as copy:
+        with closing(_connect_readonly(destination)) as snapshot, closing(sqlite3.connect(reference)) as copy:
             snapshot.backup(copy)
         expected, actual = database_stats(destination), database_stats(reference)
         return {'verified': expected == actual and actual['integrity_ok'] and actual['foreign_key_errors'] == 0, 'stats': actual}

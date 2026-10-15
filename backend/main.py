@@ -165,7 +165,7 @@ _PROVIDER_ERROR_HTTP_STATUS = {
 }
 
 # 加载配置
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
+load_dotenv(dotenv_path=os.getenv("AI_ECOMMERCE_ENV_FILE") or os.path.join(os.path.dirname(__file__), ".env"), override=False)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -222,6 +222,10 @@ def initialize_firecrawl_settings():
     finally:
         db.close()
 
+
+from services.research_runtime import claim_before_main_initialization
+from db import DB_PATH
+claim_before_main_initialization(DB_PATH)
 
 init_db()
 initialize_ai_settings()

@@ -211,3 +211,40 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
         if ai is not None:
             ai_engine.dispose()
         await engine.dispose()
+
+
+def claim_before_main_initialization(database, *, config=None, data_root=None) -> bool:
+    """Consume a valid handoff before legacy main initialization can write its DB.
+
+    Missing/broken research configuration degrades research only. No offline
+    activation, migration, key generation, or external service starts here.
+    """
+    from services.research_client import load_research_config
+    from services.research_activation import claim_activation, validate_activation
+    import sqlite3
+    config=load_research_config() if config is None else config
+    if config.get('enabled') is not True or config.get('mode')!='local':
+        return False
+    check_cutover_startup(config,database)
+    try:
+        root=Path(data_root or config.get('data_root') or Path.home()/'.local/share/ai-ecommerce-tools/research')
+        paths=resolve_runtime_paths(Path(database),root)
+        if not validate_activation(paths): return False
+        claim_activation(paths)
+        return True
+    except (OSError,ValueError,PermissionError,sqlite3.Error):
+        return False
+
+
+def check_cutover_startup(config, database):
+    """An explicit maintenance journal blocks even direct uvicorn startup."""
+    if not config.get('cutover_ledger'): return
+    path=Path(config['cutover_ledger'])
+    _validate_path(path,private=True)
+    try:
+        with os.fdopen(os.open(path,os.O_RDONLY|os.O_NOFOLLOW),'r') as stream:
+            value=json.load(stream)
+        if value.get('phase')!='local_active' or value.get('database')!=str(Path(database)):
+            raise ValueError
+    except (OSError,ValueError,TypeError):
+        raise ValueError('cutover maintenance barrier is not released') from None

@@ -1193,7 +1193,7 @@ async def research_lifespan(app, *, config=None, database=None, data_root=None):
                 data_root = (
                     Path(data_root)
                     if data_root is not None
-                    else Path.home() / ".local/share/ai-ecommerce-tools/research"
+                    else Path(config.get("data_root") or Path.home() / ".local/share/ai-ecommerce-tools/research")
                 )
                 paths = resolve_runtime_paths(Path(database), data_root)
                 from services.research_ai_adapter import read_business_settings

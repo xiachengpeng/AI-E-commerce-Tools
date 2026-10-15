@@ -1,6 +1,7 @@
 """Explicit backup-gated ownership preparation and operator-signed handoff issuance."""
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 import hmac
 import os
@@ -16,7 +17,7 @@ def prepare_ownership(paths, *, snapshot_id, dataset_id, owner_generation, backu
     if backup_verified is not True or not dataset_id or type(owner_generation) is not int or owner_generation < 1:
         raise ValueError('verified backup and explicit ownership identity required')
     _validate_path(paths.database)
-    with sqlite3.connect(f'file:{paths.database}?mode=rw', uri=True) as c:
+    with closing(sqlite3.connect(f'file:{paths.database}?mode=rw', uri=True)) as c, c:
         c.execute('BEGIN IMMEDIATE')
         if c.execute('SELECT revision FROM full_merge_schema WHERE id=1').fetchone() != (4,):
             raise ValueError('prepared revision 4 required')
@@ -34,7 +35,7 @@ def prepare_ownership(paths, *, snapshot_id, dataset_id, owner_generation, backu
             raise ValueError('ownership already assigned')
         c.execute('UPDATE full_merge_ledger SET dataset_id=?,owner_generation=? WHERE source_snapshot_id=?', (dataset_id, owner_generation, snapshot_id))
     # Candidate must be closed/checkpointed before its initial hash is recorded.
-    with sqlite3.connect(paths.database) as c:
+    with closing(sqlite3.connect(paths.database)) as c, c:
         c.execute('PRAGMA wal_checkpoint(TRUNCATE)')
 
 

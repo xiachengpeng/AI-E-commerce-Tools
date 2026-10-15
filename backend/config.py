@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 
 # 加载 .env 文件（优先级低于系统环境变量）
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=False)
+load_dotenv(dotenv_path=os.getenv("AI_ECOMMERCE_ENV_FILE") or os.path.join(os.path.dirname(__file__), ".env"), override=False)
 
 # Firecrawl 默认配置：使用官方云端服务，亦可配置自定义地址
 FIRECRAWL_API_URL = os.getenv("FIRECRAWL_API_URL", "https://api.firecrawl.dev/v1/scrape").strip()

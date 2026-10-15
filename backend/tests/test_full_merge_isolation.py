@@ -291,3 +291,21 @@ def test_source_copy_rejects_all_supported_database_sidecars(tmp_path):
     target = tmp_path / "copied"
     module.copy_source(source, target)
     assert sorted(path.name for path in target.iterdir()) == ["keep.py"]
+
+
+def test_guard_allows_only_sandbox_file_handle_inventory(tmp_path):
+    module=runner()
+    sandbox=module.prepare_sandbox('main',tmp_path)
+    code='''import subprocess,pathlib,sqlite3,os
+p=pathlib.Path('fixture.db').resolve()
+c=sqlite3.connect(p);c.execute('CREATE TABLE marker(value TEXT)')
+r=subprocess.run(['lsof','-t','--',str(p)],capture_output=True,text=True)
+assert str(os.getpid()) in r.stdout
+for args in (['lsof','-t'],['lsof','-t','--','/etc/passwd'],['lsof','-p',str(os.getpid())]):
+ try:subprocess.run(args,capture_output=True)
+ except RuntimeError as e:assert 'isolated test subprocess' in str(e)
+ else:raise AssertionError('unbounded lsof escaped')
+c.close()
+'''
+    result=subprocess.run([sys.executable,'-c',code],cwd=sandbox,env=module.sandbox_environment(sandbox,'main'),capture_output=True,text=True)
+    assert result.returncode==0,result.stderr

@@ -320,3 +320,35 @@ session.close()
             "model": None,
         },
     }
+
+
+def test_actual_main_claims_before_first_initialization_write(tmp_path):
+    """Import the real main module on a disposable signed pre-activation database."""
+    from backend.tests.test_full_merge_ownership import fixture_activation
+    from services.research_activation import validate_activation
+    paths, report = fixture_activation(tmp_path)
+    for name,value in [('activation.json',report),('evidence-namespace.json',{'version':1,'evidence_bucket':'fixture','collector_version':'fixture'})]:
+        file=paths.keys_root/name
+        file.write_text(json.dumps(value)); file.chmod(0o600)
+    config=tmp_path/'research.json'
+    config.write_text(json.dumps({'enabled':True,'mode':'local','data_root':str(paths.evidence_root.parent)})); config.chmod(0o600)
+    backend=_isolated_backend(tmp_path/'source')
+    env=_startup_env()
+    env.update(SQLITE_DB_PATH=str(paths.database),RESEARCH_INTEGRATION_CONFIG=str(config))
+    result=subprocess.run([sys.executable,'-c','import main; print("MAIN_OK")'],cwd=backend,env=env,capture_output=True,text=True,timeout=30)
+    assert result.returncode==0, result.stderr
+    assert 'MAIN_OK' in result.stdout
+    assert validate_activation(paths), 'main initialization invalidated an unconsumed handoff'
+
+
+def test_staged_config_uses_explicit_primary_environment_file(tmp_path):
+    backend=_isolated_backend(tmp_path/'source')
+    (backend/'.env').write_text('FIRECRAWL_API_URL=https://wrong.example.invalid\n')
+    primary=tmp_path/'primary.env'
+    primary.write_text('FIRECRAWL_API_URL=https://fixture-primary.example.invalid\n')
+    env=_startup_env()
+    env.pop('FIRECRAWL_API_URL',None)
+    env['AI_ECOMMERCE_ENV_FILE']=str(primary)
+    result=subprocess.run([sys.executable,'-c','import config; print(config.FIRECRAWL_API_URL)'],cwd=backend,env=env,capture_output=True,text=True,timeout=30)
+    assert result.returncode==0,result.stderr
+    assert result.stdout.strip()=='https://fixture-primary.example.invalid'

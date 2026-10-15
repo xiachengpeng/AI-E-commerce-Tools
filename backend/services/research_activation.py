@@ -1,6 +1,7 @@
 """Signed operator handoff, independent of evidence signatures and host worker locks."""
 from __future__ import annotations
 
+from contextlib import closing
 import hashlib
 import hmac
 import json
@@ -58,7 +59,7 @@ def _logical_hash(connection):
 
 
 def candidate_hash(database):
-    with sqlite3.connect(f'file:{database}?mode=ro', uri=True) as connection:
+    with closing(sqlite3.connect(f'file:{database}?mode=ro', uri=True)) as connection:
         connection.execute('BEGIN')
         return _logical_hash(connection)
 
@@ -97,7 +98,7 @@ def validate_activation(paths, report=None) -> bool:
         if paths != resolve_runtime_paths(paths.database, paths.evidence_root.parent):
             return False
         report = load_activation(paths) if report is None else report
-        with sqlite3.connect(f'file:{paths.database}?mode=ro', uri=True) as connection:
+        with closing(sqlite3.connect(f'file:{paths.database}?mode=ro', uri=True)) as connection:
             connection.execute('BEGIN')
             return _valid(paths, report, connection)
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
@@ -107,7 +108,7 @@ def validate_activation(paths, report=None) -> bool:
 def claim_activation(paths, report=None):
     """First authorized write: atomically replace candidate hash check with ledger identity."""
     report = load_activation(paths) if report is None else report
-    with sqlite3.connect(f'file:{paths.database}?mode=rw', uri=True) as connection:
+    with closing(sqlite3.connect(f'file:{paths.database}?mode=rw', uri=True)) as connection, connection:
         connection.execute('BEGIN IMMEDIATE')
         if not _valid(paths, report, connection):
             raise PermissionError('research_activation_denied')
@@ -198,7 +199,7 @@ def _inventory(connection):
 
 def quarantine_inventory(database):
     """Private immutable identity list; performs no status conversions."""
-    with sqlite3.connect(f'file:{database}?mode=ro', uri=True) as connection:
+    with closing(sqlite3.connect(f'file:{database}?mode=ro', uri=True)) as connection:
         connection.execute('BEGIN')
         return _inventory(connection)
 

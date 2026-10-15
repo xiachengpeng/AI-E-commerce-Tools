@@ -28,10 +28,69 @@ def is_port_available(host, port):
         return sock.connect_ex((host, port)) != 0
 
 
+def local_worker_command(config, database):
+    """An explicit local active mode AND already consumed signature are required."""
+    if config.get('enabled') is not True or config.get('mode')!='local' or config.get('worker_mode')!='active':
+        return None
+    from pathlib import Path
+    from contextlib import closing
+    import sqlite3
+    from services.research_runtime import resolve_runtime_paths
+    from services.research_activation import load_activation, validate_activation
+    try:
+        paths=resolve_runtime_paths(Path(database),Path(config.get('data_root') or Path.home()/'.local/share/ai-ecommerce-tools/research'))
+        report=load_activation(paths)
+        if not validate_activation(paths,report): return None
+        with closing(sqlite3.connect(paths.database.as_uri()+'?mode=ro',uri=True)) as connection:
+            owner=connection.execute('SELECT activation_digest,cutover_state FROM full_merge_ledger WHERE source_snapshot_id=?',
+                                     (report['snapshot_id'],)).fetchone()
+        if owner!=(report['signature'],'activated'): return None
+        command=[sys.executable,'-m','services.research_worker','--database',str(paths.database),
+                 '--data-root',str(paths.evidence_root.parent),'--mode','active']
+        if config.get('business_settings_path'):
+            command+=['--business-settings',config['business_settings_path']]
+        return command
+    except (OSError,ValueError,KeyError,sqlite3.Error):
+        return None
+
+
+def stop_owned_child(process):
+    """Only Popen children created by this launcher; never scan/kill other PIDs."""
+    if process is None or process.poll() is not None: return
+    process.terminate()
+    try: process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        # Unknown external outcomes must remain recoverable. Do not SIGKILL an
+        # in-flight worker automatically; report that the child is still stopping.
+        print('⚠️ 子进程仍在结束当前操作，请核对后再重启。')
+
+
+def backend_ready(process, *, timeout=15):
+    from urllib.request import urlopen
+    deadline=time.monotonic()+timeout
+    while process.poll() is None and time.monotonic()<deadline:
+        try:
+            with urlopen(f'http://127.0.0.1:{BACKEND_PORT}/config',timeout=.5) as response:
+                if response.status==200: return True
+        except (OSError,ValueError): pass
+        time.sleep(.1)
+    return False
+
+
 def run_app():
     root_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.join(root_dir, "backend")
     frontend_dir = os.path.join(root_dir, "frontend")
+
+    if backend_dir not in sys.path:
+        sys.path.insert(0,backend_dir)
+    from services.research_client import load_research_config
+    from services.research_runtime import check_cutover_startup
+    try:
+        check_cutover_startup(load_research_config(),os.environ.get('SQLITE_DB_PATH') or os.path.join(backend_dir,'history.db'))
+    except (OSError,ValueError):
+        print('切换维护屏障尚未释放，未启动服务。')
+        return
 
     print("🚀 正在启动 AI 竞品分析工具...")
 
@@ -91,14 +150,16 @@ with http.server.ThreadingHTTPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) 
     )
     print(f"✅ 前端服务已启动: http://127.0.0.1:{FRONTEND_PORT}")
 
-    # Optional research transport is independent of the existing app processes.
+    # Local research shares this API/database; the old tunnel is never started.
     research_process = None
-    research_config = os.environ.get('RESEARCH_INTEGRATION_CONFIG', os.path.expanduser('~/.local/share/ai-ecommerce-merge/research.json'))
-    if os.path.isfile(research_config):
-        research_process = subprocess.Popen(
-            [sys.executable, '-m', 'services.research_tunnel'], cwd=backend_dir,
-            env={**os.environ, 'PYTHONPATH': backend_dir}
-        )
+    if backend_ready(backend_process):
+        if backend_dir not in sys.path:
+            sys.path.insert(0,backend_dir)
+        from services.research_client import load_research_config
+        command=local_worker_command(load_research_config(),os.environ.get('SQLITE_DB_PATH') or os.path.join(backend_dir,'history.db'))
+        if command:
+            research_process=subprocess.Popen(command,cwd=backend_dir,
+                env={**os.environ,'PYTHONPATH':backend_dir})
 
     # 3. 等待启动后打开浏览器
     time.sleep(1.5)
@@ -126,15 +187,9 @@ with http.server.ThreadingHTTPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) 
     except KeyboardInterrupt:
         print("\n🛑 正在停止服务...")
     finally:
-        backend_process.terminate()
-        frontend_process.terminate()
-        if research_process is not None and research_process.poll() is None:
-            research_process.terminate()
-            try:
-                research_process.wait(timeout=7)
-            except subprocess.TimeoutExpired:
-                research_process.kill()
-                research_process.wait()
+        stop_owned_child(research_process)
+        stop_owned_child(backend_process)
+        stop_owned_child(frontend_process)
         print("👋 已安全退出。")
 
 if __name__ == "__main__":

@@ -134,6 +134,15 @@ class IsolatedPopen(original_popen):
                     validate_python_options(args)
                     allowed = True
                     kwargs["env"] = inherited_environment(kwargs)
+            elif (
+                executable in {Path('/usr/sbin/lsof'), Path('/usr/bin/lsof')}
+                and len(args) >= 4 and list(args[1:3]) == ['-t','--']
+                and all(Path(item).is_absolute() and Path(item).resolve().is_relative_to(child_sandbox(kwargs))
+                        for item in args[3:])
+            ):
+                # Only explicit disposable fixture files; no process-wide or
+                # live-user inventory, write operation, or network capability.
+                allowed = True
             elif str(args[0]) == "ssh":
                 # Replace the retained local SSH test stub with its guarded Python
                 # payload. Real ssh and arbitrary shell scripts remain forbidden.
