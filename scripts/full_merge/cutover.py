@@ -127,6 +127,8 @@ def _observe_barrier(plan):
 def _barrier(plan):
     receipt = _observe_barrier(plan)
     frozen = plan['freeze']
+    if plan.get('source_roster_sha256') is not None and receipt.get('roster_sha256') != plan['source_roster_sha256']:
+        raise ValueError('reviewed source roster mismatch')
     now = time.time()
     if not (receipt.get('reachable') is True and 0 <= now-receipt['observed_at'] < 35
             and 0 < frozen['frozen_since'] <= frozen['snapshot_created_at'] <= now

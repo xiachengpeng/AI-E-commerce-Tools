@@ -374,3 +374,10 @@ def test_post_activation_repeat_backup_detects_new_rows(setup):
     snapshot=Path(second['incremental_snapshot'])/'databases/0.db'
     assert database_stats(snapshot)==database_stats(live)
     assert first['incremental_snapshot']!=second['incremental_snapshot']
+
+
+def test_pinned_roster_mismatch_rejected_even_with_matching_source_hash(setup):
+    m,p,plan,receipt,live,paths=setup
+    plan['source_roster_sha256']='f'*64;private(p,plan)
+    receipt['roster_sha256']='e'*64
+    assert not m.cutover(p)['ready']
