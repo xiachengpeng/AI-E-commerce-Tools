@@ -40,9 +40,10 @@ def file_holders(paths, *, run=subprocess.run):
         lines=response.stdout.splitlines()
         if response.stderr.strip() or response.returncode not in (0,1):
             raise ValueError('file-holder inspection unavailable')
-        if response.returncode==1:
-            if lines:raise ValueError('inconsistent file-holder inspection')
-        elif not lines or any(not re.fullmatch(r'[1-9][0-9]*',line) for line in lines):
+        # macOS may return 1 for a mixed selection of open and closed files.
+        # Valid emitted PIDs still prove holders, so preserve them as blockers.
+        if (response.returncode==0 and not lines or
+                any(not re.fullmatch(r'[1-9][0-9]*',line) for line in lines)):
             raise ValueError('file-holder inspection malformed')
         found.update(int(line) for line in lines)
     return sorted(found)

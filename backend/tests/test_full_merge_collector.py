@@ -166,3 +166,29 @@ def test_snapshot_keeps_original_sidecars_as_private_provenance(fixture):
     roster,resolved,run,calls=fixture
     sidecar=Path(resolved['database']+'-wal');sidecar.write_bytes(b'original')
     assert sidecar in snapshot_sources(roster)['key_files']
+
+
+
+def test_partial_lsof_selection_preserves_known_holders(fixture):
+    from scripts.full_merge.collector import file_holders, snapshot_guard
+    roster,resolved,run,calls=fixture
+    def partial(argv,**kwargs):
+        if argv[0]=='lsof':return result(1,stdout='660\n670\n')
+        return run(argv,**kwargs)
+    # macOS returns 1 when a named closed config is selected alongside an open DB.
+    assert file_holders(roster['config_files']+[resolved['database']],run=partial)==[660,670]
+    with pytest.raises(ValueError,match='source writers not frozen'):
+        with snapshot_guard(roster,lambda:resolved,run=partial):
+            pytest.fail('known source holders must never count as frozen')
+
+
+@pytest.mark.parametrize('code,stdout,stderr',[
+    (1,'660\n','permission denied'),
+    (1,'660\nmalformed\n',''),
+    (2,'660\n',''),
+])
+def test_partial_lsof_selection_never_hides_inspection_errors(fixture,code,stdout,stderr):
+    from scripts.full_merge.collector import file_holders
+    roster,resolved,run,calls=fixture
+    def broken(argv,**kwargs):return result(code,stdout=stdout,stderr=stderr)
+    with pytest.raises(ValueError):file_holders(roster['config_files'],run=broken)
