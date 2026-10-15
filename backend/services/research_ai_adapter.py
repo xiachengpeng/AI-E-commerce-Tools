@@ -32,12 +32,25 @@ class ResearchAIAdapter:
         self.session_factory = session_factory
         self.allow_external = allow_external
         self.usage_runtime = usage_runtime
+        self._legacy = ContextVar("research_ai_legacy", default=None)
         self._action = ContextVar("research_ai_action", default=None)
         self._deadline = ContextVar("research_ai_deadline", default=None)
         self._snapshot = ContextVar("research_ai_snapshot", default=None)
 
     @contextmanager
+    def legacy_context(self, jobs, job):
+        if self._action.get() is not None or self._legacy.get() is not None:
+            raise ResearchAIError('legacy AI context overlap', code='input_changed')
+        token = self._legacy.set((jobs, job))
+        try:
+            yield
+        finally:
+            self._legacy.reset(token)
+
+    @contextmanager
     def action_context(self, runtime, action):
+        if self._legacy.get() is not None:
+            raise ResearchAIError('legacy AI context overlap', code='input_changed')
         token = self._action.set(
             (runtime, str(action["id"]), action["attempt"], action)
         )
@@ -117,6 +130,14 @@ class ResearchAIAdapter:
             )
         routing = {"deadline": deadline} if deadline is not None else {}
         reservation_id = None
+        legacy = self._legacy.get()
+        legacy_reservation = None
+        if legacy is not None:
+            if request.action_id is not None:
+                raise ResearchAIError('legacy AI cannot impersonate native action', code='input_changed')
+            from services.research_legacy_ai import reserve_legacy_ai
+            legacy_reservation = await reserve_legacy_ai(*legacy, request.operation)
+            payload['operation_id'] = f'research-legacy:{legacy[1].id}:{legacy[1].attempt}:{legacy_reservation}'
         network_attempt = 1
 
         async def observer(event):
@@ -124,7 +145,14 @@ class ResearchAIAdapter:
             from services.research_ai_usage import ResearchUsageError, record_ai_attempt
 
             network_attempt = event["network_attempt"]
-            await record_ai_attempt(usage, reservation_id, event)
+            if legacy_reservation is not None:
+                from services.research_legacy_ai import record_legacy_ai
+                # A network attempt failure is not a logical-call terminal
+                # result: the sole controller may still authorize its retry.
+                status = 'retrying' if event['status'] == 'failed' and not event.get('terminal') else event['status']
+                await record_legacy_ai(*legacy, legacy_reservation, status)
+            else:
+                await record_ai_attempt(usage, reservation_id, event)
             if event["status"] == "uncertain":
                 raise ResearchUsageError("AI提交结果未知，未自动重放或切换提供商")
 
@@ -150,7 +178,13 @@ class ResearchAIAdapter:
                 context[3]["payload"]["ai_usage"] = reserved_payload["ai_usage"]
             routing["attempt_observer"] = observer
 
+        if legacy_reservation is not None:
+            routing['attempt_observer'] = observer
+
         async def terminal(status):
+            if legacy_reservation is not None:
+                from services.research_legacy_ai import record_legacy_ai
+                await record_legacy_ai(*legacy, legacy_reservation, status)
             if reservation_id is not None:
                 from services.research_ai_usage import record_ai_attempt
 
@@ -183,6 +217,11 @@ class ResearchAIAdapter:
                         "text", payload, snapshot=snapshot, **routing
                     )
         except asyncio.CancelledError:
+            if legacy_reservation is not None:
+                try:
+                    await terminal('cancelled')
+                except Exception:  # Preserve cancellation; durable reserved/submitted state blocks replay.
+                    pass
             # Router observes in-flight cancellation. Cancellation during central backoff
             # also leaves a durable unknown record; no new network loop lives here.
             if reservation_id is not None:
@@ -198,6 +237,11 @@ class ResearchAIAdapter:
                     pass
             raise
         except TimeoutError:
+            if legacy_reservation is not None:
+                try:
+                    await terminal('uncertain')
+                except Exception:  # A lost lease cannot authorize a late metadata write.
+                    pass
             if reservation_id is not None:
                 from services.research_ai_usage import record_ai_attempt
 
@@ -211,7 +255,7 @@ class ResearchAIAdapter:
                     pass
             raise
         except AIProviderRequestError as exc:
-            await terminal("failed")
+            await terminal('uncertain' if exc.category == 'ambiguous_outcome' else 'failed')
             if exc.category in {"protocol_incompatible", "model_not_found"}:
                 raise ResearchAIError(
                     "当前模型不支持此操作，请在主AI设置更换text绑定；未切换或重放供应商",

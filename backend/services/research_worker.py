@@ -31,6 +31,19 @@ class LocalWorkerServices:
     sync: WorkerLoop
 
 
+class UnifiedResearchRunner:
+    """Both queues run beneath the one process owner lock held by serve_workbench."""
+    def __init__(self, runtime, native):
+        self.runtime, self.native = runtime, native
+
+    async def loop(self):
+        from rabbit_hole.cli import DefaultOperatorRuntime
+        legacy = await DefaultOperatorRuntime(local_runtime=self.runtime).build_worker()
+        async with asyncio.TaskGroup() as group:
+            group.create_task(self.native.loop(), name='research-native-actions')
+            group.create_task(legacy.run_forever(), name='research-legacy-queue')
+
+
 def deny_activation(runtime: ResearchRuntime) -> bool:
     return False
 
@@ -49,7 +62,7 @@ def build_local_worker_services(runtime: ResearchRuntime) -> LocalWorkerServices
         raise RuntimeError('research_worker_configuration_not_ready')
     runner = runtime.non_ai_integrations.make_runner(runtime.store, runtime.business_settings,
                                                     runtime.evidence_store, ai_adapter=runtime.ai_adapter)
-    return LocalWorkerServices(runner, sync)
+    return LocalWorkerServices(UnifiedResearchRunner(runtime, runner), sync)
 
 
 async def serve_local_worker(runtime: ResearchRuntime, *, mode: str,

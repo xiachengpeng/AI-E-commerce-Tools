@@ -1,6 +1,7 @@
 """Local-only research boundary shared with the existing research session."""
 
 import secrets
+from ipaddress import ip_address
 from pathlib import PurePosixPath
 from urllib.parse import unquote
 
@@ -18,6 +19,12 @@ def require_research_session(
 ) -> None:
     from routes.research import _session_token
 
+    try:
+        local_peer = request.client is not None and ip_address(request.client.host).is_loopback
+    except ValueError:
+        local_peer = False
+    if not local_peer:
+        raise HTTPException(403, "研究入口只允许本机访问")
     if "http://" + request.headers.get("host", "") not in ORIGINS:
         raise HTTPException(403, "研究入口只允许本机访问")
     origin = request.headers.get("origin")

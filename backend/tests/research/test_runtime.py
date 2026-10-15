@@ -548,6 +548,7 @@ async def test_default_operator_builds_worker_without_external_factory(monkeypat
     operator.settings = SimpleNamespace(browser_concurrency=2)
     operator.jobs = object()
     operator.feishu = object()
+    operator.local_runtime = SimpleNamespace(evidence_store=object(), ai_adapter=object())
     worker = await operator.build_worker()
     assert worker.consumer_count == 2
     assert created[0]["settings"] is operator.settings

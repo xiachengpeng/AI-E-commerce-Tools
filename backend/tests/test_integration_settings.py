@@ -118,7 +118,7 @@ def test_settings_routes_share_research_security_and_never_echo(tmp_path):
     app = FastAPI()
     app.state.integration_settings = IntegrationSettingsService(prepared(tmp_path))
     app.include_router(create_integration_settings_router())
-    client = TestClient(app, base_url="http://127.0.0.1:9503")
+    client = TestClient(app, client=('127.0.0.1', 50000), base_url="http://127.0.0.1:9503")
     endpoint = "/api/settings/integrations/apify/research"
     assert client.get(endpoint).status_code == 401
     headers = {"X-Research-Token": _session_token, "Origin": "http://127.0.0.1:9502"}
@@ -148,7 +148,7 @@ def test_unavailable_runtime_api_is_503(tmp_path):
 
     app = FastAPI()
     app.include_router(create_integration_settings_router())
-    response = TestClient(app, base_url="http://127.0.0.1:9503").get(
+    response = TestClient(app, client=('127.0.0.1', 50000), base_url="http://127.0.0.1:9503").get(
         "/api/settings/integrations/apify/research",
         headers={"X-Research-Token": _session_token},
     )
@@ -432,7 +432,7 @@ def test_corrupt_integration_schema_returns_unconfigured_not_parameter_error(tmp
     app = FastAPI()
     app.state.integration_settings = IntegrationSettingsService(path)
     app.include_router(create_integration_settings_router())
-    response = TestClient(app, base_url="http://127.0.0.1:9503").get(
+    response = TestClient(app, client=('127.0.0.1', 50000), base_url="http://127.0.0.1:9503").get(
         "/api/settings/integrations/apify/research",
         headers={"X-Research-Token": _session_token},
     )

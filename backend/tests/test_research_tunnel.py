@@ -15,36 +15,22 @@ def test_tunnel_requires_fixed_loopback_destination_and_no_user_ssh_options():
             ssh_command({**config, **changes})
 
 
-def test_supervisor_shutdown_closes_only_its_owned_transport(tmp_path):
+def test_archived_supervisor_exits_without_invoking_ssh(tmp_path):
     import json
     import os
     from pathlib import Path
-    import shlex
-    import socket
     import subprocess
     import sys
-    import time
-    def listening():
-        with socket.socket() as probe:
-            probe.settimeout(0.1)
-            return probe.connect_ex(('127.0.0.1', 19503)) == 0
-    if listening(): pytest.skip('integration transport already owns the fixed port')
-    folder = tmp_path / 'bin'; folder.mkdir()
-    fake = folder / 'ssh'
-    code = 'import socket,time;s=socket.socket();s.bind(("127.0.0.1",19503));s.listen();time.sleep(30)'
-    fake.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' -c ' + shlex.quote(code) + '\n')
+    folder=tmp_path/'bin';folder.mkdir()
+    marker=tmp_path/'ssh-invoked'
+    fake=folder/'ssh'
+    fake.write_text('#!/bin/sh\ntouch "'+str(marker)+'"\nexit 99\n')
     fake.chmod(0o700)
-    config = tmp_path / 'research.json'
-    config.write_text(json.dumps({'enabled': True, 'base_url': 'http://127.0.0.1:19503', 'ssh_target': 'fixture@fixture'}))
+    config=tmp_path/'research.json'
+    config.write_text(json.dumps({'enabled':True,'mode':'remote','base_url':'http://127.0.0.1:19503','ssh_target':'fixture@fixture'}))
     config.chmod(0o600)
-    process = subprocess.Popen([sys.executable, '-B', '-m', 'services.research_tunnel'],
-        env={**os.environ, 'PYTHONPATH': str(Path(__file__).resolve().parents[1]), 'RESEARCH_INTEGRATION_CONFIG': str(config), 'PATH': str(folder) + os.pathsep + os.environ['PATH']},
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    try:
-        deadline = time.monotonic() + 5
-        while not listening() and process.poll() is None and time.monotonic() < deadline: time.sleep(0.05)
-        assert listening(), 'owned fake SSH transport did not start'
-        process.terminate(); process.wait(timeout=7)
-        assert not listening(), 'owned transport leaked after supervisor exit'
-    finally:
-        if process.poll() is None: process.kill(); process.wait()
+    result=subprocess.run([sys.executable,'-B','-m','services.research_tunnel'],
+        env={**os.environ,'PYTHONPATH':str(Path(__file__).resolve().parents[1]),'RESEARCH_INTEGRATION_CONFIG':str(config),'PATH':str(folder)+os.pathsep+os.environ['PATH']},
+        capture_output=True,timeout=5)
+    assert result.returncode==0
+    assert not marker.exists()

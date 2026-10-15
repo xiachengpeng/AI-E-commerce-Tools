@@ -1,7 +1,6 @@
 """Research-only session and routes; old business endpoints remain unchanged."""
 import secrets
 from typing import Literal
-from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -16,7 +15,7 @@ from modules.research_math.estimates import scenario_rows
 from modules.research_math.logistics import logistics_weights
 from modules.research_math.markets import MARKETS
 from pydantic import ValidationError
-from services.research_client import ResearchClient, ResearchError, load_research_config
+from services.research_client import ResearchError, load_research_config
 from services.research_mapper import build_marketing_preview
 
 router = APIRouter(prefix='/api/research/v1', tags=['research'])
@@ -38,19 +37,8 @@ def require_session(request: Request):
 def session(request: Request):
     guard_origin(request)
     config = load_research_config()
-    endpoint = config.get('base_url', '')
-    try:
-        parsed = urlsplit(endpoint) if isinstance(endpoint, str) else None
-        if parsed:
-            _ = parsed.port
-    except ValueError:
-        parsed = None
-    embed_url = (endpoint.rstrip('/') + '/marketing-workbench'
-                 if parsed and parsed.scheme == 'http' and parsed.hostname in {'127.0.0.1', 'localhost'}
-                 and not parsed.username and not parsed.password and not parsed.query and parsed.path in {'', '/'} else None)
     return JSONResponse({'csrf_token': _session_token, 'enabled': config.get('enabled') is True,
-                         'embed_url': embed_url if config.get('enabled') is True and config.get('mode', 'remote') == 'remote' else None,
-                         'workbench_url': config.get('workbench_url') if config.get('enabled') is True and config.get('mode', 'remote') == 'remote' else None},
+                         'embed_url': None, 'workbench_url': None},
                         headers={'Cache-Control': 'no-store'})
 
 
@@ -58,24 +46,15 @@ def client(*, runtime=None, config=None):
     config = load_research_config() if config is None else config
     if config.get('enabled') is not True:
         raise HTTPException(503, '研究连接尚未启用，独立计算工具仍可使用')
+    from services.research_facade import ResearchFacade
     try:
-        mode = config.get('mode', 'remote')
-        if mode == 'local':
-            from services.research_facade import ResearchFacade
-            return ResearchFacade(runtime)
-        if mode != 'remote':
-            raise ResearchError('invalid_mode', '研究模式必须明确选择 local 或 remote')
-        return ResearchClient(config)
+        return ResearchFacade(runtime)
     except ResearchError as e:
         raise HTTPException(e.status, {'code': e.code, 'message': str(e)}) from None
 
 
 def routed_client(request):
-    # Existing default and legacy test adapters retain the zero-argument factory.
-    config = load_research_config()
-    if config.get('mode', 'remote') == 'local':
-        return client(runtime=getattr(request.app.state, 'research_runtime', None), config=config)
-    return client()
+    return client(runtime=getattr(request.app.state, 'research_runtime', None))
 
 
 async def invoke(call):
@@ -224,7 +203,7 @@ async def save_import(request: Request, project_id: UUID, product_id: UUID, payl
     request_digest = import_request_digest(data)
     config = load_research_config()
     runtime = getattr(request.app.state, 'research_runtime', None)
-    if (config.get('enabled') is True and config.get('mode', 'remote') == 'local'
+    if (config.get('enabled') is True
             and runtime is not None and runtime.engine is not None and runtime.store is not None
             and runtime.evidence_store is not None and not runtime.diagnostics):
         owner = client(runtime=runtime, config=config)
@@ -237,26 +216,14 @@ async def save_import(request: Request, project_id: UUID, product_id: UUID, payl
     previous = local_call(lambda: repository().lookup(payload.import_id, request_digest))
     if previous:
         return previous
-    if payload.confirmation is not None and config.get('mode', 'remote') != 'local':
-        raise HTTPException(422, '确认并导入仅支持本地研究运行时')
+    if runtime is None:
+        raise HTTPException(503, '本地研究运行时尚未就绪')
     owner = routed_client(request)
-    if config.get('mode', 'remote') == 'local':
-        from services.research_repository import RepositoryError
-        try:
-            return await invoke(confirm_and_import(owner.runtime, data, payload.import_id))
-        except RepositoryError as exc:
-            raise HTTPException(exc.status, str(exc)) from None
-    snapshot = await invoke(owner.get_product(project_id, product_id))
-    ref = snapshot['source_ref']
-    if (ref['source_version'] != payload.expected_source_version or ref['identity_revision'] != payload.expected_identity_revision
-            or snapshot['market'] != payload.expected_market):
-        raise HTTPException(409, '研究资料或商品身份已更新，请重新预览')
-    accepted = set(payload.selected_fields)
-    preview = build_marketing_preview(snapshot, {})
-    if not accepted.issubset({field['key'] for field in preview['fields']}):
-        raise HTTPException(409, '所选事实未核实或已失效，请重新核对')
-    saved = {**snapshot, 'facts': [fact for fact in snapshot['facts'] if fact['key'] in accepted]}
-    return local_call(lambda: repository().save(payload.import_id, request_digest, payload.name.strip(), saved))
+    from services.research_repository import RepositoryError
+    try:
+        return await invoke(confirm_and_import(owner.runtime, data, payload.import_id))
+    except RepositoryError as exc:
+        raise HTTPException(exc.status, str(exc)) from None
 
 
 @router.post('/imports/{import_id}/artifacts', dependencies=[Depends(require_session)])

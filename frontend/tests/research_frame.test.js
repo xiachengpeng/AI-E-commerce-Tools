@@ -3,30 +3,34 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 
-test('frame messages require exact origin/window and leaving view destroys workbench', async () => {
-    const nodes = {}, events = {}, requests = [];
-    let removed = 0;
-    const node = id => nodes[id] ||= { dataset:{},value:'',classList:{toggle(){}},
-        addEventListener(type, handler){events[type]=handler;},replaceChildren(){},querySelectorAll(){return [];} };
-    const frame = {setAttribute(){},contentWindow:{postMessage(){}},remove(){removed++;}};
-    const context = {URL,AbortSignal,Event,location:{protocol:'http:'},
-        document:{getElementById:node,createElement(){return frame;}},
-        addEventListener(type,handler){events['window:'+type]=handler;},
-        fetch:async url => {requests.push(url);return {ok:true,json:async()=>url.endsWith('/session') ?
-            {csrf_token:'test',enabled:true,embed_url:'http://127.0.0.1:19503/marketing-workbench'} : {projects:[],next_cursor:null}};}};
+test('native entry is unconditional and never installs a remote message bridge', async () => {
+    const nodes = {}, events = {};
+    const node = id => nodes[id] ||= { dataset:{}, value:'', classList:{toggle(){}},
+        addEventListener(type, fn){events[type]=fn;}, querySelectorAll(){return [];} };
+    const path='/projects/7ed7aafc-0e0e-4ec7-a55e-95dccad5f31a/products/7ed7aafc-0e0e-4ec7-a55e-95dccad5f31b/imports';
+    const body={name:'Pending'};
+    const pending={path,signature:JSON.stringify([path,body]),body:{...body,import_id:'7ed7aafc-0e0e-4ec7-a55e-95dccad5f31c'}};
+    const context = {URL, AbortSignal, Event, localStorage:{getItem(){return '0';}},
+        sessionStorage:{getItem(){return JSON.stringify(pending);}},
+        document:{getElementById:node, createElement(){assert.fail('remote frame created');}},
+        addEventListener(type){assert.notEqual(type, 'message');},
+        fetch:async()=>assert.fail('mount must use native module, not remote session')};
     context.window=context;
-    vm.runInNewContext(fs.readFileSync(require.resolve('../js/research.js'),'utf8'),context);
-    await context.ResearchPanel.init();
-    events.click({target:{closest:()=>({id:'researchToggleWorkbench',dataset:{},hasAttribute(){return false;}})}});
-    const count = requests.length;
-    const data = {type:'research:select',version:1,project_id:'7ed7aafc-0e0e-4ec7-a55e-95dccad5f31a',product_id:'7ed7aafc-0e0e-4ec7-a55e-95dccad5f31b',source_version:1,identity_revision:1};
-    await events['window:message']({origin:'http://evil.example',source:frame.contentWindow,data});
-    await events['window:message']({origin:'http://127.0.0.1:19503',source:{},data});
-    assert.equal(requests.length,count);
+    const source=fs.readFileSync(require.resolve('../js/research.js'),'utf8');
+    vm.runInNewContext(source,context);
+    // VM has no import callback, so the native loading error is rendered locally.
+    await context.ResearchPanel.mount();
+    assert.equal(nodes.researchNativeRoot.hidden,false);
+    assert.equal(nodes.researchView.hidden,true);
+    assert.equal(nodes.researchResolveImport?.hidden,false);
+    assert.equal(nodes.researchRetryImport?.hidden,false);
+    assert.equal(nodes.researchPendingImportEntry?.hidden,false);
+    assert.equal(typeof context.ResearchPanel.openPendingImport,'function');
+    assert.match(nodes.researchNativeRoot.textContent,/原生研究/);
     context.ResearchPanel.suspend();
-    assert.equal(removed,1);
-    await events['window:message']({origin:'http://127.0.0.1:19503',source:frame.contentWindow,data});
-    assert.equal(requests.length,count);
+    assert.equal(nodes.researchNativeRoot.hidden,true);
+    assert.doesNotMatch(source,/postMessage|createElement\(['"]iframe|research_native_workbench/);
+    assert.equal(/id="researchWorkbenchLink"|id="researchToggleWorkbench"|id="researchWorkbenchHost"/.test(fs.readFileSync(require.resolve('../index.html'),'utf8')),false);
 });
 
 test('uncommitted import survives reload and can retry original body after source changes', async () => {

@@ -233,7 +233,7 @@ async def test_http_combined_import_rollback_and_legacy_digest(local, monkeypatc
         await original(self, connection, *args)
         raise ResearchError("unavailable", "synthetic failure", 503)
 
-    with TestClient(app, base_url="http://127.0.0.1:9503") as browser:
+    with TestClient(app, client=('127.0.0.1', 50000), base_url="http://127.0.0.1:9503") as browser:
         headers = {
             "X-Research-Token": browser.get("/api/research/v1/session").json()[
                 "csrf_token"
@@ -344,7 +344,7 @@ async def test_ready_local_route_uses_only_shared_async_connection(local, monkey
     app.state.research_runtime = facade.runtime
     app.include_router(research.router)
     data = request_for(project)
-    with TestClient(app, base_url="http://127.0.0.1:9503") as browser:
+    with TestClient(app, client=('127.0.0.1', 50000), base_url="http://127.0.0.1:9503") as browser:
         headers = {
             "X-Research-Token": browser.get("/api/research/v1/session").json()[
                 "csrf_token"
@@ -391,7 +391,7 @@ async def test_old_remote_receipt_recovers_offline(
     if not missing_runtime:
         app.state.research_runtime = facade.runtime
     app.include_router(research.router)
-    with TestClient(app, base_url="http://127.0.0.1:9503") as browser:
+    with TestClient(app, client=('127.0.0.1', 50000), base_url="http://127.0.0.1:9503") as browser:
         headers = {
             "X-Research-Token": browser.get("/api/research/v1/session").json()[
                 "csrf_token"
@@ -431,7 +431,7 @@ async def test_remote_combined_workflow_refused_before_client(local, monkeypatch
     app = FastAPI()
     app.include_router(research.router)
     data = request_for(project)
-    with TestClient(app, base_url="http://127.0.0.1:9503") as browser:
+    with TestClient(app, client=('127.0.0.1', 50000), base_url="http://127.0.0.1:9503") as browser:
         headers = {
             "X-Research-Token": browser.get("/api/research/v1/session").json()[
                 "csrf_token"
@@ -445,7 +445,7 @@ async def test_remote_combined_workflow_refused_before_client(local, monkeypatch
             + "/imports"
         )
         body = {k: v for k, v in data.items() if k not in {"project_id", "product_id"}}
-        assert browser.post(url, json=body, headers=headers).status_code == 422
+        assert browser.post(url, json=body, headers=headers).status_code == 503
 
 
 @pytest.mark.asyncio
@@ -490,7 +490,7 @@ async def test_readonly_local_runtime_cannot_write_archives(local, monkeypatch):
         app = FastAPI()
         app.state.research_runtime = runtime
         app.include_router(research.router)
-        with TestClient(app, base_url="http://127.0.0.1:9503") as browser:
+        with TestClient(app, client=('127.0.0.1', 50000), base_url="http://127.0.0.1:9503") as browser:
             headers = {
                 "X-Research-Token": browser.get("/api/research/v1/session").json()[
                     "csrf_token"

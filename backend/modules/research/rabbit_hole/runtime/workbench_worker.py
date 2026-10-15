@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import signal
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -12,15 +11,9 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from rabbit_hole.application.runner import WorkbenchRunner
-from rabbit_hole.application.sync import WorkbenchSync
 from rabbit_hole.config import get_settings
-from rabbit_hole.integrations.feishu import FeishuClient
 from rabbit_hole.monitoring import runtime_health
 from rabbit_hole.persistence.database import create_database_engine
-from rabbit_hole.persistence.evidence_store import EvidenceStore
-from rabbit_hole.persistence.projects import WorkbenchStore
-from rabbit_hole.persistence.storage_factory import create_storage_client
 
 COMPONENT = "workbench_worker"
 LOCK_KEY = 727481063
@@ -148,25 +141,9 @@ async def _serve_postgres(
 
 
 async def run_workbench_worker() -> None:
-    settings = get_settings()
-    engine = create_database_engine(settings)
-    from rabbit_hole.persistence.sql import initialize_sqlite
-    await initialize_sqlite(engine)
-    s3 = create_storage_client(settings)
-    feishu = FeishuClient(settings.feishu_app_id, settings.feishu_app_secret, settings.feishu_base_app_token)
-    store = WorkbenchStore(engine)
-    runner = WorkbenchRunner(store, settings,
-        lambda: EvidenceStore(s3, bucket=settings.s3_bucket, collector_version="workbench-v2"))
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-    try:
-        await serve_workbench(engine, runner, WorkbenchSync(store, feishu), stop=stop)
-    finally:
-        await feishu.aclose()
-        s3.close()
-        await engine.dispose()
+    # Historical module entry remains importable, never a second producer or
+    # consumer configured from the retired project's environment.
+    raise RuntimeError('owned_local_runtime_required')
 
 
 async def healthcheck() -> bool:

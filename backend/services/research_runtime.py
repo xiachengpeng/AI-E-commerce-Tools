@@ -223,7 +223,7 @@ def claim_before_main_initialization(database, *, config=None, data_root=None) -
     from services.research_activation import claim_activation, validate_activation
     import sqlite3
     config=load_research_config() if config is None else config
-    if config.get('enabled') is not True or config.get('mode')!='local':
+    if config.get('enabled') is not True:
         return False
     check_cutover_startup(config,database)
     try:

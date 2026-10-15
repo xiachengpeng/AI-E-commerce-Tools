@@ -5,13 +5,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
-import importlib
-import inspect
 import json
 import os
 import sys
 import tempfile
-from collections.abc import Awaitable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,15 +21,14 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
 from pydantic import BaseModel, ValidationError
 
-from rabbit_hole.config import Settings, get_settings
+from rabbit_hole.config import Settings
 from rabbit_hole.domain.legacy import Job
 from rabbit_hole.integrations.collectors.meta import (
     MetaPageHealthError,
     MetaQuery,
     PlaywrightMetaPage,
 )
-from rabbit_hole.integrations.feishu import FeishuClient, TriggerPoller, bootstrap_base
-from rabbit_hole.persistence.database import create_database_engine
+from rabbit_hole.integrations.feishu import TriggerPoller, bootstrap_base
 from rabbit_hole.persistence.evidence_store import EvidenceStore
 from rabbit_hole.persistence.legacy_jobs import (
     ActiveLeaseError,
@@ -65,56 +62,35 @@ class OperatorRuntime(Protocol):
 class DefaultOperatorRuntime:
     """Validated, lazily destructive operator dependencies.
 
-    Standard collector/browser composition is provided by ``runtime``. An
-    optional ``RABBIT_HOLE_WORKER_FACTORY=module:callable`` remains available
-    for controlled adapter injection.
+    Main-owned runtime injection is mandatory. Retired source environment and
+    worker-factory variables cannot activate a second queue consumer.
     """
 
-    def __init__(self, settings: Settings | None = None) -> None:
-        self.settings = settings or get_settings()
-        self.engine = create_database_engine(self.settings)
-        self.jobs = JobRepository(self.engine)
-        self.feishu = FeishuClient(
-            self.settings.feishu_app_id,
-            self.settings.feishu_app_secret,
-            self.settings.feishu_base_app_token,
-        )
+    def __init__(self, settings: Settings | None = None, *, local_runtime=None) -> None:
+        # Standalone legacy consumers may not infer a second database or owner
+        # from old source environment variables. The sole main worker injects it.
+        if local_runtime is None:
+            raise RuntimeConfigurationError("owned_local_runtime_required")
+        if local_runtime.diagnostics or local_runtime.engine is None:
+            raise RuntimeConfigurationError("owned_local_runtime_required")
+        self.local_runtime = local_runtime
+        self.settings = local_runtime.business_settings
+        self.engine = local_runtime.engine
+        self.jobs = JobRepository(self.engine, admission=self.settings.admission)
+        self.feishu = local_runtime.non_ai_integrations.feishu
 
     async def poll_once(self) -> int:
         return await TriggerPoller(self.feishu, self.jobs).poll_once()
 
     async def build_worker(self) -> Worker:
-        reference = os.environ.get("RABBIT_HOLE_WORKER_FACTORY", "").strip()
-        if not reference:
-            from rabbit_hole.runtime.legacy import build_worker
+        from rabbit_hole.runtime.legacy import build_worker
 
-            return await build_worker(
-                settings=self.settings, jobs=self.jobs, feishu=self.feishu
-            )
-        module_name, separator, attribute = reference.partition(":")
-        if not separator or not module_name or not attribute:
-            raise RuntimeConfigurationError(
-                "RABBIT_HOLE_WORKER_FACTORY must name module:callable"
-            )
-        try:
-            module = importlib.import_module(module_name)
-            factory = cast(Any, getattr(module, attribute))
-        except (AttributeError, ImportError) as exc:
-            raise RuntimeConfigurationError(
-                "RABBIT_HOLE_WORKER_FACTORY cannot be imported"
-            ) from exc
-        candidate: object = factory(
-            settings=self.settings,
-            jobs=self.jobs,
-            feishu=self.feishu,
+        return await build_worker(
+            settings=self.settings, jobs=self.jobs, feishu=self.feishu,
+            storage=self.local_runtime.evidence_store,
+            ai_adapter=self.local_runtime.ai_adapter,
+            consume_only=True,
         )
-        if inspect.isawaitable(candidate):
-            candidate = await cast(Awaitable[object], candidate)
-        if not isinstance(candidate, Worker):
-            raise RuntimeConfigurationError(
-                "RABBIT_HOLE_WORKER_FACTORY did not return Worker"
-            )
-        return candidate
 
     async def worker_once(self) -> WorkerRunResult:
         return await (await self.build_worker()).run_once()
@@ -143,13 +119,15 @@ class DefaultOperatorRuntime:
         )
 
     async def aclose(self) -> None:
-        await self.feishu.aclose()
-        await self.engine.dispose()
+        # Main runtime owns and closes shared services.
+        return None
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m rabbit_hole.cli")
     commands = parser.add_subparsers(dest="command", required=True)
+    report = commands.add_parser('queue-report', help='read local legacy queue status without consuming work')
+    report.add_argument('--database', type=Path)
     smoke = commands.add_parser(
         "meta-smoke", help="run a bounded, read-only Meta Ad Library smoke check"
     )
@@ -298,6 +276,22 @@ async def _operator_command(
     arguments: argparse.Namespace,
     runtime: OperatorRuntime | None,
 ) -> dict[str, Any]:
+    if arguments.command == 'queue-report':
+        import sqlite3
+        from contextlib import closing
+        if arguments.database is None:
+            from db import DB_PATH
+            path = Path(DB_PATH)
+        else:
+            path = arguments.database
+        if not path.is_absolute() or path.is_symlink():
+            raise RuntimeConfigurationError('invalid_local_database')
+        with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)) as connection:
+            connection.execute('PRAGMA query_only=ON')
+            rows = connection.execute('SELECT kind,status,COUNT(*),MAX(attempt) FROM runtime_jobs GROUP BY kind,status ORDER BY kind,status').fetchall()
+        return {'ok': True, 'command': 'queue-report', 'result': {'jobs': [
+            dict(kind=kind, status=status, count=count, max_attempt=attempt)
+            for kind, status, count, attempt in rows]}}
     selected = runtime or DefaultOperatorRuntime()
     try:
         if arguments.command == "poll-once":

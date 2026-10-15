@@ -133,13 +133,24 @@ class ResearchSync:
         return await self._invoke("retry", project_id, run_id)
 
     async def run_once(self):
+        # Inspect only the local queue before resolving a target/client. Entry to
+        # the workbench is never a Feishu poll, sync or connection probe.
+        from datetime import UTC, datetime
+        from sqlalchemy import and_, or_, select
+        from rabbit_hole.application.sync import runs
+        async with self.store.engine.connect() as connection:
+            eligible = await connection.scalar(select(runs.c.id).where(or_(
+                runs.c.status.in_(['ready', 'running']),
+                and_(runs.c.status == 'retry_wait', runs.c.next_attempt_at <= datetime.now(UTC)),
+            )).limit(1))
+        if eligible is None:
+            return False
         return await self._invoke("run_once")
 
     async def loop(self):
         import asyncio
 
         # Activation belongs to Task19; do not silently retry authorization failures.
-        self._service(external=True)
         while True:
             await self.run_once()
             await asyncio.sleep(3)

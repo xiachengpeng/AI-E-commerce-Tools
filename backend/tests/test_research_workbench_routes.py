@@ -25,7 +25,7 @@ def make_client(runtime=None):
     app.state.research_runtime = runtime
     app.include_router(research.router)
     app.include_router(research_workbench.router)
-    client = TestClient(app, base_url="http://localhost:9503")
+    client = TestClient(app, client=('127.0.0.1', 50000), base_url="http://localhost:9503")
     client.headers["X-Research-Token"] = client.get("/api/research/v1/session").json()[
         "csrf_token"
     ]
@@ -217,6 +217,7 @@ async def test_log_stream_limit_and_cursor_validation(monkeypatch):
                     *headers,
                 ],
                 "app": app,
+                "client": ("127.0.0.1", 50000),
             }
         )
 

@@ -123,7 +123,7 @@ async def test_all_local_v1_routes_reuse_lifecycle_and_session(local, monkeypatc
     app = FastAPI()
     app.state.research_runtime = facade.runtime
     app.include_router(research.router)
-    with TestClient(app, base_url='http://127.0.0.1:9503') as browser:
+    with TestClient(app, client=('127.0.0.1', 50000), base_url='http://127.0.0.1:9503') as browser:
         base = '/api/research/v1'
         session = browser.get(base + '/session').json()
         assert session['embed_url'] is None

@@ -152,14 +152,14 @@
     <!-- Main Content Area -->
     <div class="flex-1 flex overflow-hidden relative">
         <div id="view-research" class="hidden flex-1 overflow-hidden">
+            <button id="researchPendingImportEntry" type="button" class="r-link" onclick="ResearchPanel.openPendingImport()" hidden>查看上次待核对的营销档案保存</button>
             <section id="researchNativeRoot" class="research-workbench" aria-label="原生选品研究工作台" hidden></section>
             <section id="researchView">
                 <header class="r-header"><div><h2>选品研究</h2><p class="r-muted">研究与核实 → 营销草稿 → 素材交付 → 人工测试复盘</p></div>
-                    <div><a id="researchWorkbenchLink" class="r-link" href="#" target="_blank" rel="noopener noreferrer" hidden>打开完整研究工作台</a><button id="researchRefresh">刷新研究资料</button><button id="researchResolveConfirmation" type="button" hidden>核对上次提交</button>
+                    <div><button id="researchRefresh">刷新研究资料</button><button id="researchResolveConfirmation" type="button" hidden>核对上次提交</button>
                 <button id="researchReturnNative" type="button" hidden>返回研究工作台</button><button id="researchUndo" hidden>撤销本次草稿填充</button></div>
                 </header>
                 <div id="researchStatus" class="r-status" role="status" aria-live="polite">研究入口待加载</div>
-                <div class="r-card"><button id="researchToggleWorkbench" type="button" disabled>展开完整 SOP 工作台</button><p class="r-muted">关键词审核、采集队列、证据、核算、决策和测试复盘；付费操作由你在工作台明确发起。</p><div id="researchWorkbenchHost" hidden></div></div>
                 <div class="r-card"><h3>已保存的营销档案</h3><button id="researchLoadImports" type="button">刷新档案</button><button id="researchResolveImport" type="button" hidden>核对上次档案保存</button><button id="researchRetryImport" type="button" hidden>重试原档案保存</button><div id="researchImports"></div><button id="researchMoreImports" type="button" hidden>加载更多档案</button></div>
                 <div class="r-grid">
                     <aside class="r-card"><h3>研究项目</h3><div id="researchProjectList"><p class="r-muted">正在读取研究摘要…</p></div><button id="researchMoreProjects" hidden>加载更多项目</button></aside>

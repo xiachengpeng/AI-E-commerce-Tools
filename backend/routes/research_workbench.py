@@ -1184,7 +1184,7 @@ async def research_lifespan(app, *, config=None, database=None, data_root=None):
     app.state.research_diagnostics = ()
     config = load_research_config() if config is None else config
     async with AsyncExitStack() as resources:
-        if config.get("enabled") is True and config.get("mode") == "local":
+        if config.get("enabled") is True:
             try:
                 if database is None:
                     from db import DB_PATH

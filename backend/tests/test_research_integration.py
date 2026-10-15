@@ -78,7 +78,7 @@ def test_research_routes_cannot_be_called_cross_site_or_without_session():
     from fastapi.testclient import TestClient
     from routes.research import router
     app=FastAPI();app.include_router(router)
-    client=TestClient(app,base_url='http://127.0.0.1:9503')
+    client=TestClient(app, client=('127.0.0.1', 50000),base_url='http://127.0.0.1:9503')
     assert client.get('/api/research/v1/session',headers={'Origin':'https://evil.example'}).status_code==403
     assert client.get('/api/research/v1/projects').status_code==401
     session=client.get('/api/research/v1/session').json()
@@ -112,7 +112,7 @@ def test_explicit_local_origin_works_when_browser_labels_alias_cross_site():
     from fastapi.testclient import TestClient
     from routes.research import router
     app = FastAPI(); app.include_router(router)
-    client = TestClient(app, base_url='http://127.0.0.1:9503')
+    client = TestClient(app, client=('127.0.0.1', 50000), base_url='http://127.0.0.1:9503')
     assert client.get('/api/research/v1/session', headers={'Origin': 'http://localhost:9502', 'Sec-Fetch-Site': 'cross-site'}).status_code == 200
     assert client.get('/api/research/v1/session', headers={'Sec-Fetch-Site': 'cross-site'}).status_code == 403
 
@@ -142,9 +142,9 @@ def test_route_preview_rejects_changed_source_before_handoff(monkeypatch):
     data = snapshot()
     class Stub:
         async def get_product(self, *args): return data
-    monkeypatch.setattr(research, 'client', lambda: Stub())
+    monkeypatch.setattr(research, 'client', lambda **_kwargs: Stub())
     app = FastAPI(); app.include_router(research.router)
-    client = TestClient(app, base_url='http://127.0.0.1:9503')
+    client = TestClient(app, client=('127.0.0.1', 50000), base_url='http://127.0.0.1:9503')
     token = client.get('/api/research/v1/session').json()['csrf_token']
     ref = data['source_ref']
     response = client.post(f"/api/research/v1/projects/{ref['project_id']}/products/{ref['product_id']}/preview", headers={'X-Research-Token': token}, json={
@@ -159,9 +159,9 @@ def test_confirmation_status_proxy_checks_requested_command_identity(monkeypatch
     project_id, command_id = str(uuid4()), str(uuid4())
     class Stub:
         async def request(self, *args): return {'contract_version': 1, 'project_id': project_id, 'command_id': str(uuid4()), 'state': 'committed'}
-    monkeypatch.setattr(research, 'client', lambda: Stub())
+    monkeypatch.setattr(research, 'client', lambda **_kwargs: Stub())
     app = FastAPI(); app.include_router(research.router)
-    client = TestClient(app, base_url='http://127.0.0.1:9503')
+    client = TestClient(app, client=('127.0.0.1', 50000), base_url='http://127.0.0.1:9503')
     token = client.get('/api/research/v1/session').json()['csrf_token']
     response = client.get(f'/api/research/v1/projects/{project_id}/confirmations/{command_id}', headers={'X-Research-Token': token})
     assert response.status_code == 503
@@ -204,9 +204,9 @@ def test_direct_product_route_is_guarded_and_ownership_validated(monkeypatch):
         async def get_product(self, project_id, product_id):
             calls.append((str(project_id),str(product_id)))
             return data
-    monkeypatch.setattr(research,'client',lambda:Stub())
+    monkeypatch.setattr(research,'client',lambda **_kwargs:Stub())
     app=FastAPI();app.include_router(research.router)
-    with TestClient(app,base_url='http://127.0.0.1:9503') as client:
+    with TestClient(app, client=('127.0.0.1', 50000),base_url='http://127.0.0.1:9503') as client:
         path=f"/api/research/v1/projects/{ref['project_id']}/products/{ref['product_id']}"
         assert client.get(path).status_code==401
         assert calls==[]

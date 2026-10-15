@@ -30,7 +30,7 @@ def load_research_config():
             if len(raw) > 8192:
                 return {}
             data = json.loads(raw)
-        return data if isinstance(data, dict) else {}
+        return {**data, 'mode': 'local'} if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
 

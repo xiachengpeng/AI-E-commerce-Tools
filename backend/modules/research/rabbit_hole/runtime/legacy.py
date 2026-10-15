@@ -818,15 +818,38 @@ class RuntimeDiscoveryGenerator:
 
 
 class _MeasuredPipeline:
-    def __init__(self, pipeline: Pipeline, telemetry: Telemetry) -> None:
+    def __init__(self, pipeline: Pipeline, telemetry: Telemetry, *, jobs=None, ai_adapter=None) -> None:
         self.pipeline, self.telemetry = pipeline, telemetry
+        self.jobs, self.ai_adapter = jobs, ai_adapter
 
     async def run(self, job: Job) -> PipelineResult:
         started, success = time.monotonic(), False
         try:
-            result = await self.pipeline.run(job)
+            if self.ai_adapter is not None:
+                with self.ai_adapter.legacy_context(self.jobs, job):
+                    result = await self.pipeline.run(job)
+            else:
+                result = await self.pipeline.run(job)
             success = not result.retryable and not result.needs_human
             return result
+        except ValueError as exc:
+            if self.ai_adapter is None:
+                raise
+            from services.research_legacy_ai import LegacyAIError
+            from services.research_ai_usage import ResearchUsageError
+            from services.ai_router import AIObserverError
+            if not isinstance(exc, (LegacyAIError, ResearchUsageError, AIObserverError)):
+                raise
+            from rabbit_hole.pipeline import TerminalPipelineError
+            raise TerminalPipelineError('legacy_ai_manual_reconciliation', 'Legacy AI reservation requires manual review') from None
+        except Exception as exc:
+            if self.ai_adapter is None:
+                raise
+            from services.ai_router import AIProviderRequestError
+            if not isinstance(exc, AIProviderRequestError) or exc.category != 'ambiguous_outcome':
+                raise
+            from rabbit_hole.pipeline import TerminalPipelineError
+            raise TerminalPipelineError('legacy_ai_manual_reconciliation', 'Legacy AI submission outcome is unknown') from None
         finally:
             await self.telemetry.record(
                 f"job:{job.id}:{job.lease_token}",
@@ -845,6 +868,7 @@ async def build_worker(
     pipeline: Pipeline | None = None,
     telemetry: Telemetry | None = None,
     ai_adapter=None,
+    consume_only: bool = False,
 ) -> Worker:
     """Construct the standard worker from validated settings; no factory env required."""
     if ai_adapter is None and pipeline is None:
@@ -898,10 +922,10 @@ async def build_worker(
 
     return Worker(
         jobs=jobs,
-        pipeline=_MeasuredPipeline(pipeline, telemetry),
-        poller=TriggerPoller(feishu, jobs),
+        pipeline=_MeasuredPipeline(pipeline, telemetry, jobs=jobs, ai_adapter=ai_adapter),
+        poller=None if consume_only else TriggerPoller(feishu, jobs),
         worker_id=f"worker-{uuid4().hex}",
         browser_concurrency=settings.browser_concurrency,
         poll_seconds=settings.poll_seconds,
-        maintenance=maintenance,
+        maintenance=None if consume_only else maintenance,
     )

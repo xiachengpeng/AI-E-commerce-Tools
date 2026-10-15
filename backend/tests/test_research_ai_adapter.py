@@ -499,12 +499,12 @@ async def test_revision3_runtime_and_worker_explicit_business_configuration(
     ) as runtime:
         assert runtime.worker_readiness == ()
         services = build_local_worker_services(runtime)
-        assert services.runner.ai_adapter is runtime.ai_adapter
-        assert services.runner.settings is runtime.business_settings
-        assert services.runner.provider_secrets is runtime.non_ai_integrations.providers
+        assert services.runner.native.ai_adapter is runtime.ai_adapter
+        assert services.runner.native.settings is runtime.business_settings
+        assert services.runner.native.provider_secrets is runtime.non_ai_integrations.providers
         assert services.sync is runtime.workbench_services["sync"]
         with pytest.raises(PermissionError, match="not_authorized"):
-            await services.runner.run_once()
+            await services.runner.native.run_once()
 
     def failed_evidence(*args, **kwargs):
         raise ValueError("synthetic evidence initialization failure")

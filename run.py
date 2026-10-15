@@ -30,7 +30,7 @@ def is_port_available(host, port):
 
 def local_worker_command(config, database):
     """An explicit local active mode AND already consumed signature are required."""
-    if config.get('enabled') is not True or config.get('mode')!='local' or config.get('worker_mode')!='active':
+    if config.get('enabled') is not True or config.get('worker_mode')!='active':
         return None
     from pathlib import Path
     from contextlib import closing

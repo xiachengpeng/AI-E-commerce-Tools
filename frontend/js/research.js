@@ -3,7 +3,7 @@
     'use strict';
     const state = { token: '', enabled: false, project: null, product: null, preview: null,
         cursor: null, generation: 0, undo: null, pendingConfirmation: null, applying: false, loadingProjects: false,
-        embedUrl: null, frame: null, pendingImport: null, imports: [], importCursor: null, loadingImports: false };
+        pendingImport: null, imports: [], importCursor: null, loadingImports: false };
     const labels = { confirmed: '人工核实', inferred: '待人工核实', unknown: '未知', stale: '已失效' };
     const fieldLabels = { product_name: '商品名称', category: '类别', material: '材质', dimensions: '尺寸', features: '特征', warranty: '质保条款' };
     const el = id => typeof document !== 'undefined' ? document.getElementById(id) : null;
@@ -85,7 +85,7 @@
             if (generation !== state.generation) return;
             const html = page.projects.map(p => `<button class="r-project" data-research-project="${escapeHtml(p.id)}"><strong>${escapeHtml(p.title)}</strong><span>${escapeHtml(p.market)} · 版本 ${p.source_version}</span></button>`).join('');
             const list = el('researchProjectList');
-            if (append) list.insertAdjacentHTML('beforeend', html); else list.innerHTML = html || '<p class="r-muted">尚无研究项目。可在独立研究工作台创建项目。</p>';
+            if (append) list.insertAdjacentHTML('beforeend', html); else list.innerHTML = html || '<p class="r-muted">尚无研究项目。可在研究工作台创建项目。</p>';
             state.cursor = page.next_cursor;
             el('researchMoreProjects').hidden = !state.cursor;
             message('研究资料已同步；导入前仍需人工核实自有产品事实。');
@@ -255,7 +255,6 @@
             if (button.id === 'researchRefresh') { if (state.project) openProject(state.project.id); loadProjects(); }
             if (button.id === 'researchResolveConfirmation') resolveConfirmation();
             if (button.id === 'researchMoreProjects') loadProjects(true);
-            if (button.id === 'researchToggleWorkbench') toggleWorkbench();
             if (button.id === 'researchReturnNative') mountPanel();
             if (button.id === 'researchSaveImport') saveImport();
             if (button.id === 'researchLoadImports') loadImports();
@@ -274,18 +273,31 @@
         });
     }
 
-    // Transitional opt-in until Tasks 13–16 provide all native pages; Task 21
-    // retires the iframe. Never replay commands while switching views.
+    // The complete workbench lives in the main application.
     let nativeModule = null;
     let nativeGeneration = 0;
-    function nativeEnabled() {
-        try { return localStorage.getItem('research_native_workbench') === '1'; }
-        catch (_) { return false; }
+    function restorePendingImport() {
+        try {
+            const pending = JSON.parse(sessionStorage.getItem('research_pending_import') || 'null');
+            if (/^\/projects\/[0-9a-f-]{36}\/products\/[0-9a-f-]{36}\/imports$/i.test(pending?.path || '') && /^[0-9a-f-]{36}$/i.test(pending?.body?.import_id || '') && pending.signature === JSON.stringify([pending.path, Object.fromEntries(Object.entries(pending.body).filter(([key]) => key !== 'import_id'))])) {
+                state.pendingImport = pending;
+                el('researchResolveImport').hidden = false;
+                el('researchRetryImport').hidden = false;
+                if (el('researchPendingImportEntry')) el('researchPendingImportEntry').hidden = false;
+            }
+        } catch (_) { /* Storage is optional; no business call is replayed on load. */ }
     }
-    async function mountPanel(options = {}) {
+
+    async function openPendingImport() {
+        if (!state.pendingImport) return;
+        unmountPanel();
+        if (el('researchReturnNative')) el('researchReturnNative').hidden = false;
+        await init();
+    }
+
+    async function mountPanel() {
+        restorePendingImport();
         const generation = ++nativeGeneration;
-        if (!nativeEnabled() && !options.native) { unmountPanel(); await init(); return; }
-        closeWorkbench();
         const host = el('researchNativeRoot');
         if (!host) return;
         el('researchView').hidden = true;
@@ -301,14 +313,13 @@
     async function openNativePage(view, kind) {
         if (!['settings','history','reports'].includes(view)) return;
         root.switchMainTab?.('research');
-        await mountPanel({native:true});
+        await mountPanel();
         if (el('researchNativeRoot')?.hidden === false) nativeModule?.navigate(view, kind);
     }
     function unmountPanel() {
         nativeGeneration++;
         nativeModule?.unmount();
         state.generation++;
-        closeWorkbench();
         if (el('researchNativeRoot')) el('researchNativeRoot').hidden = true;
         if (el('researchView')) el('researchView').hidden = false;
     }
@@ -323,55 +334,9 @@
             const session = await request('/session');
             if (generation !== state.generation) return;
             state.token = session.csrf_token; state.enabled = session.enabled;
-            state.embedUrl = session.embed_url || null;
-            if (el('researchToggleWorkbench')) el('researchToggleWorkbench').disabled = !state.embedUrl;
-            const link = el('researchWorkbenchLink');
-            if (session.workbench_url) {
-                const url = new URL(session.workbench_url);
-                if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) { link.href = url.href; link.hidden = false; }
-            }
-            if (state.embedUrl) link.href = new URL('/',state.embedUrl).href;
-            try {
-                const pending = JSON.parse(sessionStorage.getItem('research_pending_import') || 'null');
-                if (/^\/projects\/[0-9a-f-]{36}\/products\/[0-9a-f-]{36}\/imports$/i.test(pending?.path || '') && /^[0-9a-f-]{36}$/i.test(pending?.body?.import_id || '') && pending.signature === JSON.stringify([pending.path, Object.fromEntries(Object.entries(pending.body).filter(([key]) => key !== 'import_id'))])) {
-                    state.pendingImport = pending;
-                    el('researchResolveImport').hidden = false;
-                    el('researchRetryImport').hidden = false;
-                }
-            } catch (_) { /* Storage is optional; no business call is replayed on load. */ }
+            restorePendingImport();
             if (state.enabled) await loadProjects(); else message('独立计算工具已就绪；研究服务连接尚未启用。');
         } catch (error) { if (generation === state.generation) message('研究入口加载失败：' + error.message, true); }
-    }
-
-    function closeWorkbench() {
-        if (state.frame) state.frame.remove();
-        state.frame = null;
-        if (el('researchWorkbenchHost')) el('researchWorkbenchHost').hidden = true;
-        if (el('researchToggleWorkbench')) el('researchToggleWorkbench').textContent = '展开完整 SOP 工作台';
-    }
-
-    function toggleWorkbench() {
-        if (state.frame) { closeWorkbench(); return; }
-        if (!state.embedUrl) return;
-        const url = new URL(state.embedUrl);
-        if (url.protocol !== 'http:' || !['127.0.0.1','localhost'].includes(url.hostname) || url.pathname !== '/marketing-workbench') return;
-        const frame = document.createElement('iframe');
-        frame.title = '完整选品研究 SOP 工作台';
-        frame.referrerPolicy = 'no-referrer';
-        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads');
-        frame.src = url.href;
-        frame.onload = () => frame.contentWindow.postMessage({type:'marketing:hello',version:1},url.origin);
-        state.frame = frame;
-        el('researchWorkbenchHost').replaceChildren(frame);
-        el('researchWorkbenchHost').hidden = false;
-        el('researchToggleWorkbench').textContent = '收起完整 SOP 工作台';
-    }
-
-    async function receiveSource(event) {
-        if (!state.frame || event.source !== state.frame.contentWindow || event.origin !== new URL(state.embedUrl).origin) return;
-        const data = event.data;
-        if (data?.type !== 'research:select' || data.version !== 1) return;
-        await selectSource(data);
     }
 
     // Native handoff carries IDs/fences only. Main v1 reads the authoritative DTO.
@@ -431,6 +396,7 @@
     }
 
     function clearPendingImport() {
+        if (el('researchPendingImportEntry')) el('researchPendingImportEntry').hidden = true;
         try { sessionStorage.removeItem('research_pending_import'); } catch (_) {}
         el('researchResolveImport').hidden = true;
         el('researchRetryImport').hidden = true;
@@ -515,9 +481,7 @@
         finally { button.disabled = false; }
     }
 
-    if (root.addEventListener) root.addEventListener('message',receiveSource);
-
-    const api = { init, openNativePage, mount: mountPanel, unmount: unmountPanel, suspend: unmountPanel, applyDraft, undoDraft, escapeHtml, selectSource };
+    const api = { init, openPendingImport, openNativePage, mount: mountPanel, unmount: unmountPanel, suspend: unmountPanel, applyDraft, undoDraft, escapeHtml, selectSource };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     root.ResearchPanel = api;
 })(typeof window !== 'undefined' ? window : globalThis);
