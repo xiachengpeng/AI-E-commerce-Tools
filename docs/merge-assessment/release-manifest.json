@@ -82,9 +82,9 @@
     "browser_acceptance": "existing in-app tab: homepage and embedded SOP workbench loaded"
   },
   "full_consolidation_acceptance": {
-    "recorded_date": "2026-10-15",
-    "code_commit": "ad0554909da71cb58b3dd888f95608536fa9a242",
-    "code_tree": "38503378a7651323f2f958b4a38f514ccfcc484c",
+    "recorded_date": "2026-10-16",
+    "code_commit": "04f6cb9f0f51e9bcd4b131318de0943a56575e10",
+    "code_tree": "d378891e94efc52902aa3f1c293c8607e250a32f",
     "base_commit": "62c2e590328dba9eeabc30614abd114f4d3f67ca",
     "recording_policy": "Separate manifest-only commit after code commit; historical fields above remain their original checkpoints.",
     "local_code_accepted": true,
@@ -196,6 +196,12 @@
         "research_seconds": 0.079643,
         "scope": "new private full snapshot copy + complete verify, local single warm-cache sample; not outage/SLA",
         "original_snapshot_byte_rosters_unchanged": true
+      },
+      "acceptance_review_fix1": {
+        "passed": 43,
+        "warnings": 1,
+        "seconds": 5.98,
+        "scope": "acceptance + inventory focused; no full main/research rerun or runtime changes"
       }
     },
     "evidence_artifacts": {
@@ -258,6 +264,30 @@
       "timed-independent-recovery/recovery-timing.json": {
         "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/timed-independent-recovery/recovery-timing.json",
         "sha256": "9ce18f12f29c8d8e249ab4c42ea429650369b5b962e1007d7657ea999f445e5a"
+      },
+      "fix1-focused-final.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/fix1-focused-final.log",
+        "sha256": "84e9a7c5c0023bf0c4f147bf704fe9908802d98bc6d249d65f4139f251f11f6b"
+      },
+      "fix1-coordinated-red.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/fix1-coordinated-red.log",
+        "sha256": "58cc8dc88810e56ab86db991268523e9197bbdca102821d66a811dfe85b885c5"
+      },
+      "fix1-20261016/accepted-acceptance.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/fix1-20261016/accepted-acceptance.json",
+        "sha256": "1cedc38f65d226b40a23fc319c188d812dc3c1f73ce509c3a39ad424d59f40c6"
+      },
+      "fix1-20261016/compare-omission-acceptance.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/fix1-20261016/compare-omission-acceptance.json",
+        "sha256": "c8c9226fde9455bc2b7a1cd492e8ae825fbce2b4a27ff04982d59b04cc018e0e"
+      },
+      "fix1-20261016/accepted.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/fix1-20261016/accepted.log",
+        "sha256": "41279015f7c18a2613809f2f8c1062880ee11e6a960f440c5bd1d634771b9001"
+      },
+      "fix1-20261016/compare-omission.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/task22-20261015/fix1-20261016/compare-omission.log",
+        "sha256": "f586f33812e6aec7040f9aa990ad16ea63e91b0cd7f809c075aac9a143b9ba6d"
       }
     },
     "limitations": [
@@ -271,7 +301,8 @@
       "Dependency deprecations/schema warning and JUnit record_property/xunit2 warnings retained.",
       "New SQLAlchemy unchecked aiosqlite GC warning in temporary browser quick_triage[1324] fixture remains diagnostic minor; no production leak established.",
       "Task20 one-time mtime extension affected exactly120 reviewed marketing files; unchanged24h TTL is not indefinite retention.",
-      "Actual Task20 source-stop-to-active-worker interval2h25m14s exceeded provisional10–20min; no SLA claim."
+      "Actual Task20 source-stop-to-active-worker interval2h25m14s exceeded provisional10–20min; no SLA claim.",
+      "Initial acceptance report used self-described inventory and did not reject coordinated omissions; retained as historical evidence only. Current fix1 report validates independently pinned Task1 original identities; current full-suite counts remain prior unchanged-runtime evidence, not reruns."
     ],
     "observation": {
       "status": "pending_actual_use_days",
@@ -282,6 +313,39 @@
       "status": "not_verified"
     },
     "chronological_rulings_disclosed": 44,
-    "guide": "docs/merge-assessment/11-完整归并验收与运行说明.md"
+    "guide": "docs/merge-assessment/11-完整归并验收与运行说明.md",
+    "initial_code_commit": "ad0554909da71cb58b3dd888f95608536fa9a242",
+    "initial_manifest_commit": "c8fded8ea566edaa607c34fd59f7c4a0dfbb949c",
+    "original_inventory_authority": {
+      "task": "Task1 approved frozen original inventory",
+      "commit": "bb45209efb10932fa6aa613d09b70c5d8e3b4c74",
+      "path": "docs/merge-assessment/full-merge-coverage.json",
+      "git_blob": "2d6682b09dab36a380d34e08c3358ac72889f90c",
+      "matrix_sha256": "5930cdec0ec3d3d97ca9c378c53b7d43455b5f79f7f0efc463ab06066c313c64",
+      "research_source_revision": "b749491",
+      "artifact_sha256": "b53cdb657b38b849839bdb7d25e09191101ba3f8e3a65b43000d0612969d25ca",
+      "original_identity_count": 217
+    },
+    "current_acceptance_artifact": "fix1-20261016/accepted-acceptance.json",
+    "review_fix1": {
+      "base_commit": "c8fded8ea566edaa607c34fd59f7c4a0dfbb949c",
+      "important_issue": "I1 self-authorizing original inventory",
+      "fix": "Independent Task1 original identity artifact with code-pinned SHA256 + exact identity comparison, then existing matrix validation",
+      "coordinated_omission_red_cases": 8,
+      "compare_actual_report_rejection": {
+        "exit": 1,
+        "coverage_count": 220,
+        "failure": "original_identity_mismatch"
+      },
+      "same_count_identity_substitution_rejected": true,
+      "artifact_tamper_rejected": true,
+      "local_gate_recomputed": true,
+      "fresh_scoped_review": "pending",
+      "M1": "unchecked temporary aiosqlite fixture connection warning retained diagnostic minor; production leak not established"
+    },
+    "original_inventory_artifact": {
+      "path": "docs/merge-assessment/task1-original-identities.json",
+      "sha256": "b53cdb657b38b849839bdb7d25e09191101ba3f8e3a65b43000d0612969d25ca"
+    }
   }
 }
