@@ -14,8 +14,8 @@ export function renderSync(context){
   const identity=id+':'+key;state.syncUncertain[identity]=true;busy=true;
   try{const result=await api.request(path,{method:'POST',body,signal:life.signal});if(valid())delete state.syncUncertain[identity];return result;}
   catch(error){
-   // Only an authoritative rejection on this active scope proves this submission did not apply.
-   if(valid()&&[400,401,403,404,409,422,429,503].includes(error.status))delete state.syncUncertain[identity];
+   // Generic503 may follow an applied operation/timeout; retain its unknown intent.
+   if(valid()&&[400,401,403,404,409,422,429].includes(error.status))delete state.syncUncertain[identity];
    throw error;
   }
   finally{busy=false;}

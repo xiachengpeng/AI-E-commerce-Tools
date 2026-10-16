@@ -145,3 +145,23 @@ test('native in-flight Feishu approval and original retry retain uncertainty bef
   }finally{wb.unmount();}
  }
 });
+test('native Feishu generic503 after submission retains approval and original retry identity across repeats and remount',async()=>{
+ const {createWorkbench}=await import('../../js/research-workbench/index.mjs');
+ for(const operation of ['approve','retry']){
+  const root=fixtureRoot(),wb=createWorkbench(),posts=[];
+  const project={id:'p',version:7,title:'Merchant',market:'DE',keywords:[],products:[]};
+  const target=operation==='approve'?'/projects/p/sync':'/projects/p/sync/original-run/retry';
+  const fetch=async(url,o)=>{
+   if(o.method==='POST'&&url.endsWith(target)){posts.push(JSON.parse(o.body));return {ok:false,status:503,json:async()=>({detail:'操作未完成，请刷新确认状态后重试'})};}
+   return {ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?structuredClone(project):url.endsWith('/sync/preview')?{version:7,digest:'exact',records:1,tables:[]}:url.endsWith('/sync')?{runs:operation==='retry'?[{id:'original-run',version:3,status:'blocked',error_code:'uncertain_create'}]:[]}:url.includes('/actions?')?{actions:[]}:{projects:[structuredClone(project)]}};
+  };
+  const submit=async()=>{const page=root.querySelector('[data-rw-page]');if(operation==='approve'){find(page,'预览当前版本同步').click();await tick();find(page,'确认同步此版本').click();}else find(page,'重新核对并重试')?.click();await tick();};
+  const key='p:'+(operation==='approve'?'approve:7:exact':'retry:original-run');
+  try{
+   await wb.mount(root,{fetch});find(root.querySelector('[data-rw-projects]'),'Merchant').click();await tick();find(root.querySelector('[data-rw-page]'),'飞书同步与状态').click();await tick();await submit();
+   assert.equal(posts.length,1);assert.equal(wb.state.syncUncertain[key],true,'generic503 is not proof of nonapplication');await submit();assert.equal(posts.length,1,'active repeat after503 blocked');
+   find(root.querySelector('[data-rw-page]'),'刷新同步状态').click();await tick();assert.equal(wb.state.syncUncertain[key],true,'statusGET cannot clear503 outcome');
+   wb.unmount();await wb.mount(root,{fetch});assert.equal(wb.state.syncUncertain[key],true);await submit();assert.equal(posts.length,1,'remount repeat after503 blocked');assert.deepEqual(posts[0],operation==='approve'?{version:7,digest:'exact'}:{});
+  }finally{wb.unmount();}
+ }
+});

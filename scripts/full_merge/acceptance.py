@@ -54,6 +54,7 @@ NATIVE_WORKFLOWS = (
     'native Feishu uncertain_create explicit retry preserves original checkpoint run and never starts a new sync',
     'native in-flight mismatch remount releases transient lock but preserves uncertain command identity',
     'native in-flight Feishu approval and original retry retain uncertainty before unmount snapshot and late rejection',
+    'native Feishu generic503 after submission retains approval and original retry identity across repeats and remount',
 )
 
 def native_workflow_gate(report_root: Path, components: dict) -> dict:
