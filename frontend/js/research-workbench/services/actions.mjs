@@ -17,7 +17,7 @@ export function createActionService(context){
    const cursor=older?state.actionCursor:null;
    const page=await api.request(projectPath(id)+'/actions?limit=20'+(cursor?'&cursor='+encodeURIComponent(cursor):''),{signal:life.signal});
    if(!valid())return;state.actions=older?mergeActionPages(state.actions||[],page.actions||[]):mergeActionPages(page.actions||[],state.actions||[]);
-   if(older||!expanded)state.actionCursor=page.next_cursor||null;if(older)expanded=true;state.keywordActions=page.keyword_actions||state.keywordActions;return page;
+   if(older||!expanded)state.actionCursor=page.next_cursor||null;if(older)expanded=true;state.keywordActions=page.keyword_actions||state.keywordActions;state.verificationActions=page.verification_actions||state.verificationActions;state.productActions=page.product_actions||state.productActions;return page;
   }finally{fetching=false;}},
   async enqueue(selection){
    if(selection.kind==='trends'&&(typeof selection.query!=='string'||!selection.query.trim()||selection.query.trim().length>200))throw Error('请输入1到200字的当地常用产品查询词');
@@ -35,10 +35,10 @@ export function createActionService(context){
    if(valid()){delete state.commands[key];try{storage?.removeItem(key);}catch{}}return result;
    }finally{state.writeBusy=false;}
   },
-  async retry(action,input={}){if(!retryEligible(action))throw Error('该任务不可重试，请先核对提交状态');const query=Object.hasOwn(input,'query')?input.query:trendsQuery(action);return this.enqueue({kind:action.kind,...(action.kind==='trends'?{query:typeof query==='string'?query.trim():query}:{}),...(action.keyword_id?{keyword_id:action.keyword_id}:{}),...(action.product_id?{product_id:action.product_id}:{}),...(action.landing_mode?{landing_mode:action.landing_mode}:{}),attempt:action.attempt,version:state.project.version});},
+  async retry(action,input={}){if(!retryEligible(action))throw Error('该任务不可重试，请先核对提交状态');const query=Object.hasOwn(input,'query')?input.query:trendsQuery(action);return this.enqueue({kind:action.kind,...(action.kind==='trends'?{query:typeof query==='string'?query.trim():query}:{}),...(action.keyword_id?{keyword_id:action.keyword_id}:{}),...(action.product_id?{product_id:action.product_id}:{}),...(action.landing_mode?{landing_mode:action.landing_mode}:{}),...(action.retry_review===true?{retry_review:true}:{}),attempt:action.attempt,version:state.project.version});},
   async stop(action){const attempt=action.attempt,version=state.project.version;
    const result=await api.request(projectPath(id)+'/actions/'+encodeURIComponent(action.id)+'/stop',{method:'POST',body:{attempt,version},signal:life.signal});
-   if(!valid())return;const current=state.actions.find(a=>a.id===action.id);if(current?.attempt!==attempt)return;
+   if(!valid())return;const current=[...(state.actions||[]),...Object.values(state.verificationActions||{}),...Object.values(state.productActions||{})].find(a=>a.id===action.id);if(current?.attempt!==attempt)return;
    // Stop responses vary across legacy versions; refresh owns the authoritative DTO.
    return result;
   }

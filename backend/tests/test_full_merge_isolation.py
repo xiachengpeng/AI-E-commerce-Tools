@@ -205,7 +205,8 @@ def test_source_copy_excludes_sqlite_sidecars_and_environment_variants(tmp_path)
 def test_signal_terminated_components_cannot_be_success(monkeypatch, tmp_path):
     module = runner()
     # Terminate only synthetic child processes; never run real suites or network calls.
-    returns = iter((-9, 0, 0, 0, -15, 0))
+    # Main now includes the independently reported native workflow component.
+    returns = iter((-9, 0, 0, 0, 0, -15, 0))
     monkeypatch.setattr(
         module,
         "prepare_sandbox",

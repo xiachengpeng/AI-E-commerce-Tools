@@ -1,3 +1,5 @@
+import { createSnapshotRefresher } from './services/snapshot.mjs';
+import { renderSync } from './pages/sync.mjs';
 import { renderSettings } from './settings.mjs';
 import { renderHistory } from './history.mjs';
 import { renderProduct } from './pages/product.mjs';
@@ -39,15 +41,17 @@ export function createWorkbench() {
     function pageContext(current,life) {
         const navigation=current.navigation;
         const origin={signal:life.signal,isCurrent:()=>active(current)&&life.active&&current.navigation===navigation&&current.pageLife===life};
-        return {...current,life,
+        const result={...current,life,
             navigate:view=>navigate(current,view), openProject:(id,form)=>openProject(current,id,form), openForm:spec=>openForm(current,spec),
             showQueue:selection=>{current.state.queueSelection=selection||null;navigate(current,'actions');},
             selectProduct:id=>openProduct(current,current.state.project?.id,id),
             openProduct:(projectId,productId,step)=>openProduct(current,projectId,productId,step),
             openHistoryProduct:(projectId,productId)=>origin.isCurrent()?openHistoryProduct(current,projectId,productId):undefined,
             onSelectProduct:selection=>{if(origin.isCurrent())return current.context.onSelectProduct?.(selection,origin);},
+            redraw:()=>{if(origin.isCurrent())paint(current);},
             command:(action,payload)=>command(current,action,payload),acceptProject:project=>{if(!active(current))return;current.state.project=project;navigate(current,'project');}
         };
+        result.refreshProject=createSnapshotRefresher(result);return result;
     }
     function paint(current,focus=false) {
         if(!active(current))return;current.pageLife?.dispose();const life=createLifecycle();current.pageLife=life;
@@ -55,6 +59,7 @@ export function createWorkbench() {
         let page;
         if(current.state.view==='projects')page=projectsPage(c);
         else if(current.state.view==='actions'&&current.state.project)page=renderActions(c);
+        else if(current.state.view==='sync'&&current.state.project)page=renderSync(c);
         else if(current.state.view==='product'&&current.state.project)page=renderProduct(c);
         else if(current.state.view==='triage'&&current.state.project)page=renderTriage(c);
         else if(current.state.view==='settings')page=renderSettings(c);
@@ -81,7 +86,7 @@ export function createWorkbench() {
         current.state.product=productId;current.state.step=step;navigate(current,'product');
         current.context.onProductNavigate?.({projectId,productId});
     }
-    function navigate(current,view) {if(!active(current))return;current.navigation++;current.state.view=view;paint(current,true);}
+    function navigate(current,view) {if(!active(current))return;current.navigation++;current.state.view=view;paint(current,true);if(view==='project')void current.pageContext.refreshProject().catch(error=>{if(active(current))notify(current,error.message+'。已加载资料保持显示。');});}
     function openForm(current,spec) {if(!active(current))return;current.state.form=structuredClone(spec);navigate(current,'form');}
     async function openProject(current,id,form) {
         const generation=++current.navigation;
@@ -89,7 +94,7 @@ export function createWorkbench() {
             const project=await current.api.request('/projects/'+encodeURIComponent(id));
             const actions=await current.api.request('/projects/'+encodeURIComponent(id)+'/actions?limit=20');
             if(!active(current)||generation!==current.navigation)return;
-            current.state.project=project;current.state.actions=actions.actions||[];current.state.actionCursor=actions.next_cursor||null;current.state.keywordActions=actions.keyword_actions||{};current.state.product=null;
+            current.state.project=project;current.state.actions=actions.actions||[];current.state.actionCursor=actions.next_cursor||null;current.state.keywordActions=actions.keyword_actions||{};current.state.verificationActions=actions.verification_actions||{};current.state.productActions=actions.product_actions||{};current.state.product=null;
             if(form)openForm(current,form);else navigate(current,'project');
             current.context.onSelectProject?.(id,{...current,...pageContext(current,current.pageLife)});
         }catch(error){if(active(current)&&generation===current.navigation)notify(current,error.message+'。已加载资料保持显示。');}
@@ -122,8 +127,8 @@ export function createWorkbench() {
             let project=current.state.project,actions;
             if(projectId){project=await current.api.request('/projects/'+encodeURIComponent(projectId));actions=await current.api.request('/projects/'+encodeURIComponent(projectId)+'/actions?limit=20');}
             if(!active(current)||navigation!==current.navigation)return;
-            current.state.projects=data.projects;current.state.project=project;if(actions){current.state.actions=actions.actions||[];current.state.actionCursor=actions.next_cursor||null;current.state.keywordActions=actions.keyword_actions||{};}
-            current.state.error='';renderProjects(current);if(view!=='form')paint(current);notify(current,'研究资料已更新');
+            current.state.projects=data.projects;current.state.project=project;if(actions){current.state.actions=actions.actions||[];current.state.actionCursor=actions.next_cursor||null;current.state.keywordActions=actions.keyword_actions||{};current.state.verificationActions=actions.verification_actions||{};current.state.productActions=actions.product_actions||{};}
+            current.state.error='';renderProjects(current);if(view!=='form'&&!current.pageContext?.editing)paint(current);notify(current,'研究资料已更新');
         }catch(_){if(active(current)){current.state.error='研究资料暂时无法读取；已加载资料保持显示。';notify(current,current.state.error);}}
         finally{current.state.busy=false;}
     }

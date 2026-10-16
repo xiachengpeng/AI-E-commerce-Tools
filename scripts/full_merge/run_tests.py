@@ -228,6 +228,14 @@ def run_isolated_suite(suite: Literal["main", "research", "all"], output: Path) 
         components[current].update(
             pytest=result.returncode, frontend=frontend.returncode
         )
+        if current == "main":
+            with (output / current / "native-workflows.xml").open("w") as native_report:
+                native = subprocess.run(
+                    ["node", "--test", "--test-isolation=none", "--test-reporter=junit", str(sandbox / "frontend/tests/research-workbench/native-workflows.test.mjs")],
+                    cwd=sandbox, env=env, stdout=native_report, stderr=subprocess.STDOUT, check=False,
+                )
+            components[current]["native_workflows"] = native.returncode
+
         statuses[current] = int(any(code != 0 for code in components[current].values()))
         if current == "research":
             tools = [

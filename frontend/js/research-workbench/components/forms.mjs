@@ -12,12 +12,12 @@ export function createForm(context, { title, help, defs, initial = {}, key, subm
     const storage=context.context.storage || context.root.ownerDocument.defaultView?.sessionStorage;
     let stored=context.state.drafts[key];
     if(!stored&&storage){try{stored=JSON.parse(storage.getItem(key)||'null');}catch{/* Storage can be unavailable. */}}
-    const draft={...restoreDraft(stored||{}),version},inputs=new Map();context.state.drafts[key]=draft;
+    const draft={...restoreDraft(stored||{}),version:Number.isInteger(stored?.version)?stored.version:version},inputs=new Map();context.state.drafts[key]=draft;
     const values=()=>Object.fromEntries([...inputs].map(([key,input])=>[key,input.type==='checkbox'?input.checked:input.value]));
     const persist=()=>{
         if(!context.life.active)return;
         const safe=safeDraft(values(),defs,draft);context.state.drafts[key]={...safe,version:draft.version};
-        try{const encoded=JSON.stringify(safe);if(new TextEncoder().encode(encoded).length>65536){note.textContent='内容超过草稿上限，当前输入未全部备份；请先保存或复制。';return;}storage?.setItem(key,encoded);}catch{note.textContent='浏览器草稿存储不可用，请先保存或复制输入。';}
+        try{const encoded=JSON.stringify({...safe,version:draft.version});if(new TextEncoder().encode(encoded).length>65536){note.textContent='内容超过草稿上限，当前输入未全部备份；请先保存或复制。';return;}storage?.setItem(key,encoded);}catch{note.textContent='浏览器草稿存储不可用，请先保存或复制输入。';}
     };
     for(const def of defs){
         const wrap=el(context,'label','',def.label),input=el(context,['select','choice'].includes(def.type)?'select':def.type==='textarea'?'textarea':'input');

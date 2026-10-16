@@ -33,6 +33,52 @@ ADDITIVE = (
 )
 
 
+# Independent named merchant-workflow requirements, separate from 217+4 inventory identities.
+NATIVE_WORKFLOW_FILE = 'frontend/tests/research-workbench/native-workflows.test.mjs'
+NATIVE_WORKFLOWS = (
+    'native Trends initial merchant workflow preserves explicit market query, identity and one enqueue',
+    'native Trends uncertain submit preserves typed input and forbids automatic duplicate or changed replay',
+    'native verification initial review stop and deliberate mismatch parking preserve contracts',
+    'native Feishu status preview exact approval stale rejection and original blocked retry have no entry mutations',
+    'native progress refresh consumes projections outside first twenty, preserves edits and cleans poll with late scope fence',
+    'native Feishu ambiguous approval submits once and missing credentials remain actionable',
+    'native verification unknown outcome never enables new verify or review replay',
+    'native mismatch batch saves every eligible original product with progressive versions and retains partial failure identity',
+    'native Feishu successful approval refreshes durable status and stale local preview never submits',
+    'native late sync preview and status after project switch cannot approve or overwrite current page',
+    'native actual workbench queue completion and return refresh project without mutation or global refresh',
+    'native polling preserves the current dirty product form DOM and its original submission version',
+    'native dirty form remount keeps saved base version after authoritative background update',
+    'native header refresh keeps open product form edits and captured base version',
+    'native mismatch partial failure remains visible when redraw disposes the old page',
+    'native Feishu uncertain_create explicit retry preserves original checkpoint run and never starts a new sync',
+    'native in-flight mismatch remount releases transient lock but preserves uncertain command identity',
+)
+
+def native_workflow_gate(report_root: Path, components: dict) -> dict:
+    path = report_root / 'main/native-workflows.xml'
+    failures = []
+    code = components.get('main', {}).get('native_workflows')
+    if type(code) is not int or code != 0:
+        failures.append('failed_or_missing_native_workflow_component')
+    try:
+        cases = list(ET.parse(path).getroot().iter('testcase'))
+        if not cases or any(case.find(tag) is not None for case in cases for tag in ('failure', 'error', 'skipped')):
+            failures.append('failed_or_empty_native_workflow_evidence')
+        for name in NATIVE_WORKFLOWS:
+            matches = [case for case in cases if case.get('name') == name
+                       and case.get('file', '').replace('\\', '/').endswith('/' + NATIVE_WORKFLOW_FILE)]
+            if len(matches) != 1 or any(matches[0].find(tag) is not None for tag in ('failure', 'error', 'skipped')):
+                failures.append('unproved_native_workflow:' + name)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except (OSError, ET.ParseError):
+        failures.append('missing_native_workflow_evidence')
+        digest = None
+    return {'accepted': not failures, 'failures': failures, 'path': str(path), 'sha256': digest,
+            'required_file': NATIVE_WORKFLOW_FILE, 'required_cases': list(NATIVE_WORKFLOWS),
+            'scope': 'required native DOM/fake HTTP merchant workflows; no live external parity'}
+
+
 def _case_status(path: Path) -> dict[str, bool]:
     root = ET.parse(path).getroot()
     result = {}
@@ -50,6 +96,7 @@ def acceptance(coverage: Path, report_root: Path) -> dict:
     failures, rows = [], []
     reports = {}
     original = {}
+    native = {'accepted': False, 'failures': ['missing_native_workflow_evidence']}
     try:
         matrix = json.loads(coverage.read_text())
         original = validate_original_inventory(matrix)
@@ -57,6 +104,8 @@ def acceptance(coverage: Path, report_root: Path) -> dict:
         checked = validate_coverage(matrix)
         failures.extend(checked['failures'])
         components = json.loads((report_root / 'component-results.json').read_text())
+        native = native_workflow_gate(report_root, components)
+        failures.extend(native['failures'])
         required = {'main': {'pytest', 'frontend'}, 'research': {'pytest', 'frontend', 'ruff', 'mypy', 'tailwind', 'frontend_build'}}
         for suite, names in required.items():
             if not names <= components.get(suite, {}).keys() or any(type(components[suite].get(name)) is not int or components[suite][name] != 0 for name in names):
@@ -107,7 +156,7 @@ def acceptance(coverage: Path, report_root: Path) -> dict:
     except (OSError, ValueError, KeyError, TypeError, ET.ParseError) as exc:
         failures.append('invalid_or_missing_evidence:' + type(exc).__name__)
     return {'local_code_accepted': not failures, 'failures': sorted(set(failures)),
-            'original_inventory': original.get('authority'),
+            'original_inventory': original.get('authority'), 'native_workflow_gate': native,
             'coverage_count':len(rows), 'status_counts':dict(Counter(row['status'] for row in rows)),
             'rows':rows, 'reports':{k:{a:b for a,b in v.items() if a != 'cases'} for k,v in reports.items()},
             'scope':'local automated contracts; inventory-only row proof is not exhaustive per-endpoint behavior proof',

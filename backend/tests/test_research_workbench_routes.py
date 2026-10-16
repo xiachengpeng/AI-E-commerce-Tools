@@ -744,6 +744,13 @@ async def test_native_history_canonical_projection_cursor_and_private_payload(tm
         assert "PRIVATE" not in response.text and "payload" not in response.text
         assert page["items"][0]["action"] == "review"
         assert client.get(route, params={"cursor": "!!!"}).status_code == 422
+        from base64 import urlsafe_b64encode
+        for malformed in [42, [], "text", {"kind": "activity", "project_id": project, "id": 7},
+                          {"kind": "activity", "project_id": project, "id": {}},
+                          {"kind": "activity", "project_id": project, "id": None}]:
+            encoded = urlsafe_b64encode(json.dumps(malformed).encode()).decode().rstrip("=")
+            assert client.get(route, params={"kind": "activity", "project_id": project, "cursor": encoded}).status_code == 422
+
         assert (
             client.get(route, headers={"Origin": "https://outside.invalid"}).status_code
             == 403

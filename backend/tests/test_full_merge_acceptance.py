@@ -196,6 +196,15 @@ def acceptance_fixture(tmp_path):
     ElementTree(suite).write(tmp_path / 'research/pytest.xml')
     for kind in ('main','research'):
         (tmp_path / kind / 'frontend.log').write_text('# pass 1\n# fail 0\n')
+    # Synthetic reports belong only to unit tests; production runner generates real node JUnit.
+    from scripts.full_merge.acceptance import NATIVE_WORKFLOWS, NATIVE_WORKFLOW_FILE
+    native = Element('testsuites')
+    for name in NATIVE_WORKFLOWS:
+        SubElement(native, 'testcase', classname='test', file='/isolated/' + NATIVE_WORKFLOW_FILE, name=name)
+    ElementTree(native).write(tmp_path / 'main/native-workflows.xml')
+    values = json.loads((tmp_path / 'component-results.json').read_text())
+    values['main']['native_workflows'] = 0
+    (tmp_path / 'component-results.json').write_text(json.dumps(values))
     return coverage
 
 
@@ -295,3 +304,41 @@ def test_acceptance_rejects_review_compare_counterexample(tmp_path):
     assert result['coverage_count'] == 220
     assert not result['local_code_accepted']
     assert result['failures'] == ['original_identity_mismatch']
+
+def test_old_inventory_reports_cannot_claim_native_workflow_completion(tmp_path):
+    from scripts.full_merge.acceptance import acceptance
+    coverage = acceptance_fixture(tmp_path)
+    (tmp_path / 'main/native-workflows.xml').unlink()
+    result = acceptance(coverage, tmp_path)
+    assert not result['local_code_accepted']
+    assert 'missing_native_workflow_evidence' in result['failures']
+
+
+@pytest.mark.parametrize('damage', ['missing_trends', 'failed_verification', 'skipped_sync', 'wrong_file', 'empty', 'nonzero_component'])
+def test_native_workflow_gate_rejects_incomplete_dom_proof(tmp_path, damage):
+    from scripts.full_merge.acceptance import acceptance
+    coverage = acceptance_fixture(tmp_path)
+    # This test fixture will include the required DOM evidence once the gate exists.
+    path = tmp_path / 'main/native-workflows.xml'
+    if path.exists():
+        from xml.etree import ElementTree as ET
+        tree = ET.parse(path)
+        cases = list(tree.getroot().iter('testcase'))
+        if damage == 'missing_trends':
+            tree.getroot().remove(cases[0])
+        elif damage == 'failed_verification':
+            ET.SubElement(cases[2], 'failure')
+        elif damage == 'skipped_sync':
+            ET.SubElement(cases[3], 'skipped')
+        elif damage == 'wrong_file':
+            cases[0].set('file', 'unrelated.test.mjs')
+        elif damage == 'empty':
+            tree = ET.ElementTree(ET.Element('testsuites'))
+        tree.write(path)
+    if damage == 'nonzero_component':
+        import json
+        components = tmp_path / 'component-results.json'
+        value = json.loads(components.read_text())
+        value['main']['native_workflows'] = 1
+        components.write_text(json.dumps(value))
+    assert not acceptance(coverage, tmp_path)['local_code_accepted']

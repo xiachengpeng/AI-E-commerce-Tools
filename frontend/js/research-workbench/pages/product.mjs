@@ -1,3 +1,4 @@
+import { bindProgressRefresh } from '../services/snapshot.mjs';
 import { el as nativeEl, button as nativeButton, panel, link as nativeLink, notify, marketNames, typeNames, labels as nativeLabels } from '../components/elements.mjs';
 import { createForm, fields } from '../components/forms.mjs';
 import { submitMutation, newCommandId } from '../services/commands.mjs';
@@ -12,7 +13,7 @@ const text=v=>typeof v==='object'?JSON.stringify(v,null,2):String(v??'未记录'
 const adAgeDays=i=>i.ad_age_days??(i.active_days>0?i.active_days:null);
 const adAgeLabel=i=>adAgeDays(i)===null?'未知':`${adAgeDays(i)} 天`;
 export function renderProduct(context) {
- const state=context.state,root=nativeEl(context,'section','rw-product');
+ const state=context.state,root=nativeEl(context,'section','rw-product');bindProgressRefresh(context);
  state.step=productSteps.includes(state.step)?state.step:'identification';state.landingModes||={};state.productActions||={};
  const el=(tag,cls='',content)=>nativeEl(context,tag,cls,content),button=(label,fn,cls='')=>nativeButton(context,label,fn,cls),link=(label,url)=>nativeLink(context,label,url),box=(title,note)=>panel(context,title,note),stateTag=value=>el('span','rw-tag',labels[value]||value||'未知');
  const product=()=>state.project?.products?.find(p=>p.id===state.product);
@@ -36,6 +37,7 @@ export function renderProduct(context) {
   return context.api.request(path,{...options,body,signal:context.life.signal});
  }
  function openForm(title,help,defs,onSubmit,initial={},spec={}) {
+  context.editing=true;
   const key='rabbit-hole:draft:'+JSON.stringify([state.project.id,state.product,spec.type||title,spec.objectId||initial.id||'']);
   const form=createForm(context,{title,help,defs,initial,key,submit:async(data,draft,persist)=>{
    activeDraft=draft;activePersist=persist;

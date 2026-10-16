@@ -1,3 +1,4 @@
+import { renderVerification } from './verification.mjs';
 import { el, button, panel, stateTag, link, keywordSearchSummary } from '../components/elements.mjs';
 import { keywordControls } from './exploration.mjs';
 export function render(context) {
@@ -10,7 +11,8 @@ export function render(context) {
     context.life.listen(select,'change',()=>{context.state.explorationKeyword=select.value;context.navigate('project');});label.append(select);root.append(label,stateTag(context,word.status),el(context,'p','rw-muted',keywordSearchSummary(word,context.state.keywordActions)),keywordControls(context,word));
     if(word.source_quote)root.append(el(context,'blockquote','',word.source_quote));
     const action=context.state.keywordActions?.[word.id];if(action?.recovery_action==='manual')root.append(el(context,'p','rw-notice','提交状态不确定，先按任务标签 '+action.id+' 核对云端记录。'));
-    const matched=products.filter(p=>!p.merged_into&&(p.source_keyword_ids||[]).includes(word.id));
+    root.append(renderVerification(context,word));
+    const matched=products.filter(p=>!p.merged_into&&(p.source_keyword_ids||[]).includes(word.id)&&(!context.state.focusReviewOnly?.[word.id]||(!p.identification?.relevance_confirmed&&['pending','retained'].includes(p.triage?.state||'pending')&&['needs_review','mismatch'].includes(p.verification?.status))));
     const index=Math.min(context.state.focusIndices?.[word.id]||0,Math.max(0,matched.length-1));const product=matched[index];
     if(product){
         const nav=el(context,'div','rw-actions');for(const [text,delta] of [['上一条线索',-1],['下一条线索',1]]){const b=button(context,text,()=>{context.state.focusIndices||={};context.state.focusIndices[word.id]=index+delta;context.navigate('project');});b.disabled=index+delta<0||index+delta>=matched.length;nav.append(b);}root.append(nav);

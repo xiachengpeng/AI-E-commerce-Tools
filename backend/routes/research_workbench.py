@@ -216,7 +216,9 @@ def create_workbench_router() -> APIRouter:
                     urlsafe_b64decode(cursor + "=" * ((-len(cursor)) % 4))
                 )
                 if (
-                    set(value) != {"kind", "project_id", "id"}
+                    not isinstance(value, dict)
+                    or set(value) != {"kind", "project_id", "id"}
+                    or not isinstance(value["id"], str)
                     or value["kind"] != kind
                     or value["project_id"] != scope
                 ):

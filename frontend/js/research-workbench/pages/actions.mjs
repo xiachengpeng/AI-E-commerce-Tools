@@ -7,9 +7,17 @@ import { renderAds,mediaControl } from '../components/ad-copy.mjs';
 export function renderActions(context){
  const host=el(context,'section'),heading=el(context,'h1','','动作队列');heading.tabIndex=-1;host.append(heading,button(context,'返回探索',()=>context.navigate('project')));
  const service=createActionService(context),logs=createActionLogs(context),records=panel(context,'自动处理记录','执行状态不代表产品已通过筛选；没有可确认结果时保留未知。'),sources=panel(context,'来源可用性','仅显示配置状态；不探测或自动采集。');
- async function refresh(older=false){try{await service.load(older);if(context.life.active)draw();}catch(error){if(context.life.active)notify(context,error.message+'。已保存记录保持显示。');}}
+ async function refresh(older=false){try{await service.load(older);if(!older)await context.refreshProject?.(false);if(context.life.active)draw();}catch(error){if(context.life.active)notify(context,error.message+'。已保存记录保持显示。');}}
  const selection=context.state.queueSelection,kinds={keywords:'AI 建议初始词',scan:'搜索这个词',scan_all:'扫描全部已审核词',expand:'提取下一层建议',landing:'读取商品页面',verify:'核对商品',trends:'采集 Trends'};
- if(selection?.kind&&kinds[selection.kind])host.append(panel(context,'已选择操作',kinds[selection.kind]),button(context,'确认提交：'+kinds[selection.kind],async()=>{const {action_id,...request}=selection;const outcome=await service.enqueue(request);if(!context.life.active)return;notify(context,outcome.disposition==='unchanged'?'已有任务，未重复入队。':'已保存执行请求；尚未确认取得结果。');await refresh();},'rw-primary'));
+ if(selection?.kind&&kinds[selection.kind]){
+  const choice=panel(context,'已选择操作',kinds[selection.kind]);let query;
+  if(selection.kind==='trends'){
+   const label=el(context,'label','','当地常用产品搜索词 · 目标市场 '+context.state.project.market);query=el(context,'input');query.name='initial_trends_query';query.type='text';query.maxLength=200;query.required=true;query.setAttribute('aria-label','首次 Trends 查询词');query.value=selection.query||'';
+   context.life.listen(query,'input',()=>{selection.query=query.value;});label.append(query);choice.append(label,el(context,'p','rw-muted','输入1到200字的当地常用查询词；商品名不会自动代填。'));
+  }
+  let submitted=false;
+  choice.append(button(context,'确认提交：'+kinds[selection.kind],async()=>{if(submitted)return;const {action_id,...request}=selection;if(query)request.query=query.value.trim();const outcome=await service.enqueue(request);if(!context.life.active)return;submitted=true;notify(context,outcome.disposition==='unchanged'?'已有任务，未重复入队。':'已保存执行请求；尚未确认取得结果。');await refresh();},'rw-primary'));host.append(choice);
+ }
  let recordLife=null,lastRecords='';context.life.track(()=>recordLife?.dispose());
  function draw(){const signature=JSON.stringify([context.state.actions,context.state.actionCursor]);if(signature===lastRecords)return;lastRecords=signature;recordLife?.dispose();recordLife=createLifecycle();const rowContext={...context,life:recordLife};
  records.replaceChildren(el(context,'h2','','自动处理记录'));
