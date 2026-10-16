@@ -253,3 +253,45 @@ def test_acceptance_requires_each_actual_legacy_kind_case(tmp_path):
     report = tmp_path / 'main/pytest.xml'
     report.write_text(report.read_text().replace('test_all_legacy_kinds_keep_actual_baseline_queue_behavior[meta_scan]', 'test_unrelated_kind'))
     assert not acceptance(coverage,tmp_path)['local_code_accepted']
+
+
+@pytest.mark.parametrize('source,kind,field', [
+    ('main','route','routes'), ('research','route','routes'),
+    ('main','page','pages'), ('research','page','pages'),
+    ('main','table','tables'), ('research','table','tables'),
+    ('research','action','user_actions'), ('research','job_kind','job_kinds'),
+])
+def test_acceptance_rejects_coordinated_original_inventory_deletion(tmp_path, source, kind, field):
+    import json
+    from scripts.full_merge.acceptance import acceptance
+    coverage = acceptance_fixture(tmp_path)
+    data = json.loads(coverage.read_text())
+    row = next(row for row in data['coverage'] if row['source'] == source and row['kind'] == kind)
+    data['coverage'].remove(row)
+    if kind == 'route':
+        data['inventories'][source][field] = [entry for entry in data['inventories'][source][field]
+            if not (entry['method'] == row['method'] and entry['path'] == row['path'] and entry['file'] == row['file'] and entry['handler'] == row['handler'])]
+        data['runtime_routes'][source].remove([row['method'], row['path']])
+    else:
+        data['inventories'][source][field].remove(row['name'])
+    coverage.write_text(json.dumps(data))
+    result = acceptance(coverage,tmp_path)
+    assert not result['local_code_accepted'], result
+    assert 'original_identity_mismatch' in result['failures']
+
+
+def test_acceptance_rejects_review_compare_counterexample(tmp_path):
+    import json
+    from scripts.full_merge.acceptance import acceptance
+    coverage = acceptance_fixture(tmp_path)
+    data = json.loads(coverage.read_text())
+    identity = 'main:route:POST:/compare:backend/main.py:compare'
+    data['coverage'] = [row for row in data['coverage'] if row['id'] != identity]
+    data['inventories']['main']['routes'] = [row for row in data['inventories']['main']['routes']
+        if not (row['method'] == 'POST' and row['path'] == '/compare' and row['handler'] == 'compare')]
+    data['runtime_routes']['main'].remove(['POST','/compare'])
+    coverage.write_text(json.dumps(data))
+    result = acceptance(coverage,tmp_path)
+    assert result['coverage_count'] == 220
+    assert not result['local_code_accepted']
+    assert result['failures'] == ['original_identity_mismatch']

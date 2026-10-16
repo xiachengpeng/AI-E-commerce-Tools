@@ -209,3 +209,37 @@ def validate_coverage(matrix: dict) -> dict:
     except (KeyError, TypeError, AttributeError):
         failures.append('invalid_matrix')
     return {'verified': not failures, 'expected': len(expected), 'failures': failures}
+
+
+# Release trust anchor, deliberately not taken from the caller's matrix. The
+# artifact is an exact identity projection of the approved Task1 Git object;
+# provenance and original matrix digest are inside these anchored bytes.
+ORIGINAL_IDENTITIES_SHA256 = 'b53cdb657b38b849839bdb7d25e09191101ba3f8e3a65b43000d0612969d25ca'
+ORIGINAL_IDENTITIES_PATH = Path(__file__).resolve().parents[2] / 'docs/merge-assessment/task1-original-identities.json'
+
+
+def validate_original_inventory(matrix: dict) -> dict:
+    """Compare original identities against independently pinned Task1 authority."""
+    result = {'verified': False, 'failures': [], 'authority': None}
+    try:
+        raw = ORIGINAL_IDENTITIES_PATH.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != ORIGINAL_IDENTITIES_SHA256:
+            raise ValueError('original inventory anchor mismatch')
+        frozen = json.loads(raw)
+        expected = {entry['id']: entry for entry in frozen['identities']}
+        actual = {}
+        for row in matrix['coverage']:
+            fields = ['id', 'source', 'kind'] + (
+                ['method', 'path', 'file', 'handler'] if row['kind'] == 'route' else ['name']
+            )
+            if row['id'] in actual:
+                raise ValueError('duplicate original identity')
+            actual[row['id']] = {field: row[field] for field in fields}
+        result['authority'] = {**frozen['authority'], 'artifact_sha256': ORIGINAL_IDENTITIES_SHA256,
+                               'original_identity_count': len(expected)}
+        if actual != expected:
+            result['failures'].append('original_identity_mismatch')
+        result['verified'] = not result['failures']
+    except (OSError, ValueError, TypeError, KeyError):
+        result['failures'].append('invalid_original_inventory_authority')
+    return result

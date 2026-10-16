@@ -1,0 +1,1705 @@
+{
+  "version": 1,
+  "authority": {
+    "task": "Task1 approved frozen original inventory",
+    "commit": "bb45209efb10932fa6aa613d09b70c5d8e3b4c74",
+    "path": "docs/merge-assessment/full-merge-coverage.json",
+    "git_blob": "2d6682b09dab36a380d34e08c3358ac72889f90c",
+    "matrix_sha256": "5930cdec0ec3d3d97ca9c378c53b7d43455b5f79f7f0efc463ab06066c313c64",
+    "research_source_revision": "b749491"
+  },
+  "identities": [
+    {
+      "id": "main:page:frontend/index.html",
+      "source": "main",
+      "kind": "page",
+      "name": "frontend/index.html"
+    },
+    {
+      "id": "main:route:DELETE:/api/history/{module}/batch-delete:backend/main.py:batch_delete_history",
+      "source": "main",
+      "kind": "route",
+      "method": "DELETE",
+      "path": "/api/history/{module}/batch-delete",
+      "file": "backend/main.py",
+      "handler": "batch_delete_history"
+    },
+    {
+      "id": "main:route:DELETE:/api/history/{module}/{id}:backend/main.py:delete_history",
+      "source": "main",
+      "kind": "route",
+      "method": "DELETE",
+      "path": "/api/history/{module}/{id}",
+      "file": "backend/main.py",
+      "handler": "delete_history"
+    },
+    {
+      "id": "main:route:DELETE:/api/settings/ai/providers/{provider_id}:backend/main.py:api_delete_ai_provider",
+      "source": "main",
+      "kind": "route",
+      "method": "DELETE",
+      "path": "/api/settings/ai/providers/{provider_id}",
+      "file": "backend/main.py",
+      "handler": "api_delete_ai_provider"
+    },
+    {
+      "id": "main:route:DELETE:/api/square-redraw/batches/{batch_id}/items/{item_id}:backend/main.py:api_square_redraw_delete_item",
+      "source": "main",
+      "kind": "route",
+      "method": "DELETE",
+      "path": "/api/square-redraw/batches/{batch_id}/items/{item_id}",
+      "file": "backend/main.py",
+      "handler": "api_square_redraw_delete_item"
+    },
+    {
+      "id": "main:route:DELETE:/api/storage/config/{config_id}:backend/routes/storage.py:delete_config_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "DELETE",
+      "path": "/api/storage/config/{config_id}",
+      "file": "backend/routes/storage.py",
+      "handler": "delete_config_endpoint"
+    },
+    {
+      "id": "main:route:DELETE:/storage/config/{config_id}:backend/routes/storage.py:delete_config_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "DELETE",
+      "path": "/storage/config/{config_id}",
+      "file": "backend/routes/storage.py",
+      "handler": "delete_config_endpoint"
+    },
+    {
+      "id": "main:route:GET:/api/brand-profiles:backend/main.py:get_brand_profiles_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/brand-profiles",
+      "file": "backend/main.py",
+      "handler": "get_brand_profiles_endpoint"
+    },
+    {
+      "id": "main:route:GET:/api/export/launch-kit/{kit_id}/download:backend/main.py:api_download_launch_kit",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/export/launch-kit/{kit_id}/download",
+      "file": "backend/main.py",
+      "handler": "api_download_launch_kit"
+    },
+    {
+      "id": "main:route:GET:/api/history/{module}/{item_id}:backend/main.py:get_history_item",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/history/{module}/{item_id}",
+      "file": "backend/main.py",
+      "handler": "get_history_item"
+    },
+    {
+      "id": "main:route:GET:/api/history/{module}:backend/main.py:get_history",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/history/{module}",
+      "file": "backend/main.py",
+      "handler": "get_history"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/artifact-choices:backend/routes/research.py:artifact_choices",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/artifact-choices",
+      "file": "backend/routes/research.py",
+      "handler": "artifact_choices"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/imports/{import_id}:backend/routes/research.py:import_status",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/imports/{import_id}",
+      "file": "backend/routes/research.py",
+      "handler": "import_status"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/imports:backend/routes/research.py:list_imports",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/imports",
+      "file": "backend/routes/research.py",
+      "handler": "list_imports"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/markets:backend/routes/research.py:markets",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/markets",
+      "file": "backend/routes/research.py",
+      "handler": "markets"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/projects/{project_id}/actions:backend/routes/research.py:research_actions",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/projects/{project_id}/actions",
+      "file": "backend/routes/research.py",
+      "handler": "research_actions"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/projects/{project_id}/commands/{command_id}:backend/routes/research.py:research_command_status",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/projects/{project_id}/commands/{command_id}",
+      "file": "backend/routes/research.py",
+      "handler": "research_command_status"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/projects/{project_id}/confirmations/{command_id}:backend/routes/research.py:confirmation_status",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/projects/{project_id}/confirmations/{command_id}",
+      "file": "backend/routes/research.py",
+      "handler": "confirmation_status"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/projects/{project_id}/report:backend/routes/research.py:report",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/projects/{project_id}/report",
+      "file": "backend/routes/research.py",
+      "handler": "report"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/projects/{project_id}:backend/routes/research.py:project",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/projects/{project_id}",
+      "file": "backend/routes/research.py",
+      "handler": "project"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/projects:backend/routes/research.py:projects",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/projects",
+      "file": "backend/routes/research.py",
+      "handler": "projects"
+    },
+    {
+      "id": "main:route:GET:/api/research/v1/session:backend/routes/research.py:session",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/research/v1/session",
+      "file": "backend/routes/research.py",
+      "handler": "session"
+    },
+    {
+      "id": "main:route:GET:/api/settings/ai/bindings:backend/main.py:api_get_ai_bindings",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/settings/ai/bindings",
+      "file": "backend/main.py",
+      "handler": "api_get_ai_bindings"
+    },
+    {
+      "id": "main:route:GET:/api/settings/ai/providers/{provider_id}/usage-query:backend/main.py:api_get_provider_usage_query_config",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/settings/ai/providers/{provider_id}/usage-query",
+      "file": "backend/main.py",
+      "handler": "api_get_provider_usage_query_config"
+    },
+    {
+      "id": "main:route:GET:/api/settings/ai/providers:backend/main.py:api_list_ai_providers",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/settings/ai/providers",
+      "file": "backend/main.py",
+      "handler": "api_list_ai_providers"
+    },
+    {
+      "id": "main:route:GET:/api/settings/crawler:backend/main.py:api_get_crawler_settings",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/settings/crawler",
+      "file": "backend/main.py",
+      "handler": "api_get_crawler_settings"
+    },
+    {
+      "id": "main:route:GET:/api/settings/logs/recent:backend/main.py:api_recent_logs",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/settings/logs/recent",
+      "file": "backend/main.py",
+      "handler": "api_recent_logs"
+    },
+    {
+      "id": "main:route:GET:/api/settings/logs/stream:backend/main.py:api_stream_logs",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/settings/logs/stream",
+      "file": "backend/main.py",
+      "handler": "api_stream_logs"
+    },
+    {
+      "id": "main:route:GET:/api/square-redraw/batches/{batch_id}/download:backend/main.py:api_square_redraw_download",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/square-redraw/batches/{batch_id}/download",
+      "file": "backend/main.py",
+      "handler": "api_square_redraw_download"
+    },
+    {
+      "id": "main:route:GET:/api/square-redraw/batches/{batch_id}:backend/main.py:api_square_redraw_get",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/square-redraw/batches/{batch_id}",
+      "file": "backend/main.py",
+      "handler": "api_square_redraw_get"
+    },
+    {
+      "id": "main:route:GET:/api/storage/configs:backend/routes/storage.py:get_configs_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/storage/configs",
+      "file": "backend/routes/storage.py",
+      "handler": "get_configs_endpoint"
+    },
+    {
+      "id": "main:route:GET:/config:backend/main.py:get_frontend_config",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/config",
+      "file": "backend/main.py",
+      "handler": "get_frontend_config"
+    },
+    {
+      "id": "main:route:GET:/storage/configs:backend/routes/storage.py:get_configs_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "GET",
+      "path": "/storage/configs",
+      "file": "backend/routes/storage.py",
+      "handler": "get_configs_endpoint"
+    },
+    {
+      "id": "main:route:POST:/api/ads/generate:backend/routes/generation.py:api_ads_generate",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/ads/generate",
+      "file": "backend/routes/generation.py",
+      "handler": "api_ads_generate"
+    },
+    {
+      "id": "main:route:POST:/api/ai/generate:backend/routes/generation.py:api_ai_generate",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/ai/generate",
+      "file": "backend/routes/generation.py",
+      "handler": "api_ai_generate"
+    },
+    {
+      "id": "main:route:POST:/api/brand-profiles:backend/main.py:save_brand_profiles_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/brand-profiles",
+      "file": "backend/main.py",
+      "handler": "save_brand_profiles_endpoint"
+    },
+    {
+      "id": "main:route:POST:/api/export/launch-kit:backend/main.py:api_export_launch_kit",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/export/launch-kit",
+      "file": "backend/main.py",
+      "handler": "api_export_launch_kit"
+    },
+    {
+      "id": "main:route:POST:/api/history/{module}/batch-delete:backend/main.py:batch_delete_history",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/history/{module}/batch-delete",
+      "file": "backend/main.py",
+      "handler": "batch_delete_history"
+    },
+    {
+      "id": "main:route:POST:/api/history/{module}:backend/main.py:save_history",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/history/{module}",
+      "file": "backend/main.py",
+      "handler": "save_history"
+    },
+    {
+      "id": "main:route:POST:/api/image/compress-webp:backend/routes/generation.py:api_compress_webp",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/image/compress-webp",
+      "file": "backend/routes/generation.py",
+      "handler": "api_compress_webp"
+    },
+    {
+      "id": "main:route:POST:/api/listing/compliance:backend/routes/generation.py:api_listing_compliance",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/listing/compliance",
+      "file": "backend/routes/generation.py",
+      "handler": "api_listing_compliance"
+    },
+    {
+      "id": "main:route:POST:/api/listing/extract:backend/routes/generation.py:api_listing_extract",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/listing/extract",
+      "file": "backend/routes/generation.py",
+      "handler": "api_listing_extract"
+    },
+    {
+      "id": "main:route:POST:/api/listing/generate:backend/routes/generation.py:api_listing_generate",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/listing/generate",
+      "file": "backend/routes/generation.py",
+      "handler": "api_listing_generate"
+    },
+    {
+      "id": "main:route:POST:/api/listing/regenerate-section:backend/routes/generation.py:api_listing_regenerate_section",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/listing/regenerate-section",
+      "file": "backend/routes/generation.py",
+      "handler": "api_listing_regenerate_section"
+    },
+    {
+      "id": "main:route:POST:/api/research/v1/imports/{import_id}/artifacts:backend/routes/research.py:attach_artifact",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/research/v1/imports/{import_id}/artifacts",
+      "file": "backend/routes/research.py",
+      "handler": "attach_artifact"
+    },
+    {
+      "id": "main:route:POST:/api/research/v1/math/logistics:backend/routes/research.py:logistics",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/research/v1/math/logistics",
+      "file": "backend/routes/research.py",
+      "handler": "logistics"
+    },
+    {
+      "id": "main:route:POST:/api/research/v1/math/scenarios:backend/routes/research.py:scenarios",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/research/v1/math/scenarios",
+      "file": "backend/routes/research.py",
+      "handler": "scenarios"
+    },
+    {
+      "id": "main:route:POST:/api/research/v1/projects/{project_id}/commands:backend/routes/research.py:research_command",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/research/v1/projects/{project_id}/commands",
+      "file": "backend/routes/research.py",
+      "handler": "research_command"
+    },
+    {
+      "id": "main:route:POST:/api/research/v1/projects/{project_id}/products/{product_id}/confirm-fact:backend/routes/research.py:confirm_fact",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/research/v1/projects/{project_id}/products/{product_id}/confirm-fact",
+      "file": "backend/routes/research.py",
+      "handler": "confirm_fact"
+    },
+    {
+      "id": "main:route:POST:/api/research/v1/projects/{project_id}/products/{product_id}/imports:backend/routes/research.py:save_import",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/research/v1/projects/{project_id}/products/{product_id}/imports",
+      "file": "backend/routes/research.py",
+      "handler": "save_import"
+    },
+    {
+      "id": "main:route:POST:/api/research/v1/projects/{project_id}/products/{product_id}/preview:backend/routes/research.py:preview",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/research/v1/projects/{project_id}/products/{product_id}/preview",
+      "file": "backend/routes/research.py",
+      "handler": "preview"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers/balance/test:backend/main.py:api_test_provider_balance",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers/balance/test",
+      "file": "backend/main.py",
+      "handler": "api_test_provider_balance"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers/models/fetch:backend/main.py:api_fetch_provider_models",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers/models/fetch",
+      "file": "backend/main.py",
+      "handler": "api_fetch_provider_models"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers/test:backend/main.py:api_test_ai_provider",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers/test",
+      "file": "backend/main.py",
+      "handler": "api_test_ai_provider"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers/usage-query/proxy:backend/main.py:api_proxy_usage_query",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers/usage-query/proxy",
+      "file": "backend/main.py",
+      "handler": "api_proxy_usage_query"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers/{provider_id}/balance/record:backend/main.py:api_record_provider_balance",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers/{provider_id}/balance/record",
+      "file": "backend/main.py",
+      "handler": "api_record_provider_balance"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers/{provider_id}/balance:backend/main.py:api_query_provider_balance",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers/{provider_id}/balance",
+      "file": "backend/main.py",
+      "handler": "api_query_provider_balance"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers/{provider_id}/disable:backend/main.py:api_disable_ai_provider",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers/{provider_id}/disable",
+      "file": "backend/main.py",
+      "handler": "api_disable_ai_provider"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers/{provider_id}/enable:backend/main.py:api_enable_ai_provider",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers/{provider_id}/enable",
+      "file": "backend/main.py",
+      "handler": "api_enable_ai_provider"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers/{provider_id}/test:backend/main.py:api_test_saved_ai_provider",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers/{provider_id}/test",
+      "file": "backend/main.py",
+      "handler": "api_test_saved_ai_provider"
+    },
+    {
+      "id": "main:route:POST:/api/settings/ai/providers:backend/main.py:api_create_ai_provider",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/ai/providers",
+      "file": "backend/main.py",
+      "handler": "api_create_ai_provider"
+    },
+    {
+      "id": "main:route:POST:/api/settings/crawler/test:backend/main.py:api_test_crawler_connection",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/crawler/test",
+      "file": "backend/main.py",
+      "handler": "api_test_crawler_connection"
+    },
+    {
+      "id": "main:route:POST:/api/settings/secrets/reveal:backend/main.py:reveal_saved_secret",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings/secrets/reveal",
+      "file": "backend/main.py",
+      "handler": "reveal_saved_secret"
+    },
+    {
+      "id": "main:route:POST:/api/square-redraw/batches/{batch_id}/items/{item_id}/process:backend/main.py:api_square_redraw_process_item",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/square-redraw/batches/{batch_id}/items/{item_id}/process",
+      "file": "backend/main.py",
+      "handler": "api_square_redraw_process_item"
+    },
+    {
+      "id": "main:route:POST:/api/square-redraw/batches/{batch_id}/retry-failed:backend/main.py:api_square_redraw_retry_failed",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/square-redraw/batches/{batch_id}/retry-failed",
+      "file": "backend/main.py",
+      "handler": "api_square_redraw_retry_failed"
+    },
+    {
+      "id": "main:route:POST:/api/square-redraw/batches:backend/main.py:api_square_redraw_create",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/square-redraw/batches",
+      "file": "backend/main.py",
+      "handler": "api_square_redraw_create"
+    },
+    {
+      "id": "main:route:POST:/api/storage/config/{config_id}/default:backend/routes/storage.py:set_default_config_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/storage/config/{config_id}/default",
+      "file": "backend/routes/storage.py",
+      "handler": "set_default_config_endpoint"
+    },
+    {
+      "id": "main:route:POST:/api/storage/config:backend/routes/storage.py:save_config_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/storage/config",
+      "file": "backend/routes/storage.py",
+      "handler": "save_config_endpoint"
+    },
+    {
+      "id": "main:route:POST:/api/storage/test:backend/routes/storage.py:test_connection_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/storage/test",
+      "file": "backend/routes/storage.py",
+      "handler": "test_connection_endpoint"
+    },
+    {
+      "id": "main:route:POST:/api/storage/upload-image:backend/routes/storage.py:upload_image_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/storage/upload-image",
+      "file": "backend/routes/storage.py",
+      "handler": "upload_image_endpoint"
+    },
+    {
+      "id": "main:route:POST:/api/translate-text:backend/routes/generation.py:api_translate_text",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/translate-text",
+      "file": "backend/routes/generation.py",
+      "handler": "api_translate_text"
+    },
+    {
+      "id": "main:route:POST:/api/watermark-removal:backend/routes/generation.py:api_watermark_removal",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/watermark-removal",
+      "file": "backend/routes/generation.py",
+      "handler": "api_watermark_removal"
+    },
+    {
+      "id": "main:route:POST:/compare:backend/main.py:compare",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/compare",
+      "file": "backend/main.py",
+      "handler": "compare"
+    },
+    {
+      "id": "main:route:POST:/log:backend/routes/generation.py:receive_frontend_log",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/log",
+      "file": "backend/routes/generation.py",
+      "handler": "receive_frontend_log"
+    },
+    {
+      "id": "main:route:POST:/storage/config/{config_id}/default:backend/routes/storage.py:set_default_config_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/storage/config/{config_id}/default",
+      "file": "backend/routes/storage.py",
+      "handler": "set_default_config_endpoint"
+    },
+    {
+      "id": "main:route:POST:/storage/config:backend/routes/storage.py:save_config_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/storage/config",
+      "file": "backend/routes/storage.py",
+      "handler": "save_config_endpoint"
+    },
+    {
+      "id": "main:route:POST:/storage/test:backend/routes/storage.py:test_connection_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/storage/test",
+      "file": "backend/routes/storage.py",
+      "handler": "test_connection_endpoint"
+    },
+    {
+      "id": "main:route:POST:/storage/upload-image:backend/routes/storage.py:upload_image_endpoint",
+      "source": "main",
+      "kind": "route",
+      "method": "POST",
+      "path": "/storage/upload-image",
+      "file": "backend/routes/storage.py",
+      "handler": "upload_image_endpoint"
+    },
+    {
+      "id": "main:route:PUT:/api/settings/ai/bindings/{capability}:backend/main.py:api_set_ai_binding",
+      "source": "main",
+      "kind": "route",
+      "method": "PUT",
+      "path": "/api/settings/ai/bindings/{capability}",
+      "file": "backend/main.py",
+      "handler": "api_set_ai_binding"
+    },
+    {
+      "id": "main:route:PUT:/api/settings/ai/providers/{provider_id}/usage-query:backend/main.py:api_update_provider_usage_query_config",
+      "source": "main",
+      "kind": "route",
+      "method": "PUT",
+      "path": "/api/settings/ai/providers/{provider_id}/usage-query",
+      "file": "backend/main.py",
+      "handler": "api_update_provider_usage_query_config"
+    },
+    {
+      "id": "main:route:PUT:/api/settings/ai/providers/{provider_id}:backend/main.py:api_update_ai_provider",
+      "source": "main",
+      "kind": "route",
+      "method": "PUT",
+      "path": "/api/settings/ai/providers/{provider_id}",
+      "file": "backend/main.py",
+      "handler": "api_update_ai_provider"
+    },
+    {
+      "id": "main:route:PUT:/api/settings/crawler:backend/main.py:api_update_crawler_settings",
+      "source": "main",
+      "kind": "route",
+      "method": "PUT",
+      "path": "/api/settings/crawler",
+      "file": "backend/main.py",
+      "handler": "api_update_crawler_settings"
+    },
+    {
+      "id": "main:table:ads_history",
+      "source": "main",
+      "kind": "table",
+      "name": "ads_history"
+    },
+    {
+      "id": "main:table:ai_capability_bindings",
+      "source": "main",
+      "kind": "table",
+      "name": "ai_capability_bindings"
+    },
+    {
+      "id": "main:table:ai_provider_configs",
+      "source": "main",
+      "kind": "table",
+      "name": "ai_provider_configs"
+    },
+    {
+      "id": "main:table:analysis_history",
+      "source": "main",
+      "kind": "table",
+      "name": "analysis_history"
+    },
+    {
+      "id": "main:table:app_settings",
+      "source": "main",
+      "kind": "table",
+      "name": "app_settings"
+    },
+    {
+      "id": "main:table:firecrawl_configs",
+      "source": "main",
+      "kind": "table",
+      "name": "firecrawl_configs"
+    },
+    {
+      "id": "main:table:listing_history",
+      "source": "main",
+      "kind": "table",
+      "name": "listing_history"
+    },
+    {
+      "id": "main:table:render_history",
+      "source": "main",
+      "kind": "table",
+      "name": "render_history"
+    },
+    {
+      "id": "main:table:research_import_events",
+      "source": "main",
+      "kind": "table",
+      "name": "research_import_events"
+    },
+    {
+      "id": "main:table:research_links",
+      "source": "main",
+      "kind": "table",
+      "name": "research_links"
+    },
+    {
+      "id": "main:table:research_schema",
+      "source": "main",
+      "kind": "table",
+      "name": "research_schema"
+    },
+    {
+      "id": "main:table:square_redraw_batches",
+      "source": "main",
+      "kind": "table",
+      "name": "square_redraw_batches"
+    },
+    {
+      "id": "main:table:square_redraw_history",
+      "source": "main",
+      "kind": "table",
+      "name": "square_redraw_history"
+    },
+    {
+      "id": "main:table:square_redraw_items",
+      "source": "main",
+      "kind": "table",
+      "name": "square_redraw_items"
+    },
+    {
+      "id": "main:table:storage_configs",
+      "source": "main",
+      "kind": "table",
+      "name": "storage_configs"
+    },
+    {
+      "id": "main:table:text_translation_history",
+      "source": "main",
+      "kind": "table",
+      "name": "text_translation_history"
+    },
+    {
+      "id": "main:table:translation_history",
+      "source": "main",
+      "kind": "table",
+      "name": "translation_history"
+    },
+    {
+      "id": "main:table:watermark_removal_history",
+      "source": "main",
+      "kind": "table",
+      "name": "watermark_removal_history"
+    },
+    {
+      "id": "research:action:add_creative_reference",
+      "source": "research",
+      "kind": "action",
+      "name": "add_creative_reference"
+    },
+    {
+      "id": "research:action:add_keyword",
+      "source": "research",
+      "kind": "action",
+      "name": "add_keyword"
+    },
+    {
+      "id": "research:action:add_product",
+      "source": "research",
+      "kind": "action",
+      "name": "add_product"
+    },
+    {
+      "id": "research:action:add_sales_estimate",
+      "source": "research",
+      "kind": "action",
+      "name": "add_sales_estimate"
+    },
+    {
+      "id": "research:action:approve_keyword",
+      "source": "research",
+      "kind": "action",
+      "name": "approve_keyword"
+    },
+    {
+      "id": "research:action:archive_keyword",
+      "source": "research",
+      "kind": "action",
+      "name": "archive_keyword"
+    },
+    {
+      "id": "research:action:configure_collection",
+      "source": "research",
+      "kind": "action",
+      "name": "configure_collection"
+    },
+    {
+      "id": "research:action:configure_rules",
+      "source": "research",
+      "kind": "action",
+      "name": "configure_rules"
+    },
+    {
+      "id": "research:action:confirm_creatives",
+      "source": "research",
+      "kind": "action",
+      "name": "confirm_creatives"
+    },
+    {
+      "id": "research:action:confirm_product",
+      "source": "research",
+      "kind": "action",
+      "name": "confirm_product"
+    },
+    {
+      "id": "research:action:confirm_test_result",
+      "source": "research",
+      "kind": "action",
+      "name": "confirm_test_result"
+    },
+    {
+      "id": "research:action:decide",
+      "source": "research",
+      "kind": "action",
+      "name": "decide"
+    },
+    {
+      "id": "research:action:economics",
+      "source": "research",
+      "kind": "action",
+      "name": "economics"
+    },
+    {
+      "id": "research:action:edit_keyword",
+      "source": "research",
+      "kind": "action",
+      "name": "edit_keyword"
+    },
+    {
+      "id": "research:action:evaluate",
+      "source": "research",
+      "kind": "action",
+      "name": "evaluate"
+    },
+    {
+      "id": "research:action:evidence",
+      "source": "research",
+      "kind": "action",
+      "name": "evidence"
+    },
+    {
+      "id": "research:action:focus_product",
+      "source": "research",
+      "kind": "action",
+      "name": "focus_product"
+    },
+    {
+      "id": "research:action:funnel",
+      "source": "research",
+      "kind": "action",
+      "name": "funnel"
+    },
+    {
+      "id": "research:action:identify",
+      "source": "research",
+      "kind": "action",
+      "name": "identify"
+    },
+    {
+      "id": "research:action:link_product_offers",
+      "source": "research",
+      "kind": "action",
+      "name": "link_product_offers"
+    },
+    {
+      "id": "research:action:merge_products",
+      "source": "research",
+      "kind": "action",
+      "name": "merge_products"
+    },
+    {
+      "id": "research:action:record_funnel_investigation",
+      "source": "research",
+      "kind": "action",
+      "name": "record_funnel_investigation"
+    },
+    {
+      "id": "research:action:restore_keyword",
+      "source": "research",
+      "kind": "action",
+      "name": "restore_keyword"
+    },
+    {
+      "id": "research:action:restore_product",
+      "source": "research",
+      "kind": "action",
+      "name": "restore_product"
+    },
+    {
+      "id": "research:action:review",
+      "source": "research",
+      "kind": "action",
+      "name": "review"
+    },
+    {
+      "id": "research:action:revise_test_result",
+      "source": "research",
+      "kind": "action",
+      "name": "revise_test_result"
+    },
+    {
+      "id": "research:action:set_logistics_profile",
+      "source": "research",
+      "kind": "action",
+      "name": "set_logistics_profile"
+    },
+    {
+      "id": "research:action:split_product_offer",
+      "source": "research",
+      "kind": "action",
+      "name": "split_product_offer"
+    },
+    {
+      "id": "research:action:test_plan",
+      "source": "research",
+      "kind": "action",
+      "name": "test_plan"
+    },
+    {
+      "id": "research:action:test_result",
+      "source": "research",
+      "kind": "action",
+      "name": "test_result"
+    },
+    {
+      "id": "research:action:triage_product",
+      "source": "research",
+      "kind": "action",
+      "name": "triage_product"
+    },
+    {
+      "id": "research:action:undo_offer_link",
+      "source": "research",
+      "kind": "action",
+      "name": "undo_offer_link"
+    },
+    {
+      "id": "research:action:undo_triage_product",
+      "source": "research",
+      "kind": "action",
+      "name": "undo_triage_product"
+    },
+    {
+      "id": "research:action:void_test_result",
+      "source": "research",
+      "kind": "action",
+      "name": "void_test_result"
+    },
+    {
+      "id": "research:job_kind:evaluate",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "evaluate"
+    },
+    {
+      "id": "research:job_kind:feishu_writeback",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "feishu_writeback"
+    },
+    {
+      "id": "research:job_kind:keyword_scan",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "keyword_scan"
+    },
+    {
+      "id": "research:job_kind:keyword_seed",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "keyword_seed"
+    },
+    {
+      "id": "research:job_kind:landing_scan",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "landing_scan"
+    },
+    {
+      "id": "research:job_kind:link_validation",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "link_validation"
+    },
+    {
+      "id": "research:job_kind:meta_scan",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "meta_scan"
+    },
+    {
+      "id": "research:job_kind:niche_discovery",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "niche_discovery"
+    },
+    {
+      "id": "research:job_kind:niche_research",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "niche_research"
+    },
+    {
+      "id": "research:job_kind:trends_scan",
+      "source": "research",
+      "kind": "job_kind",
+      "name": "trends_scan"
+    },
+    {
+      "id": "research:page:frontend/legacy/dashboard.html",
+      "source": "research",
+      "kind": "page",
+      "name": "frontend/legacy/dashboard.html"
+    },
+    {
+      "id": "research:page:frontend/workbench.html",
+      "source": "research",
+      "kind": "page",
+      "name": "frontend/workbench.html"
+    },
+    {
+      "id": "research:page:tests/fixtures/landing/category.html",
+      "source": "research",
+      "kind": "page",
+      "name": "tests/fixtures/landing/category.html"
+    },
+    {
+      "id": "research:page:tests/fixtures/landing/product.html",
+      "source": "research",
+      "kind": "page",
+      "name": "tests/fixtures/landing/product.html"
+    },
+    {
+      "id": "research:page:tests/fixtures/meta/captcha.html",
+      "source": "research",
+      "kind": "page",
+      "name": "tests/fixtures/meta/captcha.html"
+    },
+    {
+      "id": "research:page:tests/fixtures/meta/empty-smoke.html",
+      "source": "research",
+      "kind": "page",
+      "name": "tests/fixtures/meta/empty-smoke.html"
+    },
+    {
+      "id": "research:page:tests/fixtures/meta/empty.html",
+      "source": "research",
+      "kind": "page",
+      "name": "tests/fixtures/meta/empty.html"
+    },
+    {
+      "id": "research:page:tests/fixtures/meta/results.html",
+      "source": "research",
+      "kind": "page",
+      "name": "tests/fixtures/meta/results.html"
+    },
+    {
+      "id": "research:page:tests/fixtures/meta/reverted-filter.html",
+      "source": "research",
+      "kind": "page",
+      "name": "tests/fixtures/meta/reverted-filter.html"
+    },
+    {
+      "id": "research:page:tests/fixtures/meta/smoke.html",
+      "source": "research",
+      "kind": "page",
+      "name": "tests/fixtures/meta/smoke.html"
+    },
+    {
+      "id": "research:route:DELETE:/workbench/api/projects/{project_id}:src/rabbit_hole/api/workbench.py:delete_project",
+      "source": "research",
+      "kind": "route",
+      "method": "DELETE",
+      "path": "/workbench/api/projects/{project_id}",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "delete_project"
+    },
+    {
+      "id": "research:route:GET:/:src/rabbit_hole/api/workbench.py:home",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "home"
+    },
+    {
+      "id": "research:route:GET:/dashboard/data:src/rabbit_hole/runtime/server.py:dashboard_data",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/dashboard/data",
+      "file": "src/rabbit_hole/runtime/server.py",
+      "handler": "dashboard_data"
+    },
+    {
+      "id": "research:route:GET:/favicon.ico:src/rabbit_hole/runtime/server.py:favicon",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/favicon.ico",
+      "file": "src/rabbit_hole/runtime/server.py",
+      "handler": "favicon"
+    },
+    {
+      "id": "research:route:GET:/health:src/rabbit_hole/runtime/server.py:health",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/health",
+      "file": "src/rabbit_hole/runtime/server.py",
+      "handler": "health"
+    },
+    {
+      "id": "research:route:GET:/integrations:src/rabbit_hole/runtime/server.py:integrations",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/integrations",
+      "file": "src/rabbit_hole/runtime/server.py",
+      "handler": "integrations"
+    },
+    {
+      "id": "research:route:GET:/internal/integration/v1/projects/{project_id}/actions:src/rabbit_hole/api/integration.py:action_statuses",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/internal/integration/v1/projects/{project_id}/actions",
+      "file": "src/rabbit_hole/api/integration.py",
+      "handler": "action_statuses"
+    },
+    {
+      "id": "research:route:GET:/internal/integration/v1/projects/{project_id}/commands/{command_id}:src/rabbit_hole/api/integration.py:command_status",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/internal/integration/v1/projects/{project_id}/commands/{command_id}",
+      "file": "src/rabbit_hole/api/integration.py",
+      "handler": "command_status"
+    },
+    {
+      "id": "research:route:GET:/internal/integration/v1/projects/{project_id}/confirmations/{command_id}:src/rabbit_hole/api/integration.py:confirmation_status",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/internal/integration/v1/projects/{project_id}/confirmations/{command_id}",
+      "file": "src/rabbit_hole/api/integration.py",
+      "handler": "confirmation_status"
+    },
+    {
+      "id": "research:route:GET:/internal/integration/v1/projects/{project_id}/products/{product_id}:src/rabbit_hole/api/integration.py:product",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/internal/integration/v1/projects/{project_id}/products/{product_id}",
+      "file": "src/rabbit_hole/api/integration.py",
+      "handler": "product"
+    },
+    {
+      "id": "research:route:GET:/internal/integration/v1/projects/{project_id}/report:src/rabbit_hole/api/integration.py:report",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/internal/integration/v1/projects/{project_id}/report",
+      "file": "src/rabbit_hole/api/integration.py",
+      "handler": "report"
+    },
+    {
+      "id": "research:route:GET:/internal/integration/v1/projects/{project_id}:src/rabbit_hole/api/integration.py:project",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/internal/integration/v1/projects/{project_id}",
+      "file": "src/rabbit_hole/api/integration.py",
+      "handler": "project"
+    },
+    {
+      "id": "research:route:GET:/internal/integration/v1/projects:src/rabbit_hole/api/integration.py:projects",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/internal/integration/v1/projects",
+      "file": "src/rabbit_hole/api/integration.py",
+      "handler": "projects"
+    },
+    {
+      "id": "research:route:GET:/marketing-workbench:src/rabbit_hole/api/workbench.py:marketing_home",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/marketing-workbench",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "marketing_home"
+    },
+    {
+      "id": "research:route:GET:/metrics:src/rabbit_hole/runtime/server.py:metrics",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/metrics",
+      "file": "src/rabbit_hole/runtime/server.py",
+      "handler": "metrics"
+    },
+    {
+      "id": "research:route:GET:/operations:src/rabbit_hole/runtime/server.py:dashboard",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/operations",
+      "file": "src/rabbit_hole/runtime/server.py",
+      "handler": "dashboard"
+    },
+    {
+      "id": "research:route:GET:/ready:src/rabbit_hole/runtime/server.py:ready",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/ready",
+      "file": "src/rabbit_hole/runtime/server.py",
+      "handler": "ready"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/ai-settings:src/rabbit_hole/api/workbench.py:ai_settings",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/ai-settings",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "ai_settings"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/evidence-file:src/rabbit_hole/runtime/server.py:evidence_file",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/evidence-file",
+      "file": "src/rabbit_hole/runtime/server.py",
+      "handler": "evidence_file"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}/actions/{action_id}/provider-evidence:src/rabbit_hole/api/workbench.py:provider_evidence",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}/actions/{action_id}/provider-evidence",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "provider_evidence"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}/actions/{action_id}/screenshot:src/rabbit_hole/api/workbench.py:screenshot",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}/actions/{action_id}/screenshot",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "screenshot"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}/actions:src/rabbit_hole/api/workbench.py:actions",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}/actions",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "actions"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}/intelligence:src/rabbit_hole/api/workbench.py:intelligence",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}/intelligence",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "intelligence"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}/live-logs:src/rabbit_hole/api/workbench.py:live_logs",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}/live-logs",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "live_logs"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}/log-stream:src/rabbit_hole/api/workbench.py:log_stream",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}/log-stream",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "log_stream"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}/media-download:src/rabbit_hole/api/workbench.py:media_download",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}/media-download",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "media_download"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}/report:src/rabbit_hole/api/workbench.py:report",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}/report",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "report"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}/sync:src/rabbit_hole/api/workbench.py:sync_status",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}/sync",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "sync_status"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects/{project_id}:src/rabbit_hole/api/workbench.py:project",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects/{project_id}",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "project"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/projects:src/rabbit_hole/api/workbench.py:projects",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/projects",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "projects"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/provider-settings:src/rabbit_hole/api/workbench.py:provider_settings",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/provider-settings",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "provider_settings"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/session:src/rabbit_hole/api/workbench.py:session",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/session",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "session"
+    },
+    {
+      "id": "research:route:GET:/workbench/api/sources:src/rabbit_hole/api/workbench.py:sources",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/api/sources",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "sources"
+    },
+    {
+      "id": "research:route:GET:/workbench/ui-icons/{name}.svg:src/rabbit_hole/api/workbench.py:ui_icon",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/ui-icons/{name}.svg",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "ui_icon"
+    },
+    {
+      "id": "research:route:GET:/workbench/{asset}:src/rabbit_hole/api/workbench.py:asset_file",
+      "source": "research",
+      "kind": "route",
+      "method": "GET",
+      "path": "/workbench/{asset}",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "asset_file"
+    },
+    {
+      "id": "research:route:POST:/internal/integration/v1/projects/{project_id}/commands:src/rabbit_hole/api/integration.py:user_command",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/integration/v1/projects/{project_id}/commands",
+      "file": "src/rabbit_hole/api/integration.py",
+      "handler": "user_command"
+    },
+    {
+      "id": "research:route:POST:/internal/integration/v1/projects/{project_id}/confirm-fact:src/rabbit_hole/api/integration.py:confirm_fact",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/integration/v1/projects/{project_id}/confirm-fact",
+      "file": "src/rabbit_hole/api/integration.py",
+      "handler": "confirm_fact"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/ai-settings:src/rabbit_hole/api/workbench.py:save_ai_settings",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/ai-settings",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "save_ai_settings"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/project-direction:src/rabbit_hole/api/workbench.py:project_direction",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/project-direction",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "project_direction"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/projects/{project_id}/actions/{action_id}/stop:src/rabbit_hole/api/workbench.py:stop_workbench_action",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/projects/{project_id}/actions/{action_id}/stop",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "stop_workbench_action"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/projects/{project_id}/actions:src/rabbit_hole/api/workbench.py:queue_action",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/projects/{project_id}/actions",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "queue_action"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/projects/{project_id}/ads/translate:src/rabbit_hole/api/workbench.py:translate_ad",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/projects/{project_id}/ads/translate",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "translate_ad"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/projects/{project_id}/commands:src/rabbit_hole/api/workbench.py:command",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/projects/{project_id}/commands",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "command"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/projects/{project_id}/sync/preview:src/rabbit_hole/api/workbench.py:sync_preview",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/projects/{project_id}/sync/preview",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "sync_preview"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/projects/{project_id}/sync/{run_id}/retry:src/rabbit_hole/api/workbench.py:sync_retry",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/projects/{project_id}/sync/{run_id}/retry",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "sync_retry"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/projects/{project_id}/sync:src/rabbit_hole/api/workbench.py:sync_enqueue",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/projects/{project_id}/sync",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "sync_enqueue"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/projects/{project_id}/trends-import:src/rabbit_hole/api/workbench.py:import_trends",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/projects/{project_id}/trends-import",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "import_trends"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/projects:src/rabbit_hole/api/workbench.py:create_project",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/projects",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "create_project"
+    },
+    {
+      "id": "research:route:POST:/workbench/api/provider-settings:src/rabbit_hole/api/workbench.py:save_provider_settings",
+      "source": "research",
+      "kind": "route",
+      "method": "POST",
+      "path": "/workbench/api/provider-settings",
+      "file": "src/rabbit_hole/api/workbench.py",
+      "handler": "save_provider_settings"
+    },
+    {
+      "id": "research:table:alembic_version",
+      "source": "research",
+      "kind": "table",
+      "name": "alembic_version"
+    },
+    {
+      "id": "research:table:collector_cache",
+      "source": "research",
+      "kind": "table",
+      "name": "collector_cache"
+    },
+    {
+      "id": "research:table:daily_usage",
+      "source": "research",
+      "kind": "table",
+      "name": "daily_usage"
+    },
+    {
+      "id": "research:table:feishu_outbox",
+      "source": "research",
+      "kind": "table",
+      "name": "feishu_outbox"
+    },
+    {
+      "id": "research:table:job_checkpoints",
+      "source": "research",
+      "kind": "table",
+      "name": "job_checkpoints"
+    },
+    {
+      "id": "research:table:runtime_alerts",
+      "source": "research",
+      "kind": "table",
+      "name": "runtime_alerts"
+    },
+    {
+      "id": "research:table:runtime_events",
+      "source": "research",
+      "kind": "table",
+      "name": "runtime_events"
+    },
+    {
+      "id": "research:table:runtime_health",
+      "source": "research",
+      "kind": "table",
+      "name": "runtime_health"
+    },
+    {
+      "id": "research:table:runtime_jobs",
+      "source": "research",
+      "kind": "table",
+      "name": "runtime_jobs"
+    },
+    {
+      "id": "research:table:workbench_actions",
+      "source": "research",
+      "kind": "table",
+      "name": "workbench_actions"
+    },
+    {
+      "id": "research:table:workbench_events",
+      "source": "research",
+      "kind": "table",
+      "name": "workbench_events"
+    },
+    {
+      "id": "research:table:workbench_projects",
+      "source": "research",
+      "kind": "table",
+      "name": "workbench_projects"
+    },
+    {
+      "id": "research:table:workbench_provider_logs",
+      "source": "research",
+      "kind": "table",
+      "name": "workbench_provider_logs"
+    },
+    {
+      "id": "research:table:workbench_sync_runs",
+      "source": "research",
+      "kind": "table",
+      "name": "workbench_sync_runs"
+    }
+  ]
+}

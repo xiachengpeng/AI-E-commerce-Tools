@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-from scripts.full_merge.inventory import validate_coverage
+from scripts.full_merge.inventory import validate_coverage, validate_original_inventory
 
 INVENTORY = 'backend/tests/test_full_merge_inventory.py::test_full_merge_coverage_matrix'
 VERSIONS = 'backend/tests/test_full_merge_data.py::test_all_versions_and_original_key_bytes'
@@ -49,8 +49,11 @@ def _case_status(path: Path) -> dict[str, bool]:
 def acceptance(coverage: Path, report_root: Path) -> dict:
     failures, rows = [], []
     reports = {}
+    original = {}
     try:
         matrix = json.loads(coverage.read_text())
+        original = validate_original_inventory(matrix)
+        failures.extend(original['failures'])
         checked = validate_coverage(matrix)
         failures.extend(checked['failures'])
         components = json.loads((report_root / 'component-results.json').read_text())
@@ -104,6 +107,7 @@ def acceptance(coverage: Path, report_root: Path) -> dict:
     except (OSError, ValueError, KeyError, TypeError, ET.ParseError) as exc:
         failures.append('invalid_or_missing_evidence:' + type(exc).__name__)
     return {'local_code_accepted': not failures, 'failures': sorted(set(failures)),
+            'original_inventory': original.get('authority'),
             'coverage_count':len(rows), 'status_counts':dict(Counter(row['status'] for row in rows)),
             'rows':rows, 'reports':{k:{a:b for a,b in v.items() if a != 'cases'} for k,v in reports.items()},
             'scope':'local automated contracts; inventory-only row proof is not exhaustive per-endpoint behavior proof',

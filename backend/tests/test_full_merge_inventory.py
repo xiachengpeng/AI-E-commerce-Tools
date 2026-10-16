@@ -276,3 +276,27 @@ def test_task1_operational_gates_preserve_later_acceptance():
     invalid = copy.deepcopy(matrix)
     invalid['runtime_routes']['research'].pop()
     assert not validate_coverage(invalid)['verified']
+
+
+def test_original_inventory_uses_independent_task1_identity_authority():
+    from scripts.full_merge.inventory import validate_original_inventory
+    root = Path(__file__).resolve().parents[2]
+    matrix = json.loads((root / 'docs/merge-assessment/full-merge-coverage.json').read_text())
+    checked = validate_original_inventory(matrix)
+    assert checked['verified']
+    assert checked['authority']['commit'] == 'bb45209efb10932fa6aa613d09b70c5d8e3b4c74'
+    # Equal counts cannot substitute an original identity with a new one.
+    matrix['coverage'][0] = {**matrix['coverage'][0], 'id':'main:page:invented', 'name':'invented'}
+    assert validate_original_inventory(matrix)['failures'] == ['original_identity_mismatch']
+
+
+def test_original_inventory_rejects_modified_authority_even_with_matching_matrix(tmp_path, monkeypatch):
+    import scripts.full_merge.inventory as module
+    root = Path(__file__).resolve().parents[2]
+    matrix = json.loads((root / 'docs/merge-assessment/full-merge-coverage.json').read_text())
+    frozen = json.loads(module.ORIGINAL_IDENTITIES_PATH.read_text())
+    frozen['identities'].pop()
+    forged = tmp_path / 'forged-authority.json'
+    forged.write_text(json.dumps(frozen))
+    monkeypatch.setattr(module, 'ORIGINAL_IDENTITIES_PATH', forged)
+    assert module.validate_original_inventory(matrix)['failures'] == ['invalid_original_inventory_authority']
