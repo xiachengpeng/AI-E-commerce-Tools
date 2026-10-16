@@ -44,7 +44,7 @@ test('native Feishu status preview exact approval stale rejection and original b
  if(path.endsWith('/sync')&&options.method){const error=Error('preview stale');error.status=409;throw error;}return {};
  });
  try{const page=exploration(c);const entry=find(page,'飞书同步与状态');assert.ok(entry);entry.click();await tick();assert.equal(c.state.view,'sync');const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');const sync=renderSync(c);await tick();assert.equal(calls.filter(v=>v.method).length,0);assert.ok(sync.find(n=>n.textContent.includes('版本 5')));
- find(sync,'预览当前版本同步').click();await tick();assert.equal(previewCalls,1);assert.deepEqual(calls.find(v=>v.path.endsWith('/preview')).body,{version:7});find(sync,'确认同步此版本').click();await tick();assert.deepEqual(calls.find(v=>v.path.endsWith('/sync')&&v.method).body,{version:7,digest:'exact'});assert.equal(find(sync,'确认同步此版本'),null);
+ find(sync,'预览当前版本同步').click();await tick();assert.equal(previewCalls,1);assert.deepEqual(calls.find(v=>v.path.endsWith('/preview')).body,{version:7});find(sync,'确认同步此版本').click();await tick();assert.deepEqual(calls.find(v=>v.path.endsWith('/sync')&&v.method).body,{version:7,digest:'exact'});assert.equal(find(sync,'确认同步此版本'),null);assert.equal(c.state.syncUncertain['p:approve:7:exact'],undefined,'definitive409 rejection clears active intent');
  find(sync,'重新核对并重试').click();await tick();assert.ok(calls.find(v=>v.path==='/projects/p/sync/r/retry'));assert.equal(calls.filter(v=>v.path==='/projects/p/sync/u/retry').length,0);
  }finally{c.life.dispose();}
 });
@@ -77,7 +77,7 @@ test('native mismatch batch saves every eligible original product with progressi
 });
 test('native Feishu successful approval refreshes durable status and stale local preview never submits',async()=>{
  let runs=[];const {c,calls}=fixture((path,o)=>{if(path.endsWith('/sync')&&!o.method)return {runs};if(path.endsWith('/preview'))return {version:c.state.project.version,digest:'v'+c.state.project.version,records:2,tables:[{name:'Products',exists:false}]};runs=[{id:'approved',version:o.body.version,status:'ready',message:'queued'}];return runs[0];});
- try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');let page=renderSync(c);await tick();find(page,'预览当前版本同步').click();await tick();find(page,'确认同步此版本').click();await tick();assert.ok(page.find(n=>n.textContent==='版本 7 · ready'));assert.equal(calls.filter(v=>v.path.endsWith('/sync')&&v.method==='POST').length,1);
+ try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');let page=renderSync(c);await tick();find(page,'预览当前版本同步').click();await tick();find(page,'确认同步此版本').click();await tick();assert.ok(page.find(n=>n.textContent==='版本 7 · ready'));assert.equal(c.state.syncUncertain['p:approve:7:v7'],undefined,'authoritative active success clears intent');assert.equal(calls.filter(v=>v.path.endsWith('/sync')&&v.method==='POST').length,1);
  page=renderSync(c);find(page,'预览当前版本同步').click();await tick();c.state.project.version=8;find(page,'确认同步此版本').click();await tick();assert.equal(calls.filter(v=>v.path.endsWith('/sync')&&v.method==='POST').length,1);assert.equal(find(page,'确认同步此版本'),null);
  }finally{c.life.dispose();}
 });
@@ -115,11 +115,33 @@ test('native mismatch partial failure remains visible when redraw disposes the o
 });
 test('native Feishu uncertain_create explicit retry preserves original checkpoint run and never starts a new sync',async()=>{
  const {c,calls}=fixture((path,o)=>!o.method?{runs:[{id:'checkpoint-run',version:3,status:'blocked',error_code:'uncertain_create',message:'unconfirmed create'}]}:{id:'checkpoint-run',version:3,status:'ready'});
- try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');const page=renderSync(c);await tick();assert.ok(page.find(n=>n.textContent.includes('先核对远端检查点')));assert.equal(calls.filter(v=>v.method).length,0);find(page,'重新核对并重试').click();await tick();const posts=calls.filter(v=>v.method==='POST');assert.equal(posts.length,1);assert.equal(posts[0].path,'/projects/p/sync/checkpoint-run/retry');assert.deepEqual(posts[0].body,{});assert.equal(calls.some(v=>v.path==='/projects/p/sync'&&v.method==='POST'),false);}finally{c.life.dispose();}
+ try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');const page=renderSync(c);await tick();assert.ok(page.find(n=>n.textContent.includes('先核对远端检查点')));assert.equal(calls.filter(v=>v.method).length,0);find(page,'重新核对并重试').click();await tick();const posts=calls.filter(v=>v.method==='POST');assert.equal(posts.length,1);assert.equal(posts[0].path,'/projects/p/sync/checkpoint-run/retry');assert.deepEqual(posts[0].body,{});assert.equal(c.state.syncUncertain['p:retry:checkpoint-run'],undefined,'authoritative original retry response clears active intent');assert.equal(calls.some(v=>v.path==='/projects/p/sync'&&v.method==='POST'),false);}finally{c.life.dispose();}
 });
 test('native in-flight mismatch remount releases transient lock but preserves uncertain command identity',async()=>{
  const {createWorkbench}=await import('../../js/research-workbench/index.mjs');const root=fixtureRoot(),wb=createWorkbench(),sent=[];let release;
  const project={id:'p',version:7,title:'Merchant',market:'DE',keywords:[{id:'k',text:'travel'}],products:[{id:'x',name:'Mismatch',source_keyword_ids:['k'],identification:{},triage:{state:'pending'},verification:{status:'mismatch',reason:'different',checked_at:'t'}}]};
  const fetch=async(url,o)=>{if(o.method==='POST'){sent.push(JSON.parse(o.body));if(sent.length===1)return new Promise((_,reject)=>release=()=>reject(Error('lost first reply')));throw Error('still uncertain');}return {ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?structuredClone(project):url.includes('/actions?')?{actions:[]}:{projects:[structuredClone(project)]}};};
  try{await wb.mount(root,{fetch});find(root.querySelector('[data-rw-projects]'),'Merchant').click();await tick();find(root.querySelector('[data-rw-page]'),'批量跳过不相关线索（1）').click();await tick();assert.equal(sent.length,1);wb.unmount();release();await tick();await wb.mount(root,{fetch});find(root.querySelector('[data-rw-page]'),'批量跳过不相关线索（1）').click();await tick();assert.equal(sent.length,2);assert.equal(sent[0].command_id,sent[1].command_id);assert.equal(sent[1].version,7);}finally{wb.unmount();}
+});
+test('native in-flight Feishu approval and original retry retain uncertainty before unmount snapshot and late rejection',async()=>{
+ const {createWorkbench}=await import('../../js/research-workbench/index.mjs');
+ for(const operation of ['approve','retry']){
+  const root=fixtureRoot(),wb=createWorkbench(),posts=[];let rejectPending;
+  const project={id:'p',version:7,title:'Merchant',market:'DE',keywords:[],products:[]};
+  const target=operation==='approve'?'/projects/p/sync':'/projects/p/sync/original-run/retry';
+  const fetch=async(url,o)=>{
+   if(o.method==='POST'&&url.endsWith(target)){posts.push(JSON.parse(o.body));return new Promise((_,reject)=>rejectPending=reject);}
+   return {ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?structuredClone(project):url.endsWith('/sync/preview')?{version:7,digest:'exact',records:1,tables:[]}:url.endsWith('/sync')?{runs:operation==='retry'?[{id:'original-run',version:3,status:'blocked',error_code:'uncertain_create'}]:[]}:url.includes('/actions?')?{actions:[]}:{projects:[structuredClone(project)]}};
+  };
+  const open=async()=>{const page=root.querySelector('[data-rw-page]');find(page,'飞书同步与状态').click();await tick();return root.querySelector('[data-rw-page]');};
+  const submit=async page=>{if(operation==='approve'){find(page,'预览当前版本同步').click();await tick();find(page,'确认同步此版本').click();}else find(page,'重新核对并重试')?.click();await tick();};
+  try{
+   await wb.mount(root,{fetch});find(root.querySelector('[data-rw-projects]'),'Merchant').click();await tick();await submit(await open());assert.equal(posts.length,1,operation+' first explicit submit');
+   wb.unmount();rejectPending(Error('late aborted reply'));await tick();await wb.mount(root,{fetch});
+   const key='p:'+(operation==='approve'?'approve:7:exact':'retry:original-run');assert.equal(wb.state.syncUncertain[key],true,'snapshot owns pending identity before late catch');
+   const page=root.querySelector('[data-rw-page]');await submit(page);assert.equal(posts.length,1,operation+' must not submit again after uncertain remount');
+   find(page,'刷新同步状态').click();await tick();assert.equal(wb.state.syncUncertain[key],true,'status GET is not proof for clearing ambiguous intent');
+   assert.deepEqual(posts[0],operation==='approve'?{version:7,digest:'exact'}:{});
+  }finally{wb.unmount();}
+ }
 });

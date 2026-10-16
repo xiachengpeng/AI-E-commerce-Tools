@@ -10,9 +10,14 @@ export function renderSync(context){
  const message=text=>{if(valid())notify(context,text);};
  async function mutate(key,path,body){
   if(busy||state.syncUncertain[id+':'+key])throw Error('上次提交结果待人工核对；请查看原同步记录，不要重复提交。');
-  busy=true;
-  try{return await api.request(path,{method:'POST',body,signal:life.signal});}
-  catch(error){if(!error.status||error.status>=500&&error.status!==503)state.syncUncertain[id+':'+key]=true;throw error;}
+  // Snapshot-owned intent must exist before transport: unmount snapshots before abort rejects.
+  const identity=id+':'+key;state.syncUncertain[identity]=true;busy=true;
+  try{const result=await api.request(path,{method:'POST',body,signal:life.signal});if(valid())delete state.syncUncertain[identity];return result;}
+  catch(error){
+   // Only an authoritative rejection on this active scope proves this submission did not apply.
+   if(valid()&&[400,401,403,404,409,422,429,503].includes(error.status))delete state.syncUncertain[identity];
+   throw error;
+  }
   finally{busy=false;}
  }
  async function load(){

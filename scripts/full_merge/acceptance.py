@@ -53,6 +53,7 @@ NATIVE_WORKFLOWS = (
     'native mismatch partial failure remains visible when redraw disposes the old page',
     'native Feishu uncertain_create explicit retry preserves original checkpoint run and never starts a new sync',
     'native in-flight mismatch remount releases transient lock but preserves uncertain command identity',
+    'native in-flight Feishu approval and original retry retain uncertainty before unmount snapshot and late rejection',
 )
 
 def native_workflow_gate(report_root: Path, components: dict) -> dict:
