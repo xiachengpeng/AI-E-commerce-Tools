@@ -83,9 +83,9 @@
   },
   "full_consolidation_acceptance": {
     "recorded_date": "2026-10-16",
-    "code_commit": "971a6376ce7dc0a3a2ae3a65d623b9424f496190",
-    "code_tree": "ca6c0ed686b6fa17a8a3b60ad37c978108f7a481",
-    "base_commit": "21bb10794867e1821782643a7c5662bf27443bff",
+    "code_commit": "b20443b08a1797ab452a58ac9b3086745eb439a6",
+    "code_tree": "040b5409c52ee001efce6bfce767ba19bdc22e87",
+    "base_commit": "94a9398a63fcc175d25432cd0e85d9bca9f32db2",
     "recording_policy": "Separate manifest-only commit after code commit; historical fields above remain their original checkpoints.",
     "local_code_accepted": true,
     "coverage_count": 221,
@@ -134,12 +134,12 @@
         "native_passed": 16
       },
       "main_frontend": {
-        "passed": 626,
-        "phase": "complete final-current-suffix original JS + native MJS; latest UI proof"
+        "passed": 627,
+        "phase": "complete current residual-I3 source-only sandbox original JS+native MJS; overlaps prior626"
       },
       "native_workflows": {
-        "passed": 17,
-        "phase": "actual final-current-suffix Node JUnit; test-only DOM/fake HTTP, not live external"
+        "passed": 18,
+        "phase": "actual current residual-I3 Node JUnit; exact createWorkbench pending/unmount/late rejection/remount for approval AND originalrun retry"
       },
       "backend_affected_suffix": {
         "passed": 180,
@@ -168,12 +168,14 @@
         "phase": "prior unchanged source proof"
       },
       "frontend_syntax": {
-        "changed_files": 11,
-        "exit": 0
+        "changed_files": 2,
+        "exit": 0,
+        "phase": "residual changed2MJS; prior11 retained in previous checkpoint"
       },
       "main_tailwind3": {
         "exit": 0,
-        "warnings": "existing Browserslist warning retained"
+        "warnings": "existing Browserslist warning retained",
+        "phase": "prior actual proof reused; no residual CSS/style changes or rebuild"
       },
       "compat_tailwind4_build": {
         "exit": 0,
@@ -186,6 +188,17 @@
           "failed_or_missing_native_workflow_component",
           "missing_native_workflow_evidence"
         ]
+      },
+      "residual_gate_focused": {
+        "passed": 50,
+        "warnings": 1,
+        "seconds": 6.42,
+        "scope": "acceptance+inventory only; overlaps prior fullbackend1162 and focused180, no fullbackend/source rerun"
+      },
+      "prior17_report_negative": {
+        "accepted": false,
+        "coverage_count": 221,
+        "failure": "unproved_native_workflow:exact in-flight Feishu lifecycle case"
       }
     },
     "evidence_artifacts": {
@@ -364,10 +377,78 @@
       "final-fix/tailwind3.log": {
         "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/final-fix-20261016/tailwind3.log",
         "sha256": "c823ea5e6b265125e2cd78d87eceb4a1c8b5de9d8ddcfb5e5ef3f9d5f6e61067"
+      },
+      "residual-i3/component-results.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/component-results.json",
+        "sha256": "a1c434c7cd990a31c08fda8d171a365991bb845b562294191073ebb007320e8e"
+      },
+      "residual-i3/main/frontend.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/main/frontend.log",
+        "sha256": "c3a33113d95b2573165882815e0130bf62a43f8fa1a79e7a97a3ea4cab21ece4"
+      },
+      "residual-i3/main/native-workflows.xml": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/main/native-workflows.xml",
+        "sha256": "3d2eaf15d82a1bfef284ce89a23ce9146dfc9fbed9a5ada7ab5348f348089359"
+      },
+      "residual-i3/main/pytest.xml": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/main/pytest.xml",
+        "sha256": "a46951c1c995e66862d93e70df571cfa3f1b4d90d384068806d37cade72fb8c5"
+      },
+      "residual-i3/main/pytest.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/main/pytest.log",
+        "sha256": "760d9138268cc1229bc5ccae14c51bed22cc238da4550c87bc94853fc9227421"
+      },
+      "residual-i3/js-syntax.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/js-syntax.json",
+        "sha256": "da08b02693e76b5c343b9b3293ce83286654c6718a42b155955063caa58ecd63"
+      },
+      "residual-i3/final-evidence/acceptance.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/final-evidence/acceptance.json",
+        "sha256": "609b97012e21cfbe4ae6bdb936d4bdc4b29e7b0ce87a0fbdb0ae28a89a4316b4"
+      },
+      "residual-i3/final-evidence/component-results.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/final-evidence/component-results.json",
+        "sha256": "b09c2e2a883484ebfa0e2aa087b682069a4478eaec8dffb8b4176f2124d30b65"
+      },
+      "residual-i3/final-evidence/provenance.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/final-evidence/provenance.json",
+        "sha256": "2cbfa2c31198ac228e003a66f2e70c40c58b49fb0f4abe204d5aedfdd8d0017a"
+      },
+      "residual-i3/final-evidence/main/frontend.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/final-evidence/main/frontend.log",
+        "sha256": "c3a33113d95b2573165882815e0130bf62a43f8fa1a79e7a97a3ea4cab21ece4"
+      },
+      "residual-i3/final-evidence/main/native-workflows.xml": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/final-evidence/main/native-workflows.xml",
+        "sha256": "3d2eaf15d82a1bfef284ce89a23ce9146dfc9fbed9a5ada7ab5348f348089359"
+      },
+      "residual-i3/final-evidence/main/pytest.xml": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/final-evidence/main/pytest.xml",
+        "sha256": "aa7dbefdab96f3446f0b47186d19df538916503606a529d0c0c3080c5a600290"
+      },
+      "residual-i3/final-evidence/research/pytest.xml": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/final-evidence/research/pytest.xml",
+        "sha256": "6ff3ba911133120c2aaa706aeb81d7932f3703f6e086d60ca54725300ade1aa7"
+      },
+      "residual-i3/final-evidence/research/frontend.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/final-evidence/research/frontend.log",
+        "sha256": "ff623ba3aac68c21e6cbd1a14f9be1d5b97328bc69c4338e8973b7c3649794a2"
+      },
+      "residual-i3/accepted.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/accepted.log",
+        "sha256": "7a15580595805840068bc7e434ec6c1dd963b007a53bd6c89cda67121f9fabc2"
+      },
+      "residual-i3/prior17-rejected.json": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/prior17-rejected.json",
+        "sha256": "c2be1df0d17bc2242e31e91c7da55b65eaaeba1fea3673a3e76b000b522edcb1"
+      },
+      "residual-i3/prior17-rejected.log": {
+        "private_path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/prior17-rejected.log",
+        "sha256": "123b1f42938a86acee49a6930db621f056f06841733f61a89d065fdcb831d6fa"
       }
     },
     "limitations": [
-      "Whole-branch review found I1-I3; this wave awaits one controller scoped rereview. Final primary source handoff and actual owned restart pending; no runtime operations performed.",
+      "Residual I3 corrected under explicit Ruling45 bounded process exception; fresh independent narrow review required before primary handoff/actual owned restart. Neither operational action performed.",
       "Real provider, translation, collection, sync, cloud upload/publication/cancellation chains unverified; fake transports only.",
       "Seven actual use days pending: verified_days=0, required_days=7.",
       "Five original enum-only legacy kinds remain explicit unsupported/needs_human, not invented handlers.",
@@ -379,7 +460,9 @@
       "Task20 one-time mtime extension affected exactly120 reviewed marketing files; unchanged24h TTL is not indefinite retention.",
       "Actual Task20 source-stop-to-active-worker interval2h25m14s exceeded provisional10–20min; no SLA claim.",
       "Initial acceptance report used self-described inventory and did not reject coordinated omissions; retained as historical evidence only. Current fix1 report validates independently pinned Task1 original identities; current full-suite counts remain prior unchanged-runtime evidence, not reruns.",
-      "Prior221 report remains authentic narrower inventory/backend checkpoint; current gate independently requires17 native merchant workflow cases. Old passing reports now fail; no identities reclassified or retired."
+      "Prior221 report remains authentic narrower inventory/backend checkpoint; current gate independently requires17 native merchant workflow cases. Old passing reports now fail; no identities reclassified or retired.",
+      "Ruling46 keeps exact M3 unchecked aiosqlite warning as nonblocking diagnostic follow-up; allocation owner/production leak unproven, no suppression or baseline claim.",
+      "Pending sync approval/originalrun retry identity is snapshot-owned before transport; late/unknown results and statusGET never clear it. Conservative unresolved identity may delay legitimate sync and requires manual review; no demonstrated remote asset duplicate claimed."
     ],
     "observation": {
       "status": "pending_actual_use_days",
@@ -389,7 +472,7 @@
     "external": {
       "status": "not_verified"
     },
-    "chronological_rulings_disclosed": 44,
+    "chronological_rulings_disclosed": 46,
     "guide": "docs/merge-assessment/11-完整归并验收与运行说明.md",
     "initial_code_commit": "ad0554909da71cb58b3dd888f95608536fa9a242",
     "initial_manifest_commit": "c8fded8ea566edaa607c34fd59f7c4a0dfbb949c",
@@ -519,8 +602,8 @@
     "native_workflow_gate": {
       "accepted": true,
       "failures": [],
-      "path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/final-fix-20261016/final-evidence/main/native-workflows.xml",
-      "sha256": "b4020895b36ad7bb41022d69868d430ae708e35a3b14233f53546024735c81ed",
+      "path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/residual-i3-20261016/final-evidence/main/native-workflows.xml",
+      "sha256": "3d2eaf15d82a1bfef284ce89a23ce9146dfc9fbed9a5ada7ab5348f348089359",
       "required_file": "frontend/tests/research-workbench/native-workflows.test.mjs",
       "required_cases": [
         "native Trends initial merchant workflow preserves explicit market query, identity and one enqueue",
@@ -539,7 +622,8 @@
         "native header refresh keeps open product form edits and captured base version",
         "native mismatch partial failure remains visible when redraw disposes the old page",
         "native Feishu uncertain_create explicit retry preserves original checkpoint run and never starts a new sync",
-        "native in-flight mismatch remount releases transient lock but preserves uncertain command identity"
+        "native in-flight mismatch remount releases transient lock but preserves uncertain command identity",
+        "native in-flight Feishu approval and original retry retain uncertainty before unmount snapshot and late rejection"
       ],
       "scope": "required native DOM/fake HTTP merchant workflows; no live external parity"
     },
@@ -548,21 +632,141 @@
       "backend/tests/test_full_merge_acceptance.py": "ca58ce05f95064bbe08860fae9f7b23e3bf830cec4222344b8482f929d25a96a",
       "backend/tests/test_full_merge_isolation.py": "d3d41e1fa864c404db93fff86bba2793239610155301c754d0265b8b642c81e1",
       "backend/tests/test_research_workbench_routes.py": "4e3d8e9ef15d852aedc2886b189674cf3b74b1d0eab3fd95ad29ee30cd50982c",
-      "docs/merge-assessment/11-完整归并验收与运行说明.md": "bbd429145510921adc382000fbef1013f53d36afb1041a6b2105c1adab287022",
+      "docs/merge-assessment/11-完整归并验收与运行说明.md": "6918e15ec97f3a1cd33dd47989711c81b9b6f2b46111bc58dc35c5a7942291b5",
       "frontend/js/research-workbench/components/forms.mjs": "480cd4708315cbfaeb65bc99ea801a6814cc2ee36e03a3b1d05f212c525317c6",
       "frontend/js/research-workbench/index.mjs": "28883494845885e79a477f4005c6b2fad64bb3dfc87d6180674f73afc3f172e7",
       "frontend/js/research-workbench/pages/actions.mjs": "73051923917141bf2162de5a85e47f516e13c8c0035629fd5e8d3c07372ef17d",
       "frontend/js/research-workbench/pages/exploration.mjs": "ed751e39b6c3a16e4cbb23b8bf5e56addb8e207a321a2a1b9d3795f303e07184",
       "frontend/js/research-workbench/pages/focused-exploration.mjs": "de5a02ae31e9c01863d0e90c967b6cf2a7ee4d0964d527f888769f99734a54d1",
       "frontend/js/research-workbench/pages/product.mjs": "deade39ed1c7339c645b376ce8c7dfd98a5648d5cc39b0a03bacd7a3e6ad8f8a",
-      "frontend/js/research-workbench/pages/sync.mjs": "5be90bd734df64ba417a9e3c490ae66350ed50df009ddaea09e039a0cb7f98e7",
+      "frontend/js/research-workbench/pages/sync.mjs": "efb5a56631089f0cdf104df4fefe5691672667dea8d625aec93bf3a9084de2ad",
       "frontend/js/research-workbench/pages/verification.mjs": "13d36d2c6a95e77360cb4b98ff4596cd3177cd99969840ce6d1f87243a3137b3",
       "frontend/js/research-workbench/services/actions.mjs": "3508366168f6ec4b9b5ae34e0c9266da9429f4e2a83963bd10487341b5217ac4",
       "frontend/js/research-workbench/services/snapshot.mjs": "e48cce8e7db977d840a27664667738fa3d9c8e0af94efe8d7bf95c6210873f6c",
-      "frontend/tests/research-workbench/native-workflows.test.mjs": "744fd153892e2471959e41b980e00c92e2186f89de5c03d7d9abff4ebd77af8b",
-      "scripts/full_merge/acceptance.py": "9f8f7589d34e2c38ad027d937b83c2accaca6e10108ea2b75e423d8d0052f60c",
+      "frontend/tests/research-workbench/native-workflows.test.mjs": "c00fe95ea5cd986a0c996a3d29c7514a228e3c8b87a66333b54a5370ba3d3973",
+      "scripts/full_merge/acceptance.py": "cec70b6ade60169413d9f2e54214b001e68371218c5949a58221f5ddb8256671",
       "scripts/full_merge/run_tests.py": "27107625e2465fa5ddead827158316008158ec1b734c9a67156709c890e81140"
     },
-    "final_fix_report": ".superpowers/sdd/10-完整归并实施计划/final-fix-report.md (private ignored narrative; immutable actual test report hashes listed above)"
+    "final_fix_report": ".superpowers/sdd/10-完整归并实施计划/final-fix-report.md (private ignored narrative; immutable actual test report hashes listed above)",
+    "prior_native17_checkpoint": {
+      "code_commit": "971a6376ce7dc0a3a2ae3a65d623b9424f496190",
+      "code_tree": "ca6c0ed686b6fa17a8a3b60ad37c978108f7a481",
+      "base_commit": "21bb10794867e1821782643a7c5662bf27443bff",
+      "native_workflow_gate": {
+        "accepted": true,
+        "failures": [],
+        "path": "/Users/xiachengpeng/.local/share/ai-ecommerce-merge/final-fix-20261016/final-evidence/main/native-workflows.xml",
+        "sha256": "b4020895b36ad7bb41022d69868d430ae708e35a3b14233f53546024735c81ed",
+        "required_file": "frontend/tests/research-workbench/native-workflows.test.mjs",
+        "required_cases": [
+          "native Trends initial merchant workflow preserves explicit market query, identity and one enqueue",
+          "native Trends uncertain submit preserves typed input and forbids automatic duplicate or changed replay",
+          "native verification initial review stop and deliberate mismatch parking preserve contracts",
+          "native Feishu status preview exact approval stale rejection and original blocked retry have no entry mutations",
+          "native progress refresh consumes projections outside first twenty, preserves edits and cleans poll with late scope fence",
+          "native Feishu ambiguous approval submits once and missing credentials remain actionable",
+          "native verification unknown outcome never enables new verify or review replay",
+          "native mismatch batch saves every eligible original product with progressive versions and retains partial failure identity",
+          "native Feishu successful approval refreshes durable status and stale local preview never submits",
+          "native late sync preview and status after project switch cannot approve or overwrite current page",
+          "native actual workbench queue completion and return refresh project without mutation or global refresh",
+          "native polling preserves the current dirty product form DOM and its original submission version",
+          "native dirty form remount keeps saved base version after authoritative background update",
+          "native header refresh keeps open product form edits and captured base version",
+          "native mismatch partial failure remains visible when redraw disposes the old page",
+          "native Feishu uncertain_create explicit retry preserves original checkpoint run and never starts a new sync",
+          "native in-flight mismatch remount releases transient lock but preserves uncertain command identity"
+        ],
+        "scope": "required native DOM/fake HTTP merchant workflows; no live external parity"
+      },
+      "verification": {
+        "main_full": {
+          "passed": 1162,
+          "warnings": 6,
+          "seconds": 67.29,
+          "phase": "main-verified before final mismatch draft-registry reuse + 17th native test/case-list; covered by final-current-suffix; overlapping counts not summed",
+          "components": {
+            "pytest": 0,
+            "frontend": 0,
+            "native_workflows": 0
+          },
+          "frontend_passed": 625,
+          "native_passed": 16
+        },
+        "main_frontend": {
+          "passed": 627,
+          "phase": "complete current residual-I3 source-only sandbox original JS+native MJS; overlaps prior626"
+        },
+        "native_workflows": {
+          "passed": 18,
+          "phase": "actual current residual-I3 Node JUnit; exact createWorkbench pending/unmount/late rejection/remount for approval AND originalrun retry"
+        },
+        "backend_affected_suffix": {
+          "passed": 180,
+          "warnings": 3,
+          "seconds": 14.76,
+          "scope": "routes/cursor, gate, inventory, ownership, facade, integration and isolation; overlaps full main"
+        },
+        "research_full_final": {
+          "passed": 1151,
+          "skipped": 4,
+          "warnings": 5,
+          "seconds": 161.71,
+          "phase": "exact prior Task22 proof reused; source production unchanged; no source full rerun"
+        },
+        "research_frontend": {
+          "passed": 10,
+          "phase": "prior unchanged source proof"
+        },
+        "ruff": {
+          "exit": 0,
+          "phase": "prior unchanged source proof"
+        },
+        "mypy": {
+          "exit": 0,
+          "source_files": 80,
+          "phase": "prior unchanged source proof"
+        },
+        "frontend_syntax": {
+          "changed_files": 2,
+          "exit": 0,
+          "phase": "residual changed2MJS; prior11 retained in previous checkpoint"
+        },
+        "main_tailwind3": {
+          "exit": 0,
+          "warnings": "existing Browserslist warning retained",
+          "phase": "prior actual proof reused; no residual CSS/style changes or rebuild"
+        },
+        "compat_tailwind4_build": {
+          "exit": 0,
+          "phase": "prior unchanged source proof"
+        },
+        "old221_report_negative": {
+          "accepted": false,
+          "coverage_count": 221,
+          "failures": [
+            "failed_or_missing_native_workflow_component",
+            "missing_native_workflow_evidence"
+          ]
+        },
+        "residual_gate_focused": {
+          "passed": 50,
+          "warnings": 1,
+          "seconds": 6.42,
+          "scope": "acceptance+inventory only; overlaps prior fullbackend1162 and focused180, no fullbackend/source rerun"
+        },
+        "prior17_report_negative": {
+          "accepted": false,
+          "coverage_count": 221,
+          "failure": "unproved_native_workflow:exact in-flight Feishu lifecycle case"
+        }
+      }
+    },
+    "residual_i3_sources": {
+      "docs/merge-assessment/11-完整归并验收与运行说明.md": "6918e15ec97f3a1cd33dd47989711c81b9b6f2b46111bc58dc35c5a7942291b5",
+      "frontend/js/research-workbench/pages/sync.mjs": "efb5a56631089f0cdf104df4fefe5691672667dea8d625aec93bf3a9084de2ad",
+      "frontend/tests/research-workbench/native-workflows.test.mjs": "c00fe95ea5cd986a0c996a3d29c7514a228e3c8b87a66333b54a5370ba3d3973",
+      "scripts/full_merge/acceptance.py": "cec70b6ade60169413d9f2e54214b001e68371218c5949a58221f5ddb8256671"
+    }
   }
 }
