@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from rabbit_hole.domain.project import active_test_results
+from rabbit_hole.domain.requirements import requirement_catalog
 from rabbit_hole.input_urls import sanitize_research_url_fields
 
 STATE_NAMES = {
@@ -239,10 +240,15 @@ def research_report(
         "",
     ]
     counts = selection_funnel(project)
+    decisions = [p["decision"] for p in project.get("products", [])
+                 if not p.get("merged_into") and isinstance(p.get("decision"), dict)]
+    decision_counts = {pool: sum(d.get("pool") == pool for d in decisions)
+                       for pool in ("observe", "backup", "test", "reject")}
     lines.extend(
         [
             "## 选品漏斗",
             "",
+            "初筛队列（线索处置；与最终人工决定不是同一统计口径）：",
             (
                 f"发现线索 {counts['discovered']}；待筛 {counts['pending']}；"
                 f"保留 {counts['retained']}；观察 {counts['observing']}；"
@@ -254,6 +260,9 @@ def research_report(
                 f"已确认测试 {counts['confirmed_tests']}。"
             ),
             "保留只代表进入深挖，不代表已通过30天及3个独立活跃创意的粗筛门槛。",
+            (f"人工决定统计：观察 {decision_counts['observe']}；备选 {decision_counts['backup']}；"
+             f"测试候选 {decision_counts['test']}；淘汰 {decision_counts['reject']}。"
+             "含已保存旧决定；有效性以商品明细为准，不代表批准投放。"),
             "",
         ]
     )
@@ -488,8 +497,14 @@ def research_report(
             lines.extend(["", "##### 五维评分", ""])
             dimensions = current_score.get("dimensions") or []
             if not dimensions:
+                requirement_names = {item.key: item.label for item in requirement_catalog(project, product)}
+                missing = current_score.get("missing") or []
+                explanation = (
+                    "证据不足，暂不能评分。待补充：" + "、".join(requirement_names.get(key, "其他待核实证据") for key in missing)
+                    if missing else current_score.get("recommendation", "证据不足或需要人工复核")
+                )
                 lines.append(
-                    f"尚未形成五维分数：{safe(current_score.get('recommendation', '证据不足或需要人工复核'))}"
+                    f"尚未形成五维分数：{safe(explanation)}"
                 )
             for dimension in dimensions:
                 lines.append(

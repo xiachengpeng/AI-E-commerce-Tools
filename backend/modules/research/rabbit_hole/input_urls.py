@@ -110,12 +110,16 @@ def product_identity_url(value: str) -> str:
     return canonical_research_url(value)
 
 
-def sanitize_research_url_fields(value: Any) -> Any:
+def sanitize_research_url_fields(value: Any, *, preserve_media: bool = False) -> Any:
     """Copy nested business data while canonicalizing only explicit URL fields."""
 
     if isinstance(value, Mapping):
         result: dict[Any, Any] = {}
         for key, item in value.items():
+            if preserve_media and key == "media":
+                from rabbit_hole.domain.ad_media import normalize_ad_media
+                result[key] = normalize_ad_media(item)
+                continue
             if key in URL_FIELD_NAMES:
                 if not isinstance(item, str) or not item.strip():
                     result[key] = None if item is not None else item
@@ -125,10 +129,10 @@ def sanitize_research_url_fields(value: Any) -> Any:
                 except ValueError:
                     result[key] = None
             else:
-                result[key] = sanitize_research_url_fields(item)
+                result[key] = sanitize_research_url_fields(item, preserve_media=preserve_media)
         return result
     if isinstance(value, (list, tuple)):
-        return [sanitize_research_url_fields(item) for item in value]
+        return [sanitize_research_url_fields(item, preserve_media=preserve_media) for item in value]
     return value
 
 

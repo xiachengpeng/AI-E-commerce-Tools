@@ -2721,7 +2721,7 @@ function getDetailChannel() {
     return currentDetailChannel;
 }
 
-function setDetailChannel(channelId = 'shopify') {
+function setDetailChannel(channelId = 'shopify', options = {}) {
     const normId = (channelId === 'general') ? 'generic' : channelId;
     const configMap = (typeof DETAIL_CHANNELS_CONFIG !== 'undefined')
         ? DETAIL_CHANNELS_CONFIG
@@ -2765,7 +2765,7 @@ function setDetailChannel(channelId = 'shopify') {
     }
 
     // 4. 重新计算 AI 推荐方案
-    if (typeof buildRecommendedDetailPlan === 'function') {
+    if (!options.restore && typeof buildRecommendedDetailPlan === 'function') {
         try {
             const assets = (typeof currentUploadedImages !== 'undefined' && currentUploadedImages.length)
                 ? currentUploadedImages
@@ -7480,6 +7480,7 @@ function collectCurrentRenderProject(finalImage = '') {
         };
         return {
             id,
+            moduleId: task.id || id.split('_')[0],
             title: task.title,
             subtitle: task.subtitle,
             displayTitle: task.displayTitle,
@@ -7505,6 +7506,7 @@ function collectCurrentRenderProject(finalImage = '') {
     return {
         version: 2,
         kind: 'detail-page-project',
+        channel: getDetailChannel(),
         finalImage,
         presentationMode: typeof currentDetailPresentationMode !== 'undefined' ? currentDetailPresentationMode : 'modules',
         layoutStyle: typeof currentDtcLayoutStyle !== 'undefined' ? currentDtcLayoutStyle : 'editorial',
@@ -7574,6 +7576,7 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
         angleImages: restoredImages.slice(1),
         uploadedImages: restoredImages,
         sellingPoints: project.sellingPoints || '',
+        productFacts: project.verifiedFacts ? JSON.parse(JSON.stringify(project.verifiedFacts)) : null,
         config: {
             aspectRatio: '1:1',
             marketingTheme: 'none',
@@ -7589,7 +7592,7 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
     const productNameInput = document.getElementById('productNameInput');
     if (productNameInput) productNameInput.value = project.productName || project.config?.productName || '';
     const factsInput = document.getElementById('productFactsText');
-    if (factsInput) factsInput.value = project.productFacts || project.config?.productFacts || '';
+    if (factsInput) factsInput.value = project.transferProjectId ? (project.rawProductFacts || '') : (project.productFacts || project.config?.productFacts || '');
     const forbiddenInput = document.getElementById('forbiddenClaimsText');
     if (forbiddenInput) forbiddenInput.value = project.forbiddenClaims || project.config?.forbiddenClaims || '';
 
@@ -7608,6 +7611,7 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
         const imageSrc = safeFormatImgSrc(mod.imageSrc || fallbackImage || project.finalImage || '');
         const task = {
             ...normalizeRestoredDetailTask(mod),
+            id: mod.moduleId || mod.id,
             uniqueId: mod.id,
             active: true,
             imageSrc: imageSrc,
@@ -7641,7 +7645,7 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
                         <div class="flex items-center gap-1.5"><i class="ph-fill ph-link text-blue-500"></i><span class="text-xs font-black text-gray-700 uppercase tracking-widest">SEO Meta-Data</span></div>
                         <div class="flex items-center gap-1.5">
                             <button onclick="uploadDetailModuleToCloud('${detailEscapeHtml(mod.id)}')" class="text-xs flex items-center gap-1 text-blue-600 hover:text-blue-800 font-bold bg-white border border-blue-200 px-2 py-1 rounded shadow-sm transition-all active:scale-95" title="上传至云存储图床"><i class="ph ph-cloud-arrow-up"></i> 上传</button>
-                            <button onclick="downloadModule('${detailEscapeHtml(mod.id)}', '${detailEscapeHtml(mod.displayTitle || mod.title || '详情模块')}')" class="text-xs flex items-center gap-1 text-gray-500 hover:text-indigo-600 font-bold bg-white border border-gray-200 px-2 py-1 rounded shadow-sm transition-all active:scale-95"><i class="ph ph-download-simple"></i> 单存</button>
+                            <button data-download-title="${detailEscapeHtml(mod.displayTitle || mod.title || '详情模块')}" onclick="downloadModule('${detailEscapeHtml(mod.id)}', this.dataset.downloadTitle)" class="text-xs flex items-center gap-1 text-gray-500 hover:text-indigo-600 font-bold bg-white border border-gray-200 px-2 py-1 rounded shadow-sm transition-all active:scale-95"><i class="ph ph-download-simple"></i> 单存</button>
                         </div>
                     </div>
                     <div class="flex flex-col gap-2.5">
@@ -7666,6 +7670,7 @@ function renderRestoredDetailProject(project, fallbackImage = '') {
     });
 
     renderSortableList();
+    if (project.transferProjectId && project.channel) setDetailChannel(project.channel, {restore:true});
     if (typeof setDtcLayoutStyle === 'function') {
         setDtcLayoutStyle(project.layoutStyle || 'editorial', false);
     }
@@ -7864,6 +7869,22 @@ function renderExportChecklist() {
             }).join('')}
         </div>`;
 }
+
+// Collect unfinished UI data too; no generation/upload or draft replacement.
+function collectDetailTransferSource() {
+    const productName = document.getElementById('productNameInput')?.value.trim() || '';
+    const sellingPoints = document.getElementById('sellingPointsText')?.value || '';
+    if (!currentUploadedImages.length && !productName && !sellingPoints && !document.getElementById('productFactsText')?.value.trim() && !Object.keys(globalGenContext?.tasks || {}).length) return null;
+    const config = getDetailConfig();
+    if (!config) throw Error('当前配置无效，请修正后再导出；原草稿保留。');
+    const project = collectCurrentRenderProject('') || {kind:'detail-page-project',version:2,modules:[],longImageOrder:[]};
+    return {...project, config, productName, sellingPoints, channel:getDetailChannel(),
+        verifiedFacts:getVerifiedProductFacts(), rawProductFacts:document.getElementById('productFactsText')?.value || '',
+        uploadedImages:currentUploadedImages.map(img => ({id:img.id,name:img.name,base64:img.base64,mimeType:img.mimeType,isPrimary:img.isPrimary,role:img.role,semanticRole:img.semanticRole,isUserAssigned:img.isUserAssigned})),
+        layoutStyle:currentDtcLayoutStyle,brandColor:currentDtcBrandColor,customBrandColor:currentDtcCustomColorHex,
+        typography:{...currentDtcTypography},presentationMode:currentDetailPresentationMode,trustBarEnabled:currentDtcTrustBarEnabled};
+}
+if (typeof globalThis !== 'undefined') globalThis.collectDetailTransferSource = collectDetailTransferSource;
 
 // 导出当前详情页项目 JSON，便于以后重新载入或排查生成配置。
 function exportCurrentProjectJson() {

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Query, Request, status
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -30,6 +30,7 @@ from models.request import (
     LaunchKitExportRequest,
 )
 from models.settings import (
+    CrawlerProfileWrite, CrawlerProfileActivation,
     AIProviderList,
     AIProviderRead,
     AIProviderWrite,
@@ -56,7 +57,9 @@ from models.settings import (
     SecretRevealResponse,
 )
 from services.ai_balance_service import AIBalanceService
+from services.crawler_config_service import CrawlerConfigService
 from services.firecrawl import (
+    with_crawler_snapshot,
     close_client as close_firecrawl_client,
     fetch_markdown,
     is_masked_or_empty as is_crawler_masked_or_empty,
@@ -80,7 +83,8 @@ from services.listing_service import (
 from services.ads_service import generate_ad_copy
 from services.watermark_removal_service import remove_watermark
 from services.storage_cleanup_service import (
-    cleanup_history_associated_files,
+    history_asset_urls,
+    safe_delete_static_file,
     cleanup_expired_static_files,
 )
 from services.square_redraw_service import (
@@ -235,7 +239,7 @@ initialize_firecrawl_settings()
 @asynccontextmanager
 async def app_lifespan(_app):
     try:
-        cleaned_count, freed_bytes = cleanup_expired_static_files(max_age_seconds=86400)
+        cleaned_count, freed_bytes = await asyncio.to_thread(cleanup_expired_static_files, max_age_seconds=86400)
         if cleaned_count > 0:
             logger.info("系统启动：已轮转清理 %d 个过期静态文件，释放 %.2f MB", cleaned_count, freed_bytes / 1024 / 1024)
     except Exception as ex:
@@ -261,6 +265,8 @@ app.include_router(research_workbench_router)
 from routes.integration_settings import router as integration_settings_router
 
 app.include_router(integration_settings_router)
+from routes.customer_setup import router as customer_setup_router
+app.include_router(customer_setup_router)
 app.include_router(storage_router, prefix="/api/storage")
 app.include_router(storage_router, prefix="/storage")
 app_logs.emit(
@@ -319,7 +325,9 @@ async def add_static_asset_headers(request: Request, call_next):
 
 
 # 挂载静态文件目录
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+from services.runtime_paths import static_root
+
+STATIC_DIR = str(static_root())
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -675,6 +683,7 @@ def analysis_cache_key(
 
 
 @app.post("/compare", response_model=CompareResponse)
+@with_crawler_snapshot
 async def compare(request: CompareRequest):
     try:
         urls = request.urls
@@ -1646,8 +1655,13 @@ async def api_fetch_provider_models(
 )
 def reveal_saved_secret(
     request: SecretRevealRequest,
+    http_request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
+    from services.research_security import require_research_session
+    require_research_session(http_request, True)
+    response.headers['Cache-Control'] = 'no-store'
     category = request.category
     field = request.field
     secret_val = None
@@ -1670,8 +1684,7 @@ def reveal_saved_secret(
     elif category == "crawler":
         if field != "api_key":
             return SecretRevealResponse(status="forbidden", secret=None)
-        crawler = db.query(FirecrawlConfig).first()
-        secret_val = crawler.api_key if crawler else None
+        secret_val = CrawlerConfigService(db).credentials(request.profile_id, request.expected_version)[1]
 
     elif category == "storage":
         allowed_fields = {
@@ -2100,119 +2113,69 @@ def api_update_provider_usage_query_config(
 
 @app.get("/api/settings/crawler", response_model=FirecrawlConfigRead)
 def api_get_crawler_settings(db: Session = Depends(get_db)):
-    cfg = db.query(FirecrawlConfig).first()
-    if not cfg:
-        api_url = (os.getenv("FIRECRAWL_API_URL") or "https://api.firecrawl.dev/v1/scrape").strip()
-        api_key = (os.getenv("FIRECRAWL_API_KEY") or "").strip() or None
-        has_key = bool(api_key)
-        return FirecrawlConfigRead(
-            api_url=api_url,
-            has_api_key=has_key,
-            api_key_masked=mask_crawler_secret(api_key) if has_key else None,
-            last_test_status=None,
-            last_test_message=None,
-            last_tested_at=None,
-        )
-    has_key = bool(cfg.api_key and cfg.api_key.strip())
-    return FirecrawlConfigRead(
-        api_url=cfg.api_url or "https://api.firecrawl.dev/v1/scrape",
-        has_api_key=has_key,
-        api_key_masked=mask_crawler_secret(cfg.api_key) if has_key else None,
-        last_test_status=cfg.last_test_status,
-        last_test_message=cfg.last_test_message,
-        last_tested_at=cfg.last_tested_at,
-    )
+    return CrawlerConfigService(db).read()
 
 
 @app.put("/api/settings/crawler", response_model=FirecrawlConfigRead)
-def api_update_crawler_settings(
-    data: FirecrawlConfigWrite,
-    db: Session = Depends(get_db),
-):
-    cfg = db.query(FirecrawlConfig).first()
-    if not cfg:
-        cfg = FirecrawlConfig(
-            api_url="https://api.firecrawl.dev/v1/scrape",
-        )
-        db.add(cfg)
+def api_update_crawler_settings(data: FirecrawlConfigWrite, db: Session = Depends(get_db)):
+    result = CrawlerConfigService(db).save(None, data.model_dump(exclude_none=True), legacy=True)
+    invalidate_analysis_cache()
+    return result
 
-    if data.api_url is not None and data.api_url.strip():
-        candidate_url = data.api_url.strip()
-        safe, ssrf_err = validate_outbound_url(candidate_url, allow_local=True, require_http=True)
-        if not safe:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"非法的爬虫服务器地址: {ssrf_err}",
-            )
-        cfg.api_url = candidate_url
 
-    if data.api_key is not None:
-        raw_key = data.api_key.strip()
-        if not is_crawler_masked_or_empty(raw_key):
-            cfg.api_key = raw_key
-        elif raw_key == "":
-            cfg.api_key = None
+@app.get("/api/settings/crawler/profiles/{profile_id}", response_model=FirecrawlConfigRead)
+def api_get_crawler_profile(profile_id: str, response: Response, db: Session = Depends(get_db)):
+    response.headers['Cache-Control'] = 'no-store'
+    return CrawlerConfigService(db).read(profile_id)
 
-    db.commit()
-    db.refresh(cfg)
 
-    has_key = bool(cfg.api_key and cfg.api_key.strip())
-    app_logs.emit(
-        level="success",
-        source="system",
-        message="Firecrawl 爬虫配置已更新",
-    )
-    return FirecrawlConfigRead(
-        api_url=cfg.api_url or "https://api.firecrawl.dev/v1/scrape",
-        has_api_key=has_key,
-        api_key_masked=mask_crawler_secret(cfg.api_key) if has_key else None,
-        last_test_status=cfg.last_test_status,
-        last_test_message=cfg.last_test_message,
-        last_tested_at=cfg.last_tested_at,
-    )
+@app.post("/api/settings/crawler/profiles", response_model=FirecrawlConfigRead)
+def api_create_crawler_profile(data: CrawlerProfileWrite, request: Request, db: Session = Depends(get_db)):
+    from services.research_security import require_research_session
+    require_research_session(request, True)
+    return CrawlerConfigService(db).save(None, data.model_dump(exclude_none=True))
+
+
+@app.put("/api/settings/crawler/profiles/{profile_id}", response_model=FirecrawlConfigRead)
+def api_save_crawler_profile(profile_id: str, data: CrawlerProfileWrite, request: Request, db: Session = Depends(get_db)):
+    from services.research_security import require_research_session
+    require_research_session(request, True)
+    result = CrawlerConfigService(db).save(profile_id, data.model_dump(exclude_none=True))
+    if result["profile_id"] == result["active_profile_id"]: invalidate_analysis_cache()
+    return result
+
+
+@app.post("/api/settings/crawler/profiles/{profile_id}/activate", response_model=FirecrawlConfigRead)
+def api_activate_crawler_profile(profile_id: str, data: CrawlerProfileActivation, request: Request, db: Session = Depends(get_db)):
+    from services.research_security import require_research_session
+    require_research_session(request, True)
+    result = CrawlerConfigService(db).activate(profile_id, data.expected_version, data.expected_active_version)
+    invalidate_analysis_cache()
+    return result
 
 
 @app.post("/api/settings/crawler/test", response_model=FirecrawlConnectionTestResult)
-async def api_test_crawler_connection(
-    data: FirecrawlConnectionTest | None = None,
-    db: Session = Depends(get_db),
-):
-    req_data = data or FirecrawlConnectionTest()
-    cfg = db.query(FirecrawlConfig).first()
-
-    target_url = (req_data.api_url or "").strip()
-    target_key = req_data.api_key
-
-    if not target_url:
-        target_url = cfg.api_url if cfg and cfg.api_url else "https://api.firecrawl.dev/v1/scrape"
-
-    if target_key is None or is_crawler_masked_or_empty(target_key):
-        target_key = cfg.api_key if cfg else None
-
-    success, duration_ms, message = await test_firecrawl_connection(
-        api_url=target_url,
-        api_key=target_key,
-        db=db,
-    )
-
-    if cfg:
-        cfg.last_test_status = "success" if success else "error"
-        cfg.last_test_message = f"{message}（{duration_ms} ms）"
-        cfg.last_tested_at = datetime.datetime.now()
-        db.commit()
-
-    app_logs.emit(
-        level="success" if success else "error",
-        source="crawler",
-        message=f"Firecrawl 连通性测试{'成功' if success else '失败'}: {message}",
-        duration_ms=duration_ms,
-    )
-
-    return FirecrawlConnectionTestResult(
-        status="success" if success else "error",
-        duration_ms=duration_ms,
-        message=message,
-    )
+async def api_test_crawler_connection(request: Request, data: FirecrawlConnectionTest | None = None, db: Session = Depends(get_db)):
+    req = data or FirecrawlConnectionTest()
+    if req.profile_id:
+        from services.research_security import require_research_session
+        require_research_session(request, True)
+    service = CrawlerConfigService(db)
+    saved = service.read(req.profile_id)
+    credentials = service.credentials(req.profile_id, req.expected_version)
+    target_url = (req.api_url or '').strip() or credentials[0]
+    target_key = credentials[1] if is_crawler_masked_or_empty(req.api_key) else req.api_key.strip()
+    # Do not hold a SQLite read transaction across the network wait.
+    db.rollback()
+    success, duration_ms, message = await test_firecrawl_connection(api_url=target_url, api_key=target_key, db=db)
+    # Raw upstream exceptions may contain URLs/credentials; expose only safe diagnostics.
+    if message.startswith(('无法建立网络连接:', '连接测试失败:')):
+        message = '连接未完成，请检查网络、服务地址或稍后重试'
+    persisted = False
+    if (target_url, target_key) == credentials:
+        persisted = service.record_test(saved['profile_id'], saved['version'], credentials, success, duration_ms, message)
+    app_logs.emit(level='success' if success else 'error', source='crawler', message=f"Firecrawl 连通性测试{'成功' if success else '失败'}: {message}", duration_ms=duration_ms)
+    return FirecrawlConnectionTestResult(status='success' if success else 'error', duration_ms=duration_ms, message=message, persisted=persisted)
 
 
 @app.get("/api/settings/logs/recent")
@@ -2401,7 +2364,7 @@ async def api_square_redraw_process_item(batch_id: int, item_id: int, db: Sessio
 @app.delete("/api/square-redraw/batches/{batch_id}/items/{item_id}")
 async def api_square_redraw_delete_item(batch_id: int, item_id: int, db: Session = Depends(get_db)):
     try:
-        delete_square_redraw_item(db, batch_id, item_id)
+        await asyncio.to_thread(delete_square_redraw_item, db, batch_id, item_id)
         return {"status": "success", "data": serialize_square_redraw_batch(db, batch_id)}
     except Exception as e:
         logger.error(f"❌ [方图重绘] 删除图片失败: {e}")
@@ -2617,13 +2580,15 @@ async def batch_delete_history(
         return {"status": "success", "deleted_count": 0}
     try:
         items_to_delete = db.query(model).filter(model.id.in_(request.ids)).all()
-        cleanup_history_associated_files(module, items_to_delete)
+        cleanup_urls = history_asset_urls(module, items_to_delete)
         deleted_count = (
             db.query(model)
             .filter(model.id.in_(request.ids))
             .delete(synchronize_session=False)
         )
         db.commit()
+        for cleanup_url in cleanup_urls:
+            await asyncio.to_thread(safe_delete_static_file, cleanup_url)
         app_logs.emit(
             level="success",
             source="history",
@@ -2654,9 +2619,11 @@ async def delete_history(module: str, id: int, db: Session = Depends(get_db)):
     try:
         item = db.query(model).filter(model.id == id).first()
         if item:
-            cleanup_history_associated_files(module, [item])
+            cleanup_urls = history_asset_urls(module, [item])
             db.delete(item)
             db.commit()
+            for cleanup_url in cleanup_urls:
+                await asyncio.to_thread(safe_delete_static_file, cleanup_url)
         app_logs.emit(
             level="success",
             source="history",

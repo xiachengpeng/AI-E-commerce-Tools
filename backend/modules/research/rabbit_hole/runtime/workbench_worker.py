@@ -19,6 +19,17 @@ COMPONENT = "workbench_worker"
 LOCK_KEY = 727481063
 
 
+async def _budget_heartbeat(connection, engine, *, clear=False):
+    identity=engine.get_execution_options().get('workbench_submission_budget_identity')
+    if identity is None:return
+    if identity!='none' and (not isinstance(identity,str) or len(identity)!=64 or any(c not in '0123456789abcdef' for c in identity)):
+        raise ValueError('invalid worker budget identity')
+    await connection.execute(delete(runtime_health).where(runtime_health.c.component.like('workbench_budget:%')))
+    if not clear:
+        from rabbit_hole.persistence.sql import dialect_insert
+        await connection.execute(dialect_insert(connection,runtime_health).values(component='workbench_budget:'+identity,updated_at=datetime.now(UTC)))
+
+
 class WorkerAlreadyRunning(RuntimeError):
     """Another process owns this workbench runtime."""
 
@@ -58,6 +69,7 @@ async def serve_workbench(
             async with write_transaction(engine) as c:
                 stmt = dialect_insert(c, runtime_health).values(component=COMPONENT, updated_at=datetime.now(UTC))
                 await c.execute(stmt.on_conflict_do_update(index_elements=[runtime_health.c.component], set_={"updated_at":stmt.excluded.updated_at}))
+                await _budget_heartbeat(c,engine)
         async def heartbeat_loop() -> None:
             while True:
                 await asyncio.sleep(heartbeat_seconds)
@@ -76,6 +88,7 @@ async def serve_workbench(
         finally:
             async with write_transaction(engine) as c:
                 await c.execute(delete(runtime_health).where(runtime_health.c.component == COMPONENT))
+                await _budget_heartbeat(c,engine,clear=True)
 
 
 async def _serve_postgres(
@@ -97,6 +110,7 @@ async def _serve_postgres(
             async with engine.begin() as c:
                 stmt = insert(runtime_health).values(component=COMPONENT, updated_at=datetime.now(UTC))
                 await c.execute(stmt.on_conflict_do_update(index_elements=[runtime_health.c.component], set_={"updated_at": stmt.excluded.updated_at}))
+                await _budget_heartbeat(c,engine)
 
         async def heartbeat_loop() -> None:
             while True:
@@ -135,6 +149,7 @@ async def _serve_postgres(
                     try:
                         async with engine.begin() as c:
                             await c.execute(delete(runtime_health).where(runtime_health.c.component == COMPONENT))
+                            await _budget_heartbeat(c,engine,clear=True)
                     finally:
                         await lock.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK_KEY})
                         await lock.commit()

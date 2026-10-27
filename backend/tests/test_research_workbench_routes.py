@@ -48,7 +48,7 @@ def test_original_business_route_inventory():
     actual = {
         (method, route.path) for route in router.routes for method in route.methods
     }
-    assert actual == expected | {("GET", PREFIX + "/history"), ("GET", PREFIX + "/projects/{project_id}/commands/{command_id}")}
+    assert actual == expected | {("GET", PREFIX + "/runtime-status"), ("GET", PREFIX + "/history"), ("GET", PREFIX + "/projects/{project_id}/commands/{command_id}")}
 
 
 @pytest.mark.parametrize(
@@ -678,7 +678,7 @@ async def test_native_history_canonical_projection_cursor_and_private_payload(tm
                     "2026-01-01",
                 ),
             )
-        for pid in (project, project, other):
+        for position, pid in enumerate((project, project, other)):
             db.execute(
                 "INSERT INTO workbench_events VALUES (?,?,?,?,?,?,?,?)",
                 (
@@ -689,7 +689,7 @@ async def test_native_history_canonical_projection_cursor_and_private_payload(tm
                     "review",
                     json.dumps({"api_key": "PRIVATE", "prompt": "PRIVATE"}),
                     "human",
-                    "2026-01-01",
+                    f"2026-01-0{position + 1}",
                 ),
             )
         ref = {
@@ -743,6 +743,7 @@ async def test_native_history_canonical_projection_cursor_and_private_payload(tm
         assert len(page["items"]) == 1 and page["next_cursor"]
         assert "PRIVATE" not in response.text and "payload" not in response.text
         assert page["items"][0]["action"] == "review"
+        assert page["items"][0]["created_at"].startswith("2026-01-02")
         assert client.get(route, params={"cursor": "!!!"}).status_code == 422
         from base64 import urlsafe_b64encode
         for malformed in [42, [], "text", {"kind": "activity", "project_id": project, "id": 7},
@@ -878,3 +879,45 @@ async def test_native_draft_receipt_is_scoped_read_only_and_private(tmp_path):
         assert client.post(path,json={}).status_code == 405
     finally:
         await engine.dispose()
+
+
+def test_runtime_status_is_read_only_private_and_unknown_without_runtime(monkeypatch):
+    monkeypatch.setattr('services.research_client.load_research_config',dict)
+    client=make_client(None)
+    response=client.get(PREFIX+'/runtime-status')
+    assert response.status_code==200 and response.json()['worker_state']=='unknown'
+    assert response.headers['cache-control']=='no-store'
+    assert 'database' not in response.text and 'token' not in response.text
+    client.headers.pop('X-Research-Token')
+    assert client.get(PREFIX+'/runtime-status').status_code==401
+    assert client.get(PREFIX+'/runtime-status',headers={'Origin':'https://evil.test'}).status_code==403
+
+def test_saved_price_projection_corrects_legacy_value_without_mutating_store():
+    from copy import deepcopy
+    store=AsyncMock()
+    original={'id':str(uuid4()),'products':[{'id':'p','landing_snapshot':{'price':'124','final_url':'https://shop.example/products/a','body_text':'Regular price $1,899.00 Sale price US$1,249.00','json_ld':[]}}]}
+    before=deepcopy(original)
+    store.get.return_value=original
+    client=make_client(SimpleNamespace(store=store,diagnostics=()))
+    response=client.get(PREFIX+'/projects/'+original['id'])
+    assert response.status_code==200
+    snap=response.json()['products'][0]['landing_snapshot']
+    assert snap['price']=='124'
+    assert snap['price_observation']['amount']=='1249.00'
+    assert snap['price_observation']['currency']=='USD'
+    assert original==before
+
+
+def test_saved_multi_package_prices_are_read_projection_only():
+    from copy import deepcopy
+    store=AsyncMock()
+    url='https://shop.example/products/kit'
+    snapshot={'price':None,'price_parser_version':2,'final_url':url,'body_text':'','json_ld':[{'@type':'ProductGroup','name':'Kit','url':url,'hasVariant':[{'name':'Kit - Buy 1','offers':{'price':'29.99','priceCurrency':'USD','url':url+'?variant=one'}},{'name':'Kit - 3 Pcs','offers':{'price':'59.99','priceCurrency':'USD','url':url+'?variant=three'}}]}]}
+    original={'id':str(uuid4()),'products':[{'id':'p','landing_snapshot':snapshot}]};before=deepcopy(original);store.get.return_value=original
+    response=make_client(SimpleNamespace(store=store,diagnostics=())).get(PREFIX+'/projects/'+original['id'])
+    assert response.status_code==200
+    observation=response.json()['products'][0]['landing_snapshot']['price_observation']
+    assert observation['amount'] is None
+    assert [item['quantity'] for item in observation['options']]==[1,3]
+    assert observation['ranges']==[{'currency':'USD','min':'29.99','max':'59.99'}]
+    assert original==before

@@ -46,6 +46,16 @@ async def abort_apify_run(engine: Any, project_id: str, action_id: str, attempt:
     await append_log(engine, project_id, action_id, attempt, 'cloud_abort', message)
 
 
+def reserve_submission(runner: Any, action: dict[str, Any], provider: str, slot: str) -> None:
+    guard = getattr(runner, 'submission_budget_guard', None)
+    if callable(guard):guard()
+    budget = getattr(runner, 'submission_budget', None)
+    if budget is None:
+        return
+    from services.research_polling_policy import require_submission
+    require_submission(budget, str(action['project_id']), str(action['id'])+':'+str(action['attempt'])+':'+slot, provider, 1)
+
+
 async def reserve(runner: Any, action: dict[str, Any], provider: str, slot: str) -> None:
     """Serialize provider admission across projects; reservations survive failures."""
     from rabbit_hole.application.actions import actions
@@ -108,6 +118,7 @@ async def meta(runner: Any, action: dict[str, Any], project: dict[str, Any], cli
     state = dict(action['payload'].get('apify_run', {}))
     if not state:
         await reserve(runner, action, 'apify', 'apify-run')
+        reserve_submission(runner, action, 'apify', 'apify-run')
         await checkpoint(runner, action, apify_run={'submission': 'uncertain', 'owner': {'action_id': str(action['id']), 'input_version': action['input_version'], 'fingerprint': action['payload'].get('fingerprint')}})
         await runner.log(action, 'submit', 'Apify API：提交任务，每次费用上限 $0.25，最多读取100条')
         run = (await request_json(client, 'POST', base + 'acts/XtaWFhbtfxyzqrFmd/runs', headers=headers,
@@ -169,6 +180,7 @@ async def trends(runner: Any, action: dict[str, Any], project: dict[str, Any], c
         if window in saved:
             continue
         await reserve(runner, action, 'serpapi', f'{window}:{action["attempt"]}')
+        reserve_submission(runner, action, 'serpapi', window)
         await runner.log(action, 'trends_' + window, 'SerpApi API：读取' + MARKETS[market].name + ' ' + window + ' 趋势')
         submissions[window] = {'state': 'uncertain', 'query': query, 'market': market,
                                'date': date, 'attempt': action['attempt'],

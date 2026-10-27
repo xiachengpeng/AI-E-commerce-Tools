@@ -8,9 +8,9 @@ from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
 
-STATIC_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
-)
+from services.runtime_paths import static_root
+
+STATIC_DIR = str(static_root())
 ALLOWED_CLEANUP_SUBDIRS = ("outputs", "uploads")
 
 
@@ -56,12 +56,20 @@ def safe_delete_static_file(static_url_or_path: str | None) -> bool:
         return False
 
     try:
-        if os.path.isfile(abs_path):
-            os.remove(abs_path)
-            logger.info("已安全清理磁盘静态文件: %s", abs_path)
-            return True
-    except OSError as exc:
-        logger.error("删除静态文件失败 %s: %s", abs_path, exc)
+        from services.asset_reference_service import asset_reference_lock, collect_asset_references, current_database
+        path = Path(abs_path)
+        if any(part.is_symlink() for part in (path, *path.parents)):
+            return False
+        database = current_database()
+        with asset_reference_lock(database, exclusive=True):
+            index = collect_asset_references(database, asset_root=Path(STATIC_DIR))
+            if not index.complete or index.protects(path):
+                return False
+            if path.is_file():
+                path.unlink()
+                return True
+    except (OSError, ValueError):
+        logger.warning("asset_cleanup_skipped_unverified")
 
     return False
 
@@ -82,10 +90,10 @@ def _extract_static_urls_from_dict(data: Any, found_urls: set[str]) -> None:
             _extract_static_urls_from_dict(val, found_urls)
 
 
-def cleanup_history_associated_files(module: str, items: Iterable[Any]) -> int:
+def history_asset_urls(module: str, items: Iterable[Any]) -> set[str]:
     """
-    Extract and safely delete all static disk assets associated with given history records.
-    Returns the total count of deleted files.
+    Extract candidate asset URLs before deleting records.
+    Actual deletion runs only after commit and reference revalidation.
     """
     urls_to_delete: set[str] = set()
 
@@ -117,43 +125,45 @@ def cleanup_history_associated_files(module: str, items: Iterable[Any]) -> int:
             res = getattr(item, "result", None)
             _extract_static_urls_from_dict(res, urls_to_delete)
 
-    deleted_count = 0
-    for url in urls_to_delete:
-        if safe_delete_static_file(url):
-            deleted_count += 1
+    return urls_to_delete
 
-    return deleted_count
+
+def cleanup_history_associated_files(module: str, items: Iterable[Any]) -> int:
+    return sum(safe_delete_static_file(url) for url in history_asset_urls(module, items))
 
 
 def cleanup_expired_static_files(max_age_seconds: int = 86400) -> tuple[int, int]:
-    """
-    Safely scan `outputs` and `uploads` subdirectories and delete files older than max_age_seconds.
-    Returns (deleted_count, freed_bytes).
-    """
+    """Remove only expired, verified-unreferenced files. Uncertainty retains data."""
+    from services.asset_reference_service import asset_reference_lock, collect_asset_references, current_database
     now = time.time()
-    deleted_count = 0
-    freed_bytes = 0
-
-    for subdir in ALLOWED_CLEANUP_SUBDIRS:
-        target_dir = os.path.join(STATIC_DIR, subdir)
-        if not os.path.isdir(target_dir):
-            continue
-        for root_path, dirs, files in os.walk(target_dir):
-            for file_name in files:
-                file_path = os.path.join(root_path, file_name)
-                if not any(
-                    file_path.startswith(os.path.abspath(os.path.join(STATIC_DIR, s)) + os.sep)
-                    for s in ALLOWED_CLEANUP_SUBDIRS
-                ):
-                    continue
-                try:
-                    mtime = os.path.getmtime(file_path)
-                    if now - mtime > max_age_seconds:
-                        size = os.path.getsize(file_path)
-                        os.remove(file_path)
-                        deleted_count += 1
-                        freed_bytes += size
-                        logger.info("已轮转清理过期静态文件 (%s 秒): %s", max_age_seconds, file_path)
-                except OSError as err:
-                    logger.warning("清理文件失败 %s: %s", file_path, err)
-    return deleted_count, freed_bytes
+    removed = freed = 0
+    root = Path(STATIC_DIR).absolute()
+    database = current_database()
+    try:
+        with asset_reference_lock(database, exclusive=True):
+            index = collect_asset_references(database, asset_root=root)
+            if not index.complete:
+                logger.warning('asset_ttl_skipped_reference_index_incomplete')
+                return 0, 0
+            for subdir in ALLOWED_CLEANUP_SUBDIRS:
+                folder = root / subdir
+                if folder.is_symlink() or not folder.is_dir(): continue
+                for parent, directories, files in os.walk(folder, followlinks=False):
+                    directories[:] = [d for d in directories if not (Path(parent)/d).is_symlink()]
+                    for name in files:
+                        candidate = Path(parent)/name
+                        if any(p.is_symlink() for p in (candidate,*candidate.parents)) or not candidate.is_relative_to(root): continue
+                        try:
+                            info = candidate.stat()
+                            if now-info.st_mtime <= max_age_seconds or index.protects(candidate): continue
+                            # Recheck committed refs immediately before removing a
+                            # candidate; compliant app writers share this lock.
+                            latest = collect_asset_references(database, asset_root=root)
+                            if not latest.complete: return removed, freed
+                            if latest.protects(candidate): continue
+                            candidate.unlink();removed += 1;freed += info.st_size
+                        except OSError:
+                            logger.warning('asset_ttl_file_skipped')
+    except (OSError, ValueError):
+        logger.warning('asset_ttl_skipped_unverified')
+    return removed, freed

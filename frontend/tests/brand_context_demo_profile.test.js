@@ -6,6 +6,16 @@ const path = require('node:path');
 const htmlPath = path.resolve(__dirname, '..', 'index.html');
 const htmlContent = fs.readFileSync(htmlPath, 'utf8');
 
+test('fresh browser has no automatically selected sample brand', () => {
+    const vm = require('node:vm');
+    const values = new Map();
+    const context = { window: {}, module:{exports:{}}, document: {addEventListener(){},querySelectorAll(){return [];}},
+        localStorage: {getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v)} };
+    vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '..', 'js', 'brand_context.js'), 'utf8'), context);
+    assert.equal(context.module.exports.getBrandProfiles().length, 0);
+    assert.equal(context.module.exports.getActiveBrandProfile(), null);
+});
+
 test('index.html contains button to load official demo profile', () => {
     assert.match(
         htmlContent,

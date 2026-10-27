@@ -1,0 +1,4 @@
+const test=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');
+test('settings logs use one console with an embedded worker summary and a persistent-log shortcut',()=>{
+ const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');const start=html.indexOf('<div id="settingsPaneLogs"'),end=html.indexOf('</main>',start),pane=html.slice(start,end);const panel=pane.indexOf('id="settingsLogPanel"'),worker=pane.indexOf('id="settingsResearchWorkerStatus"'),toolbar=pane.indexOf('class="settings-log-toolbar"');assert.ok(panel>=0&&worker>panel&&worker<toolbar);assert.equal((pane.match(/<section/g)||[]).length,1);assert.match(pane,/研究任务日志/);assert.match(pane,/onclick="openResearchSettings\(\)"/);assert.ok(pane.includes('id="settingsLogConnection"'));assert.ok(pane.includes('id="settingsLogEntries"'));
+});

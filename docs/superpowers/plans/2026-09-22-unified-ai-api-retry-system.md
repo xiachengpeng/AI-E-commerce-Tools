@@ -1,5 +1,12 @@
 # 统一 AI API 失败重试与容错系统实施计划 (Implementation Plan - v2 修订版)
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 建立工业级统一且支持细分场景策略（Retry Policy）与服务商能力声明驱动的 API 重试与容错系统。通过显式锁定 SDK 单次尝试杜绝多层重试放大；在非幂等操作（生图、外部写）遇不可确定结果（`AMBIGUOUS_OUTCOME`）时严禁盲目重放以防二次扣费；将 SSE 定位为通知而非 SSOT 并由后端维护 execution 真实状态；前端关闭业务重放并提供就地恢复。

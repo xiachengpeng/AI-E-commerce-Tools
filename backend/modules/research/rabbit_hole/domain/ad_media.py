@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from ipaddress import ip_address
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 from rabbit_hole.input_urls import canonical_research_url
 
@@ -26,7 +26,24 @@ def _public_media_url(value: Any) -> str | None:
         else:
             if not address.is_global:
                 return None
-        return canonical_research_url(value)
+        safe = canonical_research_url(value)
+        # Meta CDN delivery signatures are not provider credentials. They must
+        # remain byte-for-byte intact for playback, only on the actual CDN.
+        # Arbitrary URL credentials still follow the normal scrubbed boundary.
+        if host == "fbcdn.net" or host.endswith(".fbcdn.net"):
+            allowed = {"oh", "oe", "efg", "stp", "edm", "ccb", "vs", "bytestart", "byteend",
+                       "_nc_cat", "_nc_sid", "_nc_ss", "_nc_ht", "_nc_ohc", "_nc_oc", "_nc_gid",
+                       "_nc_zt", "_nc_eui2", "_nc_rid", "_nc_cb", "_nc_vs", "_nc_vts",
+                       "_nc_rnd", "_nc_ad"}
+            parts = []
+            for part in parsed.query.split("&"):
+                key, _, item = part.partition("=")
+                key = unquote_plus(key)
+                if key in allowed and len(item) <= 1024 and not any(ord(c) < 32 for c in unquote_plus(item)):
+                    parts.append(part)
+            base = urlsplit(safe)
+            return urlunsplit((base.scheme, base.netloc, base.path, "&".join(parts), ""))
+        return safe
     except ValueError:
         return None
 

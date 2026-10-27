@@ -28,3 +28,4 @@ class ResearchRuntime:
     ai_adapter: Any = None
     worker_readiness: tuple[str, ...] = ()
     commands_enabled: bool = False
+    submission_budget: Any = None

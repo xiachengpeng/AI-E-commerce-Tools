@@ -32,14 +32,13 @@
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (!raw) {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_PROFILES));
-                return DEFAULT_PROFILES;
+                return [];
             }
             const parsed = JSON.parse(raw);
-            return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PROFILES;
+            return Array.isArray(parsed) ? parsed : [];
         } catch (e) {
             console.error('Failed to parse brand profiles from localStorage', e);
-            return DEFAULT_PROFILES;
+            return [];
         }
     }
 
@@ -142,11 +141,8 @@
     function deleteBrandProfileById(id) {
         let profiles = getBrandProfiles();
         profiles = profiles.filter(p => p.id !== id);
-        if (profiles.length === 0) {
-            profiles = DEFAULT_PROFILES;
-        }
         saveBrandProfilesToStorage(profiles);
-        setActiveBrandProfileId(profiles[0].id);
+        setActiveBrandProfileId(profiles[0]?.id || '');
         renderBrandHubUI();
     }
 

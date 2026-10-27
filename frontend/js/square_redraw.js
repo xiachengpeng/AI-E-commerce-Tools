@@ -4,6 +4,8 @@ let squareRedrawFilter = 'all';
 let squareRedrawTargetAspectRatio = '1:1';
 let squareRedrawRenderSignature = '';
 let squareRedrawRunning = false;
+let squareRedrawLoading = false;
+let squareRedrawPreviewTrigger = null;
 const SQUARE_REDRAW_SUPPORTED_RATIOS = ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
 
 function initSquareRedrawControls() {
@@ -53,13 +55,19 @@ function readImageDimensions(dataUrl) {
 }
 
 async function loadSquareRedrawFiles(files) {
+    if (squareRedrawRunning || squareRedrawLoading) {
+        showToast('图片正在处理中，请完成后再更换本批图片', 'warning');
+        return;
+    }
     if (!files.length) return;
     if (files.length > 100) {
         showToast('每批最多上传 100 张图片，请拆批处理', 'error');
         return;
     }
 
-    squareRedrawImages = [];
+    const nextImages = [];
+    squareRedrawLoading = true;
+    updateSquareRedrawActions();
     try {
         for (const file of files) {
             const dataUrl = await new Promise((resolve, reject) => {
@@ -69,7 +77,7 @@ async function loadSquareRedrawFiles(files) {
                 reader.readAsDataURL(file);
             });
             const size = await readImageDimensions(dataUrl);
-            squareRedrawImages.push({
+            nextImages.push({
                 id: `sr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
                 filename: file.name,
                 image_data: dataUrl,
@@ -84,8 +92,13 @@ async function loadSquareRedrawFiles(files) {
     } catch (err) {
         showToast(err.message || '图片读取失败', 'error');
         return;
+    } finally {
+        squareRedrawLoading = false;
+        updateSquareRedrawActions();
     }
 
+    squareRedrawImages = nextImages;
+    squareRedrawFilter = 'all';
     squareRedrawBatchId = null;
     squareRedrawRenderSignature = '';
     renderSquareRedrawList();
@@ -108,19 +121,29 @@ function renderSquareRedrawSummary() {
     const summary = squareRedrawSummary();
     const el = document.getElementById('squareRedrawSummary');
     if (el) {
-        el.innerHTML = `
-            <span>总数 ${summary.total}</span>
-            <span>待重绘 ${summary.ready}</span>
-            <span>处理中 ${summary.running}</span>
-            <span>成功 ${summary.done}</span>
-            <span>失败 ${summary.failed}</span>
-            <span>跳过 ${summary.skipped}</span>
-        `;
+        el.innerHTML = `<i class="ph ph-check-circle" aria-hidden="true"></i><strong>${summary.done + summary.skipped} 张可导出</strong><span>含 ${summary.skipped} 张保留原图</span>`;
     }
+    const counts = { all: summary.total, pending: summary.ready + summary.running, success: summary.done, failed: summary.failed, skipped: summary.skipped };
+    document.querySelectorAll?.('[data-sr-count]').forEach(node => { node.textContent = String(counts[node.dataset.srCount] || 0); });
+    document.querySelectorAll?.('[data-sr-filter]').forEach(node => { node.setAttribute('aria-pressed', String(node.dataset.srFilter === squareRedrawFilter)); });
+    const count = document.getElementById('squareRedrawQueueCount');
+    if (count) count.textContent = String(summary.total);
+    for (const id of ['squareRedrawUploadStrip', 'squareRedrawFilters', 'squareRedrawFooter']) {
+        const node = document.getElementById(id);
+        if (node) summary.total ? node.classList.remove('hidden') : node.classList.add('hidden');
+    }
+    const progress = document.getElementById('squareRedrawProgress');
+    if (progress) {
+        const running = squareRedrawRunning || summary.running > 0;
+        running ? progress.classList.remove('hidden') : progress.classList.add('hidden');
+        progress.innerHTML = `<i class="ph ph-circle-notch" aria-hidden="true"></i><div><strong>正在处理图片 · ${summary.done + summary.failed + summary.skipped}/${summary.total}</strong><span>符合比例的原图自动保留，请等待本批完成。</span></div>`;
+    }
+    const failure = document.getElementById('squareRedrawFailure');
+    if (failure) summary.failed ? failure.classList.remove('hidden') : failure.classList.add('hidden');
+    const failureText = document.getElementById('squareRedrawFailureText');
+    if (failureText) failureText.textContent = `${summary.failed} 张图片未完成，其余结果已保留`;
     const batchUploadBtn = document.getElementById('squareRedrawBatchUploadBtn');
-    if (batchUploadBtn) {
-        batchUploadBtn.disabled = summary.done === 0;
-    }
+    if (batchUploadBtn) batchUploadBtn.disabled = squareRedrawRunning || summary.done === 0;
 }
 
 function setSquareRedrawFilter(filter) {
@@ -142,9 +165,9 @@ function squareRedrawStatusLabel(status) {
         ready: '待重绘',
         queued: '排队中',
         running: '处理中',
-        done: '完成',
-        failed: '失败',
-        skipped_square: '已符合目标，跳过',
+        done: '已完成',
+        failed: '未完成',
+        skipped_square: '已符合比例',
     };
     return labels[status] || status;
 }
@@ -173,6 +196,18 @@ function syncSquareRedrawTargetControls() {
     if (select) select.value = SQUARE_REDRAW_SUPPORTED_RATIOS.includes(squareRedrawTargetAspectRatio) ? squareRedrawTargetAspectRatio : 'custom';
     if (widthInput) widthInput.value = String(targetWidth);
     if (heightInput) heightInput.value = String(targetHeight);
+    const locked = !!squareRedrawBatchId || squareRedrawRunning || squareRedrawLoading;
+    for (const control of [select, widthInput, heightInput, document.getElementById('squareRedrawApplyRatioBtn')]) {
+        if (control) control.disabled = locked;
+    }
+    document.querySelectorAll?.('[data-sr-ratio]').forEach(node => {
+        node.setAttribute('aria-pressed', String(node.dataset.srRatio === squareRedrawTargetAspectRatio));
+        node.disabled = locked;
+    });
+    const label = document.getElementById('squareRedrawRatioLabel');
+    if (label) label.textContent = squareRedrawTargetAspectRatio;
+    const hint = document.getElementById('squareRedrawRatioLock');
+    if (hint) squareRedrawBatchId ? hint.classList.remove('hidden') : hint.classList.add('hidden');
 }
 
 function refreshSquareRedrawLocalSkipStatuses() {
@@ -184,6 +219,7 @@ function refreshSquareRedrawLocalSkipStatuses() {
 }
 
 function setSquareRedrawAspectRatio(ratio) {
+    if (squareRedrawRunning || squareRedrawLoading) return;
     if (squareRedrawBatchId) {
         showToast('当前批次已锁定尺寸：如需更换目标宽高比，请先清空当前图片列表后重新添加', 'error');
         syncSquareRedrawTargetControls();
@@ -198,6 +234,7 @@ function setSquareRedrawAspectRatio(ratio) {
 }
 
 function applySquareRedrawCustomSize() {
+    if (squareRedrawRunning || squareRedrawLoading) return;
     if (squareRedrawBatchId) {
         showToast('当前批次已锁定尺寸：如需更换目标宽高比，请先清空当前图片列表后重新添加', 'error');
         syncSquareRedrawTargetControls();
@@ -246,50 +283,38 @@ function renderSquareRedrawList() {
 
     empty.classList.add('hidden');
     list.classList.remove('hidden');
-    list.innerHTML = squareRedrawVisibleItems().map(item => {
+    const visible = squareRedrawVisibleItems();
+    if (!visible.length) {
+        const names = { pending: '待处理', success: '成功', failed: '失败', skipped: '已跳过' };
+        list.innerHTML = `<div class="sr-filter-empty">没有${names[squareRedrawFilter] || '符合筛选条件'}的图片<button type="button" onclick="setSquareRedrawFilter('all')">查看全部图片</button></div>`;
+        return;
+    }
+    list.innerHTML = visible.map(item => {
         const preview = item.output_url ? formatSquareRedrawUrl(item.output_url) : item.source_url;
-        const error = item.error_message ? `<div class="text-[11px] text-red-500 mt-1">${escapeSquareRedrawHtml(item.error_message)}</div>` : '';
-        const statusClass = squareRedrawStatusBadgeClass(item.status);
-        const resultLabel = item.status === 'done' ? '点击查看前后对比' : '点击查看预览';
-        const deleteDisabled = item.status === 'running' ? 'disabled' : '';
+        const error = item.error_message ? `<span class="sr-error-copy">${escapeSquareRedrawHtml(item.error_message)}</span>` : '';
+        const deleteDisabled = squareRedrawRunning || item.status === 'running' ? 'disabled' : '';
         return `
             <div class="square-redraw-card">
-                <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
-                    class="square-redraw-thumb">
-                    <img src="${preview}" alt="${escapeSquareRedrawHtml(item.filename)}">
-                    <span class="square-redraw-thumb-overlay">
-                        <i class="ph ph-arrows-out text-white text-lg"></i>
-                    </span>
+                <button type="button" onclick="openSquareRedrawPreview('${item.id}')" class="square-redraw-thumb" aria-label="预览 ${escapeSquareRedrawHtml(item.filename)}">
+                    <img src="${escapeSquareRedrawHtml(preview)}" alt="${escapeSquareRedrawHtml(item.filename)}">
+                    <span class="square-redraw-thumb-overlay"><i class="ph ph-arrows-out" aria-hidden="true"></i></span>
                 </button>
                 <button type="button" onclick="openSquareRedrawPreview('${item.id}')" class="square-redraw-info">
-                    <div class="square-redraw-title">${escapeSquareRedrawHtml(item.filename)}</div>
-                    <div class="square-redraw-meta">${item.width || '-'} x ${item.height || '-'} · ${resultLabel}</div>
-                    ${error}
+                    <strong class="square-redraw-title">${escapeSquareRedrawHtml(item.filename)}</strong>
+                    <span class="square-redraw-meta">${item.width || '-'} × ${item.height || '-'}</span>${error}
                 </button>
-                <span class="square-redraw-badge ${statusClass}">${squareRedrawStatusLabel(item.status)}</span>
-                ${item.status === 'done' && item.output_url ? `
-                <button type="button" onclick="uploadSquareRedrawItemToCloud('${item.id}')"
-                    class="square-redraw-preview-btn text-blue-600 hover:text-blue-700 hover:bg-blue-50" title="上传至云存储图床">
-                    <i class="ph ph-cloud-arrow-up text-base"></i>
-                </button>
-                <button type="button" onclick="sendSquareRedrawToTranslate('${item.id}')"
-                    class="square-redraw-preview-btn text-teal-600 hover:text-teal-700 hover:bg-teal-50" title="流转至图片翻译">
-                    <i class="ph ph-translate text-base"></i>
-                </button>
-                <button type="button" onclick="sendSquareRedrawToDetails('${item.id}')"
-                    class="square-redraw-preview-btn text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50" title="一键设为详情页主图">
-                    <i class="ph ph-arrow-square-out text-base"></i>
-                </button>` : ''}
-                <button type="button" onclick="openSquareRedrawPreview('${item.id}')"
-                    class="square-redraw-preview-btn" title="查看对比">
-                    <i class="ph ph-eye text-base"></i>
-                </button>
-                <button type="button" onclick="removeSquareRedrawImage('${item.id}')" ${deleteDisabled}
-                    class="square-redraw-delete-btn" title="删除">
-                    <i class="ph ph-trash text-base"></i>
-                </button>
-            </div>
-        `;
+                <span class="square-redraw-badge ${squareRedrawStatusBadgeClass(item.status)}">${squareRedrawStatusLabel(item.status)}</span>
+                <div class="sr-row-actions">
+                    <button type="button" onclick="openSquareRedrawPreview('${item.id}')" class="square-redraw-preview-btn" title="查看对比" aria-label="查看 ${escapeSquareRedrawHtml(item.filename)} 的对比"><i class="ph ph-arrows-out" aria-hidden="true"></i></button>
+                    <details class="sr-item-menu"><summary aria-label="${escapeSquareRedrawHtml(item.filename)} 的更多操作" title="更多操作"><i class="ph ph-dots-three" aria-hidden="true"></i></summary><div>
+                        ${item.status === 'done' && item.output_url ? `
+                        <button type="button" onclick="uploadSquareRedrawItemToCloud('${item.id}')"><i class="ph ph-cloud-arrow-up" aria-hidden="true"></i>上传至云存储图床</button>
+                        <button type="button" onclick="sendSquareRedrawToTranslate('${item.id}')"><i class="ph ph-translate" aria-hidden="true"></i>流转至图片翻译</button>
+                        <button type="button" onclick="sendSquareRedrawToDetails('${item.id}')"><i class="ph ph-arrow-square-out" aria-hidden="true"></i>设为详情页主图</button>` : ''}
+                        <button type="button" onclick="removeSquareRedrawImage('${item.id}')" ${deleteDisabled} data-sr-status="${escapeSquareRedrawHtml(item.status)}" class="sr-remove-action"><i class="ph ph-trash" aria-hidden="true"></i>删除图片</button>
+                    </div></details>
+                </div>
+            </div>`;
     }).join('');
 }
 
@@ -308,6 +333,8 @@ function openSquareRedrawPreview(itemId) {
     if (!modal || !title || !sourceImg || !resultWrap) return;
 
     title.textContent = item.filename;
+    const ratioLabel = document.getElementById('squareRedrawPreviewResultLabel');
+    if (ratioLabel) ratioLabel.textContent = `目标比例 · ${squareRedrawTargetAspectRatio}`;
     sourceImg.src = item.source_url;
 
     const translateBtn = document.getElementById('squareRedrawSendToTranslateBtn');
@@ -356,7 +383,9 @@ function openSquareRedrawPreview(itemId) {
 
     resultWrap.innerHTML = resultHtml;
     document.getElementById('squareRedrawPreviewMeta').textContent = `${item.width || '-'} x ${item.height || '-'} · 目标 ${squareRedrawTargetAspectRatio} · ${squareRedrawStatusLabel(item.status)}`;
+    squareRedrawPreviewTrigger = document.activeElement;
     modal.classList.remove('hidden');
+    document.getElementById('squareRedrawPreviewCloseBtn')?.focus?.();
 }
 
 async function sendSquareRedrawToDetails(itemId) {
@@ -440,6 +469,8 @@ function sendSquareRedrawToTranslate(itemId) {
 
 function closeSquareRedrawPreview() {
     document.getElementById('squareRedrawPreviewModal')?.classList.add('hidden');
+    squareRedrawPreviewTrigger?.focus?.();
+    squareRedrawPreviewTrigger = null;
 }
 
 function uploadCurrentSquareRedrawPreviewToCloud() {
@@ -520,9 +551,29 @@ function updateSquareRedrawActions() {
     const retryBtn = document.getElementById('squareRedrawRetryBtn');
     const downloadBtn = document.getElementById('squareRedrawDownloadBtn');
     const summary = squareRedrawSummary();
-    if (startBtn) startBtn.disabled = !squareRedrawImages.length || squareRedrawRunning;
-    if (retryBtn) retryBtn.disabled = squareRedrawRunning || !squareRedrawBatchId || summary.failed === 0;
-    if (downloadBtn) downloadBtn.disabled = squareRedrawRunning || !squareRedrawBatchId || (summary.done + summary.skipped === 0);
+    const busy = squareRedrawRunning || squareRedrawLoading;
+    if (startBtn) {
+        startBtn.disabled = !summary.total || busy || (!!squareRedrawBatchId && summary.ready === 0);
+        if (squareRedrawRunning) {
+            startBtn.innerHTML = '<i class="ph ph-circle-notch sr-spinning" aria-hidden="true"></i><span>正在处理…</span>';
+        } else {
+            const text = squareRedrawLoading ? '正在读取图片…' : !summary.total ? '开始重绘' : squareRedrawBatchId ? (summary.ready ? `继续处理 · ${summary.ready} 张` : '本批已处理') : summary.ready ? `开始重绘 · ${summary.ready} 张` : '准备原图 ZIP';
+            startBtn.innerHTML = `<i class="ph ph-play" aria-hidden="true"></i><span>${text}</span>`;
+        }
+    }
+    for (const btn of [retryBtn, document.getElementById('squareRedrawInlineRetryBtn')]) {
+        if (btn) btn.disabled = busy || !squareRedrawBatchId || summary.failed === 0;
+    }
+    if (downloadBtn) downloadBtn.disabled = busy || !squareRedrawBatchId || (summary.done + summary.skipped === 0);
+    for (const id of ['squareRedrawUpload', 'squareRedrawReplaceBtn']) {
+        const el = document.getElementById(id);
+        if (el) el.disabled = busy;
+    }
+    document.getElementById('squareRedrawList')?.querySelectorAll?.('.sr-remove-action').forEach(button => {
+        button.disabled = busy || button.dataset.srStatus === 'running';
+    });
+    syncSquareRedrawTargetControls();
+    renderSquareRedrawSummary();
 }
 
 function squareRedrawBatchSignature(batchId, targetAspectRatio, images) {
@@ -546,27 +597,33 @@ async function startSquareRedrawBatch() {
     }
     if (squareRedrawRunning) return;
 
+    if (squareRedrawLoading) return;
+    if (squareRedrawBatchId) {
+        await runSquareRedrawQueue();
+        return;
+    }
     const payload = {
         target_aspect_ratio: squareRedrawTargetAspectRatio,
         images: squareRedrawImages.map(item => ({
-            filename: item.filename,
-            image_data: item.image_data,
-            width: item.width,
-            height: item.height,
+            filename: item.filename, image_data: item.image_data, width: item.width, height: item.height,
         })),
     };
-
-    const response = await fetch(`${API_BASE}/api/square-redraw/batches`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-    });
-    const data = await response.json();
-    if (data.status !== 'success') {
-        showToast(data.message || '创建重绘任务失败', 'error');
+    squareRedrawRunning = true;
+    updateSquareRedrawActions();
+    try {
+        const response = await fetch(`${API_BASE}/api/square-redraw/batches`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        });
+        const data = await response.json();
+        if (data.status !== 'success') throw new Error(data.message || '创建重绘任务失败');
+        applySquareRedrawBatch(data.data);
+    } catch (err) {
+        showToast(err.message || '创建重绘任务失败，请检查连接后重试', 'error');
         return;
+    } finally {
+        squareRedrawRunning = false;
+        updateSquareRedrawActions();
     }
-    applySquareRedrawBatch(data.data);
     await runSquareRedrawQueue();
 }
 
@@ -600,7 +657,7 @@ function applySquareRedrawBatch(batch) {
 async function removeSquareRedrawImage(itemId) {
     const item = getSquareRedrawItem(itemId);
     if (!item) return;
-    if (item.status === 'running') {
+    if (squareRedrawRunning || item.status === 'running') {
         showToast('图片正在处理中，暂不能删除', 'error');
         return;
     }
@@ -665,6 +722,7 @@ async function runSquareRedrawQueue() {
     if (!squareRedrawBatchId) return;
     const queuedItems = squareRedrawImages.filter(item => item.status === 'queued');
     if (!queuedItems.length) {
+        saveSquareRedrawHistory();
         updateSquareRedrawActions();
         return;
     }
@@ -692,7 +750,7 @@ async function runSquareRedrawQueue() {
             } catch (err) {
                 console.error(err);
                 errorCount++;
-                await refreshSquareRedrawBatch();
+                try { await refreshSquareRedrawBatch(); } catch (_) { /* Keep the last known results while offline. */ }
                 showToast(`${item.filename} 重绘失败`, 'error');
             } finally {
                 completedCount++;
@@ -716,7 +774,11 @@ async function runSquareRedrawQueue() {
     await Promise.all(activeTasks);
     squareRedrawRunning = false;
     if (startBtn) startBtn.innerHTML = originalStartHtml;
-    await refreshSquareRedrawBatch();
+    try {
+        await refreshSquareRedrawBatch();
+    } catch (_) {
+        showToast('结果刷新失败，已保留当前图片。请稍后从历史恢复本批次。', 'warning');
+    }
     updateSquareRedrawActions();
     saveSquareRedrawHistory();
     showToast(`重绘完成：成功 ${successCount}，失败 ${errorCount}`, errorCount ? 'warning' : 'success');
@@ -751,19 +813,30 @@ function saveSquareRedrawHistory() {
 
 async function retrySquareRedrawFailed() {
     if (!squareRedrawBatchId) return;
-    if (squareRedrawRunning) return;
-    const response = await fetch(`${API_BASE}/api/square-redraw/batches/${squareRedrawBatchId}/retry-failed`, { method: 'POST' });
-    const data = await response.json();
-    if (data.status !== 'success') {
-        showToast(data.message || '重试失败项失败', 'error');
+    if (squareRedrawRunning || squareRedrawLoading) return;
+    squareRedrawRunning = true;
+    updateSquareRedrawActions();
+    try {
+        const response = await fetch(`${API_BASE}/api/square-redraw/batches/${squareRedrawBatchId}/retry-failed`, { method: 'POST' });
+        const data = await response.json();
+        if (data.status !== 'success') throw new Error(data.message || '重试失败项失败');
+        applySquareRedrawBatch(data.data);
+    } catch (err) {
+        showToast(err.message || '重试失败项失败，请检查连接', 'error');
         return;
+    } finally {
+        squareRedrawRunning = false;
+        updateSquareRedrawActions();
     }
-    applySquareRedrawBatch(data.data);
     await runSquareRedrawQueue();
 }
 
 async function addImageToSquareRedraw(dataUrl, filename = 'image.png') {
     if (!dataUrl) return false;
+    if (squareRedrawRunning || squareRedrawLoading) {
+        showToast('图片正在处理中，请完成后再添加图片', 'warning');
+        return false;
+    }
     try {
         let width = 1000;
         let height = 1000;
@@ -797,9 +870,35 @@ async function addImageToSquareRedraw(dataUrl, filename = 'image.png') {
     }
 }
 
-function downloadSquareRedrawZip() {
-    if (!squareRedrawBatchId) return;
-    window.location.href = `${API_BASE}/api/square-redraw/batches/${squareRedrawBatchId}/download`;
+let squareRedrawDownloading = false;
+async function downloadSquareRedrawZip() {
+    if (!squareRedrawBatchId || squareRedrawDownloading) return;
+    const batchId = squareRedrawBatchId;
+    const button = document.getElementById('squareRedrawDownloadBtn');
+    const previousLabel = button?.innerHTML;
+    squareRedrawDownloading = true;
+    if (button) { button.disabled = true; button.textContent = '正在准备 ZIP…'; }
+    try {
+        // Fetching avoids a cross-port navigation blocked by the desktop host.
+        const response = await fetch(`${API_BASE}/api/square-redraw/batches/${batchId}/download`, {redirect:'error'});
+        if (!response.ok || !/^application\/(zip|x-zip-compressed)(?:;|$)/i.test(response.headers.get('Content-Type') || '')) {
+            throw new Error('ZIP 打包下载未完成，请确认本批有可导出的图片后重试。');
+        }
+        const blob = await response.blob();
+        if (!blob.size) throw new Error('ZIP 文件为空，请重新核对本批结果。');
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = `square-redraw-${batchId}.zip`;
+        document.body.appendChild(link);
+        try { link.click(); } finally { link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000); }
+        showToast('ZIP 已交给下载器，请在下载目录或保存窗口查看', 'success');
+    } catch (_) {
+        showToast('ZIP 下载未完成，请检查本批图片与本机服务后重试。已有结果已保留。', 'error');
+    } finally {
+        squareRedrawDownloading = false;
+        if (button) button.innerHTML = previousLabel;
+        updateSquareRedrawActions();
+    }
 }
 
 if (typeof window !== 'undefined') {
@@ -841,3 +940,16 @@ if (typeof module !== 'undefined' && module.exports) {
         getSquareRedrawImages: () => squareRedrawImages
     };
 }
+
+// Keep keyboard interaction inside the comparison while it is open.
+if (typeof document !== 'undefined') document.addEventListener?.('keydown', event => {
+    const modal = document.getElementById('squareRedrawPreviewModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    if (event.key === 'Escape') { event.preventDefault(); closeSquareRedrawPreview(); }
+    if (event.key === 'Tab') {
+        const controls = Array.from(modal.querySelectorAll('button:not(:disabled)'));
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+});

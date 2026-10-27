@@ -1147,3 +1147,49 @@ def test_translate_text_multi_lang():
         assert resp.status_code == 200
         data = resp.json()
         assert data["translations"]["Japanese"] == "こんにちは"
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('batch',[False,True])
+async def test_history_cleanup_wait_runs_off_loop(batch,monkeypatch):
+    import threading
+    import httpx
+    import main
+    # Mimic a lock owner that needs this same event loop to finish its transaction.
+    released=threading.Event();observed=[]
+    def cleanup(_url):
+        observed.append(released.wait(.2))
+        return True
+    monkeypatch.setattr(main,'safe_delete_static_file',cleanup)
+    monkeypatch.setattr(main,'history_asset_urls',lambda *a:['/static/outputs/example.png'])
+    saved=client.post('/api/history/listing',json={'name':'cleanup regression','result':{}}).json()['id']
+    async def finish_reader():await asyncio.sleep(.01);released.set()
+    ticker=asyncio.create_task(finish_reader())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://testserver') as c:
+        response=await c.post('/api/history/listing/batch-delete',json={'ids':[saved]}) if batch else await c.delete(f'/api/history/listing/{saved}')
+    await ticker
+    assert response.status_code==200
+    assert observed==[True],'cleanup blocked the event loop that releases the reader lock'
+
+@pytest.mark.asyncio
+async def test_real_async_reader_and_history_delete_both_finish(monkeypatch,tmp_path):
+    import httpx
+    import main
+    import db
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy import text
+    from services.asset_reference_service import install_reference_transaction_lock
+    from services import storage_cleanup_service
+    static=tmp_path/'static';(static/'outputs').mkdir(parents=True);(static/'outputs/image.png').write_bytes(b'gc fixture')
+    monkeypatch.setattr(storage_cleanup_service,'STATIC_DIR',str(static))
+    row=client.post('/api/history/render',json={'name':'concurrent','image':'/static/outputs/image.png','metadata':{}}).json()['id']
+    engine=create_async_engine('sqlite+aiosqlite:///'+str(db.DB_PATH));install_reference_transaction_lock(engine.sync_engine,db.DB_PATH)
+    acquired=asyncio.Event()
+    async def reader():
+        async with engine.connect() as connection:
+            await connection.execute(text('SELECT 1'));acquired.set();await asyncio.sleep(.03)
+    async def deletion():
+        await acquired.wait()
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://testserver') as c:
+            response=await c.delete(f'/api/history/render/{row}');assert response.status_code==200
+    try:await asyncio.wait_for(asyncio.gather(reader(),deletion()),2)
+    finally:await engine.dispose()

@@ -20,7 +20,9 @@ from services.storage_cleanup_service import safe_delete_static_file
 
 
 MAX_SQUARE_REDRAW_BATCH_SIZE = 100
-STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+from services.runtime_paths import static_root
+
+STATIC_DIR = str(static_root())
 SQUARE_OUTPUT_ROOT = os.path.join(STATIC_DIR, "outputs", "square-redraw")
 SQUARE_REDRAW_PROMPT_TEMPLATE = """Expand and outpaint the reference image into a clean {aspect_ratio} aspect ratio composition.
 
@@ -374,14 +376,12 @@ def delete_square_redraw_item(db, batch_id: int, item_id: int) -> None:
     if item.status == "running":
         raise ValueError("图片正在处理中，暂不能删除")
 
-    if item.source_url:
-        safe_delete_static_file(item.source_url)
-    if item.output_url:
-        safe_delete_static_file(item.output_url)
-
+    cleanup_urls = [url for url in (item.source_url, item.output_url) if url]
     db.delete(item)
     db.commit()
     _update_batch_status(db, batch_id)
+    for url in cleanup_urls:
+        safe_delete_static_file(url)
 
 
 def _static_url_to_abs_path(static_url: str) -> str:

@@ -2,11 +2,20 @@ These AGENTS.md instructions replace all previously provided AGENTS.md instructi
 
 # AI E-commerce Tools Project Guide
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 现行入口或维护说明**
+> 使用说明按当前代码同步；测试结果引用对应日期验收，本次文档整理没有运行收费链路或重新验收所有功能。
+> 当前入口与验证范围：[项目当前状态](<docs/项目当前状态.md>)；[2026-10-26流程修复与边界](<docs/ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
 ## Project Overview
 
 AI E-commerce Tools is a local FastAPI application with a vanilla JavaScript frontend for cross-border e-commerce workflows.
 
 Current product areas:
+
+- Native product research/SOP workflow: projects, reviewed search terms, source-bound product/ad media, triage, ten-step evidence and decision flow, tests/reviews, reports and persistent task logs.
+- One shared grouped sidebar across every module; external integration credentials are managed in main Settings.
 
 - Competitor URL scraping, analysis, comparison, and deterministic scoring.
 - AI detail-page image planning, generation, regeneration, SEO metadata, long-image composition, and project history.
@@ -30,7 +39,10 @@ Current product areas:
 
 ## Runtime Architecture
 
-- `run.py` starts the FastAPI backend on port 9503 and the static frontend on port 9502.
+- `run.py` starts the FastAPI backend on port 9503 and `frontend_server.py` on port 9502. The latter serves static files and relays only allowlisted research/integration paths to the fixed loopback API without replaying mutations.
+- The research worker starts only for explicitly enabled active mode with valid consumed activation/ledger state; do not start workers or paid queues merely to verify UI.
+- `backend/routes/research_workbench.py` exposes the native research workflow; `backend/modules/research/rabbit_hole/` contains its integrated domain/application/persistence code. No remote SOP API, SSH tunnel or iframe is required.
+- Research evidence/config/signing material stays under the private research root, separate from marketing static assets.
 - `backend/main.py` owns HTTP routes, startup/shutdown hooks, settings APIs, history APIs, and feature endpoints.
 - `backend/routes/generation.py` owns AI-backed translation, Listing, advertising, watermark, generic AI, and frontend-log endpoints; it is included by `backend/main.py` without changing public paths.
 - `backend/routes/storage.py` owns storage configuration CRUD, connection testing, and proxied image upload dispatching for WordPress, Shopify, and Cloudflare R2.
@@ -54,6 +66,22 @@ frontend callAI("text" | "image", payload)
 
 The browser must not call AI providers directly.
 
+## 代码库理解与 Token 节省规范 (Token Optimization)
+
+- 分析整体架构、跨模块关系或涉及 3 个及以上文件时，先界定问题范围，查看本文件的模块地图和相关配置/入口，再用 `rg --files`、`rg -n` 定位。避免无目标地逐个读取大量完整文件；文件数量本身不构成整库打包的理由。
+- 需要广泛了解代码结构时，可按需使用 Repomix 的 Tree-sitter 压缩。优先复用仍与当前源码一致的上下文文件；仅打包相关模块，使用 `--include` / `--ignore` 限制范围，不默认打包整个仓库。
+- 使用已安装或项目已固定版本的工具。不要为了读取代码而自动执行会下载未固定版本工具的 `npx repomix`；工具不可用时，继续通过定向搜索、导入关系和源码片段完成分析，不因此阻塞任务。
+- 压缩结果仅用于导航和结构概览，不能作为业务逻辑、安全、数据库或兼容性结论的唯一依据。即使不修改代码，也应核验支撑重要结论的原始实现、配置和测试；修改前精读相关逻辑及直接调用方。
+- 保持默认忽略规则与安全扫描开启，并显式排除凭据、环境文件、数据库、生成素材、构建产物、依赖及本地工具状态；遵守下文 Local State And Secrets。安全扫描不能替代人工核对，不使用远程上传或剪贴板复制选项。
+- 输出放在已忽略的 `debug/repomix/` 等本地目录，不写到仓库根目录，不提交 Git。创建目录后使用不覆盖已有文件的输出名；记录打包范围和源码状态，相关代码变更后重新生成或核验。
+- 先检查输出摘要、文件范围与大小，再按问题读取相关 XML 区段；输出过大就缩小范围，不一次读入整个压缩文件。没有执行压缩或源码未覆盖的部分，应如实说明，不编造分析依据。
+
+示例（仅在 Repomix 已可用时，从仓库根目录运行；先创建输出目录，并按任务调整范围和输出名）：
+
+```bash
+repomix --compress --style xml --include 'frontend/js/research-workbench/**/*.mjs' -o debug/repomix/research-context.xml
+```
+
 ## Feature And Frontend Map
 
 - `frontend/js/analysis.js`: competitor URLs, analysis progress, comparison rendering, and report export.
@@ -74,6 +102,25 @@ The browser must not call AI providers directly.
 - `frontend/css/input.css`: Tailwind input.
 - `frontend/css/style.css`: shared application styles.
 - `frontend/css/analysis.css`, `settings.css`, and `square_redraw.css`: feature-specific styles.
+
+## Research UI And Shared Navigation
+
+- `frontend/js/research-workbench/index.mjs` owns native workbench lifecycle; `pages/`, `components/`, and `services/` retain existing commands and DTO contracts.
+- `services/journey.mjs` maps ten authoritative steps into four business-language groups; do not loosen server evidence, version or decision gates to match a mockup.
+- `services/media-cache.mjs` provides bounded lifecycle-owned media leases; preserve exact project/source/revision binding and release blobs on teardown.
+- `frontend/js/settings_research.mjs` mounts the single integration credential editor in main Settings; preserve blank-secret behavior and unique editor ownership.
+- `frontend/js/app.js:updateResearchDesignNavigation` mounts the original navigation controls once for all modules. `unified-navigation-mode` scopes shared sidebar CSS; `research-design-mode` scopes research content/settings presentation only. Never restore the legacy sidebar on a module switch.
+- Preserve group expansion within the session and reveal the active nested entry on direct entry/refresh; keep original IDs, handlers, content state and settings restoration lifecycle.
+- Current documentation entry point: `docs/README.md`; current facts and dated verification boundaries: `docs/项目当前状态.md`. Historical plans are not new execution authorization.
+
+### Research flow contracts (2026-10-26)
+
+- The visible journey has five stages; `journeyGroups` is a four-group internal projection. Preserve all ten authoritative steps. `components/workflow-controls.mjs` exposes funnel, score, test and review tasks without weakening server gates.
+- Candidate triage (retain/observe/reject) opens the existing reason form and requires explicit saving. Keep recovery and source history; retained does not mean passed.
+- `services/journey.mjs:projectResume` restores valid focus first, otherwise a recent source with results. Valid non-test decisions on a focused product route to review; stale decisions need rechecking.
+- Completed-word rescans require `rescan_of` bound to the completed same-project/same-keyword task. Keep old results and deduplicate the successor; blocked recovery must target the matching `retry_action_id`. Never turn ambiguous outcomes into fresh automatic searches or switch accounts silently.
+- `scanCandidates` must match server eligibility and batch limit; empty previews must not submit. Ad age and recent activity do not prove uninterrupted 30-day delivery; preserve unknown continuity.
+- Latest dated acceptance is `docs/ux-audit/2026-10-26-sop-flow-repair/验收记录.md`. Its test counts and installed-client evidence are historical verification boundaries, not a substitute for rerunning relevant checks after future changes. Customer DMG updates are separate from local-client updates.
 
 ## Backend Service Map
 
@@ -162,7 +209,7 @@ Run backend tests:
 Run the complete frontend test suite:
 
 ```bash
-node --test frontend/tests/*.test.js
+node --test frontend/tests/*.test.js frontend/tests/research-workbench/*.test.mjs
 ```
 
 Syntax-check every changed frontend JavaScript file:
@@ -188,6 +235,17 @@ Never commit or upload:
 When testing in an isolated worktree, copy local state only when necessary, keep it ignored, and never stage it. Do not expose secret values in terminal output, tests, logs, screenshots, fixtures, or documentation.
 
 ## Implementation Invariants
+
+### Research product/ad identity review
+
+- Evidence review UI must expose positive, negative, and unresolved outcomes with a clear next action; an unchecked confirmation box alone must not represent both mismatch and unreviewed evidence.
+- Product/ad review uses `relevance_result`: `matched`（一致）, `mismatch`（不一致）, or `unverified`（暂时无法判断）. Only `matched` sets `relevance_confirmed=true`; the backend must reject contradictory values and retain the existing evidence and expansion gates.
+- Missing media, timeouts, inaccessible pages, or insufficient evidence mean unresolved, not a confirmed mismatch or match. Never infer a human confirmation from successful scraping or an AI suggestion.
+- Saving a mismatch must retain its reason and source evidence, show the result in the candidate list and detail panel, block keyword expansion, and offer correction/review. It must not automatically delete, reject, or archive the lead; triage remains a separate explicit action.
+- Preserve the original confirmation command, version checks, submission identity, drafts, and source-bound comparison dialog. Correcting a product URL must continue to invalidate affected evidence while preserving history.
+- Keep old records and callers compatible: when `relevance_result` is absent, derive `matched` from true and `unverified` from false; do not reinterpret an old false value as a recorded mismatch.
+- Changes to this flow require focused checks for all three saved outcomes, contradictory payload rejection, reopening/correction, and expansion remaining blocked for mismatch/unresolved evidence. Use isolated data for saves; do not submit paid tasks or change a real product judgment merely to verify UI.
+- Implementation references: `components/identity-result.mjs`, `components/product-identity-dialog.mjs`, `pages/product.mjs`, and `pages/focused-exploration.mjs` under `frontend/js/research-workbench/`; authoritative validation remains in `backend/modules/research/rabbit_hole/domain/project.py`.
 
 ### Detail-page generation and configuration sidebar
 

@@ -147,7 +147,13 @@ class MetaAd(BaseModel):
     human_confirmed_distinct: bool = False
     query: str
 
-    @field_validator("landing_url", "final_landing_url", "media_url")
+    @field_validator("media_url")
+    @classmethod
+    def _safe_media_url(cls, value: str | None) -> str | None:
+        from rabbit_hole.domain.ad_media import _public_media_url
+        return _public_media_url(value)
+
+    @field_validator("landing_url", "final_landing_url")
     @classmethod
     def _safe_urls(cls, value: str | None) -> str | None:
         return canonical_research_url(value) if value else None

@@ -1,4 +1,6 @@
 import { el, button, panel, notify } from './components/elements.mjs';
+import {icon} from './components/presentation.mjs';
+const actionNames={create_project:'新建研究',configure_rules:'更新项目规则',add_keyword:'新增关键词',approve_keyword:'审核关键词',triage_product:'筛选线索',focus_product:'进入深挖',confirm_product:'确认商品',confirm_creatives:'确认粗筛素材',evidence:'保存渠道证据',funnel:'保存漏斗分析',economics:'更新成本测算',evaluate:'检查证据与评分',decide:'保存人工决定',review:'保存复盘',unknown:'自动处理记录'};
 export const historyKinds=Object.freeze({activity:'研究活动',report:'已保存研究报告',import:'营销档案导入'});
 export async function loadResearchHistory(context,{kind='activity',cursor=null,projectId=context.state.project?.id||null}={}) {
  if(!Object.hasOwn(historyKinds,kind))throw Error('研究历史类型无效');
@@ -7,19 +9,22 @@ export async function loadResearchHistory(context,{kind='activity',cursor=null,p
 }
 export function renderHistory(context) {
  const host=el(context,'section','rw-history'),heading=el(context,'h1','','研究历史');heading.tabIndex=-1;host.append(heading,el(context,'p','rw-muted','持久审计只读；营销模块原历史与恢复入口保持。'));
- const tabs=el(context,'nav','rw-toolbar'),body=el(context,'div'),more=el(context,'div');host.append(tabs,body,more);
- let generation=0,kind=context.state.historyKind||'activity',cursor=null,rows=[];
+ const tabs=el(context,'nav','rw-toolbar'),workspace=el(context,'div','rw-history-workspace'),body=el(context,'div','rw-history-timeline'),detail=el(context,'aside','rw-history-detail'),more=el(context,'div');workspace.append(body,detail);host.append(tabs,workspace,more);
+ let selectedRow=null;
+ function preview(row,card,rowKind){selectedRow=row;detail.replaceChildren();for(const child of body.children)child.setAttribute('aria-current',String(child===card));detail.append(el(context,'h2','',rowKind==='activity'?(actionNames[row.action]||'研究资料更新'):historyKinds[rowKind]),el(context,'p','rw-muted','已保存的历史活动 · 只读'));const project=context.state.projects?.find(p=>p.id===row.project_id),product=project?.products?.find(p=>p.id===row.product_id);detail.append(el(context,'p','',project?.title||'研究项目'));if(product)detail.append(el(context,'h3','',product.name));detail.append(el(context,'p','rw-muted',row.created_at?new Date(row.created_at).toLocaleString('zh-CN',{hour12:false}):'未记录时间'));const facts=el(context,'dl','rw-history-detail-facts');for(const [label,value] of [['研究项目',project?.title||'研究项目'],['当前商品档案',product?.name||'本条活动摘要未提供商品定位'],['当时资料版本',row.version??'本条活动摘要未提供'],['保存状态','已保存的历史活动']])facts.append(el(context,'dt','',label),el(context,'dd','',value));detail.append(facts);if(row.product_id)detail.append(button(context,'打开商品档案',()=>context.openHistoryProduct(row.project_id,row.product_id),'rw-primary'));if(row.project_id)detail.append(button(context,'打开研究项目',()=>context.openProject(row.project_id)));if(rowKind==='report')detail.append(button(context,'查看研究报告',()=>context.navigate('reports')));for(const artifact of row.artifacts||[])detail.append(el(context,'p','rw-muted','营销产物：'+artifact.module+' #'+artifact.history_id));detail.append(el(context,'p','rw-muted','历史记录保留当时的活动，不代表当前商品仍处于相同状态。'));}
+ let generation=0,kind=context.state.historyKind||'activity',cursor=null,rows=[],projectId=context.state.project?.id||null;
+ const filter=el(context,'select');filter.setAttribute('aria-label','历史所属项目');const all=el(context,'option','','全部研究项目');all.value='';filter.append(all);for(const project of context.state.projects||[]){const option=el(context,'option','',project.title||'研究项目');option.value=project.id;filter.append(option);}filter.value=projectId||'';context.life.listen(filter,'change',()=>{projectId=filter.value||null;cursor=null;return load();});tabs.append(filter);
  async function load(append=false){const id=++generation;try{
-  const data=await loadResearchHistory(context,{kind,cursor:append?cursor:null});if(!context.life.active||generation!==id)return;
-  rows=append?[...rows,...data.items]:data.items;cursor=data.next_cursor||null;body.replaceChildren();more.replaceChildren();
+  const data=await loadResearchHistory(context,{kind,cursor:append?cursor:null,projectId});if(!context.life.active||generation!==id)return;
+  rows=append?[...rows,...data.items]:data.items;selectedRow=rows.find(row=>row.id&&row.id===selectedRow?.id)||null;cursor=data.next_cursor||null;body.replaceChildren();detail.replaceChildren();more.replaceChildren();
   if(!rows.length)body.append(el(context,'p','rw-muted',kind==='report'?'尚无成功保存的报告；实时下载不计入已保存报告。':'尚无此类历史记录。'));
-  for(const row of rows){const card=panel(context,historyKinds[kind],(row.created_at||'未记录时间')+' · '+(row.action||row.status||''));
+  const rowKind=kind;let previousDate=null;for(const [index,row] of rows.entries()){const parsed=row.created_at?new Date(row.created_at):null,date=parsed&&Number.isFinite(parsed.getTime())?parsed.toLocaleDateString('zh-CN'):'日期未记录';if(date!==previousDate){const day=el(context,'h3','rw-history-date',date);body.append(day);previousDate=date;}const card=panel(context,kind==='activity'?(actionNames[row.action]||'研究资料更新'):historyKinds[kind],(row.created_at?new Date(row.created_at).toLocaleString('zh-CN',{hour12:false}):'未记录时间')+' · '+(context.state.projects?.find(p=>p.id===row.project_id)?.title||'研究项目'));card.classList.add('rw-history-row');card.append(icon(context,({evaluate:'chart-bar',decide:'check-square',review:'notebook',economics:'calculator',confirm_product:'package'})[row.action]||'file-text'));if(parsed&&Number.isFinite(parsed.getTime())){const clock=el(context,'time','rw-history-time',parsed.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}));clock.dateTime=row.created_at;card.append(clock);}
    if(row.project_id)card.append(button(context,'打开研究项目',()=>context.openProject(row.project_id)));
    if(row.product_id)card.append(button(context,'打开商品档案',()=>context.openHistoryProduct(row.project_id,row.product_id)));
    if(kind==='report')card.append(button(context,'查看研究报告',()=>context.navigate('reports')));
    for(const artifact of row.artifacts||[])card.append(el(context,'p','rw-muted','营销产物：'+artifact.module+' #'+artifact.history_id+' · '+(artifact.created_at||artifact.history_timestamp||artifact.timestamp||'旧记录未保存时间')));
-   body.append(card);
+   card.append(button(context,'查看活动详情',()=>preview(row,card,rowKind),'rw-history-select'));body.append(card);if(row===selectedRow||(!selectedRow&&index===0))preview(row,card,rowKind);
   }if(cursor)more.append(button(context,'加载更多',()=>load(true)));
  }catch(error){if(context.life.active&&generation===id)notify(context,error.message+'。已有历史保留。');}}
- for(const [value,label] of Object.entries(historyKinds))tabs.append(button(context,label,()=>{kind=value;context.state.historyKind=kind;return load();}));void load();return host;
+ const tabButtons=new Map(),updateTabs=()=>{for(const [value,node] of tabButtons)node.setAttribute('aria-pressed',String(value===kind));};for(const [value,label] of Object.entries(historyKinds)){const tab=button(context,label,()=>{kind=value;context.state.historyKind=kind;updateTabs();return load();});tabButtons.set(value,tab);tabs.append(tab);}updateTabs();void load();return host;
 }

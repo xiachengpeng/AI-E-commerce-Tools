@@ -1,5 +1,12 @@
 # 阶段二：性能优化与资源管理 (Phase 2: Performance, Reliability & Resource Management) Implementation Plan
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 针对审查报告中的 P2 级系统可靠性与资源管理问题，实现临时静态 Zip/切图文件的生命周期 TTL 自动清理轮转、多 URL 竞品分析并发信号量限流（防 429 穿透）、OpenAI 兼容协议单图生成表单字段规范化适配、以及前端竞品分析长请求的 AbortController 取消与中断机制。

@@ -18,7 +18,9 @@ from services.image_validation import ValidatedImage, validate_image_payload
 DATA_URL_PATTERN = re.compile(
     r"^data:(image/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/]*={0,2})$"
 )
-STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+from services.runtime_paths import static_root
+
+STATIC_DIR = str(static_root())
 SUPPORTED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
 SUPPORTED_GENERATION_ASPECT_RATIOS = (
     ("1:1", 1 / 1),

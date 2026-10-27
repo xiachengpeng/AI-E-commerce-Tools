@@ -7,6 +7,7 @@ import { render as exploration } from '../../js/research-workbench/pages/explora
 import { renderProduct } from '../../js/research-workbench/pages/product.mjs';
 const tick=()=>new Promise(r=>setTimeout(r,20));
 const find=(root,text)=>root.find(n=>n.tagName==='BUTTON'&&n.textContent===text);
+const approvePreview=page=>{const ack=page.find(n=>n.name==='sync_preview_ack');if(ack){ack.checked=true;ack.dispatchEvent(new Event('change'));}find(page,'确认同步此版本').click();};
 function fixture(handler=()=>({})){
  const root=fixtureRoot();root.innerHTML='<p data-rw-status></p>';const calls=[];
  const c={root,life:createLifecycle(),state:{project:{id:'p',version:7,market:'DE',title:'Research',keywords:[{id:'k',text:'travel',approved:true}],products:[{id:'x',name:'Source',source_keyword_ids:['k'],identification:{},triage:{state:'pending'}}]},actions:[],commands:{},product:'x',step:'channels'},api:{request:async(path,options={})=>{calls.push({path,...options});if(path==='/sources')return {sources:[]};if(path.endsWith('/events'))return {events:[]};if(path.includes('/actions?'))return {actions:[]};return handler(path,options);}},navigate:()=>{},showQueue:selection=>{c.state.queueSelection=selection;},selectProduct:()=>{},openForm:()=>{},command:()=>{}};
@@ -44,7 +45,7 @@ test('native Feishu status preview exact approval stale rejection and original b
  if(path.endsWith('/sync')&&options.method){const error=Error('preview stale');error.status=409;throw error;}return {};
  });
  try{const page=exploration(c);const entry=find(page,'飞书同步与状态');assert.ok(entry);entry.click();await tick();assert.equal(c.state.view,'sync');const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');const sync=renderSync(c);await tick();assert.equal(calls.filter(v=>v.method).length,0);assert.ok(sync.find(n=>n.textContent.includes('版本 5')));
- find(sync,'预览当前版本同步').click();await tick();assert.equal(previewCalls,1);assert.deepEqual(calls.find(v=>v.path.endsWith('/preview')).body,{version:7});find(sync,'确认同步此版本').click();await tick();assert.deepEqual(calls.find(v=>v.path.endsWith('/sync')&&v.method).body,{version:7,digest:'exact'});assert.equal(find(sync,'确认同步此版本'),null);assert.equal(c.state.syncUncertain['p:approve:7:exact'],undefined,'definitive409 rejection clears active intent');
+ find(sync,'预览当前版本同步').click();await tick();assert.equal(previewCalls,1);assert.deepEqual(calls.find(v=>v.path.endsWith('/preview')).body,{version:7});approvePreview(sync);await tick();assert.deepEqual(calls.find(v=>v.path.endsWith('/sync')&&v.method).body,{version:7,digest:'exact'});assert.equal(find(sync,'确认同步此版本'),null);assert.equal(c.state.syncUncertain['p:approve:7:exact'],undefined,'definitive409 rejection clears active intent');
  find(sync,'重新核对并重试').click();await tick();assert.ok(calls.find(v=>v.path==='/projects/p/sync/r/retry'));assert.equal(calls.filter(v=>v.path==='/projects/p/sync/u/retry').length,0);
  }finally{c.life.dispose();}
 });
@@ -60,9 +61,9 @@ test('native progress refresh consumes projections outside first twenty, preserv
 });
 test('native Feishu ambiguous approval submits once and missing credentials remain actionable',async()=>{
  let ambiguous=false;const {c,calls}=fixture((path,o)=>{if(path.endsWith('/sync')&&!o.method)return {runs:[]};if(path.endsWith('/preview'))return {version:7,digest:'same',records:1,tables:[]};ambiguous=true;throw Error('lost');});
- try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');let page=renderSync(c);await tick();find(page,'预览当前版本同步').click();await tick();find(page,'确认同步此版本').click();await tick();assert.equal(ambiguous,true);
- page=renderSync(c);find(page,'预览当前版本同步').click();await tick();find(page,'确认同步此版本').click();await tick();assert.equal(calls.filter(v=>v.path==='/projects/p/sync'&&v.method==='POST').length,1);
- c.api.request=async()=>{const e=Error('凭据未配置');e.status=503;throw e;};renderSync(c);await tick();assert.match(c.root.querySelector('[data-rw-status]').textContent,/研究与集成.*凭据/);
+ try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');let page=renderSync(c);await tick();find(page,'预览当前版本同步').click();await tick();approvePreview(page);await tick();assert.equal(ambiguous,true);
+ page=renderSync(c);find(page,'预览当前版本同步').click();await tick();approvePreview(page);await tick();assert.equal(calls.filter(v=>v.path==='/projects/p/sync'&&v.method==='POST').length,1);
+ c.api.request=async()=>{const e=Error('凭据未配置');e.status=503;throw e;};renderSync(c);await tick();assert.match(c.root.querySelector('[data-rw-status]').textContent,/设置.*外部服务.*飞书接口/);
  }finally{c.life.dispose();}
 });
 test('native verification unknown outcome never enables new verify or review replay',()=>{
@@ -77,8 +78,8 @@ test('native mismatch batch saves every eligible original product with progressi
 });
 test('native Feishu successful approval refreshes durable status and stale local preview never submits',async()=>{
  let runs=[];const {c,calls}=fixture((path,o)=>{if(path.endsWith('/sync')&&!o.method)return {runs};if(path.endsWith('/preview'))return {version:c.state.project.version,digest:'v'+c.state.project.version,records:2,tables:[{name:'Products',exists:false}]};runs=[{id:'approved',version:o.body.version,status:'ready',message:'queued'}];return runs[0];});
- try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');let page=renderSync(c);await tick();find(page,'预览当前版本同步').click();await tick();find(page,'确认同步此版本').click();await tick();assert.ok(page.find(n=>n.textContent==='版本 7 · ready'));assert.equal(c.state.syncUncertain['p:approve:7:v7'],undefined,'authoritative active success clears intent');assert.equal(calls.filter(v=>v.path.endsWith('/sync')&&v.method==='POST').length,1);
- page=renderSync(c);find(page,'预览当前版本同步').click();await tick();c.state.project.version=8;find(page,'确认同步此版本').click();await tick();assert.equal(calls.filter(v=>v.path.endsWith('/sync')&&v.method==='POST').length,1);assert.equal(find(page,'确认同步此版本'),null);
+ try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');let page=renderSync(c);await tick();find(page,'预览当前版本同步').click();await tick();approvePreview(page);await tick();assert.ok(page.find(n=>n.textContent==='版本 7 · ready'));assert.equal(c.state.syncUncertain['p:approve:7:v7'],undefined,'authoritative active success clears intent');assert.equal(calls.filter(v=>v.path.endsWith('/sync')&&v.method==='POST').length,1);
+ page=renderSync(c);find(page,'预览当前版本同步').click();await tick();c.state.project.version=8;approvePreview(page);await tick();assert.equal(calls.filter(v=>v.path.endsWith('/sync')&&v.method==='POST').length,1);assert.equal(find(page,'确认同步此版本'),null);
  }finally{c.life.dispose();}
 });
 test('native late sync preview and status after project switch cannot approve or overwrite current page',async()=>{
@@ -134,7 +135,7 @@ test('native in-flight Feishu approval and original retry retain uncertainty bef
    return {ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?structuredClone(project):url.endsWith('/sync/preview')?{version:7,digest:'exact',records:1,tables:[]}:url.endsWith('/sync')?{runs:operation==='retry'?[{id:'original-run',version:3,status:'blocked',error_code:'uncertain_create'}]:[]}:url.includes('/actions?')?{actions:[]}:{projects:[structuredClone(project)]}};
   };
   const open=async()=>{const page=root.querySelector('[data-rw-page]');find(page,'飞书同步与状态').click();await tick();return root.querySelector('[data-rw-page]');};
-  const submit=async page=>{if(operation==='approve'){find(page,'预览当前版本同步').click();await tick();find(page,'确认同步此版本').click();}else find(page,'重新核对并重试')?.click();await tick();};
+  const submit=async page=>{if(operation==='approve'){find(page,'预览当前版本同步').click();await tick();approvePreview(page);}else find(page,'重新核对并重试')?.click();await tick();};
   try{
    await wb.mount(root,{fetch});find(root.querySelector('[data-rw-projects]'),'Merchant').click();await tick();await submit(await open());assert.equal(posts.length,1,operation+' first explicit submit');
    wb.unmount();rejectPending(Error('late aborted reply'));await tick();await wb.mount(root,{fetch});
@@ -155,7 +156,7 @@ test('native Feishu generic503 after submission retains approval and original re
    if(o.method==='POST'&&url.endsWith(target)){posts.push(JSON.parse(o.body));return {ok:false,status:503,json:async()=>({detail:'操作未完成，请刷新确认状态后重试'})};}
    return {ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?structuredClone(project):url.endsWith('/sync/preview')?{version:7,digest:'exact',records:1,tables:[]}:url.endsWith('/sync')?{runs:operation==='retry'?[{id:'original-run',version:3,status:'blocked',error_code:'uncertain_create'}]:[]}:url.includes('/actions?')?{actions:[]}:{projects:[structuredClone(project)]}};
   };
-  const submit=async()=>{const page=root.querySelector('[data-rw-page]');if(operation==='approve'){find(page,'预览当前版本同步').click();await tick();find(page,'确认同步此版本').click();}else find(page,'重新核对并重试')?.click();await tick();};
+  const submit=async()=>{const page=root.querySelector('[data-rw-page]');if(operation==='approve'){find(page,'预览当前版本同步').click();await tick();approvePreview(page);}else find(page,'重新核对并重试')?.click();await tick();};
   const key='p:'+(operation==='approve'?'approve:7:exact':'retry:original-run');
   try{
    await wb.mount(root,{fetch});find(root.querySelector('[data-rw-projects]'),'Merchant').click();await tick();find(root.querySelector('[data-rw-page]'),'飞书同步与状态').click();await tick();await submit();
@@ -164,4 +165,64 @@ test('native Feishu generic503 after submission retains approval and original re
    wb.unmount();await wb.mount(root,{fetch});assert.equal(wb.state.syncUncertain[key],true);await submit();assert.equal(posts.length,1,'remount repeat after503 blocked');assert.deepEqual(posts[0],operation==='approve'?{version:7,digest:'exact'}:{});
   }finally{wb.unmount();}
  }
+});
+
+test('task list selection shows the selected saved task and only reads its logs',async()=>{
+ const {c,calls}=fixture();const original=c.api.request;const tasks=[{id:'a',kind:'scan',label:'任务A',status:'complete'},{id:'b',kind:'landing',label:'任务B',status:'blocked'}];
+ c.api.request=async(path,options={})=>path.includes('/actions?')?{actions:tasks}:path.includes('live-logs')?(calls.push({path,...options}),{logs:[],events:[]}):original(path,options);
+ try{const page=renderActions(c);await tick();const select=page.find(n=>n.className==='rw-task-select'&&n.find(child=>child.textContent==='任务B'));assert.ok(select);select.click();await tick();assert.equal(c.state.selectedResearchAction,'b');assert.equal(page.find(n=>n.dataset.rwAction==='a').hidden,true);assert.equal(page.find(n=>n.dataset.rwAction==='b').hidden,false);assert.equal(calls.some(call=>call.method==='POST'),false);}finally{c.life.dispose();}
+});
+
+test('sync approval stays in the control column and repeated previews never duplicate or submit it',async()=>{
+ const {c,calls}=fixture((path,o)=>path.endsWith('/preview')?{version:7,digest:'current',records:2,tables:[]}:{runs:[]});
+ try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');const page=renderSync(c);await tick();
+ for(let n=0;n<2;n++){find(page,'预览当前版本同步').click();await tick();}
+ const confirm=find(page,'确认同步此版本');assert.ok(confirm);assert.equal(confirm.parentElement.className.includes('rw-sync-controls'),true);
+ const count=root=>root.children.reduce((sum,n)=>sum+(n.tagName==='BUTTON'&&n.textContent==='确认同步此版本'?1:0)+count(n),0);
+ assert.equal(count(page),1);assert.equal(calls.filter(v=>v.path.endsWith('/sync')&&v.method==='POST').length,0);
+ }finally{c.life.dispose();}
+});
+
+test('design triage embeds the original reason form and changing disposition never submits',async()=>{
+ const {c,calls}=fixture();c.context={};c.state.drafts={};c.designDirectForms=true;c.state.project.queues={triage:[{product_id:'x',name:'Source'}]};
+ try{const {renderTriage}=await import('../../js/research-workbench/pages/triage.mjs');const page=renderTriage(c),inline=page.find(n=>n.className==='rw-inline-triage-form');assert.ok(inline);assert.ok(inline.find(n=>n.tagName==='FORM'));
+ const observe=page.find(n=>n.tagName==='INPUT'&&n.value==='observing');assert.ok(observe);observe.checked=true;observe.dispatchEvent(new Event('change'));
+ assert.ok(inline.find(n=>n.tagName==='H1'&&n.textContent==='暂时观察这条线索'));assert.equal(calls.filter(v=>v.method==='POST').length,0);assert.ok(inline.find(n=>n.name==='reason_choice'));assert.ok(inline.find(n=>n.name==='reason'));
+ c.state.drafts['rabbit-hole:draft:[\"p\",\"x\",\"triage_product\"]'].uncertain=true;const retain=page.find(n=>n.tagName==='INPUT'&&n.value==='retained');retain.checked=true;retain.dispatchEvent(new Event('change'));assert.equal(retain.checked,false);assert.equal(observe.checked,true);assert.ok(inline.find(n=>n.tagName==='H1'&&n.textContent==='暂时观察这条线索'));
+ }finally{c.life.dispose();}
+});
+
+test('triage inline layout keeps ambiguous legacy receipts on the original explicit recovery path',async()=>{
+ const {c,calls}=fixture();c.context={};c.designDirectForms=true;c.state.drafts={'rabbit-hole:draft:["p","x","triage_product"]':{uncertain:true,values:{reason_choice:'证据不足，稍后再看'}}};
+ try{const {renderTriage}=await import('../../js/research-workbench/pages/triage.mjs');const page=renderTriage(c);assert.equal(page.find(n=>n.className==='rw-inline-triage-form'),null);assert.ok(find(page,'暂时观察'));assert.equal(calls.filter(v=>v.method==='POST').length,0);}finally{c.life.dispose();}
+});
+
+test('inline triage submits the original observing command and advances only after success',async()=>{
+ const {c,calls}=fixture((path,o)=>o.method==='POST'?{id:'p',version:8,products:[{id:'x',name:'Source'}],keywords:[],queues:{triage:[]}}:{});c.context={};c.state.drafts={};c.designDirectForms=true;
+ try{const {renderTriage}=await import('../../js/research-workbench/pages/triage.mjs');const page=renderTriage(c),observe=page.find(n=>n.tagName==='INPUT'&&n.value==='observing');observe.checked=true;observe.dispatchEvent(new Event('change'));const form=page.find(n=>n.tagName==='FORM');form.find(n=>n.name==='reason_choice').value='证据不足，稍后再看';form.find(n=>n.name==='reason').value='核对来源后继续';form.dispatchEvent(new Event('submit',{cancelable:true}));await tick();const posts=calls.filter(v=>v.method==='POST');assert.equal(posts.length,1);assert.equal(posts[0].body.action,'triage_product');assert.deepEqual(posts[0].body.payload,{product_id:'x',disposition:'observing',reason:'证据不足，稍后再看：核对来源后继续'});assert.equal(c.state.project.version,8);assert.equal(c.state.product,null);assert.equal(c.state.triageSession.processed,1);
+ }finally{c.life.dispose();}
+});
+
+test('task filters expose running and attention tasks without starting or retrying work',async()=>{
+ const {c,calls}=fixture(),tasks=[{id:'done',kind:'scan',label:'已完成任务',status:'complete'},{id:'blocked',kind:'trends',label:'待处理任务',status:'blocked'},{id:'running',kind:'landing',label:'执行中任务',status:'running',attempt:1}];
+ c.api.request=async(path,o={})=>{calls.push({path,...o});return path.includes('/actions?')?{actions:tasks}:path==='/sources'?{sources:[]}:{events:[]};};
+ try{const page=renderActions(c);await tick();const attention=find(page,'需处理（1）');assert.ok(attention);attention.click();await tick();assert.equal(c.state.researchTaskFilter,'attention');assert.equal(page.find(n=>n.dataset.rwAction==='blocked').hidden,false);assert.equal(page.find(n=>n.dataset.rwAction==='done').hidden,true);find(page,'进行中（1）').click();await tick();assert.equal(page.find(n=>n.dataset.rwAction==='running').hidden,false);assert.equal(calls.some(v=>v.method==='POST'),false);}finally{c.life.dispose();}
+});
+
+test('design sync requires explicit preview acknowledgement and resets it for each new version preview',async()=>{
+ const {c,calls}=fixture((path,o)=>path.endsWith('/preview')?{version:7,digest:'current',records:2,tables:[]}:{runs:[]});c.designDirectForms=true;
+ try{const {renderSync}=await import('../../js/research-workbench/pages/sync.mjs');const page=renderSync(c);await tick();find(page,'预览当前版本同步').click();await tick();let confirm=find(page,'确认同步此版本'),ack=page.find(n=>n.name==='sync_preview_ack');assert.ok(ack);assert.equal(confirm.disabled,true);ack.checked=true;ack.dispatchEvent(new Event('change'));assert.equal(confirm.disabled,false);find(page,'预览当前版本同步').click();await tick();confirm=find(page,'确认同步此版本');ack=page.find(n=>n.name==='sync_preview_ack');assert.equal(ack.checked,false);assert.equal(confirm.disabled,true);assert.equal(calls.filter(v=>v.path.endsWith('/sync')&&v.method==='POST').length,0);ack.checked=true;ack.dispatchEvent(new Event('change'));confirm.click();await tick();assert.deepEqual(calls.find(v=>v.path.endsWith('/sync')&&v.method==='POST').body,{version:7,digest:'current'});
+ }finally{c.life.dispose();}
+});
+test('background completion updates live status while keeping the exact dirty form mounted',async()=>{
+ const {createSnapshotRefresher}=await import('../../js/research-workbench/services/snapshot.mjs');const {c}=fixture();
+ try{
+  c.editing=true;c.state.lastResearchAction={id:'landing-live',projectId:'p'};
+  const form=c.root.ownerDocument.createElement('form'),input=c.root.ownerDocument.createElement('input');input.value='Unsaved evidence';form.append(input);c.root.append(form);let draw=0;c.redraw=()=>draw++;
+  c.api.request=async path=>path.includes('/actions?')?{actions:[{id:'landing-live',kind:'landing',status:'complete',result:{}}]}:{...c.state.project,version:8};
+  await createSnapshotRefresher(c)();
+  assert.match(c.root.querySelector('[data-rw-status]').textContent,/已完成/);
+  assert.equal(c.root.querySelector('form'),form);assert.equal(input.value,'Unsaved evidence');assert.equal(draw,0);
+  c.life.dispose();c.root.querySelector('[data-rw-status]').textContent='Navigated';await createSnapshotRefresher(c)();assert.equal(c.root.querySelector('[data-rw-status]').textContent,'Navigated');
+ }finally{c.life.dispose();}
 });

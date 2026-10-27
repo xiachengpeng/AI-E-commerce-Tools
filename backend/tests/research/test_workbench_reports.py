@@ -4,6 +4,27 @@ from rabbit_hole.application.reports import research_report
 from rabbit_hole.domain.project import apply_command, new_project, project_view
 
 
+def test_report_distinguishes_triage_counts_from_final_observation_decision():
+    project = new_project("观察口径", "tool")
+    apply_command(project, "add_product", {"name": "Tool", "url": "https://shop.example/products/tool"})
+    item = project["products"][0]
+    item["triage"] = {"state": "retained", "reason": "先研究"}
+    item["decision"] = {"pool": "observe", "reason": "缺真实报价"}
+    report = research_report(project_view(project))
+    assert "初筛队列" in report
+    assert "人工决定统计：观察 1" in report
+    assert "不是同一统计口径" in report
+
+
+def test_report_explains_unscored_result_with_business_evidence_labels():
+    project = new_project("缺项中文", "tool")
+    apply_command(project, "add_product", {"name": "Tool", "url": "https://shop.example/products/tool"})
+    view = project_view(project)
+    view["products"][0]["scores"] = [{"total": None, "status": "incomplete", "missing": ["coarse_screen", "economics"], "recommendation": "missing coarse_screen, economics"}]
+    report = research_report(view)
+    assert "待补充：广告粗筛、经济模型与风险" in report
+
+
 def test_report_keeps_optional_research_separate_from_profit_or_continuity():
     now = datetime(2026, 9, 30, tzinfo=UTC)
     project = new_project("辅助研究", "travel cubes", now=now)

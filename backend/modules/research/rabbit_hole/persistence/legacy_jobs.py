@@ -78,10 +78,12 @@ class JobRepository:
         clock: Clock | None = None,
         *,
         admission: AdmissionLimits | None = None,
+        lease_scope: Any = None,
     ) -> None:
         self._database = database
         self._clock = clock or SystemClock()
         self.admission = admission or AdmissionLimits()
+        self.lease_scope = lease_scope
 
     async def enqueue(self, payload: JobPayload) -> Job:
         """Admit work while preserving the original Job-returning API."""
@@ -271,6 +273,16 @@ class JobRepository:
                 runtime_jobs.c.lease_until <= now,
             ),
         )
+        if self.lease_scope is not None:
+            scopes = self.lease_scope()
+            if not scopes:
+                return None
+            eligible = and_(eligible, or_(*(and_(
+                runtime_jobs.c.payload['record_id'].as_string() == record_id,
+                runtime_jobs.c.payload['input_version'].as_string() == version,
+                runtime_jobs.c.payload['protected_input_hash'].as_string() == fingerprint,
+                runtime_jobs.c.kind == kind,
+            ) for record_id, version, fingerprint, kind in scopes)))
         async with self._transaction() as connection:
             candidate: Select[tuple[Any]] = (
                 select(runtime_jobs.c.id)

@@ -41,6 +41,13 @@ import { fixtureRoot } from './dom-fixture.mjs';
 import { renderActions } from '../../js/research-workbench/pages/actions.mjs';
 import { ownedMedia, usableAdCopy } from '../../js/research-workbench/components/ad-copy.mjs';
 import { createActionLogs } from '../../js/research-workbench/components/live-logs.mjs';
+test('queue refresh renders newly collected ads without leaving the page',async()=>{
+ const c=context({request:async path=>path==='/sources'?{sources:[]}:{actions:[],next_cursor:null}});
+ c.root=fixtureRoot();c.context={};c.state.project.keywords=[];
+ c.refreshProject=async()=>{c.state.project={...c.state.project,keywords:[{id:'w',text:'tool',ads:[{id:'a',advertiser:'Fresh advertiser',primary_text:'Newly collected product evidence.'}]}]};};
+ try{const page=renderActions(c);await new Promise(r=>setImmediate(r));assert.ok(page.find(n=>n.textContent==='Fresh advertiser'));}
+ finally{c.life.dispose();}
+});
 test('queue entry performs read-only queries, cloud/unknown UI stays truthful and success has no retry',async()=>{
  const calls=[],c=context({request:async(path,options)=>{calls.push([path,options]);return path==='/sources'?{sources:[{name:'Meta',status:'unconfigured',integration_message:'未配置'}]}:{actions:[{id:'c',status:'complete',attempt:1},{id:'u',status:'unknown',attempt:1},{id:'r',status:'running',display_status:'cloud_running',attempt:2}],next_cursor:null};}});
  c.root=fixtureRoot();c.navigate=()=>{};c.state.queueSelection={kind:'scan',keyword_id:'k'};const host=renderActions(c);await new Promise(r=>setImmediate(r));
@@ -101,4 +108,34 @@ test('Trends queue retry exposes explicit labeled query input and blank click se
  try{const host=renderActions(c);await new Promise(r=>setImmediate(r));const input=host.find(n=>n.name==='trends_query');assert.ok(input);assert.equal(input.attributes['aria-label'],'当地常用产品搜索词');
  const retry=host.find(n=>n.textContent==='显式重试失败任务');retry.click();await new Promise(r=>setImmediate(r));assert.equal(calls.filter(([,o])=>o?.method==='POST').length,0);
  input.value='explicit search';input.dispatchEvent(new Event('input'));retry.click();await new Promise(r=>setTimeout(r,20));assert.equal(calls.find(([,o])=>o?.method==='POST')[1].body.query,'explicit search');}finally{c.life.dispose();}
+});
+
+test('task log button opens a visible focused panel before the long record list',async t=>{
+ const c=context({request:async path=>path.includes('live-logs')?{logs:[{id:1,action_id:'a',message:'Persisted execution'}]}:path==='/sources'?{sources:[]}:{actions:[{id:'a',status:'complete'}]},stream:async()=>new ReadableStream()});c.root=fixtureRoot();c.navigate=()=>{};c.state.actions=[{id:'a',status:'complete'}];t.after(()=>c.life.dispose());
+ const host=renderActions(c);await new Promise(r=>setImmediate(r));const logs=host.find(n=>n.dataset.actionLogPanel==='true');assert.ok(logs);assert.equal(logs.hidden,true);let scrolled=0;logs.scrollIntoView=()=>scrolled++;
+ host.find(n=>n.tagName==='BUTTON'&&n.textContent==='查看任务日志').click();await new Promise(r=>setImmediate(r));assert.equal(logs.hidden,false);assert.equal(c.root.ownerDocument.activeElement,logs);assert.equal(scrolled,1);assert.ok(logs.find(n=>n.tagName==='PRE'&&n.textContent.includes('Persisted execution')));
+ const records=host.children.find(n=>n.find?.(child=>child.dataset.rwAction==='a'));assert.ok(host.children.indexOf(logs)<host.children.indexOf(records));c.life.dispose();
+});
+
+test('selected saved source previews reuse a bounded adjacent product prefetch',async()=>{
+ const {sourcePreview}=await import('../../js/research-workbench/components/ad-copy.mjs');const calls=[],c=context({blob:async path=>{calls.push(path);return new Blob(['saved'],{type:'image/png'});}});c.root=fixtureRoot();c.context={objectURLs:{createObjectURL:()=> 'blob:preview',revokeObjectURL(){}}};
+ const host=sourcePreview(c,{id:'k'},{id:'x',landing_snapshot:{images:['https://example.com/0','https://example.com/1']}},[]);await new Promise(r=>setImmediate(r));assert.equal(calls.length,2);assert.match(calls[0],/index=0$/);assert.match(calls[1],/index=1$/);assert.ok(host.find(n=>n.tagName==='IMG'));
+ host.find(n=>n.attributes['aria-label']==='查看素材 2').click();await new Promise(r=>setImmediate(r));assert.equal(calls.length,2);assert.match(calls[1],/index=1$/);assert.ok(host.find(n=>n.tagName==='IMG'));c.life.dispose();
+});
+
+test('automatic media failure offers explicit retry without background duplicate requests',async()=>{
+ const {mediaControl}=await import('../../js/research-workbench/components/ad-copy.mjs');let attempts=0;const c=context({blob:async()=>{attempts++;if(attempts===1)throw Error('Source HTTP 403');return new Blob(['saved'],{type:'image/png'});}});c.root=fixtureRoot();c.context={objectURLs:{createObjectURL:()=> 'blob:retry',revokeObjectURL(){}}};
+ const host=mediaControl(c,'/projects/p/media-download?index=0','Read saved',{autoLoad:true});await new Promise(r=>setImmediate(r));assert.equal(attempts,1);assert.ok(host.find(n=>n.textContent.includes('403')));
+ const retry=host.find(n=>n.tagName==='BUTTON');assert.equal(retry.hidden,false);retry.click();await new Promise(r=>setImmediate(r));assert.equal(attempts,2);assert.ok(host.find(n=>n.tagName==='IMG'));c.life.dispose();
+});
+
+test('task progress separates persisted collection from human verification and never marks a blocked result saved',async()=>{
+ const {actionProgress}=await import('../../js/research-workbench/services/actions.mjs');
+ assert.deepEqual(actionProgress({id:'task',status:'complete'}).map(s=>s.state),['done','done','done','pending']);
+ assert.deepEqual(actionProgress({id:'task',status:'blocked'}).map(s=>s.state),['done','blocked','pending','pending']);
+});
+
+test('design log table preserves recorded details and filters other tasks without inventing status',async()=>{
+ const c=context({request:async()=>({logs:[{id:1,action_id:'a',stage:'source_open',created_at:'2026-10-20T10:00:00Z',message:'已打开来源'},{id:2,action_id:'b',stage:'complete',message:'其他任务'}]}),stream:async()=>{throw Error('no stream');}});c.root=fixtureRoot();c.designDirectForms=true;const logs=createActionLogs(c);
+ try{await logs.openActionLogs('a');const table=logs.host.find(n=>n.className==='rw-action-log-table');assert.ok(table);assert.ok(table.find(n=>n.textContent==='已打开来源'));assert.equal(table.find(n=>n.textContent==='其他任务'),null);assert.equal(table.find(n=>n.textContent==='已完成'),null);assert.ok(logs.host.find(n=>n.tagName==='PRE').textContent.includes('source_open'));}finally{c.life.dispose();}
 });

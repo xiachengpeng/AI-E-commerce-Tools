@@ -1,32 +1,34 @@
-# Inactive research source
+# Integrated research source and provenance
+
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 现行入口或维护说明**
+> 使用说明按当前代码同步；测试结果引用对应日期验收，本次文档整理没有运行收费链路或重新验收所有功能。
+> 当前入口与验证范围：[项目当前状态](<../../../docs/项目当前状态.md>)；[2026-10-26流程修复与边界](<../../../docs/ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+Updated: 2026-10-26. This module is part of the main application; the old “Inactive research source” description no longer describes runtime integration.
 
 Copied from approved research commit `b749491c29fce8ac5bdad613f1ef569cb6df186b`.
 Source archive SHA256: `45f2311698da4d9fa6a2c0f59829bb362a4ca3ea2d448204396f6fc1cef269eb`.
 
-`rabbit_hole/` retains all 79 Python files and its seed JSON byte for byte.
-`backend/tests/research/` retains all 116 original test/fixture files; four Trends
-JSON fixtures have trailing blank lines normalized, with identical JSON data.
-`compat/` retains Alembic, the compatibility CLI, reviewed automation data,
-source frontend and icon attribution, container metadata used as test fixtures,
-and the operations runbook read by source tests. The approved snapshot has no
-project-root LICENSE; `compat/frontend/ui-icons/LICENSE` is preserved verbatim.
-The document screenshot and unrelated operational reports are not fixtures and
-are omitted. This package is not mounted or enabled in the main application.
+The commit/archive identifiers above describe the imported source, not a hash of the current working tree. The integrated `rabbit_hole/` implementation has subsequent adapter and business fixes; do not claim it remains byte-for-byte identical to the source archive. The current module is used through the main research facade/routes and shared lifecycle, subject to explicit local activation/configuration.
 
-Install the unified environment from `backend/requirements-full-merge.lock`.
-The lock preserves the existing main runtime and pytest/pytest-asyncio versions;
-the old optional test bounds in the original compatibility `pyproject.toml`
-remain historical metadata and are not the installation entry point.
+`compat/` preserves original CLI, automation, operations documentation, frontend/icon attribution and build/test material for compatibility verification. Its old standalone startup/deployment instructions are historical and are not the main application entry point. Do not update copied compatibility fixtures or license attribution merely to synchronize product docs.
 
-Use `scripts/full_merge/run_tests.py --suite main|research|all --output <private-temp>`
-with the worktree Python. Install pinned compat frontend packages first, and set
-`PLAYWRIGHT_BROWSERS_PATH` to the worktree-only Chromium cache. Research frontend
-assets are rebuilt from audited source into each temporary sandbox. Main and
-research collectors, homes, SQLite databases and environment variables remain
-separate. Real provider keys, live databases, .env variants and production static
-assets are excluded. Network calls use fixtures or loopback servers; arbitrary
-shell, SSH, paid SDK and upload/publish subprocesses are not enabled.
+Main runtime: `run.py`, FastAPI on9503, `frontend_server.py` on9502, canonical SQLite and private research evidence root. Native UI lives in `frontend/js/research-workbench/`. No remote source checkout, SSH tunnel or old frontend is required for normal local operation. See [current project state](../../../docs/项目当前状态.md).
 
-The ten original frontend assertions are retained and mapped to Tasks 12–15 in
-`docs/merge-assessment/full-merge-coverage.json`; retention does not claim native
-UI behavior parity or external-service acceptance.
+## Dependencies and isolated verification
+
+`backend/requirements.txt` uses constraints from `requirements-full-merge.lock`; use the existing unified environment. The compatibility `pyproject.toml` is historical metadata, not a replacement main install entry point.
+
+For the complete isolated suite, use the existing Python environment to run `scripts/full_merge/run_tests.py --suite main|research|all --output <private-temp>`. Read the runner's dependency/browser prerequisites first; it copies source into isolated sandboxes and requires existing compatible frontend packages and browser tooling. Do not use live SQLite, actual provider credentials or external writes for verification. Test caches/dependencies are not part of this documentation update.
+
+Original frontend assertions are mapped in `docs/merge-assessment/full-merge-coverage.json`. Inventory preservation and local fixture tests do not establish real provider, collection or sync success. Source/licensing attribution in `compat/frontend/ui-icons/` remains intact.
+
+## 2026-10-26 integrated workflow changes
+
+The native UI now exposes triage/recovery, explicit completed-keyword rescans, and funnel/score tasks within their business stages. `application/actions.py` validates `rescan_of` against the same project and keyword, deduplicates a successor per completed task, and requires the matching `retry_action_id` for explicit blocked recovery. Do not replay unknown outcomes or change accounts automatically. No schema migration or historical evidence threshold change was made.
+
+Latest scoped verification: 898 frontend, 1326 isolated main-backend, 43 focused research and 15 desktop tests passed; focused suites are not additive global totals. The aggregate runner's all-files frontend `--test-isolation=none` invocation has a documented global-state collision; the documented normal frontend command and per-file guarded runs passed. Do not claim the aggregate command succeeded end-to-end. See [repair acceptance and limitations](../../../docs/ux-audit/2026-10-26-sop-flow-repair/验收记录.md).
+
+Ad age plus a recent active observation does not establish uninterrupted delivery for 30 days. This integration still requires historical source evidence to prove continuity; absent evidence remains unknown. No paid end-to-end collection or Feishu write was rerun during this repair acceptance or documentation synchronization.

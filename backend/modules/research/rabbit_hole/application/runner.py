@@ -45,6 +45,8 @@ class WorkbenchRunner:
         self.provider_budget_limits = provider_budget_limits
         self.allow_external = allow_external
         self.ai_adapter = ai_adapter
+        self.submission_budget = getattr(ai_adapter, 'submission_budget', None)
+        self.submission_budget_guard = getattr(ai_adapter, 'submission_budget_guard', None)
 
     def provider_key(self, provider: str) -> str:
         if self.provider_secrets is not None:
@@ -350,6 +352,9 @@ class WorkbenchRunner:
                         actor="automation",
                         _connection=c,
                     )
+                    if command == "collection_result":
+                        from rabbit_hole.application.collection_pages import schedule_collection_pages
+                        await schedule_collection_pages(c, saved, action, payload)
                     return saved
                 except Exception as exc:
                     if getattr(exc, "status", None) != 409:
@@ -427,6 +432,8 @@ class WorkbenchRunner:
                     raise ProviderError("not_configured", "Firecrawl 密钥未配置，请到数据源与配置设置")
                 await guard.pinned_address(product["url"])
                 await reserve(self, action, "firecrawl", f"firecrawl:{action['attempt']}")
+                from rabbit_hole.integrations.provider_budget import reserve_submission
+                reserve_submission(self, action, 'firecrawl', 'firecrawl')
                 await checkpoint(self, action, firecrawl_submitted=True)
                 await self.log(action, "firecrawl_read", "Firecrawl：已准备接口请求，等待读取商品页；云端请求可能计费")
                 async with httpx.AsyncClient(timeout=75, follow_redirects=False) as client:

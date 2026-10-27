@@ -764,7 +764,7 @@ function resolveSecretMeta(input) {
         return providerId ? { category: "usage_query", field: "balance_custom_key", id: providerId } : null;
     }
     if (id === "settingsFirecrawlApiKey") {
-        return { category: "crawler", field: "api_key", id: null };
+        return input.dataset?.crawlerProfileId ? {category:"crawler",field:"api_key",profile_id:input.dataset.crawlerProfileId,expected_version:Number(input.dataset.crawlerProfileVersion)} : (typeof crawlerSelected === "function" && crawlerSelected()?.profile_id === null ? null : { category: "crawler", field: "api_key", id: null });
     }
     if (id === "settingsWpAppPassword") {
         const cfgId = (typeof settingsState !== "undefined" && settingsState.activeWpConfigId) ||
@@ -810,71 +810,46 @@ function resolveSecretMeta(input) {
  * @param {string|HTMLInputElement} inputIdOrEl - 输入框 ID 或 DOM 元素
  * @param {HTMLElement} [toggleBtn] - 触发切换的按钮 DOM 元素
  */
+const revealedCredentialValues = new WeakMap();
+function isUnchangedRevealedCredential(input) { return Boolean(input && revealedCredentialValues.has(input) && input.value === revealedCredentialValues.get(input)); }
+function clearRevealedCredential(input) { if(input){ if(isUnchangedRevealedCredential(input))input.value='';revealedCredentialValues.delete(input); } }
 async function togglePasswordVisibility(inputIdOrEl, toggleBtn) {
     const input = typeof inputIdOrEl === "string" ? (typeof document !== "undefined" ? document.getElementById(inputIdOrEl) : null) : inputIdOrEl;
-    if (!input) return;
-
+    if (!input || toggleBtn?.disabled) return;
     const isPassword = input.type === "password";
-
-    // 尝试拉取真实密钥：仅当当前是 password 状态（将切为 text）且当前输入框为空（显示已保存 placeholder）
+    const icon = typeof toggleBtn?.querySelector === "function" ? (toggleBtn.querySelector("i") || toggleBtn) : toggleBtn;
     if (isPassword && !input.value) {
-        if (input.dataset && input.dataset.cachedSecret) {
-            input.value = input.dataset.cachedSecret;
-            input.dataset.isOriginalRevealed = "true";
-        } else {
-            const meta = resolveSecretMeta(input);
-            if (meta) {
-                const icon = typeof toggleBtn?.querySelector === "function" ? (toggleBtn.querySelector("i") || toggleBtn) : toggleBtn;
-                if (icon) icon.className = "ph ph-spinner animate-spin";
-                if (toggleBtn) toggleBtn.disabled = true;
-
-                try {
-                    const apiBase = (typeof API_BASE !== "undefined" && API_BASE) ? API_BASE : "http://127.0.0.1:9503";
-                    const fetchFn = typeof fetch === "function" ? fetch : (typeof globalThis !== "undefined" ? globalThis.fetch : null);
-                    if (fetchFn) {
-                        const res = await fetchFn(`${apiBase}/api/settings/secrets/reveal`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(meta),
-                        });
-                        if (res && res.ok) {
-                            const data = await res.json();
-                            if (data && data.status === "success" && data.secret) {
-                                input.value = data.secret;
-                                if (input.dataset) {
-                                    input.dataset.cachedSecret = data.secret;
-                                    input.dataset.isOriginalRevealed = "true";
-                                }
-                            }
-                        }
-                    }
-                } catch (err) {
-                    console.warn("Failed to reveal secret:", err);
-                } finally {
-                    if (toggleBtn) toggleBtn.disabled = false;
-                }
-            }
+        const meta = resolveSecretMeta(input);
+        if (meta) {
+            if (toggleBtn) toggleBtn.disabled = true;
+            try {
+                const apiBase = (typeof API_BASE !== "undefined" && API_BASE) ? API_BASE : "http://127.0.0.1:9503";
+                const session = await fetch(`${apiBase}/api/research/v1/session`, {cache:'no-store',redirect:'error'});
+                const token = session.ok ? (await session.json()).csrf_token : null;
+                if (typeof token !== 'string' || !token) throw Error();
+                const res = await fetch(`${apiBase}/api/settings/secrets/reveal`, {
+                    method:'POST',cache:'no-store',redirect:'error',headers:{'Content-Type':'application/json','X-Research-Token':token},body:JSON.stringify(meta)
+                });
+                if (!res.ok) throw Error();
+                const data = await res.json();
+                // Changing account/editor while awaiting the read invalidates it.
+                if (input.isConnected === false || JSON.stringify(resolveSecretMeta(input)) !== JSON.stringify(meta) || input.value) return;
+                if (data.status !== 'success' || typeof data.secret !== 'string' || !data.secret) throw Error();
+                input.value=data.secret;revealedCredentialValues.set(input,data.secret);
+            } catch (_) {
+                if (typeof showToast === 'function') showToast('完整密钥暂不可读，请重新打开配置后重试','error');
+                return;
+            } finally { if(toggleBtn)toggleBtn.disabled=false; }
         }
     } else if (!isPassword) {
-        // 当前是 text，切回 password
-        // 若当前内容正是未修改过的拉取密钥，切回留空占位态保持干净
-        if (input.dataset && input.dataset.isOriginalRevealed === "true" && input.value === input.dataset.cachedSecret) {
-            input.value = "";
-        }
+        if (input.value === revealedCredentialValues.get(input)) input.value='';
+        revealedCredentialValues.delete(input);
+        if(input.dataset){delete input.dataset.cachedSecret;delete input.dataset.isOriginalRevealed;}
     }
-
-    input.type = isPassword ? "text" : "password";
-
-    if (toggleBtn) {
-        const icon = typeof toggleBtn.querySelector === "function" ? (toggleBtn.querySelector("i") || toggleBtn) : toggleBtn;
-        if (icon) {
-            icon.className = isPassword ? "ph ph-eye-slash" : "ph ph-eye";
-        }
-        if (typeof toggleBtn.setAttribute === "function") {
-            toggleBtn.setAttribute("title", isPassword ? "隐藏明文密钥" : "显示明文密钥");
-            toggleBtn.setAttribute("aria-label", isPassword ? "隐藏明文密钥" : "显示明文密钥");
-        }
-    }
+    input.type=isPassword?'text':'password';
+    if(icon)icon.className=isPassword?'ph ph-eye-slash':'ph ph-eye';
+    toggleBtn?.setAttribute?.('title',isPassword?'隐藏明文密钥':'显示明文密钥');
+    toggleBtn?.setAttribute?.('aria-label',isPassword?'隐藏明文密钥':'显示明文密钥');
 }
 
 if (typeof globalThis !== 'undefined') {

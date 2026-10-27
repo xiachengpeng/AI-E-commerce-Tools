@@ -1,0 +1,122 @@
+[
+  {
+    "clipped": [],
+    "design": "1",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "empty",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "1",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "prepare",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "1",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "running",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "1",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "mixed",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "1",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "complete",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "2",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "empty",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "2",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "prepare",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "2",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "running",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "2",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "mixed",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "2",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "complete",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "3",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "empty",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "3",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "prepare",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "3",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "running",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "3",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "mixed",
+    "width": 1024
+  },
+  {
+    "clipped": [],
+    "design": "3",
+    "documentOverflow": false,
+    "font": "20px",
+    "state": "complete",
+    "width": 1024
+  }
+]

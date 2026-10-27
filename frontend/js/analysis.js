@@ -1477,25 +1477,11 @@
     }
 
     function xp_openCrawlerSettings() {
-        if (typeof switchMainTab === 'function') {
-            switchMainTab('settings');
+        if (typeof openCrawlerSettingsDialog === 'function') {
+            return openCrawlerSettingsDialog();
         }
-        setTimeout(() => {
-            if (typeof document === 'undefined') return;
-            const card = document.getElementById('settingsCrawlerCard');
-            if (card) {
-                if (typeof card.scrollIntoView === 'function') {
-                    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-                card.classList.remove('settings-highlight-pulse');
-                void card.offsetWidth; // force reflow
-                card.classList.add('settings-highlight-pulse');
-            }
-            const keyInput = document.getElementById('settingsFirecrawlApiKey');
-            if (keyInput && typeof keyInput.focus === 'function') {
-                keyInput.focus();
-            }
-        }, 150);
+        if (typeof showToast === 'function') showToast('爬虫设置暂时无法打开，请刷新后重试。', 'error');
+        return false;
     }
 
     if (typeof window !== 'undefined') {

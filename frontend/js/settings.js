@@ -1213,15 +1213,65 @@ function providerImageModeBadgeMarkup(provider) {
     `;
 }
 
+let researchSettingsPanel = null;
+let researchSettingsGeneration = 0;
+
+async function mountSettingsIntegrations() {
+    const host=settingsElement("settingsResearchIntegrations");
+    if(!host)return;
+    const generation=++researchSettingsGeneration;
+    try {
+        const module=await import('./settings_research.mjs');
+        if(generation!==researchSettingsGeneration)return;
+        researchSettingsPanel ||= module.createSettingsIntegrations();
+        await researchSettingsPanel.mount(host,{
+            apiBase: typeof API_BASE === 'string' ? API_BASE : 'http://127.0.0.1:9503',
+            firecrawlHost:settingsElement("settingsResearchFirecrawl"),
+            openMainSettings:tab=>switchSettingsTab(tab)
+        });
+    }catch{if(generation===researchSettingsGeneration)host.textContent='接口配置暂时无法读取，请重新进入外部服务。';}
+}
+function unmountSettingsIntegrations() {
+    researchSettingsGeneration++;
+    researchSettingsPanel?.unmount();
+    unmountSettingsWorkerStatus();
+}
+function reloadSettingsIntegrations() {
+    unmountSettingsIntegrations();
+    return mountSettingsIntegrations();
+}
+let researchWorkerPanel = null;
+let researchWorkerGeneration = 0;
+async function mountSettingsWorkerStatus() {
+    const host=settingsElement('settingsResearchWorkerStatus');if(!host)return;
+    const generation=++researchWorkerGeneration;
+    const module=await import('./settings_research.mjs');
+    if(generation!==researchWorkerGeneration)return;
+    researchWorkerPanel ||= module.createSettingsWorkerStatus();
+    await researchWorkerPanel.mount(host,{apiBase:typeof API_BASE==='string'?API_BASE:'http://127.0.0.1:9503'});
+}
+function unmountSettingsWorkerStatus(){researchWorkerGeneration++;researchWorkerPanel?.unmount();}
+function switchSettingsFirecrawlPurpose(purpose) {
+    const research=purpose==='research';
+    const competitor=settingsElement("settingsCrawlerCompetitorBody"),panel=settingsElement("settingsResearchFirecrawl"),badge=settingsElement("settingsCrawlerStatusBadge");
+    if(competitor)competitor.hidden=research;
+    if(panel)panel.hidden=!research;
+    if(badge)badge.hidden=research;
+}
+
 function switchSettingsTab(tabKey) {
-    const validTabs = ["ai", "integrations", "logs"];
+    const validTabs = ["ai", "integrations", "storage", "logs", "appearance"];
     const activeTab = validTabs.includes(tabKey) ? tabKey : "ai";
     settingsState.activeTab = activeTab;
+    if(activeTab==='integrations')void mountSettingsIntegrations();else unmountSettingsIntegrations();
+    if(activeTab==='logs')void mountSettingsWorkerStatus();else unmountSettingsWorkerStatus();
 
     const tabMap = {
         ai: { btn: settingsElement("settingsTabBtnAi"), pane: settingsElement("settingsPaneAi") },
         integrations: { btn: settingsElement("settingsTabBtnIntegrations"), pane: settingsElement("settingsPaneIntegrations") },
-        logs: { btn: settingsElement("settingsTabBtnLogs"), pane: settingsElement("settingsPaneLogs") }
+        storage: { btn: settingsElement("settingsTabBtnStorage"), pane: settingsElement("settingsPaneStorage") },
+        logs: { btn: settingsElement("settingsTabBtnLogs"), pane: settingsElement("settingsPaneLogs") },
+        appearance: { btn: settingsElement("settingsTabBtnAppearance"), pane: settingsElement("settingsPaneAppearance") }
     };
 
     Object.keys(tabMap).forEach(key => {
@@ -2855,13 +2905,102 @@ function renderCrawlerSettingsBadge(crawler = settingsState.crawler) {
     }
 }
 
+let crawlerSelectedProfile = null;
+let crawlerProfilesBusy = false;
+const CRAWLER_CONTROL_IDS = ['settingsCrawlerProfileSelect','settingsCrawlerNewProfileBtn','settingsCrawlerActivateBtn','settingsFirecrawlApiKey','settingsFirecrawlApiUrl','settingsTestCrawlerBtn','settingsSaveCrawlerBtn','settingsToggleFirecrawlKeyBtn'];
+
+function crawlerSelected() { return crawlerSelectedProfile || settingsState.crawler; }
+function crawlerHasDraft() {
+    const selected = crawlerSelected();
+    if (!selected) return false;
+    const key = settingsElement('settingsFirecrawlApiKey');
+    const revealedUnchanged = typeof isUnchangedRevealedCredential === 'function' && isUnchangedRevealedCredential(key);
+    return Boolean((key?.value && !revealedUnchanged) || (selected.api_url !== undefined && (settingsElement('settingsFirecrawlApiUrl')?.value || '') !== selected.api_url));
+}
+function crawlerCanLeaveDraft() {
+    return !crawlerHasDraft() || (typeof window.confirm === 'function' && window.confirm('此账号的修改尚未保存。放弃修改并继续？'));
+}
+function crawlerActionBusy() { return crawlerProfilesBusy || settingsElement('settingsToggleFirecrawlKeyBtn')?.disabled === true; }
+function renderCrawlerProfiles(crawler) {
+    const select = settingsElement('settingsCrawlerProfileSelect');
+    if (select) {
+        const options = (crawler?.profiles || []).map(p => {
+            const option = document.createElement('option'); option.value = p.id;
+            option.textContent = `${p.name}${p.id === crawler.active_profile_id ? ' · 使用中' : ''}${p.api_key_masked ? ` · ${p.api_key_masked}` : ''}`;
+            return option;
+        });
+        if (!crawler?.profile_id) { const option=document.createElement('option'); option.value=''; option.textContent=`${crawler?.name || '新账号'}（未保存）`; options.unshift(option); }
+        select.replaceChildren(...options); select.value = crawler?.profile_id || '';
+    }
+    const activeName = crawler?.profiles?.find(p=>p.id===crawler.active_profile_id)?.name || '原有账号';
+    const hint = settingsElement('settingsCrawlerProfileHint');
+    if (hint) hint.textContent=`当前使用：${activeName}。选择只查看，点击“使用此账号”后用于新分析。`;
+    const activate=settingsElement('settingsCrawlerActivateBtn');
+    if(activate) { activate.hidden=Boolean(crawler?.profile_id && crawler.profile_id===crawler.active_profile_id); activate.disabled=crawlerProfilesBusy || !crawler?.profile_id; }
+}
+async function crawlerProfileRequest(path, options={}) {
+    if (options.method && options.method !== 'GET') {
+        const session = await settingsRequest(`${API_BASE}/api/research/v1/session`, {cache:'no-store',redirect:'error'});
+        if(!session?.csrf_token) throw Error('会话已过期，请重新打开后重试');
+        options={...options,headers:{...options.headers,'X-Research-Token':session.csrf_token}};
+    }
+    return settingsRequest(`${API_BASE}/api/settings/crawler${path}`, {...options,cache:'no-store',redirect:'error'});
+}
+async function crawlerProfileOperation(task) {
+    if(crawlerActionBusy()) return;
+    crawlerProfilesBusy=true;
+    const controls=CRAWLER_CONTROL_IDS.map(id=>settingsElement(id)).filter(Boolean), previous=controls.map(n=>n.disabled);
+    controls.forEach(n=>n.disabled=true);
+    try { return await task(); }
+    catch(error){ settingsToast(error.message,'error'); return null; }
+    finally { crawlerProfilesBusy=false; controls.forEach((n,i)=>n.disabled=previous[i]); renderCrawlerProfileAction(); }
+}
+function renderCrawlerProfileAction(){
+    const activate=settingsElement('settingsCrawlerActivateBtn'), selected=crawlerSelected();
+    if(activate){activate.hidden=Boolean(selected?.profile_id && selected.profile_id===selected.active_profile_id);activate.disabled=crawlerProfilesBusy || !selected?.profile_id;}
+}
+function acceptCrawlerProfile(result) {
+    if(result?.active_config) settingsState.crawler={...result.active_config,active_profile_id:result.active_profile_id,active_version:result.active_version,profiles:result.profiles};
+    else settingsState.crawler=result;
+    renderCrawlerSettings(result);
+}
+async function selectCrawlerProfile(id) {
+    const previous=crawlerSelected();
+    if(crawlerActionBusy() || !crawlerCanLeaveDraft()) { const el=settingsElement('settingsCrawlerProfileSelect');if(el)el.value=previous?.profile_id || '';return; }
+    if(!id){newCrawlerProfile();return;}
+    const result=await crawlerProfileOperation(()=>crawlerProfileRequest(`/profiles/${encodeURIComponent(id)}`));
+    if(result)acceptCrawlerProfile(result); else {const el=settingsElement('settingsCrawlerProfileSelect');if(el)el.value=previous?.profile_id||'';}
+}
+function nextCrawlerProfileName(profiles=[]) {
+    const names=new Set(profiles.map(profile=>profile.name));
+    let number=1; while(names.has(`账号 ${number}`))number++;
+    return `账号 ${number}`;
+}
+function newCrawlerProfile() {
+    if(crawlerActionBusy() || !crawlerCanLeaveDraft())return;
+    const current=crawlerSelected();
+    renderCrawlerSettings({profile_id:null,name:nextCrawlerProfileName(current?.profiles),api_url:'https://api.firecrawl.dev/v1/scrape',has_api_key:false,profiles:current?.profiles||[],active_profile_id:current?.active_profile_id,active_version:current?.active_version});
+    settingsElement('settingsFirecrawlApiKey')?.focus?.({preventScroll:true});
+}
+async function activateCrawlerProfile() {
+    const selected=crawlerSelected();
+    if(crawlerActionBusy() || !selected?.profile_id)return;
+    if(crawlerHasDraft()){settingsToast('请先保存修改，再使用此账号。','info');return;}
+    const result=await crawlerProfileOperation(()=>crawlerProfileRequest(`/profiles/${encodeURIComponent(selected.profile_id)}/activate`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expected_version:selected.version,expected_active_version:selected.active_version})}));
+    if(result){acceptCrawlerProfile(result);settingsToast(`已使用“${result.name}”，新分析将使用此账号。`,'success');}
+}
+
 function renderCrawlerSettings(crawler = settingsState.crawler) {
-    renderCrawlerSettingsBadge(crawler);
+    crawlerSelectedProfile = crawler;
+    renderCrawlerProfiles(crawler);
+    renderCrawlerSettingsBadge(crawler?.active_config || settingsState.crawler || crawler);
 
     const keyInput = settingsElement("settingsFirecrawlApiKey");
     if (keyInput) {
+        if (typeof clearRevealedCredential === "function") clearRevealedCredential(keyInput);
         keyInput.value = "";
         keyInput.type = "password";
+        if(keyInput.dataset){keyInput.dataset.crawlerProfileId=crawler?.profile_id || "";keyInput.dataset.crawlerProfileVersion=String(crawler?.version || "");}
         if (keyInput.dataset) {
             delete keyInput.dataset.cachedSecret;
             delete keyInput.dataset.isOriginalRevealed;
@@ -2896,6 +3035,84 @@ function renderCrawlerSettings(crawler = settingsState.crawler) {
     updateSettingsOverviewKpis();
 }
 
+let crawlerSettingsDialog = null;
+
+function closeCrawlerSettingsDialog() {
+    const current = crawlerSettingsDialog;
+    if (!current) return;
+    if (crawlerProfilesBusy || (!current.loading && !current.loadFailed && ["settingsTestCrawlerBtn", "settingsSaveCrawlerBtn", "settingsToggleFirecrawlKeyBtn"].some(id => settingsElement(id)?.disabled))) {
+        settingsToast("正在测试或保存，请完成后再关闭。", "info");
+        return;
+    }
+    current.dialog.close();
+}
+
+async function openCrawlerSettingsDialog() {
+    if (crawlerSettingsDialog) {
+        crawlerSettingsDialog.closeButton.focus({ preventScroll: true });
+        return;
+    }
+    const body = settingsElement("settingsCrawlerCompetitorBody"), badge = settingsElement("settingsCrawlerStatusBadge");
+    if (!body || !badge) { settingsToast("爬虫设置暂时无法读取，请刷新后重试。", "error"); return; }
+    const trigger = document.activeElement, dialog = document.createElement("dialog");
+    dialog.className = "settings-crawler-dialog";
+    dialog.setAttribute("aria-labelledby", "crawlerDialogTitle");
+    dialog.setAttribute("aria-describedby", "crawlerDialogNote");
+    const header = document.createElement("header"), title = document.createElement("h2"), note = document.createElement("p");
+    title.id = "crawlerDialogTitle"; title.textContent = "爬虫设置";
+    note.id = "crawlerDialogNote"; note.textContent = "用于竞品网页抓取，与设置页共用账号。选择只查看，使用此账号后生效。";
+    const closeButton = document.createElement("button"); closeButton.type = "button"; closeButton.className = "settings-crawler-dialog-close";
+    closeButton.textContent = "×"; closeButton.setAttribute("aria-label", "关闭爬虫设置");
+    header.append(title, closeButton);
+    const status = document.createElement("div"); status.className = "settings-crawler-dialog-status";
+    const slots = [body, badge].map(node => ({ node, parent: node.parentElement, next: node.nextSibling, hidden: node.hidden }));
+    const controls = CRAWLER_CONTROL_IDS.map(id => settingsElement(id)).filter(Boolean);
+    const previousDisabled = controls.map(node => node.disabled);
+    const record = { dialog, closeButton, loading: !settingsState.crawler, controller: new AbortController() };
+    crawlerSettingsDialog = record;
+    let cleaned = false;
+    const cleanup = () => {
+        if (cleaned) return; cleaned = true; record.controller.abort();
+        controls.forEach((node, i) => { if (record.loading || record.loadFailed) node.disabled = previousDisabled[i]; });
+        for (const slot of slots) { slot.parent.insertBefore(slot.node, slot.next); slot.node.hidden = slot.hidden; }
+        const key = settingsElement("settingsFirecrawlApiKey");
+        if (key) {
+            if (key.type === "text" && typeof togglePasswordVisibility === "function") void togglePasswordVisibility(key, settingsElement("settingsToggleFirecrawlKeyBtn"));
+            key.type = "password";
+            if (key.dataset?.isOriginalRevealed) { key.value = ""; delete key.dataset.isOriginalRevealed; }
+            if (key.dataset) delete key.dataset.cachedSecret;
+        }
+        const eye = settingsElement("settingsToggleFirecrawlKeyBtn");
+        eye?.setAttribute("title", "显示明文密钥"); eye?.setAttribute("aria-label", "显示明文密钥");
+        const eyeIcon = settingsElement("settingsFirecrawlKeyEyeIcon"); if (eyeIcon) eyeIcon.className = "ph ph-eye";
+        dialog.remove(); if (crawlerSettingsDialog === record) crawlerSettingsDialog = null;
+        trigger?.focus?.({ preventScroll: true });
+    };
+    closeButton.addEventListener("click", closeCrawlerSettingsDialog);
+    dialog.addEventListener("cancel", event => { event.preventDefault(); closeCrawlerSettingsDialog(); });
+    dialog.addEventListener("close", cleanup);
+    body.hidden = false; badge.hidden = false;
+    status.append(note, badge); dialog.append(header, status, body); document.body.append(dialog);
+    try { dialog.showModal(); closeButton.focus({ preventScroll: true }); } catch (error) { cleanup(); settingsToast("爬虫设置暂时无法打开。", "error"); return; }
+    if (!record.loading) return;
+    controls.forEach(node => { node.disabled = true; });
+    const message = settingsElement("settingsCrawlerTestMsg"); if (message) message.textContent = "正在读取已保存配置…";
+    const draftKey = settingsElement("settingsFirecrawlApiKey")?.value, draftUrl = settingsElement("settingsFirecrawlApiUrl")?.value;
+    try {
+        const result = await settingsRequest(`${API_BASE}/api/settings/crawler`, { signal: record.controller.signal });
+        if (crawlerSettingsDialog !== record) return;
+        settingsState.crawler = result; renderCrawlerSettings(result);
+        if (draftKey) settingsElement("settingsFirecrawlApiKey").value = draftKey;
+        if (draftUrl) settingsElement("settingsFirecrawlApiUrl").value = draftUrl;
+    } catch (error) {
+        if (crawlerSettingsDialog !== record) return;
+        record.loadFailed = true;
+        if (message) { message.textContent = "配置读取失败，请关闭后重新打开。"; message.className = "settings-crawler-test-msg is-error"; }
+    } finally {
+        if (crawlerSettingsDialog === record) { if (!record.loadFailed) controls.forEach((node, i) => { node.disabled = previousDisabled[i]; }); record.loading = false; }
+    }
+}
+
 function toggleFirecrawlKeyVisibility() {
     const input = settingsElement("settingsFirecrawlApiKey");
     const icon = settingsElement("settingsFirecrawlKeyEyeIcon");
@@ -2910,100 +3127,39 @@ function toggleFirecrawlKeyVisibility() {
 }
 
 async function testCrawlerConnection(button) {
-    const keyInput = settingsElement("settingsFirecrawlApiKey");
-    const urlInput = settingsElement("settingsFirecrawlApiUrl");
-    const msgEl = settingsElement("settingsCrawlerTestMsg");
-
-    const apiKey = keyInput ? keyInput.value.trim() : "";
-    const apiUrl = urlInput ? urlInput.value.trim() : "";
-
-    const payload = {
-        api_key: apiKey || null,
-        api_url: apiUrl || "https://api.firecrawl.dev/v1/scrape"
-    };
-
-    setSettingsButtonBusy(button, true);
-    if (msgEl) {
-        msgEl.textContent = "正在测试连接 Firecrawl…";
-        msgEl.className = "settings-crawler-test-msg";
+    if(crawlerActionBusy())return;
+    const selected=crawlerSelected();
+    const payload={api_key:settingsElement('settingsFirecrawlApiKey')?.value.trim() || null,api_url:settingsElement('settingsFirecrawlApiUrl')?.value.trim() || 'https://api.firecrawl.dev/v1/scrape'};
+    const profiles=Boolean(selected?.profile_id);
+    if(!profiles && settingsElement('settingsCrawlerProfileSelect')){settingsToast('请先保存新账号，再测试连接。','info');return;}
+    if(profiles){payload.profile_id=selected.profile_id;payload.expected_version=selected.version;}
+    const draft=crawlerHasDraft(), msg=settingsElement('settingsCrawlerTestMsg');
+    const result=await crawlerProfileOperation(async()=>{
+        if(msg){msg.textContent='正在测试连接 Firecrawl…';msg.className='settings-crawler-test-msg';}
+        // Connection testing may consume the selected account's scraping quota.
+        return profiles ? crawlerProfileRequest('/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}) : settingsRequest(`${API_BASE}/api/settings/crawler/test`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    });
+    if(!result){if(msg){msg.textContent='连接测试未完成，请检查配置后重试。';msg.className='settings-crawler-test-msg is-error';}return;}
+    const success=result.status==='success', fullMsg=`${result.message}${result.duration_ms ? `（${result.duration_ms} ms）` : ''}`;
+    if(msg){msg.textContent=`${success?'✓':'✗'} ${fullMsg}${draft?' · 草稿测试，不改变已保存状态':''}`;msg.className=`settings-crawler-test-msg ${success?'is-success':'is-error'}`;}
+    if(!draft && result.persisted!==false){
+        if(selected){selected.last_test_status=success?'success':'error';selected.last_test_message=fullMsg;}
+        if(!profiles || selected.profile_id===selected.active_profile_id){
+            if(settingsState.crawler){settingsState.crawler.last_test_status=success?'success':'error';settingsState.crawler.last_test_message=fullMsg;}
+            if(selected?.active_config){selected.active_config.last_test_status=success?'success':'error';selected.active_config.last_test_message=fullMsg;}
+        }
     }
-
-    let result;
-    try {
-        result = await settingsRequest(`${API_BASE}/api/settings/crawler/test`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-    } catch (error) {
-        if (msgEl) {
-            msgEl.textContent = `✗ ${error.message}`;
-            msgEl.className = "settings-crawler-test-msg is-error";
-        }
-        settingsToast(error.message, "error");
-        setSettingsButtonBusy(button, false);
-        return;
-    }
-
-    const durationText = result.duration_ms ? `（${result.duration_ms} ms）` : "";
-    const fullMsg = `${result.message}${durationText}`;
-
-    if (result.ok) {
-        if (msgEl) {
-            msgEl.textContent = `✓ ${fullMsg}`;
-            msgEl.className = "settings-crawler-test-msg is-success";
-        }
-        if (settingsState.crawler) {
-            settingsState.crawler.last_test_status = "success";
-            settingsState.crawler.last_test_message = fullMsg;
-        }
-        renderCrawlerSettingsBadge(settingsState.crawler);
-        settingsToast(fullMsg, "success");
-    } else {
-        if (msgEl) {
-            msgEl.textContent = `✗ ${fullMsg}`;
-            msgEl.className = "settings-crawler-test-msg is-error";
-        }
-        if (settingsState.crawler) {
-            settingsState.crawler.last_test_status = "error";
-            settingsState.crawler.last_test_message = fullMsg;
-        }
-        renderCrawlerSettingsBadge(settingsState.crawler);
-        settingsToast(fullMsg, "error");
-    }
-    setSettingsButtonBusy(button, false);
+    renderCrawlerSettingsBadge(settingsState.crawler);updateSettingsOverviewKpis();settingsToast(fullMsg,success?'success':'error');
 }
 
 async function saveCrawlerSettings(button) {
-    const keyInput = settingsElement("settingsFirecrawlApiKey");
-    const urlInput = settingsElement("settingsFirecrawlApiUrl");
-
-    const apiKey = keyInput ? keyInput.value.trim() : "";
-    const apiUrl = urlInput ? urlInput.value.trim() : "";
-
-    const payload = buildCrawlerPayload({
-        api_key: apiKey,
-        api_url: apiUrl
-    });
-
-    setSettingsButtonBusy(button, true);
-    let result;
-    try {
-        result = await settingsRequest(`${API_BASE}/api/settings/crawler`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-    } catch (error) {
-        settingsToast(error.message, "error");
-        setSettingsButtonBusy(button, false);
-        return;
-    }
-
-    settingsState.crawler = result;
-    renderCrawlerSettings(result);
-    settingsToast("Firecrawl 配置已保存", "success");
-    setSettingsButtonBusy(button, false);
+    if(crawlerActionBusy())return;
+    const selected=crawlerSelected(), hasProfiles=Boolean(settingsElement('settingsCrawlerProfileSelect'));
+    const payload=buildCrawlerPayload({api_key:settingsElement('settingsFirecrawlApiKey')?.value || '',api_url:settingsElement('settingsFirecrawlApiUrl')?.value});
+    if(typeof isUnchangedRevealedCredential==='function' && isUnchangedRevealedCredential(settingsElement('settingsFirecrawlApiKey')))payload.api_key='';
+    if(hasProfiles){payload.name=selected?.name || nextCrawlerProfileName(selected?.profiles);payload.expected_version=selected?.version;}
+    const result=await crawlerProfileOperation(()=>hasProfiles ? crawlerProfileRequest(selected?.profile_id ? `/profiles/${encodeURIComponent(selected.profile_id)}` : '/profiles',{method:selected?.profile_id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}) : settingsRequest(`${API_BASE}/api/settings/crawler`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}));
+    if(result){acceptCrawlerProfile(result);settingsToast(hasProfiles && result.profile_id!==result.active_profile_id ? '账号已保存，点击“使用此账号”后用于新分析。':'Firecrawl 配置已保存','success');}
 }
 
 /* ==========================================================================
@@ -3691,7 +3847,12 @@ async function saveSettingsStorageConfig(button) {
 
 if (typeof window !== "undefined") {
     window.toggleFirecrawlKeyVisibility = toggleFirecrawlKeyVisibility;
+    window.selectCrawlerProfile = selectCrawlerProfile;
+    window.newCrawlerProfile = newCrawlerProfile;
+    window.activateCrawlerProfile = activateCrawlerProfile;
     window.testCrawlerConnection = testCrawlerConnection;
+    window.openCrawlerSettingsDialog = openCrawlerSettingsDialog;
+    window.closeCrawlerSettingsDialog = closeCrawlerSettingsDialog;
     window.saveCrawlerSettings = saveCrawlerSettings;
     window.renderCrawlerSettings = renderCrawlerSettings;
     window.renderCrawlerSettingsBadge = renderCrawlerSettingsBadge;
@@ -3752,6 +3913,8 @@ if (typeof module !== "undefined") {
         renderCrawlerSettingsBadge,
         toggleFirecrawlKeyVisibility,
         testCrawlerConnection,
+        openCrawlerSettingsDialog,
+        closeCrawlerSettingsDialog,
         saveCrawlerSettings,
         updateSettingsOverviewKpis,
         switchSettingsTab,

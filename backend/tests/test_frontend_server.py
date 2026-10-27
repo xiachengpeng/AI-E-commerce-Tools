@@ -1,5 +1,4 @@
 """Exercise the actual launcher script without starting any backend or AI service."""
-import ast
 from pathlib import Path
 import socket
 import subprocess
@@ -9,15 +8,17 @@ from urllib.request import urlopen
 
 
 def test_idle_browser_connection_cannot_block_frontend_requests(tmp_path):
-    source = Path(__file__).resolve().parents[2] / 'run.py'
-    parsed = ast.parse(source.read_text())
-    value = next(node.value for node in ast.walk(parsed)
-                 if isinstance(node, ast.Assign)
-                 and any(isinstance(target, ast.Name) and target.id == 'frontend_script' for target in node.targets))
+    source = Path(__file__).resolve().parents[2] / 'frontend_server.py'
     with socket.socket() as reservation:
         reservation.bind(('127.0.0.1', 0))
         port = reservation.getsockname()[1]
-    script = eval(compile(ast.Expression(value), str(source), 'eval'), {'FRONTEND_PORT': port})
+    script = f"""import importlib.util, http.server
+spec=importlib.util.spec_from_file_location('frontend_server', {str(source)!r})
+module=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+with http.server.ThreadingHTTPServer(('127.0.0.1', {port}), module.make_handler('.')) as server:
+    server.serve_forever()
+"""
     (tmp_path / 'index.html').write_text('fixture frontend')
     process = subprocess.Popen([sys.executable, '-c', script], cwd=tmp_path,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

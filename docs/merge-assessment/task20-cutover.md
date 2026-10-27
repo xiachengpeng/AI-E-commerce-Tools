@@ -1,5 +1,12 @@
 # Task 20: recoverable local cutover
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史融合评估与交接**
+> 保留各阶段的远端、旧入口、进程和测试记录；这些描述仅适用于原记录时点，不作为当前启动说明。
+> 当前入口与验证范围：[项目当前状态](<../项目当前状态.md>)；[2026-10-26流程修复与边界](<../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 Status: Phase B reached `local_active` and awaits controller acceptance of the execution report. The reviewed source API and worker jobs remain disabled and stopped. One local API, frontend and credential-controlled native worker are running against the canonical primary database and permanent private evidence root. Final primary code handoff remains Task22 work; earlier Phase A and fix-round paragraphs below are historical checkpoints.
 
 ## Tool contract

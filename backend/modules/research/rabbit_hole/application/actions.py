@@ -335,6 +335,7 @@ def _action_view(row: Any) -> dict[str, Any]:
         "keyword_text": row["payload"].get("keyword_text"),
         "attempt": row["attempt"],
         "execution_mode": row["payload"].get("execution_mode", "ui"),
+        **({"rescan_of": row["payload"]["rescan_of"]} if row["payload"].get("rescan_of") else {}),
         "landing_mode": row["payload"].get("landing_mode", "local") if row["kind"] == "landing" else None,
         "diagnostic": row["payload"].get("diagnostic"),
         "id": str(row["id"]),
@@ -656,6 +657,13 @@ async def enqueue_action(
         for word_id in ids:
             try:
                 latest = await store.get(project_id)
+                async with store.engine.connect() as c:
+                    last = (await c.execute(select(actions).where(
+                        actions.c.project_id == UUID(project_id), actions.c.kind == "scan",
+                        actions.c.keyword_id == word_id,
+                    ).order_by(actions.c.created_at.desc(), actions.c.id.desc()).limit(1))).mappings().first()
+                recovery_input = ({"rescan_of": last["payload"]["rescan_of"], "retry_action_id": str(last["id"])}
+                                  if last and last["status"] == "blocked" and last["payload"].get("rescan_of") else {})
                 results.append(
                     await enqueue_action(
                         store,
@@ -664,6 +672,7 @@ async def enqueue_action(
                             "kind": "scan",
                             "version": latest["version"],
                             "keyword_id": word_id,
+                            **recovery_input,
                         },
                     )
                 )
@@ -754,6 +763,17 @@ async def enqueue_action(
         dedupe += f":{SEED_POLICY}"
     if kind in {"scan", "trends"} and project.get("collection_modes_version", 0):
         dedupe += f":{mode}:{project['collection_modes_version']}"
+    rescan_of = data.get("rescan_of")
+    if rescan_of is not None:
+        try:
+            source_id = UUID(str(rescan_of))
+        except (ValueError, TypeError, AttributeError):
+            raise WorkbenchError("invalid_rescan", "请重新选择已完成的原搜索任务") from None
+        if kind != "scan":
+            raise WorkbenchError("invalid_rescan", "只有已完成的广告搜索可以补充采集")
+        # One successor per completed task, independent of later mode/account edits.
+        # Reopening/replaying the same confirmation cannot create another paid run.
+        dedupe = f"{project_id}:scan:rescan:{source_id}"
     now = datetime.now(UTC)
     # Serialize enqueue checks across consumers for the same project.
     async with write_transaction(store.engine) as c:
@@ -762,6 +782,13 @@ async def enqueue_action(
         from rabbit_hole.persistence.projects import workbench_projects
         if not await c.scalar(select(workbench_projects.c.id).where(workbench_projects.c.id == project_id)):
             raise WorkbenchError('not_found', '研究项目不存在', 404)
+        if rescan_of is not None:
+            source = (await c.execute(select(actions).where(
+                actions.c.id == source_id, actions.c.project_id == UUID(project_id),
+                actions.c.kind == "scan", actions.c.keyword_id == word["id"],
+            ).with_for_update())).mappings().first()
+            if not source or source["status"] != "complete":
+                raise WorkbenchError("invalid_rescan", "原搜索尚未确认完成，请先核对原任务，不能作为新搜索重复提交")
         if kind == "landing":
             active = (await c.execute(select(actions).where(
                 actions.c.project_id == UUID(project_id),
@@ -801,6 +828,20 @@ async def enqueue_action(
         if existing:
             from rabbit_hole.persistence.sql import ownership_guard
             await ownership_guard(c, kind='actions', identifier=existing['id'])
+        explicit_rescan_retry = bool(rescan_of is not None and data.get("retry_action_id")
+                                     and existing and str(existing["id"]) == data["retry_action_id"]
+                                     and existing["status"] == "blocked")
+        if rescan_of is not None and data.get("retry_action_id") and (not existing or str(existing["id"]) != data["retry_action_id"]):
+            raise WorkbenchError("invalid_rescan", "恢复任务已变化，请刷新采集日志后核对")
+        if rescan_of is not None and existing and not explicit_rescan_retry:
+            return {"id": str(existing["id"]), "status": existing["status"], "disposition": "unchanged"}
+        if rescan_of is not None and not existing:
+            unfinished = await c.scalar(select(actions.c.id).where(
+                actions.c.project_id == UUID(project_id), actions.c.keyword_id == word["id"],
+                actions.c.kind == "scan", actions.c.status.in_(["ready", "running", "blocked"]),
+            ).limit(1))
+            if unfinished:
+                raise WorkbenchError("invalid_rescan", "该词仍有未完成任务，请先查看采集日志并核对原任务")
         explicit_verification_retry = bool(kind == "verify" and data.get("retry_review") is True
                                            and existing and existing["status"] == "complete")
         if existing and existing["status"] != "blocked" and not explicit_verification_retry:
@@ -901,6 +942,7 @@ async def enqueue_action(
                              "keyword_text": (word or {}).get("text"),
                              **({"landing_mode": landing_mode} if kind == "landing" else {}),
                              **({"retry_of": fresh_retry_of} if fresh_retry_of else {}),
+                             **({"rescan_of": str(source_id)} if rescan_of is not None else {}),
                              **prepared},
                     created_at=now,
                     updated_at=now,

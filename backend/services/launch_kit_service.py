@@ -19,7 +19,9 @@ from models.request import LaunchKitExportRequest
 
 logger = logging.getLogger(__name__)
 
-STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), "static"))
+from services.runtime_paths import static_root
+
+STATIC_DIR = str(static_root())
 LAUNCH_KITS_DIR = os.path.join(STATIC_DIR, "outputs", "launch-kits")
 
 

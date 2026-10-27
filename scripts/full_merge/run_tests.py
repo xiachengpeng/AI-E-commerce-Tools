@@ -64,8 +64,10 @@ def prepare_sandbox(suite: Literal["main", "research"], output: Path) -> Path:
             "backend",
             "frontend",
             "scripts/full_merge",
+            "scripts/desktop",
             "docs/merge-assessment",
             "run.py",
+            "frontend_server.py",
             "pytest.ini",
         ):
             copy_source(ROOT / relative, sandbox / relative)

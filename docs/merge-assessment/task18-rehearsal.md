@@ -1,5 +1,12 @@
 # Candidate data rehearsal
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史融合评估与交接**
+> 保留各阶段的远端、旧入口、进程和测试记录；这些描述仅适用于原记录时点，不作为当前启动说明。
+> 当前入口与验证范围：[项目当前状态](<../项目当前状态.md>)；[2026-10-26流程修复与边界](<../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 Task 18 adds explicit offline import, immutable object copying and independently
 anchored backup rehearsal. None of these tools replaces a live database, starts
 an application, freezes writers or authorizes cutover.

@@ -49,6 +49,8 @@ def local_worker_command(config, database):
                  '--data-root',str(paths.evidence_root.parent),'--mode','active']
         if config.get('business_settings_path'):
             command+=['--business-settings',config['business_settings_path']]
+        if config.get('feishu_polling_enabled') is True:
+            command.append('--poll-feishu')
         return command
     except (OSError,ValueError,KeyError,sqlite3.Error):
         return None
@@ -128,32 +130,8 @@ def run_app():
     print(f"✅ 竞品分析后端已启动: http://127.0.0.1:{BACKEND_PORT}")
 
     # 2. 启动前端 HTTP Server - 端口 9502
-    frontend_script = f"""
-import http.server
-
-class MyHandler(http.server.SimpleHTTPRequestHandler):
-    # Browsers can preconnect without sending HTTP bytes; expire idle sockets.
-    timeout = 15
-
-    def end_headers(self):
-        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
-        super().end_headers()
-    
-    def send_response(self, *args, **kwargs):
-        super().send_response(*args, **kwargs)
-
-    def guess_type(self, path):
-        base_type = super().guess_type(path)
-        if base_type.startswith('text/') or base_type == 'application/javascript':
-            return base_type + '; charset=utf-8'
-        return base_type
-
-print("Serving HTTP on 127.0.0.1 port {FRONTEND_PORT} (http://127.0.0.1:{FRONTEND_PORT}/) ...")
-with http.server.ThreadingHTTPServer(("127.0.0.1", {FRONTEND_PORT}), MyHandler) as httpd:
-    httpd.serve_forever()
-"""
     frontend_process = subprocess.Popen(
-        [sys.executable, "-c", frontend_script],
+        [sys.executable, os.path.join(root_dir, "frontend_server.py")],
         cwd=frontend_dir
     )
     print(f"✅ 前端服务已启动: http://127.0.0.1:{FRONTEND_PORT}")

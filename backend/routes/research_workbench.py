@@ -128,6 +128,17 @@ def create_workbench_router() -> APIRouter:
         if write and getattr(current, 'commands_enabled', True) is not True:
             raise HTTPException(503, '研究所有权尚未移交，仅允许读取')
 
+    @router.get('/runtime-status')
+    async def runtime_status(request: Request):
+        guard(request)
+        from services.research_client import load_research_config
+        from services.research_worker_status import read_worker_status, unknown_status
+        current = getattr(request.app.state, 'research_runtime', None)
+        if current is None or getattr(current, 'diagnostics', ()) or not getattr(current, 'paths', None):
+            return unknown_status()
+        interval = getattr(getattr(current, 'business_settings', None), 'poll_seconds', 60)
+        return await asyncio.to_thread(read_worker_status, current.paths, load_research_config(), poll_seconds=interval, runtime_budget=getattr(current, 'submission_budget', None))
+
     def runtime(request: Request) -> Any:
         value = getattr(request.app.state, "research_runtime", None)
         if value is None or getattr(value, "diagnostics", ()):
@@ -201,7 +212,7 @@ def create_workbench_router() -> APIRouter:
             workbench_events,
             workbench_projects,
         )
-        from sqlalchemy import select, text
+        from sqlalchemy import and_, or_, select, text
 
         if kind not in {"activity", "report", "import"}:
             raise HTTPException(422, "研究历史类型无效")
@@ -240,12 +251,20 @@ def create_workbench_router() -> APIRouter:
                     workbench_projects,
                     workbench_projects.c.id == workbench_events.c.project_id,
                 )
-                .where(workbench_events.c.id > after)
-                .order_by(workbench_events.c.id)
+                .order_by(workbench_events.c.created_at.desc(), workbench_events.c.id.desc())
                 .limit(limit + 1)
             )
             if scope:
                 query = query.where(workbench_events.c.project_id == scope)
+            if after:
+                anchor = select(workbench_events.c.created_at).where(workbench_events.c.id == after)
+                if scope:
+                    anchor = anchor.where(workbench_events.c.project_id == scope)
+                anchor_time = anchor.scalar_subquery()
+                query = query.where(or_(
+                    workbench_events.c.created_at < anchor_time,
+                    and_(workbench_events.c.created_at == anchor_time, workbench_events.c.id < after),
+                ))
             async with service.engine.connect() as connection:
                 rows = (await connection.execute(query)).mappings().all()
             items = [
@@ -644,10 +663,15 @@ def create_workbench_router() -> APIRouter:
     @router.get("/projects/{project_id}")
     async def project(request: Request, project_id: str) -> JSONResponse:
         guard(request)
-        return JSONResponse(
-            await invoke(store(request).get(project_uuid(project_id))),
-            headers={"Cache-Control": "no-store"},
-        )
+        data = await invoke(store(request).get(project_uuid(project_id)))
+        from copy import deepcopy
+        from rabbit_hole.integrations.collectors.landing_price import saved_price_observation
+        data = deepcopy(data)
+        for product in data.get("products", []):
+            snapshot = product.get("landing_snapshot")
+            if isinstance(snapshot, dict):
+                snapshot["price_observation"] = saved_price_observation(snapshot)
+        return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
     @router.delete("/projects/{project_id}")
     async def delete_project(request: Request, project_id: str) -> JSONResponse:

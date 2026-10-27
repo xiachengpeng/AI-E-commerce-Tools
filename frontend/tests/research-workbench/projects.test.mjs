@@ -96,7 +96,7 @@ test('product navigation stays native and passes only membership-validated IDs t
  await wb.mount(root,{onSelectProject:(id,c)=>current=c,onProductNavigate:(selection,c)=>selected.push(selection),onSelectProduct:selection=>handed.push(selection),fetch:async url=>({ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?project:{projects:[project]}})});
  root.querySelector('[data-rw-projects]').find(n=>n.textContent==='P').click();await new Promise(r=>setTimeout(r,0));
  current.selectProduct('unknown');assert.equal(selected.length,0);assert.equal(wb.state.view,'project');
- current.showQueue({kind:'scan',keyword_id:'k'});current.selectProduct('product');assert.equal(wb.state.view,'product');assert.equal(root.querySelector('[data-rw-page]').querySelector('h1').textContent,'Product');assert.deepEqual(selected,[{projectId:'p',productId:'product'}]);assert.equal(handed.length,0);assert.equal(root.ownerDocument.activeElement?.tagName,'H1');wb.unmount();
+ current.showQueue({kind:'scan',keyword_id:'k'});current.selectProduct('product');assert.equal(wb.state.view,'product');assert.ok(root.querySelector('[data-rw-page]').find(n=>n.tagName==='H1'&&n.textContent==='Product'),'the authoritative product remains in saved overview beside the direct editor');assert.deepEqual(selected,[{projectId:'p',productId:'product'}]);assert.equal(handed.length,0);assert.equal(root.ownerDocument.activeElement?.tagName,'H1');wb.unmount();
 });
 test('LAN HTTP fallback detects edits and creates valid command identities without subtle crypto',async()=>{
  const cryptoProvider={getRandomValues:array=>globalThis.crypto.getRandomValues(array)};
@@ -171,4 +171,78 @@ for(const [name,wordStatus,action,expectZero] of [
  const project={id:'p',title:'P',keywords:[{id:'k',text:'pet',status:wordStatus,approved:true,ads:[]}],products:[]};const c=pageContext(project);c.state.keywordActions={k:action};
  const node=renderFocused(c),notice=node.find(n=>n.className==='rw-notice'&&n.textContent.startsWith('本次采集 0 条'));
  assert.equal(Boolean(notice),expectZero);assert.equal(Boolean(node.find(n=>n.textContent==='换一个搜索入口')),expectZero);c.life.dispose();
+});
+
+test('exploration exposes product imagery and only the current product bound ad media',async()=>{
+ const calls=[],project={id:'p',title:'P',keywords:[{id:'k',text:'pet',ads:[{id:'a',advertiser:'Bound',primary_text:'Source copy',media:[{kind:'image',url:'https://example.com/ad.jpg'}]},{id:'other',advertiser:'Unrelated',media:[{kind:'image',url:'https://example.com/other.jpg'}]}]}],products:[{id:'item',name:'Product',url:'https://example.com/product',source_keyword_ids:['k'],candidate_sources:[{keyword_id:'k',ad_id:'a'}],landing_snapshot:{title:'Saved product title',price:'19.99',images:['https://example.com/product.jpg']}}]};
+ const c=pageContext(project);c.api.blob=async path=>{calls.push(path);return new Blob(['image'],{type:'image/png'});};let revoked=0;c.context.objectURLs={createObjectURL:()=> 'blob:fixture',revokeObjectURL:()=>revoked++};
+ const host=renderFocused(c),preview=host.find(n=>n.dataset.sourcePreview==='true');assert.ok(preview,'media preview belongs on the main exploration page');
+ assert.ok(host.find(n=>n.textContent==='Saved product title'));assert.equal(calls.length,0,'rendering does not start downloads or collection');
+ preview.find(n=>n.tagName==='BUTTON'&&n.textContent==='商品图').click();
+ await new Promise(r=>setImmediate(r));assert.ok(preview.find(n=>n.tagName==='IMG'));assert.ok(calls.some(path=>path.includes('product_id=item')&&path.includes('source=product')));
+ const toggle=preview.find(n=>n.tagName==='BUTTON'&&n.textContent==='广告素材');toggle.click();await new Promise(r=>setImmediate(r));assert.equal(revoked,0,'switching media retains its bounded cache');
+ assert.ok(preview.find(n=>n.tagName==='IMG'));assert.ok(calls.some(path=>/ad_id=a(?:&|$)/.test(path)));assert.equal(calls.some(path=>path.includes('ad_id=other')),false);c.life.dispose();assert.equal(revoked,2);
+});
+test('a product without exact ad bindings never borrows another product ad or hides the preview',()=>{
+ const c=pageContext({id:'p',keywords:[{id:'k',text:'pet',ads:[{id:'other',media:[{kind:'image',url:'https://example.com/wrong'}]}]}],products:[{id:'item',name:'P',source_keyword_ids:['k'],candidate_sources:[]}]});
+ const host=renderFocused(c),preview=host.find(n=>n.dataset.sourcePreview==='true');assert.ok(preview);preview.find(n=>n.textContent==='广告素材').click();assert.ok(preview.find(n=>n.textContent.includes('未绑定具体广告')));assert.equal(preview.find(n=>n.textContent==='读取广告素材 1'),null);c.life.dispose();
+});
+
+test('switching source never displays late results and retains them only in its releasable cache',async()=>{
+ const {sourcePreview}=await import('../../js/research-workbench/components/ad-copy.mjs');
+ const c=pageContext({id:'p'});let finish,made=0,signal;
+ c.api.blob=async(path,options)=>{signal=options.signal;return new Promise(resolve=>finish=resolve);};c.context.objectURLs={createObjectURL:()=>{made++;return 'blob:late';},revokeObjectURL(){}};
+ const preview=sourcePreview(c,{id:'k'},{id:'item',landing_snapshot:{images:['https://example.com/image']}},[]);
+ await new Promise(r=>setImmediate(r));preview.find(n=>n.textContent==='广告素材').click();assert.equal(signal.aborted,false);
+ finish(new Blob(['image'],{type:'image/png'}));await new Promise(r=>setImmediate(r));assert.equal(made,1);assert.equal(preview.find(n=>n.tagName==='IMG'),null);c.life.dispose();assert.equal(signal.aborted,true);
+});
+
+for(const [name,word,action,want] of [
+ ['awaiting approval',{status:'pending_review',approved:false},null,'审核通过'],
+ ['archived keyword',{status:'archived'},null,'恢复并重新审核'],
+ ['invalid keyword',{status:'pending_review',needs_normalization:true},null,'修改'],
+ ['stale keyword evidence',{status:'pending_review',stale_source:true},null,'来源'],
+ ['ambiguous search',{approved:true},{status:'blocked',recovery_action:'manual'},'人工核对搜索任务'],
+ ['approved but unsearched',{status:'pending_review',approved:true},null,'搜索这个词'],
+ ['search running',{status:'running',approved:true},{status:'running'},'搜索正在进行'],
+ ['completed without leads',{status:'complete',approved:true,ads:[]},{status:'complete',result:{ads:0}},'尚未取得商品线索'],
+ ['ads without product binding',{status:'complete',approved:true,ads:[{id:'a',primary_text:'saved'}]},null,'关联具体商品']
+])test('disabled verification explains the actual prerequisite: '+name,()=>{
+ const c=pageContext({id:'p',keywords:[{id:'k',text:'pet',...word}],products:[]});if(action)c.state.keywordActions.k=action;
+ const host=renderFocused(c),start=host.find(n=>n.tagName==='BUTTON'&&n.textContent==='自动核对当前词'),hint=host.find(n=>n.dataset.verificationHint==='true');
+ assert.equal(start.disabled,true);assert.ok(hint,'disabled controls must explain how to proceed');assert.ok(hint.textContent.includes(want));assert.equal(start.attributes['aria-describedby'],hint.id);c.life.dispose();
+});
+
+test('leaving a project does not surface an obsolete refresh abort as a current error',async()=>{
+ const root=fixtureRoot(),wb=createWorkbench(),project={id:'p',title:'Saved',version:1,keywords:[],products:[]};let current,reads=0,rejectOld;
+ await wb.mount(root,{onSelectProject:(id,c)=>current=c,fetch:async url=>{
+  if(url.endsWith('/projects/p')&&++reads===2)return new Promise((resolve,reject)=>{rejectOld=reject;});
+  return {ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:url.endsWith('/projects/p')?project:url.includes('/actions?')?{actions:[]}:{projects:[project]}};
+ }});
+ root.querySelector('[data-rw-projects]').find(n=>n.textContent==='Saved').click();await new Promise(r=>setImmediate(r));assert.ok(rejectOld);
+ const status=root.querySelector('[data-rw-status]'),before=status.textContent;current.navigate('projects');rejectOld(new DOMException('obsolete refresh aborted','AbortError'));await new Promise(r=>setImmediate(r));assert.equal(status.textContent,before);wb.unmount();
+});
+
+test('empty project stages render different tasks: keywords on step one and source guidance on step two',async()=>{
+ const project={id:'empty',title:'Rental kits',direction:'Tenant-safe removable draft kit and move-out repair supplies',market:'US',keywords:[],products:[]};
+ const c=pageContext(project);c.state.view='project';c.state.projectSection='leads';let queued=0;c.showQueue=()=>queued++;c.navigate=view=>{c.state.view=view;};
+ try{
+  const leads=renderExploration(c);assert.ok(leads.find(n=>n.textContent==='还没有可核实的商品线索'));assert.equal(leads.find(n=>n.textContent==='AI 建议初始词'),null);
+  const group=leads.find(n=>n.className==='rw-actions rw-project-start-actions');assert.ok(group);assert.equal(group.children.length,2);
+  group.find(n=>n.textContent==='去找线索').click();await new Promise(r=>setImmediate(r));assert.equal(c.state.projectSection,'keywords');assert.equal(queued,0);
+  const keywords=renderExploration(c);assert.ok(keywords.find(n=>n.textContent==='关键词批次'));assert.ok(keywords.find(n=>n.textContent==='AI 建议初始词'));assert.equal(keywords.find(n=>n.textContent==='还没有可核实的商品线索'),null);
+  assert.equal(keywords.find(n=>n.dataset.explorationPanel!==undefined),null);assert.ok(keywords.find(n=>n.textContent==='还没有搜索词，先添加关键词或让 AI 根据研究方向提供建议。'));
+ }finally{c.life.dispose();}
+});
+test('existing keyword and product stages do not mount each others workspaces or lose saved records',()=>{
+ const project={id:'p',title:'Saved',market:'US',keywords:[{id:'k',text:'draft stopper',approved:true,status:'ready',ads:[]}],products:[{id:'prod',name:'Saved kit',source_keyword_ids:[]}]};const c=pageContext(project);
+ try{c.state.projectSection='keywords';let page=renderExploration(c);assert.ok(page.find(n=>n.textContent==='关键词批次'));assert.equal(page.find(n=>n.dataset.explorationPanel!==undefined),null);
+ c.state.projectSection='leads';page=renderExploration(c);assert.ok(page.find(n=>n.dataset.explorationPanel!==undefined));assert.equal(page.find(n=>n.textContent==='关键词批次'),null);assert.ok(page.find(n=>n.textContent==='Saved kit'));assert.equal(project.keywords.length,1);assert.equal(project.products.length,1);
+ }finally{c.life.dispose();}
+});
+test('empty keyword preparation cannot enqueue a batch scan until a word is reviewed',async()=>{
+ const c=pageContext({id:'p',title:'Empty',market:'US',keywords:[],products:[]});c.state.projectSection='keywords';let calls=0;c.showQueue=()=>calls++;
+ try{const page=renderExploration(c),scan=page.find(n=>n.tagName==='BUTTON'&&n.textContent==='扫描全部已审核词');assert.equal(scan.disabled,true);scan.click();await new Promise(r=>setImmediate(r));assert.equal(calls,0);
+ c.state.project.keywords=[{id:'k',text:'draft stopper',approved:true,status:'ready'}];assert.equal(renderExploration(c).find(n=>n.tagName==='BUTTON'&&n.textContent==='扫描全部已审核词').disabled,false);
+ }finally{c.life.dispose();}
 });

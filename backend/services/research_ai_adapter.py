@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from uuid import uuid4
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -25,6 +26,7 @@ class ResearchAIAdapter:
         session_factory=None,
         allow_external: bool = False,
         usage_runtime=None,
+        submission_budget=None,
     ):
         if type(allow_external) is not bool:
             raise ValueError("explicit external authorization required")
@@ -32,10 +34,15 @@ class ResearchAIAdapter:
         self.session_factory = session_factory
         self.allow_external = allow_external
         self.usage_runtime = usage_runtime
+        self.submission_budget = submission_budget
         self._legacy = ContextVar("research_ai_legacy", default=None)
         self._action = ContextVar("research_ai_action", default=None)
         self._deadline = ContextVar("research_ai_deadline", default=None)
         self._snapshot = ContextVar("research_ai_snapshot", default=None)
+
+    def submission_budget_guard(self):
+        from services.research_polling_policy import require_current_submission_budget
+        require_current_submission_budget(self.submission_budget)
 
     @contextmanager
     def legacy_context(self, jobs, job):
@@ -139,19 +146,37 @@ class ResearchAIAdapter:
             legacy_reservation = await reserve_legacy_ai(*legacy, request.operation)
             payload['operation_id'] = f'research-legacy:{legacy[1].id}:{legacy[1].attempt}:{legacy_reservation}'
         network_attempt = 1
+        if self.submission_budget is not None and 'operation_id' not in payload:
+            payload['operation_id']='research-direction:'+str(uuid4())
+
 
         async def observer(event):
             nonlocal network_attempt
             from services.research_ai_usage import ResearchUsageError, record_ai_attempt
 
             network_attempt = event["network_attempt"]
+            if event['status']=='submitted':self.submission_budget_guard()
+            if self.submission_budget is not None and event['status']=='submitted':
+                from services.research_polling_policy import require_submission
+                if context is not None:
+                    scope=str(context[3]['project_id'])
+                elif legacy is not None:
+                    job=legacy[1]
+                    from services.research_polling_policy import legacy_scope_id, require_legacy_execution
+                    require_legacy_execution(self.submission_budget,job.payload)
+                    scope=legacy_scope_id(job.payload.record_id,job.payload.input_version,job.payload.protected_input_hash,job.payload.kind.value)
+                elif request.operation=='direction' and request.action_id is None:
+                    scope='direction'
+                else:
+                    raise ValueError('budget_scope_denied')
+                require_submission(self.submission_budget,scope,payload['operation_id'],'text_ai',network_attempt)
             if legacy_reservation is not None:
                 from services.research_legacy_ai import record_legacy_ai
                 # A network attempt failure is not a logical-call terminal
                 # result: the sole controller may still authorize its retry.
                 status = 'retrying' if event['status'] == 'failed' and not event.get('terminal') else event['status']
                 await record_legacy_ai(*legacy, legacy_reservation, status)
-            else:
+            elif reservation_id is not None:
                 await record_ai_attempt(usage, reservation_id, event)
             if event["status"] == "uncertain":
                 raise ResearchUsageError("AI提交结果未知，未自动重放或切换提供商")
@@ -178,8 +203,8 @@ class ResearchAIAdapter:
                 context[3]["payload"]["ai_usage"] = reserved_payload["ai_usage"]
             routing["attempt_observer"] = observer
 
-        if legacy_reservation is not None:
-            routing['attempt_observer'] = observer
+        # Always observe the actual submission: this process may predate a newly declared session.
+        routing['attempt_observer'] = observer
 
         async def terminal(status):
             if legacy_reservation is not None:

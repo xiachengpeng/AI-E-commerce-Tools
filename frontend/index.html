@@ -26,17 +26,19 @@
 
     <!-- 核心样式 -->
     <link rel="stylesheet" href="css/style.css?v=20260921-delivery-v1">
-    <link rel="stylesheet" href="css/square_redraw.css?v=20260917-reset-v1">
-    <link rel="stylesheet" href="css/analysis.css?v=20260917-reset-v1">
-    <link rel="stylesheet" href="css/settings.css?v=20260920-ccswitch-v2">
+    <link rel="stylesheet" href="css/square_redraw.css?v=20261022-design1">
+    <link rel="stylesheet" href="css/analysis.css?v=20261026-marketing-layout">
+    <link rel="stylesheet" href="css/settings.css?v=20261026-crawler-profiles-compact">
     <link rel="stylesheet" href="css/watermark_removal.css?v=20260917-reset-v1">
 
     <!-- 基础配置与工具 (必须优先加载) -->
     <link rel="stylesheet" href="css/research.css?v=20261009">
-    <link rel="stylesheet" href="css/research-workbench.css?v=20261012">
+    <link rel="stylesheet" href="css/research-workbench.css?v=20261016-design">
+    <link rel="stylesheet" href="css/research-design.css?v=20261024-stage-entry">
+    <link rel="stylesheet" href="css/research-polish.css?v=20261026-candidate-switch">
     <script src="js/languages.js?v=20260917-reset-v1"></script>
     <script src="js/config.js?v=20260917-reset-v1"></script>
-    <script src="js/utils.js?v=20260921-eyes-v2"></script>
+    <script src="js/utils.js?v=20261026-crawler-profiles-compact"></script>
     <script src="js/brand_context.js?v=20260917-reset-v1"></script>
 </head>
 
@@ -391,7 +393,7 @@
                             <div class="xp-section-title">
                                 <h2>🚀 逆向营销策略</h2>
                             </div>
-                            <div class="xp-two-col">
+                            <div class="xp-marketing-layout">
                                 <div id="xp-singleTraffic" class="xp-card"></div>
                                 <div id="xp-singleAdAngles" class="xp-card"></div>
                             </div>
@@ -2289,94 +2291,63 @@
         <!-- ============================================== -->
         <!-- 视图：图片翻译 (VIEW: TRANSLATE) -->
         <!-- ============================================== -->
-        <div id="view-square-redraw" class="hidden flex-1 overflow-hidden flex flex-col bg-slate-50">
-            <div
-                class="flex-shrink-0 bg-white/80 backdrop-blur border-b border-slate-200 px-8 py-3.5 flex items-center gap-3 sticky top-0 z-30">
-                <div class="flex items-center gap-2.5 mr-4">
-                    <div class="bg-slate-900 p-1.5 rounded-xl shadow-md">
-                        <i class="ph ph-crop text-white text-base"></i>
-                    </div>
-                    <div>
-                        <div class="text-sm font-black tracking-tight text-slate-800 leading-none">AI 尺寸重绘</div>
-                        <div id="squareRedrawSummary" class="flex gap-3 text-[10px] font-bold text-slate-400 mt-1"></div>
-                    </div>
-                </div>
-
-                <label for="squareRedrawUpload"
-                    title="支持点击上传、拖拽或 ⌘V / Ctrl+V 粘贴"
-                    class="flex items-center gap-2 cursor-pointer bg-slate-900 hover:bg-slate-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors shadow-md select-none">
-                    <i class="ph ph-upload-simple text-sm"></i> 上传图片
-                    <input type="file" id="squareRedrawUpload" class="hidden" accept="image/*" multiple
-                        onchange="handleSquareRedrawUpload(event)">
-                </label>
-
-                <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
-                    <span class="text-[10px] font-black text-slate-400 whitespace-nowrap">目标尺寸</span>
-                    <select id="squareRedrawAspectSelect" onchange="setSquareRedrawAspectRatio(this.value)"
-                        class="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-600 outline-none">
-                        <option value="1:1">1:1 (Amazon / 独立站正方形主图)</option>
-                        <option value="4:5">4:5 (Shopify / Instagram 推荐竖图)</option>
-                        <option value="3:4">3:4 (速卖通 / Shopee / 平台辅图)</option>
-                        <option value="2:3">2:3 (Pinterest / 服饰落地页)</option>
-                        <option value="5:4">5:4</option>
-                        <option value="4:3">4:3</option>
-                        <option value="3:2">3:2</option>
-                        <option value="9:16">9:16 (TikTok / Reels 竖屏视频)</option>
-                        <option value="16:9">16:9 (PC 端宽屏头图 / 横幅)</option>
-                        <option value="21:9">21:9</option>
-                    </select>
-                    <input id="squareRedrawTargetWidth" type="number" min="1" value="1"
-                        class="w-14 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-600 outline-none">
-                    <span class="text-xs font-black text-slate-300">x</span>
-                    <input id="squareRedrawTargetHeight" type="number" min="1" value="1"
-                        class="w-14 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-600 outline-none">
-                    <button type="button" onclick="applySquareRedrawCustomSize()"
-                        class="text-[10px] font-black px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-200">应用</button>
-                </div>
-
-                <button id="squareRedrawStartBtn" onclick="startSquareRedrawBatch()" disabled
-                    class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-black px-5 py-2 rounded-xl transition-colors">
-                    <i class="ph ph-play-circle text-sm"></i> 开始重绘
-                </button>
-                <button id="squareRedrawRetryBtn" onclick="retrySquareRedrawFailed()" disabled
-                    class="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-700 text-xs font-black px-4 py-2 rounded-xl transition-colors border border-amber-100">
-                    <i class="ph ph-arrows-clockwise text-sm"></i> 重试失败项
-                </button>
-                <button id="squareRedrawBatchUploadBtn" onclick="batchUploadSquareRedrawToCloud()" disabled
-                    class="flex items-center gap-2 bg-blue-50 hover:bg-blue-100 disabled:opacity-40 text-blue-700 text-xs font-black px-4 py-2 rounded-xl transition-colors border border-blue-200">
-                    <i class="ph ph-cloud-arrow-up text-sm"></i> 批量上传图床
-                </button>
-                <button id="squareRedrawDownloadBtn" onclick="downloadSquareRedrawZip()" disabled
-                    class="ml-auto flex items-center gap-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-600 text-xs font-black px-4 py-2 rounded-xl transition-colors">
-                    <i class="ph ph-file-zip text-sm"></i> 下载 ZIP
-                </button>
+        <div id="view-square-redraw" class="hidden flex-1 overflow-hidden flex flex-col square-redraw-workbench">
+            <div class="sr-breadcrumb">
+                <span>图片工具</span><i class="ph ph-caret-right" aria-hidden="true"></i><strong>尺寸重绘</strong>
+                <button type="button" onclick="toggleGlobalHistory(true)"><i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i>历史批次</button>
             </div>
-
-            <div class="px-8 pt-4 flex items-center gap-2 text-xs font-bold">
-                <button onclick="setSquareRedrawFilter('all')"
-                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">全部</button>
-                <button onclick="setSquareRedrawFilter('pending')"
-                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">待处理</button>
-                <button onclick="setSquareRedrawFilter('success')"
-                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">成功</button>
-                <button onclick="setSquareRedrawFilter('failed')"
-                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">失败</button>
-                <button onclick="setSquareRedrawFilter('skipped')"
-                    class="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600">已跳过</button>
-            </div>
-
-            <div class="flex-1 overflow-y-auto custom-scrollbar px-8 py-6">
-                <div id="squareRedrawEmptyState"
-                    class="border-2 border-dashed border-slate-300 rounded-2xl p-16 bg-white text-center cursor-pointer"
-                    title="支持点击上传、拖拽或 ⌘V / Ctrl+V 粘贴"
-                    onclick="document.getElementById('squareRedrawUpload').click()"
-                    ondragover="event.preventDefault()" ondrop="handleSquareRedrawDrop(event)"
-                    onpaste="handleSquareRedrawPaste(event)">
-                    <i class="ph ph-images text-5xl text-slate-300"></i>
-                    <div class="mt-4 text-lg font-black text-slate-700">上传 1-100 张图片</div>
-                    <div class="mt-2 text-sm text-slate-400">支持点击上传、拖拽或 ⌘V / Ctrl+V 粘贴 · 已符合目标比例的图片会自动跳过并进入最终 ZIP</div>
+            <div class="sr-workbench-scroll custom-scrollbar">
+                <header class="sr-page-heading">
+                    <div><div class="sr-eyebrow">IMAGE WORKSPACE</div><h1>尺寸重绘</h1><p>批量调整商品图比例，让素材适配不同平台。</p></div>
+                    <button id="squareRedrawStartBtn" type="button" onclick="startSquareRedrawBatch()" disabled class="sr-button sr-primary"><i class="ph ph-play" aria-hidden="true"></i><span>开始重绘</span></button>
+                </header>
+                <div class="sr-workspace">
+                    <aside class="sr-config-panel" aria-label="目标比例设置">
+                        <div class="sr-eyebrow">处理设置</div><h2>选择目标比例</h2><p class="sr-config-intro">按商品图的使用场景选择。</p>
+                        <div class="sr-ratio-grid" aria-label="常用比例">
+                            <button type="button" class="sr-ratio-tile" data-sr-ratio="1:1" aria-pressed="true" onclick="setSquareRedrawAspectRatio('1:1')"><strong>1:1</strong><span>方形主图</span><i class="ph ph-check-circle" aria-hidden="true"></i></button>
+                            <button type="button" class="sr-ratio-tile" data-sr-ratio="4:5" aria-pressed="false" onclick="setSquareRedrawAspectRatio('4:5')"><strong>4:5</strong><span>商品竖图</span><i class="ph ph-check-circle" aria-hidden="true"></i></button>
+                            <button type="button" class="sr-ratio-tile" data-sr-ratio="3:4" aria-pressed="false" onclick="setSquareRedrawAspectRatio('3:4')"><strong>3:4</strong><span>平台辅图</span><i class="ph ph-check-circle" aria-hidden="true"></i></button>
+                            <button type="button" class="sr-ratio-tile" data-sr-ratio="16:9" aria-pressed="false" onclick="setSquareRedrawAspectRatio('16:9')"><strong>16:9</strong><span>横向封面</span><i class="ph ph-check-circle" aria-hidden="true"></i></button>
+                        </div>
+                        <label class="sr-field-label" for="squareRedrawAspectSelect">所有支持的比例</label>
+                        <select id="squareRedrawAspectSelect" onchange="setSquareRedrawAspectRatio(this.value)">
+                            <option value="1:1">1:1 · Amazon / 方形主图</option>
+                            <option value="4:5">4:5 · Shopify / Instagram</option>
+                            <option value="3:4">3:4 · Shopee / 平台辅图</option>
+                            <option value="2:3">2:3 · Pinterest</option>
+                            <option value="5:4">5:4</option><option value="4:3">4:3</option><option value="3:2">3:2</option>
+                            <option value="9:16">9:16 · TikTok / Reels</option><option value="16:9">16:9 · 横向封面</option><option value="21:9">21:9</option>
+                        </select>
+                        <label class="sr-field-label" for="squareRedrawTargetWidth">输入宽高比例</label>
+                        <div class="sr-ratio-inputs"><input id="squareRedrawTargetWidth" aria-label="比例宽" type="number" min="1" value="1"><span>:</span><input id="squareRedrawTargetHeight" aria-label="比例高" type="number" min="1" value="1"><button id="squareRedrawApplyRatioBtn" type="button" class="sr-button" onclick="applySquareRedrawCustomSize()">应用</button></div>
+                        <p class="sr-ratio-note">这里设置宽高比，不是输出像素尺寸。</p>
+                        <div id="squareRedrawRatioLock" class="sr-lock-note hidden"><i class="ph ph-lock-simple" aria-hidden="true"></i><span>本批比例已锁定。更换图片后可重新设置。</span></div>
+                        <div class="sr-preserve-note"><i class="ph ph-shield-check" aria-hidden="true"></i><div><strong>符合比例的图片自动保留</strong><p>不重复重绘，原图会一并收入 ZIP。</p></div></div>
+                    </aside>
+                    <section class="sr-queue-panel" aria-label="图片工作区">
+                        <div class="sr-queue-heading"><h2>图片队列 <span id="squareRedrawQueueCount">0</span></h2><span>目标比例 <b id="squareRedrawRatioLabel">1:1</b></span></div>
+                        <div id="squareRedrawUploadStrip" class="sr-upload-strip hidden" ondragover="event.preventDefault()" ondrop="handleSquareRedrawDrop(event)"><div class="sr-upload-icon"><i class="ph ph-upload-simple" aria-hidden="true"></i></div><div><strong>拖入图片，或直接粘贴</strong><p>每批 1–100 张 · 更换图片会替换本批列表</p></div><button id="squareRedrawReplaceBtn" type="button" class="sr-button" onclick="document.getElementById('squareRedrawUpload').click()">更换本批图片</button></div>
+                        <input type="file" id="squareRedrawUpload" class="hidden" accept="image/*" multiple onchange="handleSquareRedrawUpload(event)">
+                        <div id="squareRedrawFilters" class="sr-filters hidden" role="group" aria-label="图片状态筛选">
+                            <button type="button" data-sr-filter="all" aria-pressed="true" onclick="setSquareRedrawFilter('all')">全部<span data-sr-count="all">0</span></button>
+                            <button type="button" data-sr-filter="pending" aria-pressed="false" onclick="setSquareRedrawFilter('pending')">待处理<span data-sr-count="pending">0</span></button>
+                            <button type="button" data-sr-filter="success" aria-pressed="false" onclick="setSquareRedrawFilter('success')">成功<span data-sr-count="success">0</span></button>
+                            <button type="button" data-sr-filter="failed" aria-pressed="false" onclick="setSquareRedrawFilter('failed')">失败<span data-sr-count="failed">0</span></button>
+                            <button type="button" data-sr-filter="skipped" aria-pressed="false" onclick="setSquareRedrawFilter('skipped')">已跳过<span data-sr-count="skipped">0</span></button>
+                        </div>
+                        <div id="squareRedrawProgress" class="sr-progress-banner hidden" role="status" aria-live="polite"></div>
+                        <div id="squareRedrawFailure" class="sr-failure-banner hidden" role="status"><i class="ph ph-warning-circle" aria-hidden="true"></i><div><strong id="squareRedrawFailureText"></strong><span>可以只重试失败项，无需重做成功图片。</span></div><button id="squareRedrawInlineRetryBtn" type="button" onclick="retrySquareRedrawFailed()">重试失败项</button></div>
+                        <div id="squareRedrawEmptyState" class="sr-empty-state" title="支持点击上传、拖拽或 ⌘V / Ctrl+V 粘贴" ondragover="event.preventDefault()" ondrop="handleSquareRedrawDrop(event)" onpaste="handleSquareRedrawPaste(event)">
+                            <div class="sr-empty-icon"><i class="ph ph-images" aria-hidden="true"></i></div><h2>先放入需要处理的商品图</h2><p>拖拽图片到这里，或按 ⌘V / Ctrl+V 粘贴。</p><button type="button" class="sr-button sr-primary" onclick="document.getElementById('squareRedrawUpload').click()"><i class="ph ph-plus" aria-hidden="true"></i>选择图片</button><small>每批 1–100 张 · 已符合比例的原图会保留</small>
+                        </div>
+                        <div id="squareRedrawList" class="hidden sr-image-list"></div>
+                        <footer id="squareRedrawFooter" class="sr-queue-footer hidden">
+                            <div id="squareRedrawSummary" class="sr-result-summary" aria-live="polite"></div>
+                            <div class="sr-export-actions"><button id="squareRedrawRetryBtn" type="button" onclick="retrySquareRedrawFailed()" disabled class="sr-button sr-quiet"><i class="ph ph-arrows-clockwise" aria-hidden="true"></i>重试失败项</button><span class="sr-action-spacer"></span><button id="squareRedrawBatchUploadBtn" type="button" onclick="batchUploadSquareRedrawToCloud()" disabled class="sr-button"><i class="ph ph-cloud-arrow-up" aria-hidden="true"></i>上传图床</button><button id="squareRedrawDownloadBtn" type="button" onclick="downloadSquareRedrawZip()" disabled class="sr-button"><i class="ph ph-download-simple" aria-hidden="true"></i>下载 ZIP</button></div>
+                        </footer>
+                    </section>
                 </div>
-                <div id="squareRedrawList" class="hidden max-w-5xl mx-auto flex flex-col gap-3"></div>
             </div>
         </div>
 
@@ -2754,7 +2725,7 @@
         </div>
 
         <!-- 方图重绘预览 -->
-        <div id="squareRedrawPreviewModal"
+        <div id="squareRedrawPreviewModal" role="dialog" aria-modal="true" aria-labelledby="squareRedrawPreviewTitle"
             class="hidden fixed inset-0 z-[110] flex items-center justify-center p-6 bg-white/80 backdrop-blur-md">
             <div class="relative bg-white w-full max-w-5xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col"
                 style="max-height:90vh">
@@ -2781,7 +2752,7 @@
                             <i class="ph ph-arrow-square-out"></i>
                             <span>设为详情页主图</span>
                         </button>
-                        <button onclick="closeSquareRedrawPreview()"
+                        <button id="squareRedrawPreviewCloseBtn" type="button" aria-label="关闭对比" onclick="closeSquareRedrawPreview()"
                             class="p-2.5 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-800 cursor-pointer"><i
                                 class="ph ph-x text-lg"></i></button>
                     </div>
@@ -2795,7 +2766,7 @@
                         </div>
                     </div>
                     <div class="flex flex-col gap-3 min-w-0">
-                        <span class="text-[10px] font-black text-blue-500 uppercase tracking-widest px-1">1:1 结果</span>
+                        <span id="squareRedrawPreviewResultLabel" class="text-[10px] font-black text-blue-500 uppercase tracking-widest px-1">目标比例 · 1:1</span>
                         <div id="squareRedrawPreviewResultWrap"
                             class="relative rounded-[1.5rem] border-4 border-white shadow-xl overflow-hidden bg-slate-100 aspect-square flex items-center justify-center">
                         </div>
@@ -4062,12 +4033,7 @@
                             <h1 id="settingsPageTitle">系统配置与服务治理中枢</h1>
                             <p>统筹管理 AI 文本/图片路由、API 凭据、Firecrawl 网页爬虫及实时链路日志。</p>
                         </div>
-                        <div class="settings-header-actions">
-                            <button type="button" class="settings-button settings-button-primary"
-                                onclick="openProviderEditor()">
-                                <i class="ph-bold ph-plus"></i> 新增 AI 线路
-                            </button>
-                        </div>
+
                     </div>
 
                     <!-- 顶部 4 维快捷状态与 Tab 快捷跳转 -->
@@ -4129,21 +4095,51 @@
                         </button>
                         <button type="button" class="settings-tab-btn" id="settingsTabBtnIntegrations" onclick="switchSettingsTab('integrations')">
                             <i class="ph ph-plugs-connected"></i>
-                            <span>外部服务与存储集成</span>
-                            <span class="settings-tab-badge">2 项服务</span>
+                            <span>外部接口</span>
+                            <span class="settings-tab-badge">统一管理</span>
+                        </button>
+                        <button type="button" class="settings-tab-btn" id="settingsTabBtnStorage" onclick="switchSettingsTab('storage')" aria-controls="settingsPaneStorage">
+                            <i class="ph ph-cloud-arrow-up" aria-hidden="true"></i><span>存储</span>
                         </button>
                         <button type="button" class="settings-tab-btn" id="settingsTabBtnLogs" onclick="switchSettingsTab('logs')">
                             <i class="ph ph-broadcast"></i>
                             <span>实时运行日志与观测</span>
                             <span class="settings-tab-live-dot" title="实时监测中"></span>
                         </button>
+                        <button type="button" class="settings-tab-btn" id="settingsTabBtnAppearance" onclick="switchSettingsTab('appearance')">
+                            <i class="ph ph-text-aa"></i><span>外观与字号</span>
+                        </button>
                     </nav>
                 </header>
 
                 <!-- 主体内容区（各 Tab 独立纵向滚动） -->
                 <main class="settings-main-container">
+                    <div id="settingsPaneAppearance" class="settings-tab-pane custom-scrollbar hidden">
+                        <section class="settings-card settings-appearance-card" aria-labelledby="settingsAppearanceTitle">
+                            <h2 id="settingsAppearanceTitle">外观与字号</h2>
+                            <p>调整菜单、表单和页面文字的大小，让工作台更容易阅读。</p>
+                            <label class="settings-appearance-field" for="settingsInterfaceFontSize">
+                                <span>界面字号</span>
+                                <select id="settingsInterfaceFontSize" onchange="setInterfaceFontSize(this.value)">
+                                    <option value="14">偏小 · 14px</option>
+                                    <option value="16" selected>标准 · 16px</option>
+                                    <option value="18">偏大 · 18px</option>
+                                    <option value="20">较大 · 20px</option>
+                                </select>
+                            </label>
+                            <p id="settingsInterfaceFontStatus" role="status" aria-live="polite"></p>
+                            <div class="settings-font-preview" aria-label="字号预览">
+                                <h3>选品研究工作台</h3>
+                                <p>从市场线索出发，查看商品与广告证据，再决定下一步。</p>
+                                <span>已保存 · 继续研究</span>
+                            </div>
+                            <button type="button" class="settings-button settings-button-secondary" onclick="resetInterfaceFontSize()">恢复默认字号</button>
+                            <p class="settings-font-boundary">自动保存到当前客户端或浏览器。标题与正文保留层级，不影响商品图片、生成图片或导出的详情页排版。</p>
+                        </section>
+                    </div>
                     <!-- TAB 1: AI 线路与能力路由 -->
                     <div id="settingsPaneAi" class="settings-tab-pane custom-scrollbar is-active">
+
                         <!-- 能力路由看板 -->
                         <section class="settings-card" aria-labelledby="settingsBindingsTitle">
                             <div class="settings-card-header">
@@ -4156,10 +4152,15 @@
                                         <p>仅显示已启用且支持对应能力的线路。</p>
                                     </div>
                                 </div>
+                                <div id="settingsAiActions" class="flex items-center gap-3 flex-wrap justify-end">
+                                    <button type="button" class="settings-button settings-button-primary" onclick="openProviderEditor()">
+                                        <i class="ph-bold ph-plus"></i> 新增 AI 线路
+                                    </button>
                                 <button type="button" class="settings-icon-button" title="刷新设置"
                                     aria-label="刷新设置" onclick="refreshSettings(this)">
                                     <i class="ph ph-arrow-clockwise"></i>
                                 </button>
+                                </div>
                             </div>
 
                             <div class="settings-binding-list">
@@ -4242,11 +4243,11 @@
                         </section>
                     </div>
 
-                    <!-- TAB 2: 外部服务与存储集成 -->
+                    <!-- TAB 2: 外部接口 -->
                     <div id="settingsPaneIntegrations" class="settings-tab-pane custom-scrollbar hidden">
-                        <section class="settings-card">
-                            <h2>研究与集成</h2><p>研究采集、原阿里阅读辅助与飞书同步配置；研究使用主 AI text 绑定。</p>
-                            <button type="button" class="settings-button settings-button-secondary" onclick="openResearchSettings()">打开研究设置与持久任务日志</button>
+                        <section class="settings-card settings-research-services">
+                            <div class="settings-card-header"><div><h2>采集、翻译与协作接口</h2><p>统一管理 Apify、SerpApi、阿里云翻译与飞书。AI 模型使用“AI 线路”中的全局绑定。</p></div><button type="button" class="settings-button settings-button-secondary" onclick="reloadSettingsIntegrations()">重新读取接口</button></div>
+                            <div id="settingsResearchIntegrations" class="research-workbench settings-research-embedded"></div>
                         </section>
                         <!-- 网页爬虫配置 (Firecrawl) -->
                         <section class="settings-card settings-crawler-card" id="settingsCrawlerCard" aria-labelledby="settingsCrawlerTitle">
@@ -4256,15 +4257,21 @@
                                         <i class="ph ph-spider"></i>
                                     </span>
                                     <div>
-                                        <h2 id="settingsCrawlerTitle">网页爬虫配置 (Firecrawl)</h2>
-                                        <p>用于竞品分析中的网页内容抓取与智能解析。</p>
+                                        <h2 id="settingsCrawlerTitle">Firecrawl 网页采集</h2>
+                                        <p>统一管理网页采集接口，按用途保留已有账号和调用限制。</p>
                                     </div>
                                 </div>
                                 <div id="settingsCrawlerStatusBadge">
                                     <span class="settings-badge settings-badge-disabled"><i class="ph ph-spinner-gap settings-spin"></i> 加载中</span>
                                 </div>
                             </div>
-                            <div class="settings-crawler-body">
+                            <div class="settings-firecrawl-purpose"><label for="settingsFirecrawlPurpose">使用用途</label><select id="settingsFirecrawlPurpose" onchange="switchSettingsFirecrawlPurpose(this.value)"><option value="competitor">竞品分析</option><option value="research">选品研究</option></select></div>
+                            <div id="settingsResearchFirecrawl" class="research-workbench settings-research-embedded" hidden></div>
+                            <div class="settings-crawler-body" id="settingsCrawlerCompetitorBody">
+                                <div class="settings-crawler-profiles">
+                                    <div class="settings-crawler-profile-picker"><label for="settingsCrawlerProfileSelect">已保存账号</label><div class="settings-crawler-profile-select-row"><select id="settingsCrawlerProfileSelect" onchange="selectCrawlerProfile(this.value)"></select><button type="button" id="settingsCrawlerNewProfileBtn" class="settings-button settings-button-secondary" onclick="newCrawlerProfile()"><i class="ph ph-plus"></i> 新增账号</button></div></div>
+                                    <div class="settings-crawler-profile-current"><p id="settingsCrawlerProfileHint"></p><button type="button" id="settingsCrawlerActivateBtn" class="settings-button settings-button-secondary" onclick="activateCrawlerProfile()" hidden><i class="ph ph-check-circle"></i> 使用此账号</button></div>
+                                </div>
                                 <div class="settings-field">
                                     <label for="settingsFirecrawlApiKey">
                                         <span>Firecrawl API Key <b>*</b></span>
@@ -4291,6 +4298,7 @@
                                     </div>
                                     <small>默认使用官方云端地址；亦可填写自建 Firecrawl 实例（如 http://localhost:3002/v1/scrape）。</small>
                                 </div>
+                                <small class="settings-crawler-profile-test-note">测试连接会抓取示例网页，可能消耗所选账号额度；不会启用账号或开始竞品分析。</small>
                                 <div class="settings-crawler-footer">
                                     <div id="settingsCrawlerTestMsg" class="settings-crawler-test-msg" aria-live="polite"></div>
                                     <div class="settings-crawler-actions">
@@ -4305,6 +4313,89 @@
                             </div>
                         </section>
 
+                        <!-- 本地安全与脱敏机制 -->
+                        <section id="localDraftTransfer" class="settings-card" aria-labelledby="localDraftTransferTitle">
+                            <div class="settings-card-header">
+                                <div><h2 id="localDraftTransferTitle">浏览器草稿与模板迁移</h2>
+                                    <p>先在旧浏览器导出，再到客户端选择文件、预览并确认导入。</p></div>
+                            </div>
+                            <div class="settings-security-body">
+                                <p class="text-sm text-slate-500 mb-4">仅迁移所选本地草稿；已有内容不覆盖，同名模板保留。品牌档案与业务历史已由本地数据库管理，研究草稿请使用研究页原有导入入口。</p>
+                                <fieldset class="flex flex-wrap gap-4 mb-4">
+                                    <legend class="text-sm font-bold mb-2">选择导出内容</legend>
+                                    <label><input type="checkbox" checked data-transfer-key="ai_ecommerce_listing_draft_v1"> Listing 草稿</label>
+                                    <label><input type="checkbox" checked data-transfer-key="ai_ecommerce_ads_draft_v1"> 广告文案草稿</label>
+                                    <label><input type="checkbox" checked data-transfer-key="dtc_saved_typography_templates"> 排版模板</label>
+                                </fieldset>
+                                <p class="text-xs text-slate-500 mb-4">不包含系统保存的API密钥、登录资料或研究命令。详情页资料与图片请使用下方“详情页项目迁移”。迁移文件含业务资料，请妥善保管。</p>
+                                <div class="flex flex-wrap gap-3">
+                                    <button type="button" class="settings-button settings-button-secondary" data-transfer-export>导出所选草稿与模板</button>
+                                    <button type="button" class="settings-button settings-button-secondary" data-transfer-select>选择迁移文件并预览</button>
+                                    <button type="button" class="settings-button settings-button-primary" data-transfer-apply disabled>确认添加缺少的内容</button>
+                                </div>
+                                <input type="file" accept=".json,application/json" class="hidden" aria-label="选择本地草稿迁移文件">
+                                <div data-transfer-preview class="text-sm mt-4" aria-label="草稿迁移预览"></div>
+                                <p data-transfer-status class="text-sm text-slate-500 mt-3" role="status" aria-live="polite">选择文件只会预览，不会自动导入或执行任务。</p>
+                            </div>
+                        </section>
+
+                        <section id="detailProjectTransfer" class="settings-card" aria-labelledby="detailProjectTransferTitle">
+                            <div class="settings-card-header"><div><h2 id="detailProjectTransferTitle">详情页项目迁移</h2><p>迁移原图、模块成果、文案与排版；未生成的资料也能保存。</p></div></div>
+                            <div class="settings-security-body">
+                                <p class="text-sm text-slate-500 mb-4">文件包含业务资料与图片。最多 64 MiB，单图最多 8 MiB。导入另存历史，不覆盖当前编辑内容，不自动生成或上传。失效图片会阻止导出，请保留原草稿。</p>
+                                <div class="flex flex-wrap gap-3">
+                                    <button type="button" class="settings-button settings-button-secondary" data-detail-export>导出当前详情项目（含图片）</button>
+                                    <button type="button" class="settings-button settings-button-secondary" data-detail-select>选择项目文件并预览</button>
+                                    <button type="button" class="settings-button settings-button-primary" data-detail-import disabled>另存为独立历史</button>
+                                </div>
+                                <input type="file" accept=".json,application/json" class="hidden" aria-label="选择详情页项目文件">
+                                <p data-detail-status class="text-sm text-slate-500 mt-3" role="status" aria-live="polite">先预览，确认后保存；已有项目和草稿保留。</p>
+                            </div>
+                        </section>
+
+                        <section class="settings-card settings-security-card">
+                            <div class="settings-card-header">
+                                <div>
+                                    <span class="settings-section-icon settings-section-icon-emerald">
+                                        <i class="ph ph-shield-check"></i>
+                                    </span>
+                                    <div>
+                                        <h2>本地持久化与数据脱敏机制</h2>
+                                        <p>保护您的企业 API 凭据、私有爬虫密钥与存储安全。</p>
+                                    </div>
+                                </div>
+                                <span class="settings-badge settings-badge-enabled"><i class="ph ph-lock-key"></i> 本地私有</span>
+                            </div>
+                            <div class="settings-security-body">
+                                <div class="settings-security-list">
+                                    <div class="settings-security-item">
+                                        <i class="ph-bold ph-check-circle text-emerald-500"></i>
+                                        <div>
+                                            <strong>密钥脱敏隔离</strong>
+                                            <p>前端展示 API Key / 凭据时仅呈现部分掩码（如 ••••••••），后端仅在执行实际请求时组装鉴权头，严防窃取与抓包泄露。</p>
+                                        </div>
+                                    </div>
+                                    <div class="settings-security-item">
+                                        <i class="ph-bold ph-check-circle text-emerald-500"></i>
+                                        <div>
+                                            <strong>本地 SQLite 存储</strong>
+                                            <p>所有线路配置持久化保存在本机 SQLite 数据库中，客户端数据独立于应用安装包保存。</p>
+                                        </div>
+                                    </div>
+                                    <div class="settings-security-item">
+                                        <i class="ph-bold ph-check-circle text-emerald-500"></i>
+                                        <div>
+                                            <strong>零侵入与零触碰安全</strong>
+                                            <p>切换线路或测试存储连接均遵循无副作用原则，不改动远程既有资产，不静默上传无关数据。</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- 独立存储分区：保留原存储卡片及所有处理器 -->
+                    <div id="settingsPaneStorage" class="settings-tab-pane custom-scrollbar hidden">
                         <!-- 多目标云存储图床托管 (WordPress / Shopify / Cloudflare R2) -->
                         <section class="settings-card settings-storage-integration-card" id="settingsStorageIntegrationCard">
                             <div class="settings-card-header">
@@ -4423,54 +4514,10 @@
                             </div>
                         </section>
 
-                        <!-- 本地安全与脱敏机制 -->
-                        <section class="settings-card settings-security-card">
-                            <div class="settings-card-header">
-                                <div>
-                                    <span class="settings-section-icon settings-section-icon-emerald">
-                                        <i class="ph ph-shield-check"></i>
-                                    </span>
-                                    <div>
-                                        <h2>本地持久化与数据脱敏机制</h2>
-                                        <p>保护您的企业 API 凭据、私有爬虫密钥与存储安全。</p>
-                                    </div>
-                                </div>
-                                <span class="settings-badge settings-badge-enabled"><i class="ph ph-lock-key"></i> 本地私有</span>
-                            </div>
-                            <div class="settings-security-body">
-                                <div class="settings-security-list">
-                                    <div class="settings-security-item">
-                                        <i class="ph-bold ph-check-circle text-emerald-500"></i>
-                                        <div>
-                                            <strong>密钥脱敏隔离</strong>
-                                            <p>前端展示 API Key / 凭据时仅呈现部分掩码（如 ••••••••），后端仅在执行实际请求时组装鉴权头，严防窃取与抓包泄露。</p>
-                                        </div>
-                                    </div>
-                                    <div class="settings-security-item">
-                                        <i class="ph-bold ph-check-circle text-emerald-500"></i>
-                                        <div>
-                                            <strong>本地 SQLite 存储</strong>
-                                            <p>所有线路配置持久化保存在本地 <code>backend/history.db</code> 中，无需连接外部第三方数据库，不上传任何业务核心数据。</p>
-                                        </div>
-                                    </div>
-                                    <div class="settings-security-item">
-                                        <i class="ph-bold ph-check-circle text-emerald-500"></i>
-                                        <div>
-                                            <strong>零侵入与零触碰安全</strong>
-                                            <p>切换线路或测试存储连接均遵循无副作用原则，不改动远程既有资产，不静默上传无关数据。</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </section>
                     </div>
 
                     <!-- TAB 3: 实时运行日志与观测 -->
                     <div id="settingsPaneLogs" class="settings-tab-pane custom-scrollbar hidden">
-                        <section class="settings-card">
-                            <h2>研究持久任务日志</h2><p>以下主进程日志仅保留于当前进程；研究 worker 的持久任务日志按项目查询。</p>
-                            <button type="button" class="settings-button settings-button-secondary" onclick="openResearchSettings()">打开研究持久日志</button>
-                        </section>
                         <section id="settingsLogPanel" class="settings-log-panel settings-log-panel-fullscreen">
                             <div class="settings-log-header">
                                 <div>
@@ -4478,11 +4525,15 @@
                                         <span class="settings-log-dot"></span>
                                         <h2 id="settingsLogTitle">实时运行日志</h2>
                                     </div>
-                                    <p>连接测试、AI 请求与应用事件将在此持续显示。</p>
+                                    <p>连接测试、AI 请求与应用事件；重启后不保留。</p>
                                 </div>
-                                <span id="settingsLogConnection" class="settings-log-connection"
-                                    data-status="disconnected">已断开</span>
+                                <div class="settings-log-header-actions">
+                                    <button type="button" class="settings-log-button" onclick="openResearchSettings()" title="按研究项目查看持久保存的任务记录"><i class="ph ph-list-bullets" aria-hidden="true"></i>研究任务日志</button>
+                                    <span id="settingsLogConnection" class="settings-log-connection"
+                                        data-status="disconnected">已断开</span>
+                                </div>
                             </div>
+                            <div id="settingsResearchWorkerStatus"></div>
                             <div class="settings-log-toolbar" aria-label="日志控制">
                                 <div class="settings-log-filters">
                                     <label class="settings-log-filter-label">
@@ -5244,20 +5295,25 @@
         console.log("%c[System] DOM fully loaded, starting app.js...", "color: #4f46e5; font-weight: bold;");
     </script>
     <script src="js/usage_query_engine.js?v=20260920-ccswitch-v5"></script>
-    <script src="js/settings.js?v=20260921-vertex-v1"></script>
-    <script src="js/app.js?v=20260920-config-v2"></script>
+    <script src="js/interface_typography.js?v=20261022"></script>
+    <script src="js/settings.js?v=20261026-crawler-profiles-compact"></script>
+    <script src="js/local_transfer.js?v=20261021"></script>
+    <script src="js/detail_project_transfer.js?v=20261021"></script>
+    <script src="js/app.js?v=20261024-storage-tab"></script>
     <script src="js/universal_uploader.js"></script>
     <script src="js/details.js?v=20260917-reset-v1"></script>
     <script src="js/listing.js?v=20260917-reset-v1"></script>
     <script src="js/ads.js?v=20260917-reset-v1"></script>
-    <script src="js/square_redraw.js?v=20260917-reset-v1"></script>
+    <script src="js/square_redraw.js?v=20261022-design1"></script>
     <script src="js/translate.js?v=20260917-reset-v1"></script>
     <script src="js/text_translate.js?v=20260917-reset-v1"></script>
     <script src="js/history_manager.js?v=20260917-reset-v1"></script>
     <script src="js/watermark_removal_core.js"></script>
     <script src="js/watermark_removal.js"></script>
-    <script src="js/analysis.js?v=20260917-reset-v1"></script>
-    <script src="js/research.js?v=20261009"></script>
+    <script src="js/analysis.js?v=20261026-crawler-dialog"></script>
+    <script src="js/research.js?v=20261026-candidate-switch"></script>
+    <link rel="stylesheet" href="css/customer_setup.css?v=20261023">
+    <script type="module" src="js/customer_setup.mjs?v=20261023"></script>
 </body>
 
 </html>

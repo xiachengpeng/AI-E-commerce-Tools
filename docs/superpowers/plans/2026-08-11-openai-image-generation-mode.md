@@ -1,5 +1,12 @@
 # OpenAI Compatible 图片生成模式实施计划
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 为每条 OpenAI Compatible 图片线路增加持久化的文生图/图生图模式，并分别路由到 `/v1/images/generations` JSON 与 `/v1/images/edits` multipart 接口。

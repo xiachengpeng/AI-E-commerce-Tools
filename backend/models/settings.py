@@ -176,17 +176,41 @@ class FirecrawlConfigRead(BaseModel):
     last_tested_at: datetime | None = None
 
 
+    profile_id: str | None = None
+    name: str | None = None
+    version: int | None = None
+    active_profile_id: str | None = None
+    active_version: int | None = None
+    profiles: list[dict] = Field(default_factory=list)
+    active_config: dict | None = None
+
+
 class FirecrawlConfigWrite(BaseModel):
     api_key: str | None = None
     api_url: str | None = None
 
 
+class CrawlerProfileWrite(BaseModel):
+    name: str | None = Field(default=None, max_length=60)
+    api_key: str | None = Field(default=None, max_length=2048)
+    api_url: str | None = Field(default=None, max_length=2048)
+    expected_version: int | None = None
+
+
+class CrawlerProfileActivation(BaseModel):
+    expected_version: int
+    expected_active_version: int
+
+
 class FirecrawlConnectionTest(BaseModel):
+    profile_id: str | None = None
+    expected_version: int | None = None
     api_key: str | None = None
     api_url: str | None = None
 
 
 class FirecrawlConnectionTestResult(BaseModel):
+    persisted: bool | None = None
     status: Literal["success", "error"]
     duration_ms: int
     message: str
@@ -211,6 +235,8 @@ class ProviderModelsFetchResponse(BaseModel):
 
 
 class SecretRevealRequest(BaseModel):
+    profile_id: str | None = None
+    expected_version: int | None = None
     category: Literal["ai_provider", "usage_query", "crawler", "storage"]
     field: str
     id: int | None = None

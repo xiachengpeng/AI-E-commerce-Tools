@@ -30,13 +30,14 @@ def test_product_variant_offers_and_recommendation_links():
 
 
 def test_different_variant_prices_are_not_silently_selected():
-    assert (
-        LandingCollector._price(
-            [{"@type": "Product", "offers": [{"price": 10}, {"price": 20}]}],
-            "$5 recommended",
-        )
-        is None
-    )
+    # Exercise the collector's page entry point rather than a removed helper.
+    raw = b"""<html><head><title>Variant product</title></head><body>
+    <p>$5 recommended</p>
+    <script type="application/ld+json">{"@type":"Product","offers":[
+    {"price":10},{"price":20}]}</script></body></html>"""
+    result = LandingCollector._snapshot(raw, "https://shop.example/products/variants")
+    assert result.price is None
+    assert result.price_source is None
 
 
 @pytest.mark.asyncio

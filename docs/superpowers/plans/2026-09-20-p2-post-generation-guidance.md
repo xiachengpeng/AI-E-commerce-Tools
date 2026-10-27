@@ -1,5 +1,12 @@
 # Phase P2: 全量文案与流程深度重塑 — 生成后后链路闭环与业务交付 Implementation Plan
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 构建商详全案生成后的一键交付中心、打通竞品分析长报告底部的落地行动呼吁，并全面诊断重塑全站冷硬报错与操作反馈文案，消除非专业跨境卖家的流程断点。

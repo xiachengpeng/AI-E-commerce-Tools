@@ -1,5 +1,12 @@
 # Detailed AI Error Logging Design
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 Date: 2026-07-24
 
 ## Goal

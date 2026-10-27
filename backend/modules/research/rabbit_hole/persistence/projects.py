@@ -312,7 +312,9 @@ class WorkbenchStore:
         ):
             raise WorkbenchError("invalid_version", "expected_version 必须是非负整数")
         normalized_actor = "automation" if actor == "automation" else "local_user"
-        safe_payload = sanitize_research_url_fields(payload)
+        safe_payload = sanitize_research_url_fields(
+            payload, preserve_media=action == "collection_result" and normalized_actor == "automation"
+        )
         if not isinstance(safe_payload, dict):
             raise WorkbenchError("invalid_payload", "payload must be an object")
         command_digest = _digest(

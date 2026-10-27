@@ -3474,3 +3474,19 @@ def test_keyword_history_does_not_consume_future_scan_capacity():
                 "source_quote": "nested observed phrase",
             },
         )
+
+@pytest.mark.parametrize('result,confirmed',[('matched',True),('mismatch',False),('unverified',False)])
+def test_identity_outcomes_are_explicit_and_keep_existing_relevance_gate(result,confirmed):
+    state=project();item=add_product(state)
+    command(state,'confirm_product',{'product_id':item['id'],'name':item['name'],'url':item['url'],'reason':'实际对照外观与链接','relevance_confirmed':confirmed,'relevance_result':result})
+    assert item['identification']['relevance_result']==result
+    assert item['identification']['relevance_confirmed'] is confirmed
+    assert item['triage']['state']=='pending'
+    if not confirmed:
+        assert item['identification']['passed'] is False
+
+
+def test_identity_outcome_cannot_contradict_confirmation():
+    state=project();item=add_product(state)
+    with pytest.raises(WorkbenchError):
+        command(state,'confirm_product',{'product_id':item['id'],'name':item['name'],'url':item['url'],'reason':'检查来源','relevance_confirmed':True,'relevance_result':'mismatch'})

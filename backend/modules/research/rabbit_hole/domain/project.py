@@ -574,7 +574,9 @@ def _refresh_product(
             product,
             "identification",
             "passed",
-            "已人工核对具体商品与广告相关性。",
+            "AI 已对照来源匹配商品与关键词；尚未经人工确认，粗筛需另行核对。"
+            if identity.get("confirmation_method") == "ai"
+            else "已人工核对具体商品与广告相关性。",
             "检查广告粗筛条件。",
         )
         _set_step(
@@ -714,7 +716,9 @@ def _refresh_product(
         "decision",
         "passed" if current_decision else "needs_input",
         "已保存当前人工决定。" if current_decision else "需要作出或更新人工决定。",
-        "选择测试、备选、观察或淘汰并说明理由。",
+        ("进行研究复盘，证据变化后再评估。" if decision["pool"] != "test"
+         else "制定测试计划，核对预算与停止线。")
+        if current_decision else "选择测试、备选、观察或淘汰并说明理由。",
     )
     run = current_test_run(product)
     plan = run.get("plan") if run else None
@@ -752,7 +756,8 @@ def _refresh_product(
         "review",
         "passed" if product["reviews"] else "pending",
         "已保存复盘记录。" if product["reviews"] else "尚未记录复盘。",
-        "填写结论、经验及下一轮词池。",
+        "本轮复盘已保存；审核下一轮关键词，或补充证据后重新评估。"
+        if product["reviews"] else "填写结论、经验及下一轮词池。",
     )
 
 
@@ -2181,6 +2186,9 @@ def _update_product_identity(
         _url(p.get("url")),
     )
     relevance = _bool(p.get("relevance_confirmed"), "relevance_confirmed")
+    relevance_result = p.get("relevance_result", "matched" if relevance else "unverified")
+    if not isinstance(relevance_result, str) or relevance_result not in {"matched", "mismatch", "unverified"} or relevance != (relevance_result == "matched"):
+        raise WorkbenchError("invalid_payload", "核对结果与相关性确认不一致，请重新选择")
     reason = _text(p.get("reason"), "reason", required=True)
     old_identity_key = product.get("identity_key") or product_identity_url(
         product["url"]
@@ -2223,6 +2231,7 @@ def _update_product_identity(
         {
             "product_confirmed": relevance,
             "relevance_confirmed": relevance,
+            "relevance_result": relevance_result,
             "reason": reason,
             "operator": actor,
             "confirmed_at": _iso(now),

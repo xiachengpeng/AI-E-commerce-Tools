@@ -37,10 +37,13 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def create_engine(url: str, *, readonly: bool = False, initialize_file: bool = True, lock_root: Path | None = None, **options: Any) -> AsyncEngine:
+def create_engine(url: str, *, readonly: bool = False, initialize_file: bool = True, lock_root: Path | None = None, asset_reference_database: Path | None = None, **options: Any) -> AsyncEngine:
     engine = create_async_engine(url, connect_args={"timeout": 30} if url.startswith("sqlite") else {}, **options)
     if engine.dialect.name == "sqlite":
         name = engine.url.database
+        if asset_reference_database is not None and (readonly or not name or name == ":memory:"
+                or name.startswith("file:") or Path(name).resolve() != Path(asset_reference_database).resolve()):
+            raise ValueError("reference database must match writable SQLite engine")
         if initialize_file and not readonly and name and name != ":memory:":
             database = Path(name).absolute()
             if any(part.is_symlink() for part in (database, *database.parents)):
@@ -48,6 +51,9 @@ def create_engine(url: str, *, readonly: bool = False, initialize_file: bool = T
             fd = os.open(database, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
             os.fchmod(fd, 0o600)
             os.close(fd)
+        if asset_reference_database is not None and not readonly:
+            from services.asset_reference_service import install_reference_transaction_lock
+            install_reference_transaction_lock(engine.sync_engine, asset_reference_database)
         @event.listens_for(engine.sync_engine, "connect")
         def configure(dbapi: Any, _: Any) -> None:
             dbapi.isolation_level = None

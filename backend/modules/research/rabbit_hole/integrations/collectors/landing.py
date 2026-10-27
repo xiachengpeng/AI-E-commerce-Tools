@@ -49,6 +49,9 @@ class LandingSnapshot(BaseModel):
 
     title: str | None = None
     price: str | None = None
+    price_currency: str | None = None
+    price_source: str | None = None
+    price_parser_version: int = 2
     body_text: str
     json_ld: tuple[dict[str, Any], ...] = ()
     images: tuple[str, ...] = ()
@@ -121,19 +124,45 @@ class _PageParser(HTMLParser):
         self.buttons: list[str] = []
         self._button: list[str] = []
         self.images: list[str] = []
+        self.main_images: list[str] = []
+        self.gallery_images: list[str] = []
+        self.og_images: list[str] = []
+        self.regions: list[tuple[str, str]] = []
+        self._paragraph_allowed = True
         self.links: list[str] = []
         self.json_scripts: list[str] = []
         self._script: list[str] = []
         self._is_json_script = False
         self.has_strike = False
+        self.price_meta: dict[str, str] = {}
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in {"s", "del"}:
             self.has_strike = True
-        self.stack.append(tag)
         attributes = dict(attrs)
-        if tag == "img" and attributes.get("src"):
-            self.images.append(str(attributes["src"]))
+        if tag == "meta":
+            key = attributes.get("property") or attributes.get("name")
+            field = {"og:price:amount": "amount", "product:price:amount": "amount", "og:price:currency": "currency", "product:price:currency": "currency"}.get(key)
+            if field and attributes.get("content"):
+                self.price_meta[field] = str(attributes["content"])
+        marker = " ".join(str(attributes.get(key) or "") for key in ("class", "id", "role"))
+        region = " ".join(value for _, value in self.regions) + " " + marker
+        excluded = any(t in {"header", "nav", "footer", "aside"} for t, _ in self.regions) or bool(
+            re.search(r"recommend|related.product|upsell|complementary|recently.viewed|account|cookie|newsletter|dialog", region, re.IGNORECASE)
+        )
+        if tag == "meta" and attributes.get("property") == "og:image" and attributes.get("content"):
+            self.og_images.append(str(attributes["content"]))
+        if tag == "img" and not excluded:
+            image = attributes.get("src") or attributes.get("data-src")
+            if image:
+                self.images.append(str(image))
+                if any(t == "main" for t, _ in self.regions):
+                    self.main_images.append(str(image))
+                if re.search(r"product[_-]+(?:media|image|gallery)|media-gallery|product-gallery", region, re.IGNORECASE):
+                    self.gallery_images.append(str(image))
+        if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}:
+            self.stack.append(tag)
+            self.regions.append((tag, marker))
         if tag == "a" and attributes.get("href"):
             self.links.append(str(attributes["href"]))
         if (
@@ -144,6 +173,7 @@ class _PageParser(HTMLParser):
             self._script = []
         if tag == "p":
             self._paragraph = []
+            self._paragraph_allowed = not excluded
         if tag in {"button", "a"}:
             self._button = []
 
@@ -151,13 +181,14 @@ class _PageParser(HTMLParser):
         if tag == "script" and self._is_json_script:
             self.json_scripts.append("".join(self._script))
             self._is_json_script = False
-        if tag == "p" and self._paragraph:
+        if tag == "p" and self._paragraph and self._paragraph_allowed:
             self.paragraphs.append(" ".join(self._paragraph))
         if tag in {"button", "a"} and self._button:
             self.buttons.append(" ".join(self._button))
         for index in range(len(self.stack) - 1, -1, -1):
             if self.stack[index] == tag:
                 del self.stack[index:]
+                del self.regions[index:]
                 break
 
     def handle_data(self, data: str) -> None:
@@ -603,16 +634,40 @@ class LandingCollector:
         parser.feed(text)
         body_text = " ".join(parser.text_parts)
         json_ld = cls._json_ld(parser.json_scripts)
-        price = cls._price(json_ld, body_text)
-        page_type = cls._page_type(json_ld, price, parser.links, final_url)
+        products = [item for item in json_ld if "product" in (
+            [str(t).lower() for t in item.get("@type", [])] if isinstance(item.get("@type"), list)
+            else [str(item.get("@type", "")).lower()])]
+        matching = [item for item in products if any(
+            isinstance(item.get(key), str) and urljoin(final_url, item[key]).split("#")[0].rstrip("/") == final_url.split("#")[0].rstrip("/")
+            for key in ("url", "@id")
+        )]
+        selected = matching or (products if len(products) == 1 else [])
+        product_images: list[str] = []
+        for item in selected:
+            images = item.get("image", [])
+            for image in images if isinstance(images, list) else [images]:
+                candidate = image.get("contentUrl") or image.get("url") if isinstance(image, dict) else image
+                if isinstance(candidate, str):
+                    product_images.append(candidate)
+        # When product evidence exists, page-wide recommendation images must
+        # never become the primary product gallery.
+        images = product_images or parser.gallery_images
+        if not images:
+            images = parser.og_images or parser.main_images or ([] if products else parser.images)
+        from .landing_price import observe_price
+        price_evidence = observe_price(json_ld, body_text, final_url, parser.price_meta)
+        price = price_evidence["amount"] if price_evidence else None
+        page_type = cls._page_type(selected if products else json_ld, price, parser.links, final_url)
         funnel = cls._funnel(parser, body_text)
         return LandingSnapshot(
             title=" ".join(parser.title_parts) or None,
             price=price,
+            price_currency=price_evidence.get("currency") if price_evidence else None,
+            price_source=price_evidence.get("source") if price_evidence else None,
             body_text=body_text,
             json_ld=tuple(json_ld),
             images=tuple(
-                dict.fromkeys(urljoin(final_url, image) for image in parser.images)
+                dict.fromkeys(urljoin(final_url, image) for image in images)
             ),
             final_url=final_url,
             requested_url=requested_url,
@@ -638,28 +693,10 @@ class LandingCollector:
                 continue
             items = parsed if isinstance(parsed, list) else [parsed]
             result.extend(item for item in items if isinstance(item, dict))
+            for item in items:
+                if isinstance(item, dict) and isinstance(item.get("@graph"), list):
+                    result.extend(node for node in item["@graph"][:400] if isinstance(node, dict))
         return result
-
-    @staticmethod
-    def _price(json_ld: list[dict[str, Any]], body_text: str) -> str | None:
-        for item in json_ld:
-            offers = item.get("offers")
-            if isinstance(offers, dict) and offers.get("price") is not None:
-                return str(offers["price"])
-            if isinstance(offers, list) and offers:
-                prices = {
-                    str(offer["price"])
-                    for offer in offers
-                    if isinstance(offer, dict) and offer.get("price") is not None
-                }
-                if len(prices) == 1 and all(
-                    isinstance(offer, dict) and offer.get("price") is not None
-                    for offer in offers
-                ):
-                    return next(iter(prices))
-                return None
-        matched = re.search(r"(?:US\$|\$)\s?([0-9]+(?:[.,][0-9]{2})?)", body_text)
-        return matched.group(1).replace(",", "") if matched else None
 
     @staticmethod
     def _page_type(
@@ -680,7 +717,8 @@ class LandingCollector:
     def _funnel(parser: _PageParser, body_text: str) -> FunnelEvidence:
         normalized = body_text.lower()
         hook = next(
-            (item for item in parser.paragraphs if "$" not in item and len(item) > 8),
+            (item for item in parser.paragraphs if "$" not in item and len(item) > 8
+             and not re.search(r"have an account|log ?in|sign ?in|cookie|privacy policy", item, re.IGNORECASE)),
             None,
         )
         cta = next(

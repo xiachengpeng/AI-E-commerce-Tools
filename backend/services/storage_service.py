@@ -71,7 +71,8 @@ def extract_image_bytes(image_data: str, default_mime: str = "image/jpeg") -> Tu
     static_match = re.search(r"/?static/(.+)$", cleaned)
     if static_match:
         rel_subpath = static_match.group(1)
-        static_dir = Path(__file__).resolve().parent.parent / "static"
+        from services.runtime_paths import static_root
+        static_dir = static_root()
         target_path = (static_dir / rel_subpath).resolve()
         if target_path.is_file() and str(target_path).startswith(str(static_dir.resolve())):
             content = target_path.read_bytes()

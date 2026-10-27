@@ -68,7 +68,8 @@ def _valid(paths, report, connection):
     now = time.time()
     if not isinstance(report, dict) or report.get('mode') != 'active':
         return False
-    if any(report.get(k) is not True for k in ('source_owner_stopped', 'source_writers_frozen', 'source_frozen')):
+    fresh = report.get('kind') == 'fresh_install'
+    if not fresh and any(report.get(k) is not True for k in ('source_owner_stopped', 'source_writers_frozen', 'source_frozen')):
         return False
     if type(report.get('unresolved_nonidempotent')) is not int or report['unresolved_nonidempotent'] < 0:
         return False
@@ -83,6 +84,20 @@ def _valid(paths, report, connection):
         return False
     if row[2] is not None:
         return row[2] == signature and row[3] == 'activated' and _check_quarantine(connection, report, first_use=False)
+    if fresh:
+        # Distinct empty-install issuance. Never reinterpret a migration as new.
+        if (row[3] != 'verified' or report['owner_generation'] != 1
+                or report['unresolved_nonidempotent'] != 0 or report.get('quarantine') != []
+                or not report['snapshot_id'].startswith('fresh-')
+                or not (0 < report['issued_at'] <= now < report['expires_at'] <= report['issued_at'] + 3600)):
+            return False
+        for (name,) in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+            if name in {'full_merge_schema', 'full_merge_ledger', 'sqlite_sequence'}:
+                continue
+            quoted = '"' + name.replace('"', '""') + '"'
+            if connection.execute('SELECT 1 FROM ' + quoted + ' LIMIT 1').fetchone():
+                return False
+        return _logical_hash(connection) == report['target_db_hash']
     if not _check_quarantine(connection, report, first_use=True):
         return False
     if not (0 < report['source_frozen_at'] <= report['snapshot_created_at'] <= report['issued_at'] <= now

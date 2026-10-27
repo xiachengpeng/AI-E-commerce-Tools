@@ -1,6 +1,7 @@
 import datetime
 import json
 import uuid
+from pathlib import Path
 
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, ForeignKey, Index, event, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -32,6 +33,8 @@ def enable_sqlite_foreign_keys(db_engine):
 
 
 enable_sqlite_foreign_keys(engine)
+from services.asset_reference_service import install_reference_transaction_lock
+install_reference_transaction_lock(engine, Path(DB_PATH))
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

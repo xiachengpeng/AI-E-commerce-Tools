@@ -1,5 +1,12 @@
 # 阶段三：架构解耦与边缘防御 (Phase 3: Architecture, Error Recovery & Edge Resilience) Implementation Plan
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 针对系统审查报告中的 P2 级架构鲁棒性与边界防御问题，全面升级后端单品与竞品分析的非标准 JSON 容错与解析能力（杜绝 `json.loads` 异常击穿），引入商详长图导出的画布超高纹理（>16384px）自适应缩放降级与内存保护，以及构建全局 `safeLocalStorageSet` 防御性存储与 5MB 配额超限熔断清理机制。

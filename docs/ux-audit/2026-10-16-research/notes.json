@@ -1,0 +1,48 @@
+{
+  "initialNotes": [
+    {
+      "step": "01-04",
+      "status": "blocked-iab",
+      "finding": "内置浏览器新建项目 Failed to fetch，刷新及Chrome列表未见该项目；保留原表单，未重发。",
+      "evidence": "04-iab-create-failed.jpg"
+    },
+    {
+      "step": "05",
+      "status": "pass-with-issues",
+      "finding": "Chrome创建成功；新项目在当前项目页可用，但左侧我的研究仍只有原项目，需刷新才更新。",
+      "evidence": "05-chrome-project-created.jpg"
+    },
+    {
+      "step": "06",
+      "status": "pass",
+      "finding": "预算配置可保存；本项目单次批量1、每日扫描1、每日AI3。长表单无分组，证据门槛未更改。",
+      "evidence": "06-project-rules.jpg"
+    },
+    {
+      "step": "08-10",
+      "status": "pass-with-issues",
+      "finding": "真实AI建议已完成，页面出现20个待审核关键词；任务结果仍显示本次条数未记录，没有引导返回关键词审核。",
+      "evidence": "10-keyword-awaiting-review.jpg"
+    },
+    {
+      "step": "11",
+      "status": "running",
+      "finding": "真实Meta UI采集已开始，日志显示设置美国、活跃、视频、精准短语；来源卡却显示unconfigured/尚未连接。",
+      "evidence": "11-search-running.jpg"
+    }
+  ],
+  "report": "选品研究-真实浏览器验收报告.md",
+  "completedBranch": "观察→研究复盘",
+  "unverified": [
+    "完整测试池成功分支",
+    "报告下载落地",
+    "后端测试准入"
+  ],
+  "calls": {
+    "keywords": 1,
+    "scan": 1,
+    "verifyBatch": 1,
+    "expand": 1,
+    "trends": 1
+  }
+}

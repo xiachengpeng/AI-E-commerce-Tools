@@ -1,5 +1,12 @@
 # 阶段一：核心缺陷修复与安全加固 (Phase 1: Core Fixes & Security Hardening) Implementation Plan
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 修复在全面审查中发现的 P0/P1 致命安全漏洞（Firecrawl SSRF）、商详生图强耦合报废缺陷、竞品分析转存无确认清空草稿缺陷、单品分析冗余大模型调用以及云端图床回退误删已上传映射缺陷，确保系统稳健性与资产安全性。

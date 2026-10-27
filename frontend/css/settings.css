@@ -2902,3 +2902,200 @@
     box-shadow: 0 4px 16px rgba(37, 99, 235, 0.6);
 }
 
+
+/* The research integrations share the main Settings surface and lifecycle. */
+#view-settings .settings-research-embedded { height: auto; overflow: visible; background: transparent; padding: 20px 24px; }
+#view-settings .settings-research-embedded .rw-panel { margin: 0; box-shadow: none; }
+#view-settings .settings-research-embedded .rw-settings > .rw-panel { margin-bottom: 18px; }
+#view-settings .settings-research-embedded .rw-integration-grid { gap: 18px; grid-template-columns: repeat(auto-fit,minmax(min(100%,280px),1fr)); }
+#view-settings .settings-research-embedded .rw-field { margin: 16px 0; font-size: 12px; font-weight: 600; }
+#view-settings .settings-research-embedded .rw-field input { min-height: 42px; margin-top: 4px; font-weight: 400; }
+#view-settings .settings-research-embedded .rw-panel > button { margin-top: 12px; }
+#view-settings .settings-firecrawl-purpose { display: flex; align-items: center; gap: 16px; padding: 16px 24px 0; font-size: 13px; }
+#view-settings .settings-firecrawl-purpose select { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; background: #fff; color: #334155; }
+#view-settings #settingsResearchFirecrawl .rw-panel { border: 0; padding: 0; }
+#view-settings [hidden] { display: none !important; }
+@media(max-width:760px) { #view-settings .settings-research-embedded { padding: 16px; } }
+#view-settings .settings-research-embedded .rw-binding-summary { padding: 14px 18px; background: #f8f9fe; }
+#view-settings .settings-research-embedded .rw-binding-summary h2 { font-size: 14px; }
+#view-settings .settings-research-embedded .rw-binding-summary > * + * { margin-top: 6px; }
+#view-settings .settings-research-embedded .rw-binding-summary > button { float: right; margin: 0 0 8px 16px; }
+
+/* Runtime observation is a Logs concern, independent of research-page styling. */
+#settingsResearchWorkerStatus .rw-worker-status {padding:24px;margin-bottom:20px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;}
+#settingsResearchWorkerStatus .rw-worker-status h2 {font-size:18px;font-weight:700;margin:0 0 14px;color:#17233b;}
+#settingsResearchWorkerStatus .rw-worker-status p {font-size:14px;line-height:1.7;margin:6px 0;overflow-wrap:anywhere;}
+#settingsResearchWorkerStatus .rw-worker-status button {margin-top:14px;}
+.rw-service-test {margin:16px 0 8px;}
+.rw-service-test-note {font-size:12px;line-height:1.6;}
+.rw-external-services [data-test-state="success"] {color:#15803d;}
+.rw-external-services [data-test-state="error"] {color:#b91c1c;}
+
+.settings-appearance-card {max-width:900px;padding:28px;}
+.settings-appearance-card h2 {font-size:22px;font-weight:700;margin:0 0 12px;color:#17233b;}
+.settings-appearance-card p {font-size:14px;line-height:1.7;color:#64748b;margin:10px 0;}
+.settings-appearance-field {display:flex;align-items:center;justify-content:space-between;gap:20px;margin:28px 0 12px;font-size:15px;font-weight:600;}
+.settings-appearance-field select {font-size:14px;min-width:180px;min-height:44px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:10px;background:white;}
+.settings-font-preview {padding:24px;margin:22px 0;border:1px solid #e2e8f0;border-radius:12px;background:#f8fbff;}
+.settings-font-preview h3 {font-size:20px;font-weight:650;margin:0 0 12px;}
+.settings-font-preview span {display:inline-block;font-size:13px;color:#4f46e5;}
+.settings-appearance-card .settings-font-boundary {font-size:12px;margin-top:20px;}
+/* Preview/export typography belongs to the merchant's design, never the app preference. */
+#modulesResultContainer,#dtcHybridContainer,.dtc-pdp-wrapper,.dtc-modular-section {--app-font-scale:1;}
+@media(max-width:640px){.settings-appearance-card{padding:18px;}.settings-appearance-field{align-items:flex-start;flex-direction:column;}.settings-appearance-field select{width:100%;}}
+
+/* Named external-service credentials, scoped to the single main-settings editor. */
+#view-settings .rw-profile-controls { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; padding:16px; border:1px solid #e4eaf3; border-radius:10px; background:#fff; margin:18px 0; }
+#view-settings .rw-profile-controls > label { font-size:12px; font-weight:600; color:#425675; }
+#view-settings .rw-profile-controls :is(input,select) { width:100%; min-width:0; min-height:40px; }
+#view-settings .rw-profile-active { font-size:12px; line-height:1.7; margin:4px 0 0; }
+#view-settings .rw-profile-actions { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
+#view-settings .rw-profile-actions button { min-height:36px; border:1px solid #dce4ef; background:#fff; border-radius:7px; padding:8px 12px; font-size:12px; }
+#view-settings .rw-profile-actions [data-profile-activate] { color:#005cff; border-color:#afc8ff; }
+#view-settings .rw-secret-input { display:flex; align-items:center; position:relative; width:100%; }
+#view-settings .rw-secret-input input { padding-right:44px; width:100%; min-width:0; }
+#view-settings .rw-secret-toggle { display:grid; place-items:center; position:absolute; right:5px; top:50%; transform:translateY(-50%); width:34px; height:34px; border:0; border-radius:6px; background:transparent; color:#62728f; }
+#view-settings .rw-secret-toggle:hover { color:#005cff; background:#edf4ff; }
+#view-settings .rw-secret-toggle:focus-visible { outline:2px solid #005cff; outline-offset:2px; }
+#view-settings .rw-secret-toggle .ph { font-size:18px; }
+
+/* One logs console: runtime observation is a compact strip, not another card. */
+#settingsPaneLogs .settings-log-header-actions { display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px; }
+#settingsPaneLogs .settings-log-header-actions .settings-log-button { white-space:nowrap; }
+#settingsResearchWorkerStatus { flex:none;color:#cbd5e1; }
+#settingsResearchWorkerStatus .rw-worker-status { margin:0;padding:14px 18px;border:0;border-bottom:1px solid #33415599;border-radius:0;background:#10192b; }
+#settingsResearchWorkerStatus .rw-worker-summary { display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px; }
+#settingsResearchWorkerStatus .rw-worker-caption { font-size:13px;font-weight:600;color:#cbd5e1; }
+#settingsResearchWorkerStatus .rw-worker-status p { margin:0;font-size:13px;line-height:1.65;color:#a8b6cc; }
+#settingsResearchWorkerStatus [data-worker-state] { padding:3px 9px;border:1px solid #52617b;border-radius:6px;color:#cbd5e1;background:#1c273c; }
+#settingsResearchWorkerStatus [data-worker-state][data-state=running] { color:#6ee7b7;background:#12352f;border-color:#246154; }
+#settingsResearchWorkerStatus [data-worker-state]:is([data-state=paused],[data-state=starting],[data-state=degraded]) { color:#fcd99a;background:#352d20;border-color:#625033; }
+#settingsResearchWorkerStatus .rw-worker-refresh { margin:0 0 0 auto;min-height:32px;padding:6px 10px;font-size:12px; }
+#settingsResearchWorkerStatus .rw-worker-details { margin-top:8px; }
+#settingsResearchWorkerStatus .rw-worker-details>summary { width:fit-content;cursor:pointer;font-size:12px;line-height:1.8;color:#a8b6cc; }
+#settingsResearchWorkerStatus .rw-worker-details[open]>summary { margin-bottom:10px;color:#e2e8f0; }
+#settingsResearchWorkerStatus .rw-worker-details>p { margin-top:6px;font-size:12px;line-height:1.75; }
+#settingsResearchWorkerStatus .rw-worker-alert:not([hidden]) { margin-top:10px;padding:8px 10px;border:1px solid #66502f;border-radius:6px;background:#30281d;color:#f9d69b;font-size:12px; }
+#settingsResearchWorkerStatus .rw-worker-alert[hidden] { display:none; }
+#settingsResearchWorkerStatus :is(button,summary):focus-visible { outline:2px solid #818cf8;outline-offset:3px; }
+#settingsLogPanel>.settings-log-header,#settingsLogPanel>.settings-log-toolbar,#settingsLogPanel>.settings-log-statusbar { flex-shrink:0; }
+#settingsLogPanel>.settings-log-entries { min-height:220px; }
+@media(max-width:900px) { #settingsPaneLogs .settings-log-header { flex-wrap:wrap; }#settingsPaneLogs .settings-log-header-actions { justify-content:flex-start; }#settingsResearchWorkerStatus .rw-worker-summary { gap:8px 12px; }#settingsResearchWorkerStatus .rw-worker-refresh { margin-left:0; } }
+
+/* External accounts: compact service rail + one familiar account form, in both settings frames. */
+#view-settings #settingsPaneIntegrations .settings-research-services { overflow:visible; }
+#view-settings #settingsPaneIntegrations .settings-research-services > .settings-card-header { display:flex; padding:20px 24px; gap:16px; align-items:center; }
+#view-settings #settingsPaneIntegrations .settings-research-services > .settings-card-header > div { display:block; }
+#view-settings #settingsPaneIntegrations .settings-research-services > .settings-card-header h2 { font-size:16px; line-height:1.5; }
+#view-settings #settingsPaneIntegrations .settings-research-services > .settings-card-header p { font-size:12px; line-height:1.6; margin:4px 0 0; }
+#view-settings #settingsPaneIntegrations .settings-research-services > .settings-card-header > button { margin:0; min-width:0; flex:none; font-size:12px; padding:9px 12px; }
+#view-settings #settingsPaneIntegrations .settings-research-embedded { padding:0; }
+#view-settings #settingsPaneIntegrations .rw-accounts-layout { padding:0; }
+#view-settings #settingsPaneIntegrations .rw-service-workspace { display:grid; grid-template-columns:224px minmax(0,1fr); gap:0; align-items:start; }
+#view-settings #settingsPaneIntegrations .rw-service-list { display:flex; flex-direction:column; grid-column:1; grid-row:1; align-self:stretch; min-width:0; padding:20px 12px; margin:0; border:0; border-right:1px solid #e6ebf2; border-radius:0; background:#fafbfe; overflow:visible; gap:6px; }
+#view-settings #settingsPaneIntegrations .rw-external-title { margin:0; padding:0 12px 12px; font-size:12px; font-weight:600; color:#71809b; }
+#view-settings #settingsPaneIntegrations .rw-service-description { display:none; }
+#view-settings #settingsPaneIntegrations .rw-service-button { display:grid; position:relative; grid-template-columns:30px minmax(0,1fr); gap:4px 10px; align-items:center; justify-content:initial; word-break:keep-all; overflow-wrap:normal; width:100%; min-width:0; min-height:72px; margin:0; padding:12px 10px; border:1px solid transparent; border-radius:9px; box-shadow:none; text-align:left; font-size:13px; font-weight:600; line-height:1.5; color:#42536f; background:transparent; }
+#view-settings #settingsPaneIntegrations .rw-service-button:hover { background:#f0f4fb; }
+#view-settings #settingsPaneIntegrations .rw-service-button[aria-pressed=true] { background:#eef3ff; color:#225de5; border-color:#d5e1ff; box-shadow:none; }
+#view-settings #settingsPaneIntegrations .rw-service-button > :is(.ph,.rw-service-mark) { position:static; grid-column:1; grid-row:1 / span 2; width:30px; height:30px; display:grid; place-items:center; border:0; border-radius:7px; padding:0; background:transparent; color:inherit; font-size:22px; object-fit:contain; }
+#view-settings #settingsPaneIntegrations .rw-service-button > :is(.rw-service-purpose,.rw-service-caret) { display:none; }
+#view-settings #settingsPaneIntegrations .rw-service-button small { position:static; display:block; grid-column:2; grid-row:2; align-self:start; min-width:0; padding:0; margin:0; font-size:11px; line-height:1.5; font-weight:400; white-space:normal; color:#7a88a1; background:transparent; border:0; }
+#view-settings #settingsPaneIntegrations .rw-service-button[aria-pressed=true] small { color:#5b78b5; }
+#view-settings #settingsPaneIntegrations .rw-service-workspace > :is(.rw-panel,#settingsCrawlerCard) { grid-column:2; grid-row:1; min-width:0; min-height:0; width:auto; padding:24px 28px; border:0; border-radius:0; margin:0; background:white; box-shadow:none; }
+#view-settings #settingsPaneIntegrations .rw-account-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding-bottom:20px; border-bottom:1px solid #edf0f6; }
+#view-settings #settingsPaneIntegrations .rw-account-heading h2 { font-size:20px; font-weight:700; color:#182743; line-height:1.4; margin:0; }
+#view-settings #settingsPaneIntegrations .rw-account-heading p { margin:6px 0 0; font-size:12px; line-height:1.6; color:#7b88a0; }
+#view-settings #settingsPaneIntegrations .rw-account-badge { flex:none; padding:4px 9px; background:#f1f4f9; border:1px solid #e3e8f0; color:#66768f; border-radius:6px; font-size:11px; line-height:1.5; }
+#view-settings #settingsPaneIntegrations .rw-account-badge[data-active=true] { background:#ecf9f0; color:#26804c; border-color:#ccebd7; }
+#view-settings #settingsPaneIntegrations .rw-profile-controls { display:grid; grid-template-columns:minmax(160px,1fr) auto; gap:10px 14px; margin:0; padding:20px 0; border:0; border-bottom:1px solid #edf0f6; border-radius:0; background:transparent; }
+#view-settings #settingsPaneIntegrations .rw-account-selector { display:grid; gap:7px; font-size:12px; font-weight:600; color:#4e5e78; }
+#view-settings #settingsPaneIntegrations .rw-profile-controls select { width:100%; height:auto; min-height:40px; min-width:0; margin:0; padding:9px 30px 9px 12px; border:1px solid #dce3ee; border-radius:7px; background-color:white; font-size:13px; font-weight:500; color:#23334e; }
+#view-settings #settingsPaneIntegrations .rw-profile-actions { display:flex; flex-wrap:wrap; align-self:end; gap:8px; margin:0; }
+#view-settings #settingsPaneIntegrations .rw-profile-active { grid-column:1 / -1; margin:0; font-size:11px; line-height:1.6; color:#7b88a0; }
+#view-settings #settingsPaneIntegrations .rw-account-fields { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; padding:22px 0; }
+#view-settings #settingsPaneIntegrations .rw-account-fields .rw-field { display:flex; flex-direction:column; gap:7px; grid-column:1 / -1; min-width:0; max-width:none; font-size:12px; line-height:1.5; font-weight:600; color:#455573; margin:0; }
+#view-settings #settingsPaneIntegrations .rw-account-fields .rw-account-name { grid-column:auto; }
+#view-settings #settingsPaneIntegrations .rw-account-fields .rw-field:has(input[name=daily_limit]) { grid-column:2; grid-row:1; }
+#view-settings #settingsPaneIntegrations .rw-account-fields input { width:100%; min-width:0; height:auto; min-height:42px; margin:0; padding:10px 12px; border:1px solid #dce3ee; border-radius:7px; background:white; font-size:13px; font-weight:400; line-height:1.5; color:#23334e; }
+#view-settings #settingsPaneIntegrations .rw-account-fields input::placeholder { color:#919bae; }
+#view-settings #settingsPaneIntegrations .rw-secret-input input { padding-right:46px; }
+#view-settings #settingsPaneIntegrations .rw-secret-toggle { min-height:0; margin:0; }
+#view-settings #settingsPaneIntegrations .rw-account-footer { padding-top:18px; border-top:1px solid #edf0f6; }
+#view-settings #settingsPaneIntegrations .rw-account-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+#view-settings #settingsPaneIntegrations :is(.rw-account-actions,.rw-profile-actions) button { width:auto; min-width:0; min-height:38px; padding:9px 14px; margin:0; border:1px solid #dce3ee; border-radius:7px; background:white; color:#445573; font-size:12px; line-height:1.5; font-weight:500; box-shadow:none; }
+#view-settings #settingsPaneIntegrations .rw-account-actions .rw-primary { background:#2563eb; border-color:#2563eb; color:white; }
+#view-settings #settingsPaneIntegrations :is(.rw-account-actions,.rw-profile-actions) button:hover:not(:disabled) { border-color:#9dbafa; background:#f3f6ff; color:#235bcc; }
+#view-settings #settingsPaneIntegrations .rw-account-actions .rw-primary:hover:not(:disabled) { background:#1d55d2; color:white; }
+#view-settings #settingsPaneIntegrations .rw-profile-actions [data-profile-activate] { background:#f3f6ff; color:#235bcc; border-color:#ceddfc; }
+#view-settings #settingsPaneIntegrations .rw-account-feedback { font-size:12px; line-height:1.7; padding:9px 12px; margin:0 0 12px; border-radius:6px; background:#f3f6fc; color:#566987; overflow-wrap:anywhere; }
+#view-settings #settingsPaneIntegrations .rw-account-feedback:empty { display:none; }
+#view-settings #settingsPaneIntegrations .rw-account-editor[data-dirty=true] .rw-account-feedback { background:#fffaec; color:#906816; }
+#view-settings #settingsPaneIntegrations .rw-account-feedback[data-test-state=success] { background:#edf9f1; color:#227348; }
+#view-settings #settingsPaneIntegrations .rw-account-feedback[data-test-state=error] { background:#fff1f1; color:#b04444; }
+#view-settings #settingsPaneIntegrations .rw-service-test-note { margin:12px 0 0; font-size:11px; line-height:1.7; color:#7a88a1; }
+#view-settings #settingsPaneIntegrations .rw-accounts-layout > :is(.rw-integration-ai-note,.rw-source-health-note) { margin:0; padding:14px 24px; border:0; border-top:1px solid #edf0f6; font-size:12px; color:#71809b; background:#fcfdff; }
+#view-settings #settingsPaneIntegrations .rw-accounts-layout > :is(.rw-integration-ai-note,.rw-source-health-note) > summary { cursor:pointer; font-size:12px; font-weight:500; color:#71809b; }
+#view-settings #settingsPaneIntegrations :is(input,select,button):focus-visible { outline:2px solid #497fea; outline-offset:2px; }
+#view-settings #settingsPaneIntegrations :is(input,select,button):disabled { cursor:not-allowed; opacity:.55; }
+#view-settings #settingsPaneIntegrations #settingsCrawlerCard > .settings-card-header { padding:0 0 16px; }
+#view-settings #settingsPaneIntegrations #settingsCrawlerCard .settings-crawler-body { padding:16px 0 0; }
+#view-settings #settingsPaneIntegrations #settingsResearchFirecrawl .rw-account-heading h2 { font-size:16px; }
+#view-settings #settingsPaneIntegrations #settingsResearchFirecrawl .rw-account-fields .rw-field { display:flex; margin:0; gap:7px; }
+@media(max-width:1100px) {
+ #view-settings #settingsPaneIntegrations .rw-service-workspace { grid-template-columns:224px minmax(0,1fr); }
+ #view-settings #settingsPaneIntegrations .rw-service-workspace > :is(.rw-panel,#settingsCrawlerCard) { padding:22px 20px; }
+ #view-settings #settingsPaneIntegrations .rw-profile-controls { grid-template-columns:minmax(0,1fr); }
+ #view-settings #settingsPaneIntegrations .rw-profile-actions { justify-content:flex-start; }
+}
+@media(max-width:760px) {
+ #view-settings #settingsPaneIntegrations .settings-research-services > .settings-card-header { padding:16px; align-items:flex-start; flex-wrap:wrap; }
+ #view-settings #settingsPaneIntegrations .rw-service-workspace { display:block; }
+ #view-settings #settingsPaneIntegrations .rw-service-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:12px; border-right:0; border-bottom:1px solid #e6ebf2; }
+ #view-settings #settingsPaneIntegrations .rw-external-title { display:none; }
+ #view-settings #settingsPaneIntegrations .rw-service-button { min-height:62px; padding:8px; }
+ #view-settings #settingsPaneIntegrations .rw-service-workspace > :is(.rw-panel,#settingsCrawlerCard) { padding:20px 16px; }
+ #view-settings #settingsPaneIntegrations .rw-account-fields { grid-template-columns:minmax(0,1fr); }
+ #view-settings #settingsPaneIntegrations .rw-account-fields .rw-field:has(input[name=daily_limit]) { grid-column:1; grid-row:auto; }
+ #view-settings #settingsPaneIntegrations .rw-account-heading h2 { font-size:18px; }
+}
+#view-settings #settingsPaneIntegrations .settings-firecrawl-purpose { display:grid; grid-template-columns:90px minmax(0,1fr); align-items:center; gap:12px; padding:18px 0; margin:0; font-size:12px; }
+#view-settings #settingsPaneIntegrations .settings-firecrawl-purpose label { white-space:nowrap; }
+#view-settings #settingsPaneIntegrations .settings-firecrawl-purpose select { width:100%; min-width:0; font-size:13px; min-height:40px; }
+#view-settings #settingsPaneIntegrations #settingsResearchFirecrawl > .rw-account-editor { padding:0; margin:0; border:0; background:white; border-radius:0; }
+
+/* Competitor shortcut: the existing crawler editor is moved here, never cloned. */
+.settings-crawler-dialog{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 48px);margin:auto;padding:0;border:1px solid #e2e8f0;border-radius:18px;background:#fff;color:#1e293b;box-shadow:0 24px 80px #0f172a30;overflow:auto;font-family:inherit;}
+.settings-crawler-dialog::backdrop{background:rgba(15,23,42,.38);backdrop-filter:blur(3px);}
+.settings-crawler-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 24px 12px;}
+.settings-crawler-dialog>header>h2{margin:0;font-size:1.125rem;font-weight:700;line-height:1.5;}
+.settings-crawler-dialog-close{display:grid;place-items:center;width:32px;height:32px;flex-shrink:0;border:0;border-radius:8px;background:#f1f5f9;color:#64748b;font-size:24px;cursor:pointer;}
+.settings-crawler-dialog-close:hover{background:#e2e8f0;color:#0f172a;}
+.settings-crawler-dialog-status{display:flex;align-items:flex-start;gap:16px;padding:0 24px 18px;border-bottom:1px solid #edf1f7;}
+.settings-crawler-dialog-status>p{flex:1;margin:0;font-size:.8125rem;line-height:1.6;color:#64748b;}
+.settings-crawler-dialog-status>div{flex-shrink:0;}
+.settings-crawler-dialog .settings-crawler-body{padding:20px 24px 24px;gap:20px;}
+.settings-crawler-dialog .settings-field>label{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;font-size:.8125rem;font-weight:600;}
+.settings-crawler-dialog .settings-field input{min-height:42px;padding:10px 12px;font-size:.875rem;line-height:1.5;}
+.settings-crawler-dialog .settings-field small{display:block;margin-top:7px;font-size:.75rem;line-height:1.6;color:#94a3b8;}
+.settings-crawler-dialog .settings-crawler-footer{display:flex;flex-direction:column;align-items:stretch;gap:14px;padding-top:16px;border-top:1px solid #edf1f7;}
+.settings-crawler-dialog .settings-crawler-actions{display:flex;justify-content:flex-end;gap:10px;}
+.settings-crawler-dialog .settings-crawler-test-msg{max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:.75rem;line-height:1.6;}
+.settings-crawler-dialog button:focus-visible{outline:3px solid #a5b4fc;outline-offset:2px;}
+@media(max-width:540px){.settings-crawler-dialog-status{flex-wrap:wrap;gap:10px;}.settings-crawler-dialog-status>p{flex-basis:100%;}.settings-crawler-dialog .settings-crawler-actions>button{flex:1;}}
+
+/* Competitor Firecrawl accounts: same controls in Settings and compact dialog. */
+.settings-crawler-profiles {display:grid;gap:14px;padding:18px;margin-bottom:24px;border:1px solid #e2e8f0;border-radius:14px;background:#f8fafc;}
+.settings-crawler-profiles label {display:block;margin-bottom:7px;font-size:.875rem;font-weight:600;color:#334155;}
+.settings-crawler-profile-select-row {display:flex;gap:10px;align-items:center;}
+.settings-crawler-profiles select {box-sizing:border-box;width:100%;min-width:0;min-height:42px;border:1px solid #dbe3ef;border-radius:9px;padding:9px 12px;background:white;color:#1e293b;font:inherit;}
+.settings-crawler-profile-select-row select {flex:1;}
+.settings-crawler-profile-select-row button {flex-shrink:0;white-space:nowrap;}
+.settings-crawler-profile-current {display:flex;gap:12px;align-items:center;justify-content:space-between;}
+.settings-crawler-profile-current p,.settings-crawler-profile-test-note {font-size:.75rem;line-height:1.6;color:#64748b;}
+.settings-crawler-profile-current p {margin:0;}
+.settings-crawler-profile-current button {flex-shrink:0;}
+.settings-crawler-profile-test-note {display:block;margin:0 0 12px;}
+.settings-crawler-profiles [hidden] {display:none!important;}
+.settings-crawler-profiles :is(input,select,button):focus-visible {outline:2px solid #6366f1;outline-offset:3px;}
+@media(max-width:600px){.settings-crawler-profile-current{align-items:flex-start;flex-direction:column;}.settings-crawler-profile-select-row{flex-wrap:wrap;}.settings-crawler-profile-select-row select{flex-basis:100%;}}

@@ -327,3 +327,9 @@ for module in (models.research_ai_usage, services.research_ai_adapter, migration
     assert not list(sandbox.rglob('history.db'))
     assert not list(sandbox.rglob('.env*'))
     assert not list(sandbox.rglob('*.pem'))
+
+
+def test_main_sandbox_includes_desktop_verifier_without_build_artifacts(tmp_path):
+    sandbox = runner().prepare_sandbox('main', tmp_path)
+    assert (sandbox / 'scripts/desktop/verify_bundle.py').is_file()
+    assert not (sandbox / 'desktop/resources').exists()

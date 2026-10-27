@@ -78,6 +78,7 @@ export function exportDrafts(storage,{sourceOrigin=globalThis.location?.origin}=
  return decodeBundle({version:1,source_origin:sourceOrigin,drafts});
 }
 // END STANDALONE DRAFT EXPORT
+export function describeResearchDraftKey(key){const spec=sourceKey(key);return {project:spec.project,product:spec.product,kind:spec.kind};}
 export async function importDrafts(input,context){
  const result={accepted:[],needs_review:[],rejected:[]};let bundle;
  try{bundle=decodeBundle(input);for(const record of bundle.drafts)validateRecord(record);}catch{result.rejected.push({reason:'invalid_or_unsafe_bundle'});return result;}

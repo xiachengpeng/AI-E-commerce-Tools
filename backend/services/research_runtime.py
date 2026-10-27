@@ -158,9 +158,19 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
     client = import_module('rabbit_hole.persistence.local_objects').LocalObjectClient(
         paths.evidence_root, initialize=False, signing_key_path=key)
     engine = sql.create_engine(str(URL.create('sqlite+aiosqlite', database=str(paths.database))),
-                               initialize_file=False, lock_root=paths.lock_root)
+                               initialize_file=False, lock_root=paths.lock_root,
+                               asset_reference_database=paths.database)
     engine.update_execution_options(research_ownership_paths=paths, research_offline_commands=offline_commands)
     ai = None
+    submission_budget = None
+    if allow_external:
+        from services.research_client import load_research_config
+        from services.research_polling_policy import configured_budget
+        execution_config = load_research_config()
+        if execution_config.get('closeout_session') is not None:
+            if Path(execution_config.get('data_root','')).absolute() != paths.evidence_root.parent:
+                raise ValueError('budget_configuration_root_mismatch')
+            submission_budget = configured_budget(paths.evidence_root.parent, execution_config)
     try:
         store = import_module('rabbit_hole.persistence.projects').WorkbenchStore(engine)
         evidence = import_module('rabbit_hole.persistence.evidence_store').EvidenceStore(
@@ -194,7 +204,7 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
             ai_sessions = sessionmaker(bind=ai_engine)
             from types import SimpleNamespace
             usage_runtime = SimpleNamespace(engine=engine, store=store) if revision >= 3 else None
-            ai = ResearchAIAdapter(session_factory=ai_sessions, allow_external=allow_external, usage_runtime=usage_runtime)
+            ai = ResearchAIAdapter(session_factory=ai_sessions, allow_external=allow_external, usage_runtime=usage_runtime, submission_budget=submission_budget)
             async def direction(title, market):
                 return await generate_direction(title, market, ai_adapter=ai)
             services.update(ai_settings=ResearchAISettings(ai_sessions), generate_direction=direction)
@@ -204,6 +214,7 @@ async def open_research_runtime(paths: RuntimePaths, *, allow_commands: bool = F
         yield ResearchRuntime(engine, store, evidence, settings, paths,
                               settings_store=settings_store, non_ai_integrations=integrations, commands_enabled=True,
                               workbench_services=services, business_settings=business_settings, ai_adapter=ai,
+                              submission_budget=submission_budget,
                               worker_readiness=(("business_settings_missing",) if business_settings is None else ())
                               + (("integration_schema_unprepared",) if revision < 2 else ())
                               + (("ai_usage_schema_unprepared",) if revision < 3 else ()))

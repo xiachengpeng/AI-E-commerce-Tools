@@ -129,7 +129,8 @@ async def test_product_page_extracts_observable_landing_evidence() -> None:
     assert page.price == "49.00"
     assert "Transform your desk" in page.body_text
     assert page.json_ld[0]["@type"] == "Product"
-    assert "https://shop.example/hero.jpg" in page.images
+    # The Product schema is authoritative; unscoped page images are not added.
+    assert page.images == ("https://shop.example/lamp.jpg",)
     assert page.final_url == "https://shop.example/products/glow-lamp"
     assert page.page_type == "product"
     assert len(page.content_hash) == 64

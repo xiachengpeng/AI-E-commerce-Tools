@@ -189,7 +189,58 @@ async function callAI(capability, payload, options = {}) {
  * 切换主标签页
  * @param {string} tabId 标签唯一标识
  */
+let researchSettingsFrameRestore = null;
+function updateResearchSettingsFrame(enabled) {
+    if (!enabled) { researchSettingsFrameRestore?.(); researchSettingsFrameRestore = null; return; }
+    if (researchSettingsFrameRestore) return;
+    const title = document.getElementById('settingsPageTitle'), grid = document.getElementById('settingsOverviewGrid');
+    const header = title?.closest?.('.settings-page-header'), description = title?.nextElementSibling;
+    if (!title || !grid || !header) return;
+    const previousTitle = title.textContent, previousDescription = description?.textContent;
+    title.textContent = '设置'; if (description) description.textContent = '研究与其他模块共用一套配置。选品研究的 AI 沿用文本能力绑定。';
+    const marker = document.createComment('settings connection overview position'), details = document.createElement('details'), summary = document.createElement('summary');
+    details.className = 'settings-overview-toggle'; summary.textContent = '连接状态总览'; grid.before(marker); details.append(summary, grid); header.append(details);
+    const topbar = document.createElement('div'); topbar.className = 'settings-research-topbar';
+    topbar.textContent = document.querySelector('#researchNativeRoot [data-rw-breadcrumb]')?.textContent || '选品研究 / 设置';
+    const shell = document.getElementById('view-settings')?.querySelector('.settings-shell'); shell?.prepend(topbar);
+    const labels = [];
+    for (const [id, label] of [['settingsTabBtnAi', 'AI 模型'], ['settingsTabBtnIntegrations', '外部接口'], ['settingsTabBtnLogs', '运行日志']]) {
+        const node = document.getElementById(id)?.querySelector('span'); if (node) { labels.push([node, node.textContent]); node.textContent = label; }
+    }
+    researchSettingsFrameRestore = () => { title.textContent = previousTitle; if (description) description.textContent = previousDescription; marker.before(grid); marker.remove(); details.remove(); topbar.remove(); for (const [node, text] of labels) node.textContent = text; };
+}
+let unifiedNavigationMounted = false;
+function updateResearchDesignNavigation(tabId) {
+    const sidebar = document.getElementById('appSidebar');
+    if (!document.body?.classList || !sidebar?.querySelector) return;
+    const researchContent = tabId === 'research' || (tabId === 'settings' && document.body.classList.contains('research-design-mode'));
+    document.body.classList.toggle('research-design-mode', researchContent);
+    document.body.classList.add('unified-navigation-mode');
+    updateResearchSettingsFrame(researchContent && tabId === 'settings');
+    const revealActiveGroup = () => {
+        for (let parent = document.getElementById('tab-' + tabId)?.parentElement; parent && parent !== sidebar; parent = parent.parentElement) {
+            if (parent.tagName === 'DETAILS') parent.open = true;
+        }
+    };
+    if (unifiedNavigationMounted) { revealActiveGroup(); return; }
+    const menu = document.createElement('nav'); menu.className = 'rw-global-navigation'; menu.setAttribute('aria-label', '应用功能');
+    // Move the original controls once; their handlers and IDs stay intact across modules.
+    const move = (id, parent) => { const node = document.getElementById(id); if (node) parent.append(node); };
+    move('tab-research', menu); move('tab-analysis', menu);
+    const group = (label, glyph, ids) => { const details = document.createElement('details'), summary = document.createElement('summary'), icon = document.createElement('i'), name = document.createElement('span'); icon.className = 'ph ph-' + glyph; icon.setAttribute('aria-hidden', 'true'); name.textContent = label; summary.append(icon, name); details.append(summary); ids.forEach(id => move(id, details)); menu.append(details); };
+    group('内容制作', 'files', ['tab-generate', 'tab-listing', 'tab-ads']);
+    group('图片工具', 'image', ['tab-square-redraw', 'tab-watermark-removal']);
+    group('翻译', 'translate', ['tab-translate', 'tab-text-translate']);
+    const bottom = document.createElement('div'); bottom.className = 'rw-global-bottom'; move('btnOpenBrandHub', bottom); move('tab-settings', bottom); menu.append(bottom);
+    group('更多工具', 'dots-three', ['btnOpenHistory', 'btnResetAllState']);
+    sidebar.append(menu);
+    unifiedNavigationMounted = true;
+    revealActiveGroup();
+}
 function switchMainTab(tabId) {
+    updateResearchDesignNavigation(tabId);
+    if (tabId !== 'settings' && typeof unmountSettingsIntegrations === 'function') unmountSettingsIntegrations();
+    if (tabId === 'settings' && typeof switchSettingsTab === 'function') switchSettingsTab(settingsState.activeTab || 'ai');
     if (typeof window.ResearchPanel !== 'undefined') {
         if (tabId === 'research') (window.ResearchPanel.mount || window.ResearchPanel.init)();
         else (window.ResearchPanel.unmount || window.ResearchPanel.suspend)();

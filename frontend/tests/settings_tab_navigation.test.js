@@ -8,7 +8,7 @@ const {
     filterSettingsProviders
 } = require("../js/settings.js");
 
-test("settings index.html contains tab navigation, 3 panes, and storage integration card", () => {
+test("settings index.html contains tab navigation, settings panes, and storage integration card", () => {
     const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
 
     // Check tab navigation bar & buttons
@@ -16,7 +16,7 @@ test("settings index.html contains tab navigation, 3 panes, and storage integrat
     assert.match(html, /id=\"settingsTabBtnIntegrations\"/);
     assert.match(html, /id=\"settingsTabBtnLogs\"/);
 
-    // Check 3 tab panes
+    // Check the original panes alongside the dedicated storage pane
     assert.match(html, /id=\"settingsPaneAi\"/);
     assert.match(html, /id=\"settingsPaneIntegrations\"/);
     assert.match(html, /id=\"settingsPaneLogs\"/);
@@ -98,4 +98,16 @@ test("switchSettingsTab toggles active and hidden classes appropriately", () => 
     } finally {
         global.document = originalDocument;
     }
+});
+
+test('storage is a real settings pane and cannot leave integrations highlighted or visible',()=>{
+ const previous=global.document,ids=new Map(),tabs=['Ai','Integrations','Storage','Logs','Appearance'];
+ for(const tab of tabs)for(const prefix of ['settingsTabBtn','settingsPane']){const classes=new Set(),attrs={};ids.set(prefix+tab,{classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),toggle:(c,on)=>on?classes.add(c):classes.delete(c),contains:c=>classes.has(c)},setAttribute:(k,v)=>attrs[k]=v,getAttribute:k=>attrs[k]});}
+ global.document={getElementById:id=>ids.get(id)||null};
+ try{for(const active of ['storage','integrations','appearance','logs','ai','storage']){switchSettingsTab(active);for(const tab of tabs){const expected=tab.toLowerCase()===active;assert.equal(ids.get('settingsTabBtn'+tab).getAttribute('aria-selected'),String(expected),active+' selected '+tab);assert.equal(ids.get('settingsPane'+tab).classList.contains('hidden'),!expected,active+' pane '+tab);}}}finally{global.document=previous;}
+});
+test('storage card has its own single static tab and is outside external-service pane',()=>{
+ const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8'),app=fs.readFileSync(path.join(__dirname,'../js/app.js'),'utf8');
+ const integrations=html.indexOf('id="settingsPaneIntegrations"'),storage=html.indexOf('id="settingsPaneStorage"'),card=html.indexOf('id="settingsStorageIntegrationCard"'),logs=html.indexOf('id="settingsPaneLogs"');
+ assert.ok(integrations<storage&&storage<card&&card<logs);assert.equal((html.match(/id="settingsTabBtnStorage"/g)||[]).length,1);assert.match(html,/onclick="switchSettingsTab\('storage'\)"/);assert.doesNotMatch(app,/storageLink\.addEventListener/);
 });

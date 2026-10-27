@@ -1,10 +1,29 @@
 # 🚀 AI 电商全能工具箱 (AI E-commerce All-in-One Tools)
 
-一款专为跨境电商（Amazon、TikTok Shop、Shopify 等）打造的本地 AI 效率工具集。集成竞品分析、详情页视觉生成、Listing 撰写、广告文案、图片翻译、文本本地化、批量方图重绘和水印消除等工作流。
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 现行入口或维护说明**
+> 使用说明按当前代码同步；测试结果引用对应日期验收，本次文档整理没有运行收费链路或重新验收所有功能。
+> 当前入口与验证范围：[项目当前状态](<docs/项目当前状态.md>)；[2026-10-26流程修复与边界](<docs/ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+2026-10-26：Mac自用客户端已更新选品研究流程，接通快速取舍、已完成词重新搜索、漏斗分析与评分入口。前端898、主后端1326、研究专项43、桌面15项验证通过；这批结果来自流程修复验收，本次文档同步未重跑业务测试。操作与边界见[流程修复验收](docs/ux-audit/2026-10-26-sop-flow-repair/验收记录.md)。客户纯净版旧安装包未包含后续更新，仍为未公证测试候选。
+
+
+一款专为跨境电商（Amazon、TikTok Shop、Shopify 等）打造的本地 AI 效率工具集。集成选品研究、竞品分析、详情页视觉生成、Listing 撰写、广告文案、图片翻译、文本本地化、批量方图重绘和水印消除等工作流。
 
 ---
 
 ## ✨ 核心模块
+
+### 选品研究与统一工作台
+
+独立站SOP的研究能力已归入本项目，使用原生页面和主后端，无需备用机或SSH隧道。流程涵盖研究项目、关键词准备与审核、搜索采集、商品和广告素材核实、候选筛选、渠道证据、成本风险、评分决策、测试复盘与报告。
+
+主界面按五个阶段推进：**找线索 → 核实商品 → 需求与竞争 → 算清利润 → 做决定**，保留十步专业检查清单。候选线索可先保留、观察或淘汰并记录原因；保留不等于通过证据筛选。完成词可显式重新搜索，新任务保留旧结果；阶段内直接显示漏斗分析、评分、测试和复盘入口。广告年龄≥30天不等于连续投放30天，缺少历史记录时仍标为未验证。
+
+所有模块共用新版侧栏，切到竞品分析等模块时只改变高亮；内容制作、图片工具和翻译按组收纳。外部接口统一在“设置”管理。首次使用先进入“选品研究”创建项目，按页面下一步推进；外部采集与AI调用可能计费，同步须单独预览和批准。
+
+当前架构、验证边界和完整文档入口见[项目当前状态](docs/项目当前状态.md)与[文档索引](docs/README.md)。
 
 ### 1. 📊 AI 竞品深度分析 (Competitor Insight)
 *   **一键拆解**：输入独立站或亚马逊 URL，AI 自动抓取并分析卖点、受众、场景及优劣势。
@@ -168,7 +187,7 @@ API Key 保存在本地 SQLite。设置读取接口和实时日志不会向前�
 - **WordPress**：填写站点地址、管理员用户名与 Application Password（应用密码），通过 WP REST API 自动同步媒体库。
 - **Shopify**：填写店铺域名（如 `your-store.myshopify.com`）与 Admin API Access Token，通过 GraphQL Staged Uploads 完成文件直传。
 - **Cloudflare R2**：填写 Account ID、Bucket 名称、Access Key ID、Secret Access Key 及自定义公开域名，基于 AWS SigV4 算法进行安全鉴权直传。
-- 所有存储密钥均由本地 SQLite 掩码安全保存，前端仅能读取掩码值；多子站点与多目标之间上传状态完全物理隔离，切换即时刷新。
+- 所有存储密钥保存在本地 SQLite，返回前端时仅提供掩码值；多子站点与多目标之间上传状态完全物理隔离，切换即时刷新。
 
 ### 2. 安装依赖
 ```bash
@@ -193,9 +212,15 @@ cd frontend && npm install
 
 ## ✅ 当前验证
 
-前端测试使用 `node --test frontend/tests/*.test.js`（**486/486 用例通过**），后端测试使用
-`.venv/bin/python -m pytest backend/tests`（**642/642 用例通过**）。本地修改应先通过
-`git diff --check` 和对应 JavaScript 语法检查（`node --check`），再提交。
+完整前端（含选品研究ES模块测试）：
+
+```bash
+node --test frontend/tests/*.test.js frontend/tests/research-workbench/*.test.mjs
+```
+
+2026-10-20统一侧栏修复记录为 **733通过、0失败、0跳过**，不是本次文档修改重新运行的结果。后端可运行 `.venv/bin/python -m pytest backend/tests`；包含兼容研究的隔离完整验收使用 `scripts/full_merge/run_tests.py`，细节见[研究源码说明](backend/modules/research/SOURCE.md)。历史后端计数不作为当前源码的通过承诺。
+
+修改后执行 `git diff --check`，对改变的JS/MJS执行 `node --check`，并验证相关界面及异常分支。安装/构建命令仅用于准备环境，正常使用从根目录运行 `.venv/bin/python run.py`；不要直接打开HTML文件。研究worker受激活与运行配置控制，页面打开不代表采集任务已启动。
 
 ---
 

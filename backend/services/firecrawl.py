@@ -1,3 +1,5 @@
+from contextvars import ContextVar
+from functools import wraps
 import dataclasses
 import html
 import json
@@ -41,11 +43,29 @@ def is_masked_or_empty(value: str | None) -> bool:
     return "••••" in value
 
 
+_crawler_snapshot = ContextVar('competitor_crawler_snapshot', default=None)
+
+
+def with_crawler_snapshot(func):
+    """One analysis, one server-only immutable account, including child tasks."""
+    @wraps(func)
+    async def wrapped(*args, **kwargs):
+        token = _crawler_snapshot.set(get_firecrawl_config())
+        try:
+            return await func(*args, **kwargs)
+        finally:
+            _crawler_snapshot.reset(token)
+    return wrapped
+
+
 def get_firecrawl_config(db=None) -> tuple[str, str]:
     """获取当前生效的 Firecrawl 配置 (api_url, api_key)。
     若单元测试显式 monkeypatch 了模块级变量，优先尊重测试配置；
     生产环境下优先从数据库中读取，数据库未配置时回退至环境变量/默认值。
     """
+    snapshot = _crawler_snapshot.get()
+    if snapshot is not None:
+        return snapshot
     if FIRECRAWL_API_KEY != _ORIG_FIRECRAWL_API_KEY or FIRECRAWL_API_URL != _ORIG_FIRECRAWL_API_URL:
         return FIRECRAWL_API_URL, FIRECRAWL_API_KEY
 
@@ -84,7 +104,7 @@ async def test_firecrawl_connection(
     if not safe:
         return False, 0, f"非法的爬虫服务器地址: {ssrf_err}"
 
-    if api_key is not None and not is_masked_or_empty(api_key):
+    if api_key is not None and (not api_key.strip() or not is_masked_or_empty(api_key)):
         target_key = api_key.strip()
     else:
         target_key = current_key

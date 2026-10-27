@@ -1,5 +1,12 @@
 # P0 级全链路业务流程与文案规则优化实施计划 (Implementation Plan)
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 彻底解决跨模块流转死锁（支持广告纯文本生成与图文继承）、消除 Google RSA 广告超限拒审（严格 30/90 字符上限）、纠偏竞品分析转 Listing 关键词语义倒错。
@@ -11,7 +18,7 @@
 
 **Tech Stack:** FastAPI, Pydantic v2, Python asyncio, Vanilla JavaScript (ES2022), Node test runner (`node:test`), Pytest.
 
-**Spec:** [`docs/superpowers/specs/2026-09-19-p0-copy-workflow-optimization-design.md`](file:///Users/xiachengpeng/code/AI%20E-commerce%20Tools/docs/superpowers/specs/2026-09-19-p0-copy-workflow-optimization-design.md)
+**Spec:** [`docs/superpowers/specs/2026-09-19-p0-copy-workflow-optimization-design.md`](../specs/2026-09-19-p0-copy-workflow-optimization-design.md)
 
 ## Global Constraints
 

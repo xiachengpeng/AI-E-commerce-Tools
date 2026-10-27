@@ -2,7 +2,8 @@ from fastapi.testclient import TestClient
 from main import app
 from db import init_db, SessionLocal, AIProviderConfig, FirecrawlConfig, StorageConfig
 
-client = TestClient(app)
+from routes.research import _session_token
+client = TestClient(app, client=('127.0.0.1', 50000), base_url='http://127.0.0.1:9503', headers={'X-Research-Token': _session_token, 'Origin': 'http://127.0.0.1:9502'})
 
 
 def test_reveal_provider_secret():
@@ -124,3 +125,11 @@ def test_reveal_crawler_and_storage_secrets():
 
     finally:
         db.close()
+
+
+def test_reveal_requires_local_session_and_cannot_be_cached():
+    anonymous=TestClient(app,client=('127.0.0.1',50000),base_url='http://127.0.0.1:9503')
+    payload={'category':'crawler','field':'api_key'}
+    assert anonymous.post('/api/settings/secrets/reveal',json=payload).status_code==401
+    assert client.post('/api/settings/secrets/reveal',headers={'Origin':'https://evil.invalid'},json=payload).status_code==403
+    assert client.post('/api/settings/secrets/reveal',json=payload).headers['cache-control']=='no-store'

@@ -84,7 +84,9 @@ test("togglePasswordVisibility fetches saved credential from backend when input 
     // Mock global fetch
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (url, options) => {
+        if(url.endsWith('/session')) return {ok:true,json:async()=>({csrf_token:'fixture-session'})};
         assert.match(url, /\/api\/settings\/secrets\/reveal/);
+        assert.equal(options.headers['X-Research-Token'],'fixture-session');
         const body = JSON.parse(options.body);
         assert.equal(body.category, "ai_provider");
         assert.equal(body.field, "api_key");
@@ -106,10 +108,11 @@ test("togglePasswordVisibility fetches saved credential from backend when input 
         await togglePasswordVisibility(mockInput, mockBtn);
         assert.equal(mockInput.type, "password");
         assert.equal(mockInput.value, "");
+        assert.equal(mockInput.dataset.cachedSecret,undefined);
         assert.match(mockIcon.className, /ph-eye/);
         assert.doesNotMatch(mockIcon.className, /slash/);
 
-        // Third click: cached, doesn't refetch
+        // Third click reads again, hidden full values are never kept in DOM datasets
         await togglePasswordVisibility(mockInput, mockBtn);
         assert.equal(mockInput.type, "text");
         assert.equal(mockInput.value, "sk-live-revealed-key-888");

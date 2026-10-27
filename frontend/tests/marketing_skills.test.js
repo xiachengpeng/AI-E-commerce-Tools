@@ -143,7 +143,7 @@ function createMarketingTestContext(initialHtml = '', domOverrides = {}) {
 // 1. Brand & Product Context Hub (brand_context.js) Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('brand_context.js: initializes default profile when storage is empty', () => {
+test('brand_context.js: leaves fresh storage empty until user creates a profile', () => {
     const { ctx } = createMarketingTestContext();
     const brandJs = fs.readFileSync(path.join(root, 'js', 'brand_context.js'), 'utf8');
     vm.runInContext(brandJs, ctx);
@@ -153,13 +153,10 @@ test('brand_context.js: initializes default profile when storage is empty', () =
 
     const profiles = hub.getProfiles();
     assert.ok(Array.isArray(profiles), 'getProfiles returns array');
-    assert.ok(profiles.length >= 1, 'Should have at least 1 default profile');
-    assert.equal(profiles[0].id, 'sample_ergonomic_chair');
-    assert.match(profiles[0].name, /人体工学椅/);
+    assert.equal(profiles.length, 0, 'Customer install must not auto-seed a sample');
 
     const active = hub.getActiveProfile();
-    assert.ok(active, 'Active profile should be retrieved');
-    assert.equal(active.id, 'sample_ergonomic_chair');
+    assert.equal(active, null);
 });
 
 test('brand_context.js: saveProfile creates new and updates existing profiles', () => {
@@ -202,7 +199,7 @@ test('brand_context.js: saveProfile creates new and updates existing profiles', 
     assert.match(updated.icp, /野外生存玩家/);
 });
 
-test('brand_context.js: deleteProfile removes profile and handles default fallback', () => {
+test('brand_context.js: deleteProfile preserves an intentional empty list', () => {
     const { ctx } = createMarketingTestContext();
     const brandJs = fs.readFileSync(path.join(root, 'js', 'brand_context.js'), 'utf8');
     vm.runInContext(brandJs, ctx);
@@ -211,17 +208,18 @@ test('brand_context.js: deleteProfile removes profile and handles default fallba
     const p1 = hub.saveProfile({ name: '测试商品 A' });
     const p2 = hub.saveProfile({ name: '测试商品 B' });
 
-    assert.ok(hub.getProfiles().length >= 3);
+    assert.equal(hub.getProfiles().length, 2);
 
     // Delete p2
     hub.deleteProfile(p2.id);
     const profilesAfterDelete = hub.getProfiles();
     assert.equal(profilesAfterDelete.some(p => p.id === p2.id), false);
 
-    // If deleting all profiles, fallback to default
+    // Deleting all profiles must not resurrect a sample.
     profilesAfterDelete.forEach(p => hub.deleteProfile(p.id));
     const finalProfiles = hub.getProfiles();
-    assert.ok(finalProfiles.length >= 1, 'Should restore default profile when all deleted');
+    assert.equal(finalProfiles.length, 0);
+    assert.equal(hub.getActiveProfile(), null);
 });
 
 test('brand_context.js: applyProfile populates Listing, Ads, and Details inputs', () => {

@@ -303,7 +303,7 @@
         el('researchView').hidden = true;
         host.hidden = false;
         try {
-            nativeModule = await import('./research-workbench/index.mjs');
+            nativeModule = await import('./research-workbench/index.mjs?v=20261026-candidate-switch');
             if (generation !== nativeGeneration) return;
             await nativeModule.mount(host, { apiBase: base(), onSelectProduct: selectSource, openMainSettings: tab => { root.switchMainTab?.('settings'); root.switchSettingsTab?.(tab); } });
         } catch (_) {

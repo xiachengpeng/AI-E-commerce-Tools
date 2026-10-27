@@ -1,5 +1,12 @@
 # Facebook and Google Ad Copy Generator Design
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 ## Goal
 
 Add a new left navigation feature named "广告文案" that lets the user upload a product image and generate bilingual ad copy for Facebook Ads and/or Google Ads.

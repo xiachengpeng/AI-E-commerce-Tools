@@ -1554,30 +1554,35 @@ class TriggerSource(Protocol):
     async def list_trigger_records(self) -> list[TriggerRecord]: ...
 
 
+TRIGGER_JOB_KINDS = {
+    (
+        "细分领域池",
+        BusinessStatus.NICHE_PENDING_GENERATION.value,
+    ): JobKind.NICHE_DISCOVERY,
+    (
+        "关键词库",
+        BusinessStatus.KEYWORD_PENDING_SCAN.value,
+    ): JobKind.KEYWORD_SCAN,
+    (
+        "市场评估表",
+        BusinessStatus.CANDIDATE_START_VALIDATION.value,
+    ): JobKind.LINK_VALIDATION,
+    ("细分领域池", "已启用"): JobKind.KEYWORD_SEED,
+    ("细分领域池", "待研究"): JobKind.NICHE_RESEARCH,
+}
+
+def trigger_job_kind(table: str, state: str) -> JobKind | None:
+    return TRIGGER_JOB_KINDS.get((table, state))
+
+
 class TriggerPoller:
     def __init__(self, feishu: TriggerSource, jobs: JobEnqueuer) -> None:
         self._feishu, self._jobs = feishu, jobs
 
     async def poll_once(self) -> int:
-        mapping = {
-            (
-                "细分领域池",
-                BusinessStatus.NICHE_PENDING_GENERATION.value,
-            ): JobKind.NICHE_DISCOVERY,
-            (
-                "关键词库",
-                BusinessStatus.KEYWORD_PENDING_SCAN.value,
-            ): JobKind.KEYWORD_SCAN,
-            (
-                "市场评估表",
-                BusinessStatus.CANDIDATE_START_VALIDATION.value,
-            ): JobKind.LINK_VALIDATION,
-            ("细分领域池", "已启用"): JobKind.KEYWORD_SEED,
-            ("细分领域池", "待研究"): JobKind.NICHE_RESEARCH,
-        }
         count = 0
         for record in await self._feishu.list_trigger_records():
-            kind = mapping.get((record.table, record.state))
+            kind = trigger_job_kind(record.table, record.state)
             if kind is None:
                 continue
             if kind is JobKind.NICHE_RESEARCH and (

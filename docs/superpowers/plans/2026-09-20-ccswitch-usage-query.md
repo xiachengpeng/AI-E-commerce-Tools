@@ -1,5 +1,12 @@
 # CC Switch 风格独立用量查询配置面板与脚本引擎实施计划 (Implementation Plan)
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史设计与实施计划**
+> 保留方案、任务勾选和原轮次证据；任务勾选不表示本轮重新执行，也不构成新的执行授权。
+> 当前入口与验证范围：[项目当前状态](<../../项目当前状态.md>)；[2026-10-26流程修复与边界](<../../ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 构建与 CC Switch 100% 交互对齐的独立【配置用量查询】面板与脚本提取引擎，支持通用模板、New-API（完整版）、Token Plan、官方与自定义预设切换、代码高亮格式化、免跨域本地 HTTP 代理测试与持久化保存，为后续 APP 化打包奠定基础。

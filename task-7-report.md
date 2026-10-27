@@ -1,5 +1,12 @@
 # Task 7 — native complete research workbench API
 
+<!-- project-doc-status:start -->
+> **文档状态同步：2026-10-26 · 历史开发任务记录**
+> 保留原任务环境及提交时点；不将旧工作树、PID或当时测试数量当作当前结果。
+> 当前入口与验证范围：[项目当前状态](<docs/项目当前状态.md>)；[2026-10-26流程修复与边界](<docs/ux-audit/2026-10-26-sop-flow-repair/验收记录.md>)。
+<!-- project-doc-status:end -->
+
+
 Status: Task7 implemented and verified; focused commit follows final diff check.
 Base: dc29383. Work confined to the full-sop-consolidation worktree. No subagents, live process starts, production DB, key migration, paid calls, SSH, uploads, sync execution, or worker starts were used.
 

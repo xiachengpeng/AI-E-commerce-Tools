@@ -6,6 +6,11 @@ import { createLifecycle } from '../../js/research-workbench/lifecycle.mjs';
 import { createState } from '../../js/research-workbench/state.mjs';
 import { createWorkbench } from '../../js/research-workbench/index.mjs';
 
+test('browser connection failures are readable and never replay a command',async()=>{
+ let calls=0;const api=createApi({fetch:async url=>{calls++;if(url.endsWith('/session'))return {ok:true,json:async()=>({csrf_token:'fixture'})};throw new TypeError('Failed to fetch');}});
+ await api.session();await assert.rejects(api.request('/projects',{method:'POST',body:{title:'test'}}),/本机研究服务/);assert.equal(calls,2);
+});
+
 test('API pins native 9503 routes, authenticates reads and never repeats mutations', async () => {
  const calls=[];
  const api=createApi({apiBase:'http://127.0.0.1:9503',fetch:async(url,options)=>{calls.push([url,options]); if(url.endsWith('/session'))return {ok:true,json:async()=>({csrf_token:'fixture'})}; throw Error('offline');}});
@@ -88,4 +93,9 @@ test('cached DTOs are independent from a detached prior instance',async()=>{
  const host=root(),workbench=createWorkbench();await workbench.mount(host,{fetch:async url=>({ok:true,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:{projects:[{id:'saved',title:'Saved'}]}})});
  const detached=workbench.state;workbench.unmount();detached.projects[0].title='late mutation';
  await workbench.mount(host,{fetch:async()=>{throw Error('offline');}});assert.equal(workbench.state.projects[0].title,'Saved');workbench.unmount();
+});
+
+test('media source failures expose a bounded reason without leaking upstream URLs or credentials',async()=>{
+ const api=createApi({fetch:async url=>({ok:url.endsWith('/session'),status:url.endsWith('/session')?200:502,json:async()=>url.endsWith('/session')?{csrf_token:'fixture'}:{detail:'下载失败：来源返回 HTTP 403，https://private.example/?token=synthetic-secret'}})});await api.session();
+ await assert.rejects(api.blob('/projects/p/media-download?source=ad&index=0'),error=>error.status===502&&/403/.test(error.message)&&!error.message.includes('private.example')&&!error.message.includes('synthetic-secret'));
 });

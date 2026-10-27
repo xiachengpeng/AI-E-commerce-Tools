@@ -28,7 +28,7 @@ from rabbit_hole.integrations.collectors.meta import (
     MetaQuery,
     PlaywrightMetaPage,
 )
-from rabbit_hole.integrations.feishu import TriggerPoller, bootstrap_base
+from rabbit_hole.integrations.feishu import bootstrap_base
 from rabbit_hole.persistence.evidence_store import EvidenceStore
 from rabbit_hole.persistence.legacy_jobs import (
     ActiveLeaseError,
@@ -76,11 +76,23 @@ class DefaultOperatorRuntime:
         self.local_runtime = local_runtime
         self.settings = local_runtime.business_settings
         self.engine = local_runtime.engine
-        self.jobs = JobRepository(self.engine, admission=self.settings.admission)
+        from services.research_polling_policy import current_lease_scopes
+        self.submission_budget = getattr(local_runtime, 'submission_budget', None)
+        self.jobs = JobRepository(self.engine, admission=self.settings.admission, lease_scope=lambda:current_lease_scopes(self.submission_budget))
         self.feishu = local_runtime.non_ai_integrations.feishu
 
     async def poll_once(self) -> int:
-        return await TriggerPoller(self.feishu, self.jobs).poll_once()
+        from services.research_client import load_research_config
+        from services.research_polling_policy import load_polling_policy, poll_with_policy
+        config = load_research_config()
+        policy = load_polling_policy(config)
+        if policy.execution_allowed:
+            declared = config.get('closeout_session') or {}
+            if (self.submission_budget is None or declared.get('id') != self.submission_budget.session_id
+                    or declared.get('policy_digest') != self.submission_budget.policy_digest):
+                raise ValueError('polling_execute_requires_current_budget')
+        outcome = await poll_with_policy(self, policy)
+        return outcome.enqueued
 
     async def build_worker(self) -> Worker:
         from rabbit_hole.runtime.legacy import build_worker

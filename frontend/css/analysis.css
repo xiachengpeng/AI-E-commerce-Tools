@@ -2606,3 +2606,110 @@ strong {
     transform: translateY(-1px);
 }
 
+
+/* Single-product marketing: full-width channels followed by script cards.
+   Scoped to this section; content, rendering and export remain unchanged. */
+.xp-marketing-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+    min-width: 0;
+}
+.xp-marketing-layout #xp-singleTraffic {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 1rem;
+    padding: 1.25rem;
+    min-width: 0;
+}
+.xp-marketing-layout #xp-singleTraffic > h3,
+.xp-marketing-layout #xp-singleTraffic > p {
+    flex-basis: 100%;
+    margin: 0;
+}
+.xp-marketing-layout .xp-traffic-item {
+    margin: 0;
+    min-width: 0;
+    flex: 1 1 min(100%, 15rem);
+    padding: 1rem;
+    border-radius: .75rem;
+}
+.xp-marketing-layout .xp-traffic-channel {
+    font-size: .8125rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+.xp-marketing-layout .xp-traffic-detail {
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+.xp-marketing-layout #xp-singleAdAngles {
+    min-width: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+}
+.xp-marketing-layout #xp-singleAdAngles > h3 {
+    margin: 0 0 1rem;
+}
+.xp-marketing-layout .xp-ad-script-list {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 1rem;
+    margin: 0;
+}
+.xp-marketing-layout .xp-ad-script-card {
+    min-width: 0;
+    flex: 1 1 min(100%, 20rem);
+    padding: 1rem;
+    border-radius: .875rem;
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+}
+.xp-marketing-layout .xp-ad-script-header {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: .625rem;
+    margin: 0 0 .125rem;
+}
+.xp-marketing-layout .xp-ad-script-badge {
+    flex: 1 1 12rem;
+    min-width: 0;
+    align-items: flex-start;
+    padding: .5rem .625rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+.xp-marketing-layout .xp-ad-script-badge i { flex-shrink: 0; margin-top: .25em; }
+.xp-marketing-layout .xp-ad-copy-btn {
+    flex: 0 0 auto;
+    min-height: 2.25rem;
+    padding: .5rem .625rem;
+    white-space: nowrap;
+}
+.xp-marketing-layout .xp-ad-copy-btn:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 3px;
+}
+.xp-marketing-layout .xp-ad-section-box {
+    margin: 0;
+    padding: .875rem;
+    line-height: 1.7;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.xp-marketing-layout .xp-ad-sublabel {
+    align-items: flex-start;
+    line-height: 1.6;
+    margin-bottom: .375rem;
+}
+.xp-marketing-layout .xp-ad-sublabel i { flex-shrink: 0; margin-top: .25em; }
