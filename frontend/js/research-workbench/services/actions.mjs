@@ -41,7 +41,7 @@ export function createActionService(context){
    let result;
    try{result=await submitMutation(api,projectPath(id)+'/actions',{...selection,version:draft.version},draft,persist);}
    catch(error){if(error.status===409&&valid()){try{const project=await api.request(projectPath(id),{signal:life.signal});if(valid()){state.project=project;draft.version=project.version;persist();}}catch{}}throw error;}
-   if(valid()){if(result.id)state.lastResearchAction={id:result.id,projectId:id,kind:selection.kind};delete state.commands[key];try{storage?.removeItem(key);}catch{}}return result;
+   if(valid()){if(result.id)state.lastResearchAction={id:result.id,projectId:id,kind:selection.kind,productId:selection.product_id,keywordId:selection.keyword_id};delete state.commands[key];try{storage?.removeItem(key);}catch{}}return result;
    }finally{state.writeBusy=false;}
   },
   async retry(action,input={}){if(!retryEligible(action))throw Error('该任务不可重试，请先核对提交状态');const query=Object.hasOwn(input,'query')?input.query:trendsQuery(action);return this.enqueue({kind:action.kind,...(action.kind==='trends'?{query:typeof query==='string'?query.trim():query}:{}),...(action.keyword_id?{keyword_id:action.keyword_id}:{}),...(action.product_id?{product_id:action.product_id}:{}),...(action.landing_mode?{landing_mode:action.landing_mode}:{}),...(action.retry_review===true?{retry_review:true}:{}),...(action.rescan_of?{rescan_of:action.rescan_of,retry_action_id:action.id}:{}),attempt:action.attempt,version:state.project.version});},

@@ -52,3 +52,42 @@ test('the next preview reserves the previous media height while its own source i
  c.root.ownerDocument.createElement=tag=>{const n=create(tag),query=n.querySelector.bind(n);n.style={};n.getBoundingClientRect=()=>({height:n.className==='rw-media-preview'?308:1000});n.querySelector=s=>s.startsWith('.')?n.find(x=>x.className===s.slice(1)):query(s);return n;};
  try{const page=render(c);page.find(n=>n.dataset.candidateId==='p2').click();await tick();assert.equal(page.find(n=>n.className==='rw-media-preview').style.minHeight,'308px');}finally{c.life.dispose();}
 });
+test('lead judgment opens an inline form without navigating or saving',async()=>{
+ const {c,navigation,writes}=fixture();c.state.drafts={};try{
+  const page=render(c);page.find(n=>n.textContent==='暂存观察').click();await tick();
+  assert.deepEqual(navigation,[]);assert.deepEqual(writes,[]);
+  assert.ok(page.find(n=>n.tagName==='FORM'));
+  assert.ok(page.find(n=>n.textContent==='保存判断'));
+ }finally{c.life.dispose();}
+});
+for(const [label,disposition,reason] of [['保留并深挖','retained','商品明确，值得深挖'],['暂存观察','observing','商品身份不明确'],['淘汰这条线索','rejected','与当前选品方向不符']]){
+ test(`inline ${disposition} saves the chosen lead and reason without changing pages`,async()=>{
+  const {c,navigation,writes}=fixture();c.state.drafts={};const focus=[];c.command=async(action,payload)=>focus.push([action,payload]);
+  c.api.request=async(path,options)=>{writes.push([path,options]);const p=c.state.project;return {...p,version:2,products:p.products.map(x=>x.id==='p1'?{...x,triage:{state:disposition}}:x)};};
+  try{const page=render(c);page.find(n=>n.textContent===label).click();await tick();assert.equal(writes.length,0);
+   page.find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,20));
+   assert.equal(writes.length,1);assert.equal(writes[0][1].body.action,'triage_product');assert.deepEqual(writes[0][1].body.payload,{product_id:'p1',disposition,reason});assert.deepEqual(navigation,[]);
+   assert.ok(nodes(page).some(n=>n.textContent.includes(({retained:'当前初筛：保留深挖',observing:'当前初筛：暂存观察',rejected:'当前初筛：已淘汰'})[disposition])));
+   assert.equal(focus.length,disposition==='retained'?1:0);
+  }finally{c.life.dispose();}
+ });
+}
+test('uncertain judgment cannot be silently replaced with a different outcome',async()=>{
+ const {c}=fixture();c.state.drafts={};let calls=0;c.api.request=async()=>{calls++;throw Error('network error');};
+ try{const page=render(c);page.find(n=>n.textContent==='暂存观察').click();page.find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,20));
+  page.find(n=>n.textContent==='淘汰这条线索').click();await tick();assert.equal(calls,1);assert.ok(nodes(page).some(n=>n.textContent.includes('保存状态尚待核对')));
+ }finally{c.life.dispose();}
+});
+test('expansion progress and results are shown beside the current lead without mixing other leads',()=>{
+ const {c}=fixture();c.state.project.products[0].identification={relevance_confirmed:true};c.state.project.products[0].expansion_sources=[{source_kind:'ad'}];
+ c.state.actions=[{id:'a',kind:'expand',product_id:'p1',keyword_id:'w',status:'running'}];try{
+  let page=render(c);assert.ok(nodes(page).some(n=>n.textContent.includes('搜索词提取')&&n.textContent.includes('处理中')));assert.equal(page.find(n=>n.textContent==='AI 提取搜索词').disabled,true);
+  c.state.actions=[{id:'a',kind:'expand',product_id:'p1',keyword_id:'w',status:'complete',result:{suggestions:2}},{id:'b',kind:'expand',product_id:'p2',keyword_id:'w',status:'failed'}];page=render(c);assert.ok(nodes(page).some(n=>n.textContent.includes('新增 2 个待审核关键词')));assert.ok(!nodes(page).some(n=>n.textContent.includes('提取失败')));
+ }finally{c.life.dispose();}
+});
+test('new expansion stays visible while its record is loading, and uncertain results require checking',()=>{
+ const {c}=fixture();c.state.project.products[0].identification={relevance_confirmed:true};c.state.project.products[0].expansion_sources=[{source_kind:'ad'}];c.state.lastResearchAction={id:'a',projectId:'r',kind:'expand',productId:'p1',keywordId:'w'};
+ try{let page=render(c);assert.ok(nodes(page).some(n=>n.textContent.includes('请求已提交')));assert.equal(page.find(n=>n.textContent==='AI 提取搜索词').disabled,true);
+ c.state.actions=[{id:'a',kind:'expand',product_id:'p1',keyword_id:'w',status:'blocked',display_status:'manual_check',recovery_action:'manual'}];page=render(c);assert.ok(nodes(page).some(n=>n.textContent.includes('核对结果，不要重复提交')));assert.equal(page.find(n=>n.textContent==='AI 提取搜索词').disabled,true);
+ }finally{c.life.dispose();}
+});

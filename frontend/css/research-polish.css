@@ -444,5 +444,18 @@
 .research-workbench .rw-lead-triage h3{margin:0 0 8px;font-size:.9375rem}
 .research-workbench .rw-lead-triage p{margin:6px 0 12px;font-size:.8125rem;line-height:1.7}
 .research-workbench .rw-lead-triage .rw-actions{display:flex;flex-wrap:wrap;gap:8px}
+.research-workbench .rw-lead-triage .rw-actions button[aria-pressed="true"]{background:#eaf2ff;border-color:#1761f6;color:#0755db}
+.research-workbench .rw-lead-inline-triage .rw-form-page>h1{display:none}
+.research-workbench .rw-lead-inline-triage .rw-form-workspace{display:block}
+.research-workbench .rw-lead-inline-triage .rw-form-assistance{display:none}
+.research-workbench .rw-lead-inline-triage .rw-form{display:grid;gap:10px}
+.research-workbench .rw-lead-inline-triage .rw-form label{display:grid;gap:6px}
+.research-workbench .rw-lead-inline-triage .rw-form :is(select,textarea){width:100%;min-width:0}
+.research-workbench .rw-lead-inline-triage .rw-form-footer{display:flex;flex-wrap:wrap;gap:8px;padding-top:8px}
+.research-workbench .rw-lead-inline-triage .rw-form-footer>.rw-primary{order:2;min-width:0;margin-left:auto;background:#075bf5;color:#fff;border-color:#075bf5}
+.research-workbench .rw-lead-inline-triage .rw-form-footer>button:last-child{order:3;margin-left:0}
+.research-workbench .rw-expansion-progress{margin-top:12px;padding:12px;border:1px solid #c7d9f7;border-radius:8px;background:#f2f7ff}
+.research-workbench .rw-expansion-progress p{margin:0 0 8px;color:#263c62;font-size:13px;line-height:1.6}
+.research-workbench .rw-expansion-progress button{font-size:12px}
 .research-workbench :is(.rw-workflow-shortcuts,.rw-lead-triage,.rw-creative-result-actions) button.rw-danger{color:#a23f40;border-color:#efd6d6;background:#fffafa}
 .research-workbench :is(.rw-workflow-controls,.rw-lead-triage) button:focus-visible{outline:3px solid #b4ceff;outline-offset:2px}
