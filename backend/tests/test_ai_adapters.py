@@ -976,3 +976,37 @@ async def test_openai_masked_edit_rejects_text_to_image_before_network():
             {"contents": [{"parts": [{"text": "repair"}]}], "imageEdit": {"maskIndex": 1}},
         )
     transport.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_canvas_flag_prevents_image_format_fallback_repost():
+    response = MagicMock()
+    response.status_code = 400
+    response.json.return_value = {"error": {"message": "only supports response_format=url"}}
+    response.text = 'only supports response_format=url'
+    response.raise_for_status.side_effect = ValueError('unsupported format')
+    transport = MagicMock()
+    transport.post = AsyncMock(return_value=response)
+    adapter = OpenAICompatibleAdapter(client=transport)
+    with pytest.raises(ValueError, match='unsupported format'):
+        await adapter.generate(make_snapshot(capability='image', image_generation_mode='text_to_image'), {
+            'disable_image_format_fallback': True,
+            'contents': [{'parts': [{'text': 'make an image'}]}],
+        })
+    assert transport.post.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_canvas_openai_image_options_are_forwarded_to_generation():
+    response=MagicMock();response.status_code=200;response.json.return_value={'data':[{'b64_json':TINY_PNG_BASE64}]};response.raise_for_status.return_value=None
+    transport=MagicMock();transport.post=AsyncMock(return_value=response)
+    await OpenAICompatibleAdapter(client=transport).generate(make_snapshot(capability='image',image_generation_mode='text_to_image'), {'contents':[{'role':'user','parts':[{'text':'draw'}]}],'canvasImageSettings':{'size':'1024x1536','quality':'high','background':'transparent'}})
+    sent=transport.post.await_args.kwargs['json'];assert sent['size']=='1024x1536';assert sent['quality']=='high';assert sent['background']=='transparent'
+
+
+@pytest.mark.asyncio
+async def test_canvas_gpt_image_uses_upstream_request_shape():
+    response=MagicMock();response.status_code=200;response.json.return_value={'data':[{'b64_json':TINY_PNG_BASE64}]};response.raise_for_status.return_value=None
+    transport=MagicMock();transport.post=AsyncMock(return_value=response)
+    await OpenAICompatibleAdapter(client=transport).generate(replace(make_snapshot(capability='image',image_generation_mode='text_to_image'),model='gpt-image-2'),{'contents':[{'role':'user','parts':[{'text':'draw'}]}],'canvasImageSettings':{'size':'1:1','quality':'auto','background':''}})
+    sent=transport.post.await_args.kwargs['json'];assert sent['size']=='1024x1024';assert sent['n']==1;assert sent['output_format']=='png';assert 'response_format' not in sent

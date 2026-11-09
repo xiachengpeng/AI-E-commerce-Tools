@@ -628,6 +628,19 @@ class OpenAICompatibleAdapter(AIAdapter):
                 "prompt": extract_text_prompt(payload),
                 "response_format": "b64_json",
             }
+            canvas_options = payload.get("canvasImageSettings")
+            if canvas_options:
+                common["n"] = 1
+                common["output_format"] = "png"
+                if "gpt-image" in snapshot.model.lower(): common.pop("response_format", None)
+                canvas_size = canvas_options.get("size", "auto")
+                if canvas_size != "auto":
+                    if ":" in canvas_size:
+                        presets={"1:1":"1024x1024","2:3":"1024x1536","3:2":"1536x1024","4:3":"1024x768","3:4":"768x1024","16:9":"1536x864","9:16":"864x1536","21:9":"2016x864","9:21":"864x2016"}
+                        canvas_size = presets.get(canvas_size) or _openai_image_size({"generationConfig":{"imageConfig":{"aspectRatio":canvas_size}}})
+                    if canvas_size: common["size"] = canvas_size
+                if canvas_options.get("quality") not in (None, "", "auto"): common["quality"] = canvas_options["quality"]
+                if canvas_options.get("background"): common["background"] = canvas_options["background"]
             mode = snapshot.image_generation_mode or "image_to_image"
             edit = payload.get("imageEdit") or payload.get("image_edit") or {}
             if mode == "text_to_image" and (
@@ -641,7 +654,7 @@ class OpenAICompatibleAdapter(AIAdapter):
                     json=common,
                     timeout=snapshot.timeout_seconds,
                 )
-                if _is_format_url_required_error(response):
+                if not payload.get("disable_image_format_fallback") and _is_format_url_required_error(response):
                     retry_common = dict(common)
                     retry_common["response_format"] = "url"
                     response = await self.client.post(
@@ -683,7 +696,7 @@ class OpenAICompatibleAdapter(AIAdapter):
                     files=files,
                     timeout=snapshot.timeout_seconds,
                 )
-                if _is_format_url_required_error(response):
+                if not payload.get("disable_image_format_fallback") and _is_format_url_required_error(response):
                     retry_data = dict(data)
                     retry_data["response_format"] = "url"
                     response = await self.client.post(
@@ -714,6 +727,8 @@ class OpenAICompatibleAdapter(AIAdapter):
             "model": snapshot.model,
             "messages": convert_openai_messages(payload.get("contents", [])),
         }
+        if payload.get("canvasReasoningEffort") in {"low", "medium", "high", "xhigh"}:
+            body["reasoning_effort"] = payload["canvasReasoningEffort"]
         generation_config = (
             payload.get("generationConfig")
             or payload.get("config")

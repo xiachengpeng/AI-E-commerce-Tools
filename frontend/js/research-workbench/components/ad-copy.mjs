@@ -66,10 +66,10 @@ export function sourcePreview(context,word,product,ads=[],{fixedSource,onSelecti
  const selection={source:['product','ad'].includes(fixedSource)?fixedSource:saved.source==='product'?'product':saved.source==='ad'?'ad':ads.some(ad=>ad.media?.length)?'ad':'product',adId:ads.some(ad=>ad.id===saved.adId)?saved.adId:ads[0]?.id,index:Number.isInteger(saved.index)&&saved.index>=0?saved.index:0};
  context.state.focusMediaSelections[key]=selection;
  const cache=context.mediaCache||createMediaCache({life:context.life,api:context.api,owner:context.context?.objectURLs||globalThis.URL});
- const views=new Map(),prefetched=new Set(),thumbnails=new Map();let generation=0,current=null,pendingKey=null;
+ const views=new Map(),prefetched=new Set(),thumbnails=new Map(),retryAttempts=new Map();let generation=0,current=null,pendingKey=null;
  const countLabel=el(context,'p','rw-muted'),feedback=el(context,'p','rw-muted'),preview=el(context,'div','rw-media-preview'),pagination=el(context,'div','rw-media-pagination');
- feedback.setAttribute('role','status');pagination.setAttribute('aria-label','素材列表');
- const retry=button(context,'重试读取素材',()=>{const item=selected();cache.invalidate(item.keyAt(item.index));return show();});retry.hidden=true;
+ feedback.setAttribute('role','status');feedback.setAttribute('aria-live','polite');feedback.setAttribute('aria-atomic','true');pagination.setAttribute('aria-label','素材列表');
+ const retry=button(context,'重试读取素材',()=>{const item=selected();cache.invalidate(item.keyAt(item.index));return show({isRetry:true});});retry.hidden=true;
  const navigation=el(context,'div','rw-gallery-navigation'),previous=el(context,'button','','上一张'),next=el(context,'button','','下一张');
  previous.type=next.type='button';navigation.append(previous,next);
  const move=delta=>{const item=selected(),index=item.index+delta;if(index>=0&&index<item.count){selection.index=index;paint();}};
@@ -86,14 +86,15 @@ export function sourcePreview(context,word,product,ads=[],{fixedSource,onSelecti
   const keyAt=index=>sourceMediaKey(context.state.project.id,word.id,selection.source,isAd?ad?.id:product?.id,product?.identity_revision,isAd?ad?.observed_at:product?.landing_snapshot?.observed_at,items,index);
   return {ad,isAd,items,count,group,pathAt,keyAt,index:selection.index};
  }
- async function show(){
-  const item=selected(),id=++generation;retry.hidden=true;
+ async function show({isRetry=false}={}){
+  const item=selected(),id=++generation;retry.hidden=!isRetry;retry.textContent=isRetry?'正在重试读取素材…':'重试读取素材';retry.setAttribute('aria-busy',String(isRetry));stage.setAttribute('aria-busy','false');
   if(!item.count){pendingKey=null;current?.media.pause?.();current?.lease.release();current=null;preview.replaceChildren(el(context,'div','rw-media-empty',item.isAd?(item.ad?'这条广告尚未保存图片或视频，请打开原广告核对。':'这条线索未绑定具体广告，不能借用其他广告素材。'):'尚未保存商品图，请读取商品页或打开商品来源核对。'));countLabel.textContent='';feedback.textContent='';return;}
   const key=item.keyAt(item.index);
   countLabel.textContent='已保存 '+item.count+' 项 · 当前 '+(item.index+1)+' / '+item.count;
-  if(current?.key===key){pendingKey=null;feedback.textContent='';return;}
+  if(current?.key===key&&!isRetry){pendingKey=null;retry.hidden=!current.failed;if(!current.failed)feedback.textContent='';return;}
+  const attempt=isRetry?(retryAttempts.get(key)||0)+1:0;if(isRetry)retryAttempts.set(key,attempt);
   if(current&&current.group!==item.group){current.media.pause?.();current.lease.release();current=null;preview.replaceChildren();}
-  feedback.textContent=current?'正在准备第 '+(item.index+1)+' 张；暂保留第 '+(current.index+1)+' 张预览。':'正在准备素材预览…';pendingKey=key;
+  feedback.textContent=isRetry?'正在重试第 '+(item.index+1)+' 项素材（第 '+attempt+' 次）…':current?'正在准备第 '+(item.index+1)+' 张；暂保留第 '+(current.index+1)+' 张预览。':'正在准备素材预览…';pendingKey=key;stage.setAttribute('aria-busy','true');
   let lease;
   try{
    lease=await cache.acquire(key,item.pathAt(item.index));if(!lease)return;
@@ -102,16 +103,19 @@ export function sourcePreview(context,word,product,ads=[],{fixedSource,onSelecti
    if(!view||view.url!==lease.url){
     const media=el(context,lease.type.startsWith('video/')?'video':'img');
     if(media.tagName==='VIDEO'){media.controls=true;media.preload='metadata';media.playsInline=true;}else media.alt=(item.isAd?'广告素材':'商品图')+' '+(item.index+1)+' · 仍需人工核验';
-    context.life.listen(media,'error',()=>{if(context.life.active&&current?.media===media){retry.hidden=false;feedback.textContent='当前素材无法显示，请重试或打开原来源核对。';}});
+    const isSelectedView=()=>{const active=selected();return !pendingKey&&current?.key===active.keyAt(active.index);};
+    context.life.listen(media,'error',()=>{if(context.life.active&&current?.media===media){current.failed=true;if(!isSelectedView())return;retry.hidden=false;feedback.textContent=(current.retryAttempt?'第 '+current.retryAttempt+' 次重试失败：':'')+'当前素材无法显示，请重试或打开原来源核对。';}});
+    if(media.tagName==='VIDEO')context.life.listen(media,'loadedmetadata',()=>{if(context.life.active&&current?.media===media&&!current.failed&&current.retryAttempt&&isSelectedView())feedback.textContent='第 '+current.retryAttempt+' 次重试成功，素材已可播放。';});
     media.src=lease.url;
     if(media.tagName==='IMG'&&media.decode)await media.decode();
     const download=el(context,'a','','下载当前素材');download.href=lease.url;download.download='research-media';view={media,download,url:lease.url};if(views.size>=16){const oldest=[...views.keys()].find(k=>k!==current?.key);if(oldest){views.get(oldest).media.pause?.();views.delete(oldest);}}views.set(key,view);
    }
    if(!context.life.active||id!==generation){lease.release();return;}
-   current?.media.pause?.();current?.lease.release();current={...view,lease,key,group:item.group,index:item.index};preview.replaceChildren(view.media,view.download);feedback.textContent='';pendingKey=null;
+   current?.media.pause?.();current?.lease.release();current={...view,lease,key,group:item.group,index:item.index,retryAttempt:attempt};preview.replaceChildren(view.media,view.download);feedback.textContent=isRetry?'第 '+attempt+' 次重试'+(view.media.tagName==='VIDEO'?'已重新读取素材，正在准备播放…':'成功，素材已显示。'):'';pendingKey=null;retry.hidden=true;
    // Only nearby product pictures, never whole galleries or video collections.
    if(!item.isAd)for(const index of [item.index+1,item.index-1])if(index>=0&&index<item.count){const nextKey=item.keyAt(index);if(!prefetched.has(nextKey)){prefetched.add(nextKey);void cache.prefetch(nextKey,item.pathAt(index)).catch(()=>{});}}
-  }catch(error){lease?.release();if(!context.life.active||id!==generation)return;if(lease)cache.invalidate(key);pendingKey=null;retry.hidden=false;feedback.textContent='第 '+(item.index+1)+' 项暂时无法显示；'+(current?'已保留上一张预览。':'')+error.message;}
+  }catch(error){lease?.release();if(!context.life.active||id!==generation)return;if(lease)cache.invalidate(key);pendingKey=null;retry.hidden=false;feedback.textContent=(isRetry?'第 '+attempt+' 次重试失败：':'')+'第 '+(item.index+1)+' 项暂时无法显示；'+(current&&!current.failed?'已保留上一张预览。':'')+error.message;}
+  finally{if(context.life.active&&id===generation){retry.textContent='重试读取素材';retry.setAttribute('aria-busy','false');stage.setAttribute('aria-busy','false');}}
  }
 
  const buttons=[];

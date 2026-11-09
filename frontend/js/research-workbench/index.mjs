@@ -71,8 +71,11 @@ export function createWorkbench() {
             onCancel:()=>closeConfirmation(current),
             onSubmitted:async()=>{
                 closeConfirmation(current,true,false);
-                try{await c.refreshProject?.(false);}catch{if(active(current)&&c.life.active&&selection.kind!=='keywords')notify(current,'执行请求已保存；结果暂未读到，请刷新核对，勿重复提交。');}
-                if(active(current)&&c.life.active&&current.state.project?.id===projectId)paint(current);
+                if(!active(current)||current.state.project?.id!==projectId)return;
+                // Paint the acknowledgement before waiting on follow-up reads; use the new page lifecycle to refresh.
+                paint(current);const next=current.pageContext;
+                try{await next.refreshProject?.(false);}catch{if(active(current)&&next.life.active&&selection.kind!=='keywords')notify(current,'执行请求已保存；结果暂未读到，请刷新核对，勿重复提交。');}
+                if(active(current)&&next.life.active&&current.state.project?.id===projectId)paint(current);
             }
         });
         if(!current.confirmation)current.state.queueSelection=null;

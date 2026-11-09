@@ -40,6 +40,39 @@ def test_diagnostics_does_not_import_live_backend_or_create_database(tmp_path):
     assert not (tmp_path / 'data/history.db').exists()
 
 
+def test_api_startup_restores_automatic_customer_background(tmp_path, monkeypatch):
+    from services.customer_distribution import prepare_customer_data, write_json
+    import uvicorn
+    entry = importlib.import_module('desktop_entry')
+    data = tmp_path / 'customer'
+    prepare_customer_data(data, '0.2.0')
+    config_path = data / 'research.json'
+    config = json.loads(config_path.read_text())
+    config['worker_mode'] = 'paused'
+    write_json(config_path, config)
+    # Bind no ports and import no live backend: this test exercises boot policy.
+    monkeypatch.setattr(uvicorn, 'run', lambda *args, **kwargs: None)
+    for name in ('SQLITE_DB_PATH', 'AI_ECOMMERCE_ENV_FILE', 'RESEARCH_INTEGRATION_CONFIG', 'AI_ECOMMERCE_DATA_DIR'):
+        monkeypatch.setenv(name, '')
+    assert entry.main(['--mode', 'api', '--data-dir', str(data),
+                       '--resources-dir', str(tmp_path / 'app')]) == 0
+    assert json.loads(config_path.read_text())['worker_mode'] == 'active'
+    assert not (data / 'research-business.json').exists()
+
+
+def test_automatic_customer_worker_waits_cleanly_for_rules(tmp_path):
+    from services.customer_distribution import prepare_customer_data
+    data = tmp_path / 'customer'
+    prepare_customer_data(data, '0.2.0')
+    result = subprocess.run([sys.executable, 'backend/desktop_entry.py', '--mode', 'worker',
+                             '--data-dir', str(data), '--resources-dir', str(tmp_path / 'app')],
+                            capture_output=True, text=True, env=dict(os.environ), timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert not (data / 'research-business.json').exists()
+    with __import__('sqlite3').connect(data / 'history.db') as connection:
+        assert connection.execute('SELECT COUNT(*) FROM runtime_health').fetchone()[0] == 0
+
+
 def test_frozen_verification_mode_checks_real_imports_without_starting_services(tmp_path):
     result = subprocess.run([sys.executable, 'backend/desktop_entry.py', '--mode', 'verify', '--data-dir', str(tmp_path / 'data'), '--resources-dir', str(tmp_path / 'app')], capture_output=True, text=True, env={**os.environ, 'FIRECRAWL_API_KEY': '', 'GEMINI_API_KEY': ''})
     assert result.returncode == 0, result.stderr

@@ -78,3 +78,80 @@ test('candidate thumbnail and gallery reuse the same protected product image req
   assert.equal(f.calls.filter(path=>path.includes('source=product')&&path.endsWith('index=0')).length,1);
  }finally{f.life.dispose();}
 });
+
+const singleAd={id:'bound',observed_at:'2026-10-30',media:[{kind:'video',url:'https://cdn.example/saved.mp4'}]};
+const retryButton=host=>host.find(n=>n.tagName==='BUTTON'&&n.textContent.includes('重试读取素材'));
+const status=host=>host.find(n=>n.attributes.role==='status');
+
+test('explicit retry stays visible while pending, sends one bound read and identifies repeated failures',async()=>{
+ let rejectRetry;
+ const f=fixture(()=>f.calls.length===1?Promise.reject(Error('来源连接失败')):new Promise((resolve,reject)=>{rejectRetry=reject;}));
+ try{
+  const host=media.sourcePreview(f.c,{id:'k'},product,[singleAd],{fixedSource:'ad'});await tick();
+  const retry=retryButton(host);assert.equal(retry.hidden,false);const initial=status(host).textContent;
+  retry.click();retry.click();await tick();
+  assert.equal(f.calls.length,2,'double click must issue just one explicit retry');
+  assert.equal(f.calls[0],f.calls[1],'retry must preserve the exact saved source binding');
+  assert.equal(retry.hidden,false,'retry action remains visible');assert.equal(retry.disabled,true);
+  assert.equal(retry.attributes['aria-busy'],'true');assert.match(status(host).textContent,/正在重试/);
+  rejectRetry(Error('来源连接失败'));await tick();
+  assert.equal(retry.disabled,false);assert.equal(retry.attributes['aria-busy'],'false');
+  assert.notEqual(status(host).textContent,initial);assert.match(status(host).textContent,/第 1 次重试失败/);
+  retry.click();await tick();rejectRetry(Error('来源连接失败'));await tick();
+  assert.equal(f.calls.length,3);assert.match(status(host).textContent,/第 2 次重试失败/);
+ }finally{f.life.dispose();}
+});
+
+test('retry after a displayed video errors fetches and displays a fresh media element',async()=>{
+ const f=fixture(()=>new Blob(['video'],{type:'video/mp4'}));
+ try{
+  const host=media.sourcePreview(f.c,{id:'k'},product,[singleAd],{fixedSource:'ad'});await tick();
+  const first=host.find(n=>n.tagName==='VIDEO');assert.ok(first);const firstUrl=first.src;
+  first.dispatchEvent(new Event('error'));
+  const retry=retryButton(host);assert.equal(retry.hidden,false);retry.click();await tick();
+  assert.equal(f.calls.length,2,'a failed current video cannot take the same-key no-op path');
+  const replacement=host.find(n=>n.tagName==='VIDEO');assert.notEqual(replacement,first);assert.notEqual(replacement.src,firstUrl);
+  assert.ok(f.revoked.includes(firstUrl),'failed media lease is released after replacement');
+  assert.equal(retry.hidden,true);assert.match(status(host).textContent,/已重新读取素材/);
+  replacement.dispatchEvent(new Event('loadedmetadata'));assert.match(status(host).textContent,/重试成功/);
+ }finally{f.life.dispose();}
+ assert.equal(new Set(f.revoked).size,f.revoked.length);
+});
+
+test('late retry failure cannot overwrite a different selected source or survive teardown',async()=>{
+ let rejectRetry;
+ const f=fixture(path=>path.includes('source=product')?new Blob(['product'],{type:'image/png'}):f.calls.filter(p=>p.includes('source=ad')).length===1?Promise.reject(Error('offline')):new Promise((resolve,reject)=>{rejectRetry=reject;}));
+ try{
+  const host=media.sourcePreview(f.c,{id:'k'},product,[singleAd]);await tick();
+  retryButton(host).click();await tick();
+  host.find(n=>n.dataset.mediaSource==='product').click();await tick();const current=image(host);assert.ok(current);
+  rejectRetry(Error('old retry failed'));await tick();assert.equal(image(host),current);assert.doesNotMatch(status(host).textContent,/old retry failed/);
+  const text=status(host).textContent;f.c.life.dispose();assert.equal(status(host).textContent,text);
+ }finally{f.life.dispose();}
+});
+
+test('events from a previous video cannot replace the status of a pending retry',async()=>{
+ let resolveRetry;
+ const f=fixture(()=>f.calls.length===1?new Blob(['first'],{type:'video/mp4'}):new Promise(resolve=>{resolveRetry=resolve;}));
+ try{
+  const host=media.sourcePreview(f.c,{id:'k'},product,[singleAd],{fixedSource:'ad'});await tick();
+  const first=host.find(n=>n.tagName==='VIDEO');first.dispatchEvent(new Event('error'));
+  retryButton(host).click();await tick();const loading=status(host).textContent;
+  first.dispatchEvent(new Event('error'));first.dispatchEvent(new Event('loadedmetadata'));
+  assert.equal(status(host).textContent,loading,'the old video must not overwrite active retry feedback');
+  resolveRetry(new Blob(['replacement'],{type:'video/mp4'}));await tick();
+  assert.notEqual(host.find(n=>n.tagName==='VIDEO'),first);
+ }finally{f.life.dispose();}
+});
+
+test('a retry resolving after its preview is disposed releases the lease without painting',async()=>{
+ let resolveRetry;
+ const f=fixture(()=>f.calls.length===1?Promise.reject(Error('offline')):new Promise(resolve=>{resolveRetry=resolve;}));
+ try{
+  const host=media.sourcePreview(f.c,{id:'k'},product,[singleAd],{fixedSource:'ad'});await tick();
+  retryButton(host).click();await tick();const loading=status(host).textContent;
+  f.c.life.dispose();resolveRetry(new Blob(['late'],{type:'video/mp4'}));await tick();
+  assert.equal(status(host).textContent,loading);assert.equal(host.find(n=>n.tagName==='VIDEO'),null);
+ }finally{f.life.dispose();}
+ assert.equal(f.revoked.length,1);assert.equal(new Set(f.revoked).size,f.revoked.length);
+});

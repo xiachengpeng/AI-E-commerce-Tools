@@ -1152,19 +1152,27 @@ async def upload_image_dispatcher(
         )
 
     target_filename = request.filename
+    compression_stats = None
+    if request.target_size_bytes and not request.convert_to_webp:
+        return ImageUploadResponse(success=False, storage_type=request.storage_type, filename=target_filename, error="目标大小需要启用 WebP 压缩。")
     if request.convert_to_webp:
-        from services.image_compression_service import compress_to_webp
+        from services.image_compression_service import compress_to_webp, compress_webp_to_target
         try:
-            image_bytes, _ = compress_to_webp(image_bytes, quality=request.quality)
+            if request.target_size_bytes:
+                image_bytes, compression_stats = compress_webp_to_target(image_bytes, request.target_size_bytes)
+            else:
+                image_bytes, compression_stats = compress_to_webp(image_bytes, quality=request.quality)
             mime_type = "image/webp"
             base_stem = re.sub(r"\.(png|jpe?g|bmp|tiff)$", "", target_filename, flags=re.IGNORECASE)
             if not base_stem.lower().endswith(".webp"):
                 target_filename = f"{base_stem}.webp"
         except Exception as exc:
+            if request.target_size_bytes:
+                return ImageUploadResponse(success=False, storage_type=request.storage_type, filename=target_filename, error="目标大小压缩失败，未上传。")
             logger.warning(f"WebP 转换失败，使用原始格式上传: {exc}")
 
     if request.storage_type == "wordpress":
-        return await upload_image_to_wordpress(
+        result = await upload_image_to_wordpress(
             config=row,
             image_bytes=image_bytes,
             filename=target_filename,
@@ -1173,7 +1181,7 @@ async def upload_image_dispatcher(
             alt_text=request.alt_text,
         )
     elif request.storage_type == "shopify":
-        return await upload_image_to_shopify(
+        result = await upload_image_to_shopify(
             config=row,
             image_bytes=image_bytes,
             filename=target_filename,
@@ -1181,7 +1189,7 @@ async def upload_image_dispatcher(
             alt_text=request.alt_text,
         )
     elif request.storage_type == "r2":
-        return await upload_image_to_r2(
+        result = await upload_image_to_r2(
             config=row,
             image_bytes=image_bytes,
             filename=target_filename,
@@ -1194,3 +1202,5 @@ async def upload_image_dispatcher(
             filename=target_filename,
             error=f"不支持的存储类型: {request.storage_type}",
         )
+    result.compression_stats = compression_stats
+    return result

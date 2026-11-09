@@ -108,7 +108,7 @@ def _initialize(stage, destination, version):
     claim_activation(paths, report)
     write_json(stage / 'research.json', {
         'enabled': True, 'mode': 'local', 'data_root': str(destination / 'research'),
-        'worker_mode': 'paused', 'feishu_polling_enabled': False})
+        'worker_mode': 'active', 'feishu_polling_enabled': False})
     marker = {'schema': 1, 'version': version, 'dataset_id': dataset,
               'setup_complete': False, 'created_at': datetime.now(UTC).isoformat()}
     write_json(stage / 'customer-install.json', marker)
@@ -130,6 +130,35 @@ def customer_install(data):
     if not validate_activation(paths) or load_activation(paths).get('dataset_id') != marker.get('dataset_id'):
         raise ValueError('invalid_customer_owner')
     return marker
+
+
+def ensure_customer_background(data):
+    """Normalize the desktop policy without changing queues, rules or polling scope."""
+    data = Path(data)
+    customer_install(data)
+    lock = data / '.customer-setup.lock'; _private(lock)
+    with os.fdopen(os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), 'a') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        config_path = data / 'research.json'; _private(config_path)
+        config = json.loads(config_path.read_text())
+        if not isinstance(config, dict):
+            raise ValueError('invalid_customer_configuration')
+        if config.get('enabled') is not True or config.get('worker_mode') != 'active':
+            config.update(enabled=True, worker_mode='active')
+            write_json(config_path, config)
+
+
+def customer_worker_ready(config):
+    """An automatic worker waits for confirmed rules; never save example defaults."""
+    from services.research_ai_adapter import read_business_settings
+    path = config.get('business_settings_path')
+    if not path:
+        return False
+    try:
+        read_business_settings(path)
+        return True
+    except (ValueError, OSError, TypeError):
+        return False
 
 
 def _backup(data, previous):

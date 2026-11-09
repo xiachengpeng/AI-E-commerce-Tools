@@ -34,8 +34,8 @@
     <!-- 基础配置与工具 (必须优先加载) -->
     <link rel="stylesheet" href="css/research.css?v=20261009">
     <link rel="stylesheet" href="css/research-workbench.css?v=20261016-design">
-    <link rel="stylesheet" href="css/research-design.css?v=20261024-stage-entry">
-    <link rel="stylesheet" href="css/research-polish.css?v=20261026-candidate-switch">
+    <link rel="stylesheet" href="css/research-design.css?v=20261030-sidebar-chevron-center">
+    <link rel="stylesheet" href="css/research-polish.css?v=20261027-expansion-feedback">
     <script src="js/languages.js?v=20260917-reset-v1"></script>
     <script src="js/config.js?v=20260917-reset-v1"></script>
     <script src="js/utils.js?v=20261026-crawler-profiles-compact"></script>
@@ -100,6 +100,7 @@
                     <span class="nav-group-title hidden text-[11px] font-bold text-slate-400 uppercase tracking-wider">视觉工坊</span>
                 </div>
                 <div class="nav-group-items flex flex-col items-center gap-1 w-full bg-slate-50/60 p-1 rounded-2xl border border-slate-100">
+                    <button id="tab-image-canvas" onclick="switchMainTab('image-canvas')" class="side-tab" title="AI 图片画布"><i class="ph ph-image"></i><span>AI 图片画布</span></button>
                     <button id="tab-square-redraw" onclick="switchMainTab('square-redraw')" class="side-tab" title="尺寸重绘">
                         <i class="ph ph-crop"></i><span>尺寸重绘</span>
                     </button>
@@ -2602,7 +2603,7 @@
                                     <span class="text-[10px] bg-indigo-600 text-white font-black px-1.5 py-0.5 rounded-full">推荐</span>
                                     <span id="univWebpBatchBadge" class="hidden text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded">全量批量生效</span>
                                 </div>
-                                <div class="text-[11px] text-indigo-600/80 mt-0.5">视觉高保真无损，体积平均缩减 45%~75%，大幅提升独立站加载评分</div>
+                                <div class="text-[11px] text-indigo-600/80 mt-0.5">使用 WebP 有损压缩，实际画质与大小因图片而异。</div>
                             </div>
                         </label>
                         <div class="flex items-center gap-1.5 flex-shrink-0 ml-3">
@@ -2610,6 +2611,10 @@
                             <input id="univUploadQuality" type="number" min="60" max="100" value="90" class="w-12 bg-white border border-slate-200 rounded-lg px-1.5 py-1 text-xs text-center font-bold text-slate-700 outline-none">
                         </div>
                     </div>
+                    <label class="flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+                        <input id="univTarget60Kb" type="checkbox" class="mt-0.5 w-4 h-4 rounded text-indigo-600">
+                        <span><strong>尝试压缩到 60 KB 以内</strong><br><span class="text-slate-500">保留尺寸，品质最低 70；未达到时上传最小结果并提示。此选项会覆盖上面的品质设置。</span></span>
+                    </label>
 
                     <!-- 单图上传展示区 -->
                     <div id="univSingleUploadContainer" class="flex flex-col gap-4">
@@ -2692,6 +2697,7 @@
 
                     <!-- 上传成功结果展示卡片 -->
                     <div id="univUploadResultCard" class="hidden p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex flex-col gap-2.5 animate-in fade-in duration-200">
+                        <div id="univCompressionResult" class="text-xs text-emerald-800" aria-live="polite"></div>
                         <div class="flex items-center justify-between">
                             <span class="text-xs font-extrabold text-emerald-800 flex items-center gap-1.5">
                                 <i class="ph-fill ph-check-circle text-emerald-600 text-base"></i> 托管成功！线上公网 CDN URL:
@@ -3851,6 +3857,8 @@
         </div>
 
         <!-- ============================================== -->
+        <div id="view-image-canvas" class="hidden flex-1 overflow-hidden"><iframe title="AI 图片画布" src="infinite-image-canvas/web/dist/index.html" class="flex-1 w-full h-full border-0" sandbox="allow-scripts allow-same-origin allow-downloads"></iframe></div>
+
         <!-- 视图：AI 水印消除 (VIEW: WATERMARK REMOVAL) -->
         <!-- ============================================== -->
         <div id="view-watermark-removal" class="hidden flex-1 overflow-hidden">
@@ -5299,8 +5307,8 @@
     <script src="js/settings.js?v=20261026-crawler-profiles-compact"></script>
     <script src="js/local_transfer.js?v=20261021"></script>
     <script src="js/detail_project_transfer.js?v=20261021"></script>
-    <script src="js/app.js?v=20261024-storage-tab"></script>
-    <script src="js/universal_uploader.js"></script>
+    <script src="js/app.js?v=20261030-remove-legacy-canvas"></script>
+    <script src="js/universal_uploader.js?v=20261029-target-60kb-upload"></script>
     <script src="js/details.js?v=20260917-reset-v1"></script>
     <script src="js/listing.js?v=20260917-reset-v1"></script>
     <script src="js/ads.js?v=20260917-reset-v1"></script>

@@ -119,6 +119,7 @@ class ImageUploadRequest(BaseModel):
     alt_text: Optional[str] = None
     convert_to_webp: bool = Field(default=False, description="Whether to compress and convert to WebP before uploading")
     quality: int = Field(default=90, description="WebP compression quality (1-100)")
+    target_size_bytes: Optional[int] = Field(default=None, ge=1, le=10 * 1024 * 1024)
 
 
 
@@ -129,3 +130,4 @@ class ImageUploadResponse(BaseModel):
     media_id: Optional[str] = None
     filename: str
     error: Optional[str] = None
+    compression_stats: Optional[dict] = None

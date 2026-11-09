@@ -503,3 +503,21 @@ async def test_ssrf_protection_in_storage():
     success, msg, _ = await check_shopify_connection("169.254.169.254", "shpat_123")
     assert success is False
     assert "不合规" in msg
+
+@pytest.mark.asyncio
+async def test_target_size_unmet_uploads_smallest_candidate_with_stats(test_db):
+    import io
+    from PIL import Image
+    image = Image.new('RGB', (80, 80), 'red')
+    output = io.BytesIO()
+    image.save(output, format='PNG')
+    test_db.add(StorageConfig(storage_type='wordpress', name='Test', enabled=1, is_default=1))
+    test_db.commit()
+    req = ImageUploadRequest(storage_type='wordpress', image_data=base64.b64encode(output.getvalue()).decode('ascii'), filename='x.png', convert_to_webp=True, target_size_bytes=10)
+    with patch('services.storage_service.upload_image_to_wordpress') as upload:
+        upload.return_value = ImageUploadResponse(success=True, storage_type='wordpress', filename='x.webp', remote_url='https://example.com/x.webp')
+        response = await upload_image_dispatcher(req, test_db)
+    assert response.success is True
+    assert response.compression_stats['target_met'] is False
+    upload.assert_called_once()
+    assert len(upload.call_args.kwargs['image_bytes']) == response.compression_stats['compressed_size']

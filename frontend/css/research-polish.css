@@ -379,6 +379,13 @@
 
 .research-workbench .rw-keyword-meaning{display:block;font-size:.8125rem;line-height:1.65;font-weight:400;color:#60738e;overflow-wrap:anywhere;white-space:normal}
 .research-workbench .rw-action-dialog .rw-keyword-meaning{margin-top:-6px;padding:10px 12px;border-radius:8px;background:#f5f8ff;color:#405577}
+.research-workbench .rw-trends-query-editor{margin-top:18px;padding:16px;border:1px solid #dfE8f5;border-radius:12px;background:#f8faff}
+.research-workbench .rw-trends-query-editor label{margin-top:0}
+.research-workbench .rw-trends-query-meaning{color:#254cb2;font-weight:600}
+.research-workbench .rw-trends-query-quote{padding:10px 12px;border-left:3px solid #a8c2ff;background:#fff;color:#52637d;font-size:12px}
+.research-workbench .rw-trends-query-editor p:empty{display:none}
+.research-workbench .rw-trends-query-options,.research-workbench .rw-trends-query-tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.research-workbench .rw-trends-query-options button,.research-workbench .rw-trends-query-tools button{padding:7px 10px;font-size:12px}
 
 
 /* Saved ad checks and actual creative records; never reserve three empty cards. */
@@ -444,5 +451,67 @@
 .research-workbench .rw-lead-triage h3{margin:0 0 8px;font-size:.9375rem}
 .research-workbench .rw-lead-triage p{margin:6px 0 12px;font-size:.8125rem;line-height:1.7}
 .research-workbench .rw-lead-triage .rw-actions{display:flex;flex-wrap:wrap;gap:8px}
+.research-workbench .rw-lead-triage .rw-actions button[aria-pressed="true"]{background:#eaf2ff;border-color:#1761f6;color:#0755db}
+.research-workbench .rw-lead-inline-triage .rw-form-page>h1{display:none}
+.research-workbench .rw-lead-inline-triage .rw-form-workspace{display:block}
+.research-workbench .rw-lead-inline-triage .rw-form-assistance{display:none}
+.research-workbench .rw-lead-inline-triage .rw-form{display:grid;gap:10px}
+.research-workbench .rw-lead-inline-triage .rw-form label{display:grid;gap:6px}
+.research-workbench .rw-lead-inline-triage .rw-form :is(select,textarea){width:100%;min-width:0}
+.research-workbench .rw-lead-inline-triage .rw-form-footer{display:flex;flex-wrap:wrap;gap:8px;padding-top:8px}
+.research-workbench .rw-lead-inline-triage .rw-form-footer>.rw-primary{order:2;min-width:0;margin-left:auto;background:#075bf5;color:#fff;border-color:#075bf5}
+.research-workbench .rw-lead-inline-triage .rw-form-footer>button:last-child{order:3;margin-left:0}
+.research-workbench .rw-expansion-progress{margin-top:12px;padding:12px;border:1px solid #c7d9f7;border-radius:8px;background:#f2f7ff}
+.research-workbench .rw-expansion-progress p{margin:0 0 8px;color:#263c62;font-size:13px;line-height:1.6}
+.research-workbench .rw-expansion-progress button{font-size:12px}
 .research-workbench :is(.rw-workflow-shortcuts,.rw-lead-triage,.rw-creative-result-actions) button.rw-danger{color:#a23f40;border-color:#efd6d6;background:#fffafa}
 .research-workbench :is(.rw-workflow-controls,.rw-lead-triage) button:focus-visible{outline:3px solid #b4ceff;outline-offset:2px}
+/* Keep collection acknowledgements and failures visible at the Trends work area. */
+.research-workbench .rw-trends-task-feedback{grid-column:1/-1;min-width:0;margin:12px 0 18px;padding:16px 18px;border:1px solid #cddff8;border-radius:14px;background:#f1f7ff;display:grid;gap:8px;}
+.research-workbench .rw-trends-task-feedback>strong{font-size:15px;line-height:1.6;color:#233b67;}
+.research-workbench .rw-trends-task-feedback>p{margin:0;font-size:13px;line-height:1.7;}
+.research-workbench .rw-trends-task-feedback[data-state=blocked],.research-workbench .rw-trends-task-feedback[data-state=failed]{background:#fff8ef;border-color:#f0d5b4;}
+.research-workbench .rw-trends-task-feedback[data-state=complete]{background:#f1faf6;border-color:#c8e6d8;}
+.research-workbench .rw-trends-task-tools{display:flex;flex-wrap:wrap;gap:8px;}
+/* Trends source selection lives beside the demand heading, before product identity. */
+.research-workbench .rw-demand-page-heading{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,360px) auto;align-items:center;gap:24px;margin:0 0 24px;}
+.research-workbench .rw-demand-heading-copy{min-width:0;}
+.research-workbench .rw-demand-heading-copy>.rw-design-title{padding-right:0;margin:0 0 12px;}
+.research-workbench .rw-demand-heading-copy>.rw-design-product-description{margin:0;}
+.research-workbench .rw-demand-page-heading>.rw-design-product-line{position:static;width:auto;margin:0;padding:0;border:0;}
+.research-workbench .rw-demand-page-heading>.rw-design-product-line>.rw-muted{display:none;}
+.research-workbench .rw-trends-collection-mode{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:6px 12px;padding:12px 14px;border:1px solid #dfe7f3;border-radius:12px;background:#f8faff;min-width:0;}
+.research-workbench .rw-trends-collection-mode>label{display:grid;gap:5px;margin:0;font-size:12px;font-weight:600;color:#465a7a;}
+.research-workbench .rw-trends-collection-mode select{width:100%;min-width:0;margin:0;padding:7px 10px;border:1px solid #d4dfef;border-radius:7px;background:#fff;color:#20375b;font-size:13px;}
+.research-workbench .rw-trends-mode-hint{grid-column:1/-1;font-size:11px;line-height:1.5;color:#73819a;}
+.research-workbench .rw-trends-mode-config{padding:7px 0;white-space:nowrap;border:0;background:transparent;color:#2362ce;font-size:12px;}
+@media(max-width:1400px){.research-workbench .rw-demand-page-heading{grid-template-columns:minmax(0,1fr) minmax(250px,320px);gap:16px;}.research-workbench .rw-demand-page-heading>.rw-design-product-line{grid-column:1/-1;}.research-workbench .rw-demand-page-heading .rw-design-title{font-size:26px;}}
+@media(max-width:760px){.research-workbench .rw-demand-page-heading{grid-template-columns:1fr;}.research-workbench .rw-demand-page-heading>.rw-trends-collection-mode{grid-row:3;}.research-workbench .rw-demand-page-heading .rw-design-title{font-size:24px;}}
+/* A bounded weekly ledger keeps five-year series from stretching the whole page. */
+.research-workbench .rw-trend-table{margin-top:16px;border:1px solid #dfe7f3;border-radius:10px;overflow:hidden;background:#fff;color:#546784;}
+.research-workbench .rw-trend-table>summary{display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer;padding:11px 14px;background:#f7f9fd;color:#354c70;}
+.research-workbench .rw-trend-table>summary::-webkit-details-marker{display:none;}
+.research-workbench .rw-trend-table>summary::before{content:'›';display:inline-block;font-size:18px;line-height:1;transition:transform .15s;}
+.research-workbench .rw-trend-table[open]>summary::before{transform:rotate(90deg);}
+.research-workbench .rw-trend-week-title{font-size:12px;font-weight:600;}
+.research-workbench .rw-trend-week-count{margin-left:auto;padding:2px 7px;border-radius:5px;background:#eaf0fb;font-size:11px;color:#60779e;}
+.research-workbench .rw-trend-week-note{margin:0;padding:10px 14px;font-size:11px;line-height:1.6;color:#7c8ba3;}
+.research-workbench .rw-trend-weekly-grid{width:100%;table-layout:fixed;border-collapse:collapse;margin:0;font-size:12px;font-variant-numeric:tabular-nums;}
+.research-workbench .rw-trend-weekly-grid :is(th,td){padding:7px 14px;min-width:0;height:auto;border:0;border-bottom:1px solid #eef2f8;text-align:left;vertical-align:middle;line-height:1.5;}
+.research-workbench .rw-trend-weekly-grid thead th{background:#f7f9fd;color:#7a8aa2;font-weight:500;font-size:11px;}
+.research-workbench .rw-trend-weekly-grid thead th:last-child{text-align:right;}
+.research-workbench .rw-trend-weekly-grid tbody th{background:transparent;color:#526782;font-weight:400;white-space:nowrap;}
+.research-workbench .rw-trend-weekly-grid tbody tr:nth-child(even){background:#fafcff;}
+.research-workbench .rw-trend-weekly-grid tbody tr:hover{background:#f2f6ff;}
+.research-workbench .rw-trend-week-value{display:flex;align-items:center;justify-content:flex-end;gap:12px;}
+.research-workbench .rw-trend-week-number{min-width:28px;text-align:right;font-weight:600;color:#355784;}
+.research-workbench .rw-trend-week-bar{display:block;width:80px;height:5px;overflow:hidden;border-radius:4px;background:#eaf0fa;}
+.research-workbench .rw-trend-week-bar>i{display:block;height:100%;border-radius:inherit;background:#82aaf2;}
+.research-workbench .rw-trend-week-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:10px 14px;background:#fff;}
+.research-workbench .rw-trend-week-range{font-size:11px;color:#7a8ba3;}
+.research-workbench .rw-trend-week-pages{display:flex;align-items:center;gap:8px;}
+.research-workbench .rw-trend-week-pages>button{min-height:28px;margin:0;padding:4px 8px;border:1px solid #dce5f2;border-radius:5px;background:#fff;font-size:11px;line-height:1.5;color:#4f6a91;}
+.research-workbench .rw-trend-week-pages>button:disabled{opacity:.4;cursor:default;}
+.research-workbench .rw-trend-week-position{min-width:40px;text-align:center;font-size:11px;color:#8190a6;font-variant-numeric:tabular-nums;}
+.research-workbench .rw-trend-table>summary:focus-visible,.research-workbench .rw-trend-week-pages>button:focus-visible{outline:2px solid #78a6f5;outline-offset:-2px;}
+@media(prefers-reduced-motion:reduce){.research-workbench .rw-trend-table>summary::before{transition:none;}}

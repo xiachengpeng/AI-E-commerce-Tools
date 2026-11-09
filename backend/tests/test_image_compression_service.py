@@ -90,3 +90,24 @@ def test_api_compress_webp_endpoint():
     assert data["stats"]["output_format"] == "WEBP"
     assert data["stats"]["width"] == 100
     assert data["stats"]["height"] == 100
+
+
+def test_target_webp_retains_dimensions_transparency_and_limits_quality():
+    from services.image_compression_service import compress_webp_to_target
+    raw = create_test_image_bytes('PNG', 'RGBA', (300, 300), (40, 80, 120, 100))
+    data, stats = compress_webp_to_target(raw, target_bytes=60 * 1024)
+    assert len(data) <= 60 * 1024
+    assert stats['target_met'] is True
+    assert 70 <= stats['quality'] <= 90
+    with Image.open(io.BytesIO(data)) as out:
+        assert out.size == (300, 300)
+        assert out.getpixel((0, 0))[3] == 100
+
+
+def test_target_webp_reports_when_quality_floor_cannot_reach_target():
+    from services.image_compression_service import compress_webp_to_target
+    raw = create_test_image_bytes('PNG', 'RGB', (300, 300))
+    data, stats = compress_webp_to_target(raw, target_bytes=10)
+    assert stats['target_met'] is False
+    assert 70 <= stats['quality'] <= 90
+    assert len(data) > 10

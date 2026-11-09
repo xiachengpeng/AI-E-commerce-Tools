@@ -170,6 +170,8 @@ export function decoratePage(context,page){
  const design=designPage(context.state);page.dataset.designPage=design.number;page.classList.add('rw-designed-page');
  // Tiny Node test fixtures intentionally do not implement CSS queries/layout.
  if(!page.querySelectorAll)return page;
+ // Saved outcomes own their status title and controls across snapshot redraws.
+ if(context.state.view==='product'&&page.querySelector('[data-creative-saved-result]'))return page;
  const heading=page.querySelector('h1');if(heading){heading.classList.add('rw-design-title');if(context.state.view!=='form')heading.textContent=design.title;}
  const move=(parent,node)=>{if(node){node.remove();parent.append(node);}};
  if(context.state.view==='project'&&context.state.projectSection==='keywords'){
@@ -189,6 +191,7 @@ export function decoratePage(context,page){
    const more=el(context,'details','rw-product-navigation-more');more.append(el(context,'summary','','完整检查清单与研究导航'));for(const node of Array.from(page.children)){if(node.tagName==='BUTTON'&&node.textContent==='返回探索')move(more,node);}const stages=Array.from(workspace.children).find(n=>n.tagName==='DETAILS');move(more,stages);page.append(more);
 
    const identity=el(context,'div','rw-design-product-line');identity.append(productThumbnail(context,p),el(context,'strong','',p?.name||'待识别商品'),el(context,'span','rw-muted','来源已保存不代表全部证据已确认'));heading?.after(identity);if(context.state.step==='score'){identity.classList.add('rw-product-context-band');page.querySelector('.rw-design-product-description')?.after(identity);}
+   if(context.state.step==='channels'&&heading){const mode=page.querySelector('[data-trends-collection-mode]');if(mode){const header=el(context,'header','rw-demand-page-heading'),copy=el(context,'div','rw-demand-heading-copy'),description=page.querySelector('.rw-design-product-description');heading.before(header);move(copy,heading);move(copy,description);header.append(copy);move(header,mode);move(header,identity);}}
    const guide=body.querySelector('[data-task-guide]');if(guide){guide.classList.add('rw-design-guide');const disclosure=el(context,'details','rw-product-guidance');disclosure.append(el(context,'summary','','当前建议与待补证据'));guide.before(disclosure);move(disclosure,guide);if(context.state.step==='score')disclosure.open=true;}
    const offer=Array.from(body.children).find(n=>n.querySelector('h2')?.textContent==='同款卖家商品（可选）');if(offer){const disclosure=el(context,'details','rw-product-secondary');disclosure.append(el(context,'summary','','同款卖家与重复档案管理'));offer.before(disclosure);move(disclosure,offer);}
    const related=Array.from(body.children).find(n=>n.querySelector('h2')?.textContent==='需求与竞争：先看证据，再决定投入');if(related){const disclosure=el(context,'details','rw-product-secondary');disclosure.append(el(context,'summary','','相关研究任务'));related.before(disclosure);move(disclosure,related);}

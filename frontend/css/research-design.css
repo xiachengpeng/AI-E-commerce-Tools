@@ -262,7 +262,9 @@
 .unified-navigation-mode #appSidebar .sidebar-brand-text>span:last-child{display:none;}
 .unified-navigation-mode #appSidebar .sidebar-brand-wrapper{padding:0 8px;margin-bottom:28px;}
 .unified-navigation-mode #appSidebar .sidebar-brand-icon{width:42px;height:42px;margin:0;background:#5536ed;box-shadow:none;border-radius:12px;}
-.unified-navigation-mode #appSidebar .sidebar-toggle-btn{display:none!important;}
+.unified-navigation-mode #appSidebar .sidebar-toggle-btn{display:flex!important;flex:0 0 28px;}
+.unified-navigation-mode #appSidebar .sidebar-expand-icon{display:none!important;}
+.unified-navigation-mode #appSidebar .sidebar-collapse-icon{display:inline-block!important;}
 .unified-navigation-mode .rw-global-navigation{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0;overflow:auto;padding:0;}
 .unified-navigation-mode #appSidebar .rw-global-navigation .side-tab{display:flex;align-items:center;justify-content:flex-start;gap:16px;width:100%;height:auto;min-height:48px;padding:12px 22px;border:0;border-radius:8px;box-shadow:none;font-size:15px;color:#31405f;white-space:nowrap;}
 .unified-navigation-mode #appSidebar .rw-global-navigation .side-tab span{display:inline!important;font-size:14px;font-weight:500;}
@@ -1683,3 +1685,36 @@
 .research-workbench .rw-stage-selection-summary{padding:14px 16px;margin:18px 0;border-radius:8px;background:#f3f7ff;color:#405577;font-size:14px;}
 .research-workbench .rw-stage-selection-card>button{margin:0 10px 12px 0;}
 .research-workbench .rw-stage-selection-card>p:last-child{margin:8px 0 0;}
+
+/* Shared navigation can be compacted without changing its group state. */
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed{width:72px!important;padding:18px 8px;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .sidebar-brand-wrapper{padding:0;margin-bottom:20px;flex-direction:column;gap:8px;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .sidebar-brand-text{display:none!important;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .sidebar-expand-icon{display:inline-block!important;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .sidebar-collapse-icon{display:none!important;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation .side-tab{justify-content:center;gap:0;padding:12px 0!important;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation .side-tab span{display:none!important;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details>summary{justify-content:center;gap:0;padding:14px 0;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details>summary span,.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details>summary:after{display:none;}
+@media(max-width:900px){
+  .unified-navigation-mode #appSidebar:not(.rw-sidebar-collapsed){width:205px!important;padding:18px 10px;}
+  .unified-navigation-mode #appSidebar:not(.rw-sidebar-collapsed) .sidebar-brand-text{display:flex!important;}
+  .unified-navigation-mode #appSidebar:not(.rw-sidebar-collapsed) .sidebar-brand-wrapper{padding:0 8px;}
+  .unified-navigation-mode #appSidebar:not(.rw-sidebar-collapsed) .rw-global-navigation .side-tab{justify-content:flex-start;gap:16px;padding:12px 22px;}
+  .unified-navigation-mode #appSidebar:not(.rw-sidebar-collapsed) .rw-global-navigation .side-tab span{display:inline!important;}
+  .unified-navigation-mode #appSidebar:not(.rw-sidebar-collapsed) .rw-global-navigation>details>summary{justify-content:flex-start;padding:14px 22px;}
+  .unified-navigation-mode #appSidebar:not(.rw-sidebar-collapsed) .rw-global-navigation>details>summary span,.unified-navigation-mode #appSidebar:not(.rw-sidebar-collapsed) .rw-global-navigation>details>summary:after{display:inline;}
+  .unified-navigation-mode #appSidebar:not(.rw-sidebar-collapsed) .rw-global-navigation>details>.side-tab{padding-left:52px!important;}
+}
+.rw-sidebar-tooltip{position:fixed;z-index:10000;transform:translateY(-50%);padding:7px 11px;border-radius:7px;background:#26334d;color:#fff;font-size:13px;line-height:1.3;white-space:nowrap;box-shadow:0 3px 12px #18244033;pointer-events:none;}
+.rw-sidebar-tooltip[hidden]{display:none;}
+
+/* In the compact rail, group headings and their nested actions have distinct alignment. */
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details{position:relative;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details>summary{position:relative;min-height:48px;padding:12px 0;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details>summary::-webkit-details-marker{display:none;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details>summary:after{content:'';display:block;position:absolute;right:1px;top:50%;width:6px;height:6px;border-right:1.5px solid #8191af;border-bottom:1.5px solid #8191af;transform:translateY(-50%) rotate(-45deg);margin:0;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details[open]>summary:after{transform:translateY(-50%) rotate(45deg);}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details[open]:before{content:'';position:absolute;left:5px;top:52px;bottom:5px;width:1px;background:#d3deed;pointer-events:none;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details>.side-tab{width:calc(100% - 13px);margin-left:13px;min-height:42px;padding:9px 0!important;border-radius:8px;}
+.unified-navigation-mode #appSidebar.rw-sidebar-collapsed .rw-global-navigation>details>.side-tab i{font-size:19px;}

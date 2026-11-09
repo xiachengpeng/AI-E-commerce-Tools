@@ -1,0 +1,123 @@
+import { useEffect, useRef } from "react";
+import { FileText, ImageIcon, List, Music2, SearchCheck, Settings2, Video, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
+
+import { canvasThemes } from "@/lib/canvas-theme";
+import { useThemeStore } from "@/stores/use-theme-store";
+import { listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
+import { getNodeSpec } from "@/constant/canvas";
+import { CanvasNodeType, type CanvasNodeTypeId, type ConnectionHandle, type Position } from "@/types/canvas";
+import { SEO_NODE_TYPE } from "@/components/canvas/nodes/seo-node";
+import { MARKDOWN_NODE_TYPE } from "@/components/canvas/nodes/note-nodes";
+
+export type PendingConnectionCreate = {
+    connection: ConnectionHandle;
+    position: Position;
+};
+
+export function ConnectionCreateMenu({
+    pending,
+    scale = 1,
+    sourceIsImage = false,
+    sourceIsText = false,
+    onCreate,
+    onClose,
+}: {
+    pending: PendingConnectionCreate;
+    scale?: number;
+    sourceIsImage?: boolean;
+    sourceIsText?: boolean;
+    onCreate: (type: CanvasNodeTypeId) => void;
+    onClose: () => void;
+}) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const { t } = useTranslation();
+    return (
+        <div
+            className="absolute z-[120] w-[240px] rounded-2xl border p-2 shadow-2xl backdrop-blur"
+            data-connection-create-menu
+            style={{ left: pending.position.x, top: pending.position.y, transform: `scale(${1 / scale})`, transformOrigin: "top left", background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+        >
+            <div className="mb-1.5 flex items-center justify-between px-1">
+                <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
+                    {t("canvas.createMenu.fromNode")}
+                </span>
+                <button type="button" className="grid size-7 place-items-center rounded-lg text-base opacity-55 transition hover:bg-white/10 hover:opacity-100" onClick={onClose} aria-label={t("canvas.createMenu.close")}>
+                    ×
+                </button>
+            </div>
+            <div className="grid gap-0.5">
+                <ConnectionCreateOption theme={theme} icon={<List className="size-4" />} title={t("canvas.createMenu.text")} description={t("canvas.createMenu.textDescription")} onClick={() => onCreate(CanvasNodeType.Text)} />
+                <ConnectionCreateOption theme={theme} icon={<ImageIcon className="size-4" />} title={t("canvas.createMenu.image")} onClick={() => onCreate(CanvasNodeType.Image)} />
+                {sourceIsImage && pending.connection.handleType === "source" ? <ConnectionCreateOption theme={theme} icon={<SearchCheck className="size-4" />} title="图片 SEO 与图床上传" onClick={() => onCreate(SEO_NODE_TYPE)} /> : null}
+                {sourceIsText && pending.connection.handleType === "source" ? <ConnectionCreateOption theme={theme} icon={<FileText className="size-4" />} title="Markdown" onClick={() => onCreate(MARKDOWN_NODE_TYPE)} /> : null}
+            </div>
+        </div>
+    );
+}
+
+export function ConnectionCreateOption({ theme, icon, title, description, onClick }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; icon: React.ReactNode; title: string; description?: string; onClick?: () => void }) {
+    return (
+        <button
+            type="button"
+            className="flex h-12 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2 text-left transition"
+            style={{ color: theme.node.text }}
+            onClick={onClick}
+            onMouseEnter={(event) => (event.currentTarget.style.background = theme.node.fill)}
+            onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
+        >
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg" style={{ background: theme.node.fill, color: theme.node.muted }}>
+                {icon}
+            </span>
+            <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 text-sm font-medium leading-5">{title}</span>
+                {description ? (
+                    <span className="mt-0.5 block truncate text-xs" style={{ color: theme.node.muted }}>
+                        {description}
+                    </span>
+                ) : null}
+            </span>
+        </button>
+    );
+}
+
+export function NodeCreateMenu({ position, scale = 1, onCreate, onClose }: { position: Position; scale?: number; onCreate: (type: string) => void; onClose: () => void }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const { t } = useTranslation();
+    useNodeRegistryVersion();
+    const menuRef = useRef<HTMLDivElement>(null);
+    const definitions = listNodeDefinitions().filter((def) => def.type !== CanvasNodeType.Video && def.type !== CanvasNodeType.Audio && def.type !== CanvasNodeType.Config).filter((def) => def.showInCreateMenu !== false);
+    // Close automatically when clicking outside the menu.
+    useEffect(() => {
+        const handlePointerDown = (event: PointerEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) onClose();
+        };
+        document.addEventListener("pointerdown", handlePointerDown, true);
+        return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+    }, [onClose]);
+    return (
+        <div
+            ref={menuRef}
+            className="absolute z-[120] max-h-[70vh] w-[240px] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur thin-scrollbar"
+            data-canvas-no-zoom
+            style={{ left: position.x, top: position.y, transform: `scale(${1 / scale})`, transformOrigin: "top left", background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+            onPointerDown={(event) => event.stopPropagation()}
+        >
+            <div className="mb-1.5 flex items-center justify-between px-1">
+                <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
+                    {t("canvas.createMenu.select")}
+                </span>
+                <button type="button" className="grid size-7 place-items-center rounded-lg opacity-55 transition hover:opacity-100" onClick={onClose} aria-label={t("canvas.createMenu.close")}>
+                    <X className="size-4" />
+                </button>
+            </div>
+            <div className="grid gap-0.5">
+                {definitions.map((def) => (
+                    <ConnectionCreateOption key={def.type} theme={theme} icon={def.icon} title={getNodeSpec(def.type).title} description={def.description} onClick={() => onCreate(def.type)} />
+                ))}
+            </div>
+        </div>
+    );
+}

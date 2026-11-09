@@ -92,12 +92,14 @@ def create_customer_setup_router(data=None):
                 elif action == 'background':
                     enabled = body.get('enabled'); observe = body.get('observe_feishu', False)
                     if type(enabled) is not bool or type(observe) is not bool: raise ValueError()
+                    if not enabled:
+                        raise HTTPException(422, '后台任务随客户端自动运行，不提供关闭设置。')
                     if enabled:
                         if body.get('confirm_costs') is not True: raise ValueError()
                         _private(path / 'research-business.json')
                         ResearchBusinessSettings.model_validate_json((path / 'research-business.json').read_text())
-                    config.update(worker_mode='active' if enabled else 'paused',
-                                  feishu_polling_enabled=enabled and observe,
+                    config.update(worker_mode='active',
+                                  feishu_polling_enabled=observe,
                                   feishu_polling_policy={'mode': 'observe'})
                     write_json(config_path, config)
                 else:

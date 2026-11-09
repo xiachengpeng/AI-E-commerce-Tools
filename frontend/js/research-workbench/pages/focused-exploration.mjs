@@ -8,6 +8,9 @@ import { renderVerification } from './verification.mjs';
 import { el, button, panel, stateTag, link, keywordSearchSummary } from '../components/elements.mjs';
 import { keywordControls } from './exploration.mjs';
 import {renderCandidateList} from '../components/presentation.mjs';
+import {createForm,fields} from '../components/forms.mjs';
+import {submitCommand} from '../services/commands.mjs';
+import {actionStatus,actionResultSummary} from '../services/actions.mjs';
 export function render(context) {
     const project=context.state.project,words=project.keywords||[],products=project.products||[];
     const word=words.find(k=>k.id===context.state.explorationKeyword)||words.find(k=>k.status!=='archived')||words[0];
@@ -64,9 +67,28 @@ export function render(context) {
         const disposition=product.triage?.state||'pending',triage=el(context,'div','rw-actions');
         take.append(el(context,'p','rw-muted','当前初筛：'+({pending:'尚未判断',retained:'保留深挖',observing:'暂存观察',rejected:'已淘汰'})[disposition]));
         const openTriage=value=>{if(context.openTriage)context.openTriage(product.id,value);else{context.state.product=product.id;context.state.triageIntent={productId:product.id,disposition:value};context.navigate('triage');}};
-        for(const [value,title] of [['retained','保留并深挖'],['observing','暂存观察'],['rejected','淘汰这条线索']])if(value!==disposition)triage.append(button(context,title,()=>openTriage(value),value==='rejected'?'rw-danger':''));
+        const inline=el(context,'div','rw-lead-inline-triage');
+        const choices={retained:['商品明确，值得深挖','广告信号较强','有可验证商品页'],observing:['商品身份不明确','来源暂不可访问','证据不足，稍后再看'],rejected:['与当前选品方向不符','重复商品','广告信号不足']};
+        const editorButtons=[];let openDisposition=null;
+        function showTriage(value){
+            const storage=context.context?.storage||context.root.ownerDocument.defaultView?.sessionStorage;
+            const key='rabbit-hole:draft:'+JSON.stringify([project.id,product.id,'triage_product']);
+            let draft=context.state.drafts?.[key];if(!draft)try{draft=JSON.parse(storage?.getItem(key)||'null');}catch{}
+            if((draft?.uncertain||draft?.submitting||draft?.submittedHash)&&value!==openDisposition){inline.replaceChildren(el(context,'p','rw-notice','已有判断的保存状态尚待核对，请先回到初筛页面核对原记录。'),button(context,'查看初筛与恢复',()=>openTriage(null)));return;}
+            openDisposition=value;
+            for(const [name,b] of editorButtons)b.setAttribute('aria-pressed',String(name===value));
+            context.state.drafts||={};
+            const formContext={...context,onFormSubmitting:busy=>{for(const [,b] of editorButtons)b.disabled=busy;context.onFormSubmitting?.(busy);}};
+            const editor=createForm(formContext,{title:'记录线索判断',help:'点击保存后生效；保留不代表通过广告粗筛。',defs:fields([['reason_choice','原因（必选）','choice',true,Object.fromEntries(choices[value].map(x=>[x,x]))],['reason','补充说明（选填）','textarea',false]]),key,
+                onCancel:()=>{inline.replaceChildren();for(const [,b] of editorButtons)b.setAttribute('aria-pressed','false');},onDiscard:()=>showTriage(value),
+                submit:async(data,draft,persist)=>{context.state.project=await submitCommand({request:(path,options)=>context.api.request(path,{...options,signal:context.life.signal})},{project_id:project.id,action:'triage_product',payload:{product_id:product.id,disposition:value,reason:data.reason?data.reason_choice+'：'+data.reason:data.reason_choice},draft},persist);},
+                onSaved:()=>{const updated=context.state.project.products?.find(p=>p.id===product.id);if(updated){matched[selectedIndex]=updated;workspace.replaceChildren(...renderDetail(context,updated,selectedIndex));}if(value==='retained'&&context.command)context.command('focus_product',{product_id:product.id},{preservePosition:true});}
+            });
+            editor.host.querySelector('button').textContent='保存判断';inline.replaceChildren(editor.host);
+        }
+        for(const [value,title] of [['retained','保留并深挖'],['observing','暂存观察'],['rejected','淘汰这条线索']])if(value!==disposition){const b=button(context,title,()=>showTriage(value),value==='rejected'?'rw-danger':'');b.setAttribute('aria-pressed','false');editorButtons.push([value,b]);triage.append(b);}
         if(['observing','rejected'].includes(disposition))triage.append(button(context,'查看初筛与恢复',()=>openTriage(null)));
-        take.append(triage);info.append(take);
+        take.append(triage,inline);info.append(take);
         const checklist=el(context,'div','rw-focus-evidence');checklist.append(el(context,'h3','','还需核实'));
         for(const [name,status] of [['商品匹配',confirmed?(ai?'AI 已匹配，待人工核对':'人工已确认'):mismatch?'不一致':'待确认'],['需求与竞争',product.steps?.find(s=>s.key==='channels')?.state==='passed'?'已保存核对结果':'待核实'],['采购与物流',product.steps?.find(s=>s.key==='economics')?.state==='passed'?'已保存核对结果':'待填写']]){const row=el(context,'div','rw-focus-evidence-row');row.append(el(context,'strong','',name),el(context,'span','rw-tag',status));checklist.append(row);}info.append(checklist);
         const media=el(context,'section','rw-lead-media'),productPanel=el(context,'section','rw-lead-product-content'),adPanel=el(context,'section','rw-lead-ad-content');productPanel.dataset.leadContent='product';adPanel.dataset.leadContent='ad';const facts=productFacts(context,product);if(facts)productPanel.append(facts);productPanel.append(productPageStatus(context,product,{showFacts:false}));
@@ -74,11 +96,21 @@ export function render(context) {
         const gallery=sourcePreview(context,word,product,boundAds,{onSelectionChange:({source,adId})=>{productPanel.hidden=source!=='product';adPanel.hidden=source!=='ad';for(const copy of adPanel.children)copy.hidden=copy.dataset.sourceAd!==adId;}});media.append(gallery,productPanel,adPanel);
         const expansion=el(context,'section','rw-lead-discovery'),expansionHead=el(context,'header','rw-discovery-heading'),expansionIcon=el(context,'i','ph ph-magnifying-glass');expansionIcon.setAttribute('aria-hidden','true');expansionHead.append(expansionIcon,el(context,'h3','','继续寻找相关机会'));expansion.append(expansionHead,el(context,'p','rw-muted','从当前商品的可靠原文提取下一层搜索词，发现更多相关线索。新词仍需审核。'));
         const children=words.filter(k=>k.parent_id===word.id&&k.product_id===product.id),rules=project.rules||project.limits||{};
+        const tracked=context.state.lastResearchAction,matching=(context.state.actions||[]).filter(a=>a.kind==='expand'&&a.product_id===product.id&&a.keyword_id===word.id);
+        const pendingTracked=tracked?.kind==='expand'&&tracked.projectId===project.id&&tracked.productId===product.id&&tracked.keywordId===word.id&&!matching.some(a=>a.id===tracked.id);
+        const latest=pendingTracked?null:matching[0],uncertain=pendingTracked||['ready','queued','running','manual_check','unknown'].includes(latest?.display_status||latest?.status)||latest?.recovery_action==='manual';
         if(!confirmed){expansion.dataset.discoveryState='unconfirmed';expansion.append(el(context,'p','rw-discovery-prerequisite',mismatch?'当前已确认不一致，请先更正商品链接并重新核对。':'先确认广告与这个商品相关，再从已保存原文提取新词。'),button(context,'先核对商品与广告',identity));}
         else if(!(product.expansion_sources||[]).length){expansion.dataset.discoveryState='missing_source';expansion.append(el(context,'p','rw-discovery-prerequisite','还缺可引用原文：先读取商品页或补充关联广告。'),button(context,'补充原文来源',()=>context.selectProduct(product.id)));}
         else if((word.depth||0)>=(rules.max_depth??3)||children.length>=(rules.expansion_limit??5)){expansion.dataset.discoveryState='limit';expansion.append(el(context,'p','rw-discovery-prerequisite','已达当前扩词上限，可先处理已有建议或继续核实当前商品。'));}
-        else{expansion.dataset.discoveryState='ready';const actions=el(context,'div','rw-discovery-actions');actions.append(button(context,'AI 提取搜索词',()=>context.showQueue({kind:'expand',product_id:product.id,keyword_id:word.id})),button(context,'手动添加',()=>context.openForm({kind:'add_keyword',parent:word,product})));expansion.append(actions,el(context,'p','rw-discovery-cost','AI 操作需确认，可能产生费用；不会自动开始搜索。'));}
-        if(children.length){const suggestions=el(context,'details','rw-discovery-children');suggestions.append(el(context,'summary','','已提取建议（'+children.length+'）'));for(const child of children)suggestions.append(el(context,'p','',child.text),el(context,'p','rw-muted','提词依据：'+(child.source_quote||'旧记录未保存引用')),keywordControls(context,child));expansion.append(suggestions);}info.append(expansion);
+        else{expansion.dataset.discoveryState='ready';const actions=el(context,'div','rw-discovery-actions'),extract=button(context,'AI 提取搜索词',()=>context.showQueue({kind:'expand',product_id:product.id,keyword_id:word.id}));extract.disabled=!!uncertain;actions.append(extract,button(context,'手动添加',()=>context.openForm({kind:'add_keyword',parent:word,product})));expansion.append(actions,el(context,'p','rw-discovery-cost','AI 操作需确认，可能产生费用；不会自动开始搜索。'));}
+        if(pendingTracked||latest){const progress=el(context,'section','rw-expansion-progress');progress.setAttribute('role','status');let message;
+          if(pendingTracked)message='搜索词提取 · 请求已提交，正在核对状态；请勿重复提交。';
+          else if(latest.status==='complete')message='搜索词提取 · 已完成：'+actionResultSummary(latest)+'；请在下方审核，不会自动搜索。';
+          else if(['manual_check','unknown'].includes(latest.display_status)||latest.recovery_action==='manual')message='搜索词提取 · '+actionStatus(latest)+'；请查看任务详情核对结果，不要重复提交。';
+          else if(['blocked','failed','stopped','cancelled'].includes(latest.status))message='搜索词提取 · '+actionStatus(latest)+'；请查看任务原因，不要将未完成视为没有结果。';
+          else message='搜索词提取 · '+actionStatus(latest)+'；结果出来后会显示在这里，请勿重复提交。';
+          progress.append(el(context,'p','',message),button(context,'查看任务详情',()=>context.navigate('actions')));expansion.append(progress);}
+        if(children.length){const suggestions=el(context,'details','rw-discovery-children');suggestions.open=latest?.status==='complete';suggestions.append(el(context,'summary','','已提取建议（'+children.length+'）'));for(const child of children)suggestions.append(el(context,'p','',child.text),el(context,'p','rw-muted','提词依据：'+(child.source_quote||'旧记录未保存引用')),keywordControls(context,child));expansion.append(suggestions);}info.append(expansion);
         return [media,info];
         }
         workspace.append(...renderDetail({...context,life:detailLife},product,index));master.append(list,workspace);root.append(master);

@@ -173,3 +173,82 @@ test('successful coarse save replaces the editor with an explicit saved result w
 test('saved incomplete evidence offers explicit edit and starts a fresh command only on the next save',async()=>{const c=coarseSaveFixture();try{const page=renderProduct(c);nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));nodes(page).find(n=>n.textContent==='继续补充广告证据').click();await new Promise(r=>setImmediate(r));assert.equal(c.requests.length,1);assert.ok(nodes(page).find(n=>n.tagName==='FORM'));nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));assert.equal(c.requests.length,2);assert.notEqual(c.requests[0].command_id,c.requests[1].command_id);}finally{c.life.dispose();}});
 test('passed coarse result offers a deliberate next step without automatic advancement',async()=>{const c=coarseSaveFixture('passed');try{const page=renderProduct(c);nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));assert.ok(nodes(page).some(n=>n.textContent==='已保存，广告粗筛已通过'));assert.equal(nodes(page).some(n=>n.dataset.creativeCheck!==undefined),false);assert.equal(c.state.step,'coarse');assert.deepEqual(c.navigation,[]);nodes(page).find(n=>n.textContent==='继续核对需求与竞争').click();await new Promise(r=>setImmediate(r));assert.equal(c.state.step,'channels');assert.deepEqual(c.navigation,['product']);}finally{c.life.dispose();}});
 test('failed coarse save keeps input, draft identity and editor instead of showing a success result',async()=>{const c=coarseSaveFixture();c.api.request=async()=>{throw Object.assign(Error('模拟保存失败'),{status:422});};try{const page=renderProduct(c);nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));assert.ok(nodes(page).find(n=>n.tagName==='FORM'));assert.equal(nodes(page).some(n=>n.dataset.creativeSavedResult!==undefined),false);assert.deepEqual(c.navigation,[]);assert.equal(Object.keys(c.state.drafts).length,1);assert.equal(nodes(page).find(n=>n.name==='creative_1_id').value,'a');assert.ok(nodes(page).some(n=>n.textContent==='模拟保存失败'));}finally{c.life.dispose();}});
+
+for(const outcome of ['passed','needs_input'])test('coarse saved '+outcome+' result survives authoritative polling without reopening the overview',async()=>{
+ const {createSnapshotRefresher}=await import('../../js/research-workbench/services/snapshot.mjs');
+ const c=coarseSaveFixture(outcome);let page;
+ try{
+  page=renderProduct(c);nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));
+  const latest=structuredClone(c.state.project);latest.version++;
+  c.api.request=async path=>path.includes('/actions?')?{actions:[{id:'existing',status:'complete'}]}:structuredClone(latest);
+  let redraws=0;c.redraw=()=>{redraws++;page=renderProduct(c);};
+  await createSnapshotRefresher(c)();
+  assert.equal(redraws,1,'exercise the same authoritative redraw as the five-second poll');
+  assert.ok(nodes(page).some(n=>n.dataset.creativeSavedResult!==undefined),'the saved result remains the actual rendered page');
+  assert.ok(nodes(page).some(n=>n.textContent===(outcome==='passed'?'已保存，广告粗筛已通过':'已保存，广告证据尚未达标')));
+  assert.equal(nodes(page).some(n=>n.tagName==='FORM'),false);assert.equal(c.state.step,'coarse');
+  assert.equal(c.requests.length,1,'polling must not repeat the save');assert.deepEqual(c.navigation,[]);
+  if(outcome==='passed'){nodes(page).find(n=>n.textContent==='继续核对需求与竞争').click();await new Promise(r=>setImmediate(r));assert.equal(c.state.step,'channels');assert.deepEqual(c.navigation,['product']);}
+ }finally{c.life.dispose();}
+});
+
+test('coarse result redraw uses the latest server gate instead of retaining a stale pass',async()=>{
+ const c=coarseSaveFixture('passed');
+ try{
+  const page=renderProduct(c);nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));
+  const latest=structuredClone(c.state.project);latest.products[0].steps.find(s=>s.key==='coarse').state='needs_input';latest.products[0].steps.find(s=>s.key==='coarse').reason='规则更新，需重新核实素材';c.state.project=latest;
+  const refreshed=renderProduct(c);
+  assert.ok(nodes(refreshed).some(n=>n.textContent==='已保存，广告证据尚未达标'));
+  assert.ok(nodes(refreshed).some(n=>n.textContent==='规则更新，需重新核实素材'));
+  assert.equal(nodes(refreshed).some(n=>n.textContent==='继续核对需求与竞争'),false);assert.equal(c.requests.length,1);
+ }finally{c.life.dispose();}
+});
+
+test('saved coarse result is cleared by explicit edit and cannot cross a product identity revision',async()=>{
+ const c=coarseSaveFixture('passed');
+ try{
+  let page=renderProduct(c);nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));
+  page=renderProduct(c);assert.ok(nodes(page).some(n=>n.dataset.creativeSavedResult!==undefined));
+  nodes(page).find(n=>n.textContent==='修改已保存广告证据').click();await new Promise(r=>setImmediate(r));
+  assert.ok(nodes(page).some(n=>n.tagName==='FORM'));assert.equal(nodes(page).some(n=>n.dataset.creativeSavedResult!==undefined),false);
+  nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));
+  c.state.project.products[0].identity_revision++;
+  assert.equal(nodes(renderProduct(c)).some(n=>n.dataset.creativeSavedResult!==undefined),false,'old identity cannot retain a saved result');
+  assert.equal(c.requests.length,2);
+ }finally{c.life.dispose();}
+});
+
+test('coarse overview exposes third-stage continuation only after server screening passes',async()=>{
+ for(const outcome of ['passed','needs_input']){
+  const c=context('coarse');c.state.project.products[0].steps.find(s=>s.key==='coarse').state=outcome;const navigation=[];c.navigate=view=>navigation.push(view);
+  try{
+   const page=renderProduct(c),next=nodes(page).find(n=>n.textContent==='继续核对需求与竞争');
+   assert.equal(!!next,outcome==='passed');
+   if(next){next.click();await new Promise(r=>setImmediate(r));assert.equal(c.state.step,'channels');assert.deepEqual(navigation,['product']);}
+  }finally{c.life.dispose();}
+ }
+});
+
+test('saved coarse result cannot be reused for another project, product, or removed identity',async()=>{
+ const c=coarseSaveFixture('passed');
+ try{
+  let page=renderProduct(c);nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));
+  const saved=structuredClone(c.state.project),marker=c.state.coarseSavedResult;
+  for(const change of [project=>{project.id='other-project';},project=>{project.products[0].id='other-product';c.state.product='other-product';},project=>{project.products=[];},project=>{project.products[0].merged_into='survivor';}]){
+   c.state.project=structuredClone(saved);c.state.product='p';c.state.coarseSavedResult=marker;change(c.state.project);
+   page=renderProduct(c);assert.equal(nodes(page).some(n=>n.dataset.creativeSavedResult!==undefined),false);assert.equal(c.state.coarseSavedResult,undefined);
+  }
+  assert.equal(c.requests.length,1);
+ }finally{c.life.dispose();}
+});
+
+test('page decoration preserves the saved coarse result title and its continuation button after redraw',async()=>{
+ const {decoratePage}=await import('../../js/research-workbench/components/presentation.mjs');
+ const c=coarseSaveFixture('passed');c.state.view='product';
+ try{
+  let page=renderProduct(c);nodes(page).find(n=>n.tagName==='FORM').dispatchEvent(new Event('submit',{cancelable:true}));await new Promise(r=>setTimeout(r,15));
+  page=renderProduct(c);page.querySelectorAll=()=>[];decoratePage(c,page);
+  assert.equal(nodes(page).find(n=>n.tagName==='H1').textContent,'已保存，广告粗筛已通过');
+  assert.ok(nodes(page).some(n=>n.textContent==='继续核对需求与竞争'));
+ }finally{c.life.dispose();}
+});

@@ -258,6 +258,8 @@ app = FastAPI(
     lifespan=app_lifespan,
 )
 app.include_router(generation_router)
+from routes.canvas import router as canvas_router
+app.include_router(canvas_router)
 from routes.research import router as research_router
 app.include_router(research_router)
 from routes.research_workbench import router as research_workbench_router

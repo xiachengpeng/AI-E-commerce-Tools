@@ -20,7 +20,7 @@ export function renderCustomerSetup(context, initial) {
  const host=node('section');host.className='customer-setup-content';
  const heading=node('h1','开始使用 AI 电商工具箱');
  heading.id='customerSetupTitle';host.append(heading,node('p','客户版 '+initial.version+' · 数据保存在本机，服务使用你自己的账户。'));
- host.append(node('p','① 配置 AI 与外部服务 → ② 确认研究规则 → ③ 按需开启后台。也可以先关闭此窗口浏览功能。'));
+ host.append(node('p','① 配置 AI 与外部服务 → ② 确认研究规则 → ③ 提交任务，后台自动处理。也可以先关闭此窗口浏览功能。'));
  const status=node('p');status.setAttribute('role','status');status.className='customer-setup-status';
  host.append(status);
  let data=initial,busy=false;
@@ -30,6 +30,7 @@ export function renderCustomerSetup(context, initial) {
    try{await callback();}catch{status.textContent='操作未完成。请核对填写内容和本机连接；已提交操作请先刷新查看，勿重复点击。';}
    finally{busy=false;for(const c of controls)c.disabled=false;}});controls.push(b);return b;}
  async function save(body){const result=await context.save(body);data={...data,...result};
+  updateBackgroundStatus();
   status.textContent=result.restart_required?'已保存。请从应用菜单正常退出，再重新打开后生效；当前后台状态请看“运行日志”。':'已保存。';return result;}
  const links=node('div');links.className='customer-setup-actions';
  links.append(action('配置 AI 模型',()=>context.navigate?.('ai')),action('配置外部服务与存储',()=>context.navigate?.('integrations')));
@@ -67,18 +68,14 @@ export function renderCustomerSetup(context, initial) {
   }
   await save({action:'rules',confirmed:true,business});
  }));host.append(rules);
- const background=node('fieldset');background.append(node('legend','后台任务'),
-  node('p',initial.worker_enabled?'当前设置：下次启动运行后台。':'当前设置：后台暂停。'),
-  node('p','开启后会按你提交的任务使用已配置服务，可能产生费用。密钥和模型请先在设置中保存并测试。更改开关后需正常退出并重新打开应用。'));
- const costs=check('我理解后台采集可能调用收费服务','customerCosts');
- const observe=check('同时观察飞书触发记录（只读取，不自动执行或写回）','customerObserve');observe.input.checked=!!initial.observe_feishu;
- background.append(costs.wrap,observe.wrap);
- const enable=action('下次启动时开启后台',async()=>{
-  if(!data.business){status.textContent='请先保存研究规则。';return;}
-  if(!costs.input.checked){status.textContent='请先确认后台服务费用。';return;}
-  await save({action:'background',enabled:true,confirm_costs:true,observe_feishu:!!observe.input.checked});
- });enable.dataset.customerEnable='';
- background.append(enable,action('下次启动时暂停后台',()=>save({action:'background',enabled:false})));
+ const background=node('fieldset'),backgroundStatus=node('p');
+ backgroundStatus.dataset.customerBackgroundStatus='';
+ function updateBackgroundStatus(){backgroundStatus.textContent=data.business
+  ?'默认开启：后台随客户端自动运行，无需手动开启。'
+  :'默认开启：等待确认研究规则，保存后请重新打开客户端。';}
+ updateBackgroundStatus();
+ background.append(node('legend','后台任务 · 自动运行'),backgroundStatus,
+  node('p','后台按你提交的任务使用已配置服务，可能产生费用。请先保存并测试密钥和模型；未配置的服务无法执行相应任务。实际运行状态可在“运行日志”中查看。'));
  host.append(background);
  const footer=node('div');footer.className='customer-setup-actions';
  footer.append(action('完成引导',async()=>{await save({action:'complete'});context.close();}),action('稍后设置',()=>context.close()));host.append(footer);

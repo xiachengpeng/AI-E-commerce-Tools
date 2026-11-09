@@ -1,4 +1,24 @@
 import {el,button} from './elements.mjs';
+/** Trends uses the existing project mode and shared SerpApi credential editor. */
+export function renderTrendsCollectionMode(context){
+ const {state,life}=context,host=el(context,'section','rw-trends-collection-mode'),label=el(context,'label','','Trends 采集方式'),select=el(context,'select'),hint=el(context,'small','rw-trends-mode-hint');
+ host.dataset.trendsCollectionMode='true';select.setAttribute('aria-label','Trends 采集方式（本项目）');hint.setAttribute('role','status');
+ for(const [value,name] of [['ui','浏览器 UI'],['api','API（SerpApi）']]){const option=el(context,'option','',name);option.value=value;select.append(option);}
+ const selected=()=>state.project?.collection_modes?.trends||'ui';
+ const running=()=>(state.actions||[]).some(a=>a.kind==='trends'&&(a.awaitingRefresh||['queued','ready','running'].includes(a.status)||['manual_check','unknown'].includes(a.display_status)||a.recovery_action==='manual'));
+ const describe=()=>{hint.textContent=running()?'本项目有未结束的 Trends 任务，请先核对任务再切换。':selected()==='api'?'使用设置中的 SerpApi；可能产生费用。':'使用浏览器采集；切换方式不会自动开始采集。';};
+ select.value=selected();select.disabled=running();describe();let saving=false;
+ life.listen(select,'change',async()=>{
+  if(saving||running()||state.writeBusy||!life.active){select.value=selected();return;}
+  const mode=select.value;if(!['ui','api'].includes(mode)||mode===selected()){select.value=selected();return;}
+  saving=true;select.disabled=true;hint.textContent='正在保存采集方式…';
+  try{await context.command('configure_collection',{meta:state.project.collection_modes?.meta||'ui',trends:mode},{preservePosition:true,savedMessage:'Trends 采集方式已保存；仅用于本项目后续任务。'});}
+  catch{/* A command without an authoritative reply is never treated as saved. */}
+  finally{saving=false;if(life.active){select.value=selected();select.disabled=running();describe();if(selected()!==mode)hint.textContent='未确认保存成功，已恢复当前方式；请刷新核对后再试。';}}
+ });
+ label.append(select);const tools=el(context,'div','rw-trends-mode-tools');tools.append(button(context,'配置 SerpApi',()=>context.context?.openMainSettings?context.context.openMainSettings('integrations'):context.navigate('settings'),'rw-trends-mode-config'));
+ host.append(label,tools,hint);return host;
+}
 /** Reuse the versioned project setting; selecting a mode never enqueues a task. */
 export function renderCollectionMode(context,word){
  const project=context.state.project,action=context.state.keywordActions?.[word.id],host=el(context,'label','rw-collection-mode','广告采集方式（本项目）'),select=el(context,'select'),hint=el(context,'small','rw-collection-mode-hint');
