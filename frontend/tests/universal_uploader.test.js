@@ -16,7 +16,7 @@ test("index.html contains universal uploader modal and script tag", () => {
     assert.match(indexHtml, /id="univUploadFilename"/);
     assert.match(indexHtml, /id="univResultUrlInput"/);
     assert.match(indexHtml, /id="btnUnivStartUpload"/);
-    assert.match(indexHtml, /src="js\/universal_uploader\.js"/);
+    assert.match(indexHtml, /src="js\/universal_uploader\.js(?:\?[^\"]*)?"/);
 });
 
 test("index.html contains upload-to-cloud buttons in generation modules", () => {
@@ -663,4 +663,52 @@ test("triggerSingleVisionAiSeo and triggerBatchVisionAiSeo accurately update DOM
     assert.ok(elements.univBatchAlt_0.value.includes("blue mechanical switches"));
     assert.ok(elements.univBatchFile_0.value.includes("rgb_mechanical_gaming_keyboard_view_1.png"));
     assert.ok(elements.univBatchStatus_0.innerHTML.includes("已识别"));
+});
+
+test('selected store is sent to upload and reported to the caller', async () => {
+    const { ctx, fetchCalls } = createUniversalUploaderContext([
+        { id: 2, storage_type: 'shopify', enabled: true, name: 'Store A' },
+        { id: 4, storage_type: 'shopify', enabled: true, name: 'Store B' }
+    ]);
+    let destination;
+    await ctx.openUniversalImageUploader({imageData:'data:image/png;base64,c291cmNl', filename:'vase.png', title:'Blue vase', altText:'Blue vase on table', onSuccess:(_result, target) => { destination = target; }});
+    ctx.switchUniversalStorageTarget('shopify');
+    ctx.universalUploader.configId = 4;
+    await ctx.executeUniversalImageUpload();
+    const call = fetchCalls.find(item => item.url.includes('/api/storage/upload-image'));
+    assert.equal(JSON.parse(call.opts.body).config_id, 4);
+    assert.equal(destination.storageType, 'shopify');
+    assert.equal(destination.configId, 4);
+});
+
+test('60 KB target is included in uploads and output size is shown', async () => {
+    const { ctx, elements, fetchCalls } = createUniversalUploaderContext();
+    const originalFetch = ctx.fetch;
+    ctx.fetch = async (url, opts) => {
+        if (url.includes('/api/storage/upload-image')) {
+            fetchCalls.push({url, opts});
+            return {ok:true, json:async()=>({success:true,remote_url:'https://cdn.example.com/a.webp',compression_stats:{compressed_size:51200,quality:80}})};
+        }
+        return originalFetch(url, opts);
+    };
+    await ctx.openUniversalImageUploader({imageData:'data:image/png;base64,c291cmNl',filename:'test.png'});
+    elements.univTarget60Kb.checked = true;
+    await ctx.executeUniversalImageUpload();
+    const call = fetchCalls.find(item => item.url.includes('/api/storage/upload-image'));
+    assert.equal(JSON.parse(call.opts.body).target_size_bytes, 61440);
+    assert.match(elements.univCompressionResult.textContent, /50\.0 KB/);
+});
+
+test('upload warns and reports size when target is not met', async () => {
+    const { ctx, elements, getLastToast } = createUniversalUploaderContext();
+    const originalFetch = ctx.fetch;
+    ctx.fetch = async (url, opts) => url.includes('/api/storage/upload-image')
+        ? {ok:true, json:async()=>({success:true,remote_url:'https://cdn.example.com/a.webp',compression_stats:{compressed_size:98611,quality:70,target_bytes:61440,target_met:false}})}
+        : originalFetch(url, opts);
+    await ctx.openUniversalImageUploader({imageData:'data:image/png;base64,c291cmNl',filename:'test.png'});
+    elements.univTarget60Kb.checked = true;
+    await ctx.executeUniversalImageUpload();
+    assert.match(elements.univCompressionResult.textContent, /96\.3 KB.*未达到 60 KB/);
+    assert.match(getLastToast().msg, /96\.3 KB.*未达到 60 KB/);
+    assert.equal(getLastToast().type, 'warning');
 });

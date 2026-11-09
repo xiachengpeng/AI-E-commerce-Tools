@@ -5,14 +5,14 @@ import {fixtureRoot} from './dom-fixture.mjs';
 const tick=()=>new Promise(r=>setImmediate(r));
 async function until(check){const end=Date.now()+1000;while(!check()){assert.ok(Date.now()<end,'expected asynchronous state');await new Promise(r=>setTimeout(r,5));}}
 const findButton=(root,label)=>root.find(n=>n.tagName==='BUTTON'&&n.textContent===label);
-async function fixture(handler=()=>({id:'a',disposition:'created'})){
+async function fixture(handler=()=>({id:'a',disposition:'created'}),config={}){
  const root=fixtureRoot(),wb=createWorkbench(),requests=[];let context;
- const project={id:'p',version:7,title:'Merchant',market:'US',direction:'Saved direction',keywords:[{id:'k',text:'saved term',approved:true,status:'ready',ads:[]}],products:[]};
+ const project={id:'p',version:7,title:'Merchant',market:'US',direction:'Saved direction',keywords:[{id:'k',text:'saved term',approved:true,status:'ready',ads:[]}],products:[],...config.project};
  await wb.mount(root,{onSelectProject:(id,c)=>{context=c;},fetch:async(url,options)=>{requests.push({url,...options});let data;
   if(options.method==='POST')data=await handler(url,options);
   else if(url.endsWith('/session'))data={csrf_token:'fixture'};
-  else if(url.endsWith('/projects/p'))data=structuredClone(project);
-  else if(url.includes('/actions?'))data={actions:[]};
+  else if(url.endsWith('/projects/p'))data=config.readProject?await config.readProject(project):structuredClone(project);
+  else if(url.includes('/actions?'))data=config.readActions?await config.readActions():{actions:[]};
   else data={projects:[structuredClone(project)]};
   return {ok:true,json:async()=>data};
  }});
@@ -62,4 +62,39 @@ test('changed project direction after keyword confirmation requires a new confir
 
 test('search confirmation shows saved Chinese meaning without substituting it in the search request',async()=>{
  const f=await fixture();try{const word=f.context.state.project.keywords[0];word.text='"wall repair kit"';word.meaning='墙面修补套件';f.context.showQueue({kind:'scan',keyword_id:'k'});const dialog=f.root.find(n=>n.tagName==='DIALOG');assert.ok(dialog.find(n=>n.textContent==='中文释义：墙面修补套件'));assert.ok(dialog.find(n=>n.textContent==='搜索词："wall repair kit"'));assert.equal(f.requests.filter(r=>r.method==='POST').length,0);findButton(dialog,'确认提交：搜索这个词').click();await until(()=>f.requests.some(r=>r.method==='POST'));const payload=JSON.parse(f.requests.find(r=>r.method==='POST').body);assert.equal(payload.keyword_id,'k');assert.equal(payload.kind,'scan');assert.equal(payload.meaning,undefined);assert.equal(word.text,'"wall repair kit"');}finally{f.wb.unmount();}
+});
+
+test('Trends submission paints acknowledged progress immediately while the follow-up project read is pending',async()=>{
+ let hold=false,release;const product={id:'x',name:'Fixture shower',identity_revision:1,steps:[]};
+ const f=await fixture(()=>({id:'new-trends',status:'ready',disposition:'queued'}),{project:{products:[product]},readProject:p=>hold?new Promise(r=>{release=()=>r(structuredClone(p));}):structuredClone(p)});
+ try{
+  await tick();f.wb.openProduct('p','x','channels');await tick();hold=true;f.context.showQueue({kind:'trends',product_id:'x',query:'filtered shower head'});
+  findButton(f.root.find(n=>n.tagName==='DIALOG'),'确认提交：采集 Trends').click();await until(()=>release);
+  assert.equal(f.root.find(n=>n.tagName==='DIALOG'),null);
+  const status=f.root.querySelector('[data-rw-page]').find(n=>n.dataset.trendsTaskStatus==='true');
+  assert.ok(status,'closing confirmation immediately reveals the task at its work area');assert.match(status.textContent,/已提交|排队/);
+  assert.equal(f.requests.filter(r=>r.method==='POST').length,1);release();await tick();
+ }finally{release?.();f.wb.unmount();}
+});
+
+test('acknowledged Trends submission remains visible when its follow-up read fails and is never resubmitted',async()=>{
+ let fail=false;const product={id:'x',name:'Fixture shower',identity_revision:1,steps:[]};
+ const f=await fixture(()=>({id:'new-trends',status:'ready',disposition:'queued'}),{project:{products:[product]},readProject:p=>{if(fail)throw Error('read unavailable');return structuredClone(p);}});
+ try{
+  await tick();f.wb.openProduct('p','x','channels');fail=true;f.context.showQueue({kind:'trends',product_id:'x',query:'filtered shower head'});
+  findButton(f.root.find(n=>n.tagName==='DIALOG'),'确认提交：采集 Trends').click();await until(()=>!f.root.find(n=>n.tagName==='DIALOG'));await tick();
+  assert.match(f.root.find(n=>n.dataset.trendsTaskStatus==='true').textContent,/已提交/);
+  assert.ok(f.root.find(n=>n.tagName==='BUTTON'&&n.textContent==='采集已提交，等待状态更新').disabled);
+  assert.equal(f.requests.filter(r=>r.method==='POST').length,1);
+ }finally{f.wb.unmount();}
+});
+
+test('follow-up reads replace the queue receipt with the actual failed task beside the Trends chart',async()=>{
+ let submitted=false;const product={id:'x',name:'Fixture shower',identity_revision:1,steps:[]};
+ const f=await fixture(()=>{submitted=true;return {id:'new-trends',status:'ready',disposition:'queued'};},{project:{products:[product]},readActions:()=>({actions:submitted?[{id:'new-trends',kind:'trends',product_id:'x',status:'blocked',message:'来源读取未完成，请核对。',recovery_action:'retry'}]:[]})});
+ try{
+  await tick();f.wb.openProduct('p','x','channels');f.context.showQueue({kind:'trends',product_id:'x',query:'filtered shower head'});
+  findButton(f.root.find(n=>n.tagName==='DIALOG'),'确认提交：采集 Trends').click();await until(()=>f.root.find(n=>n.dataset.trendsTaskStatus==='true')?.textContent==='本次采集未完成');
+  assert.ok(f.root.find(n=>n.textContent==='来源读取未完成，请核对。'));assert.equal(f.requests.filter(r=>r.method==='POST').length,1);
+ }finally{f.wb.unmount();}
 });

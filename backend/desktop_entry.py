@@ -199,6 +199,9 @@ def main(argv=None) -> int:
         with open(args.data_dir / (args.mode + '.lock'), 'a') as owned:
             fcntl.flock(owned, fcntl.LOCK_EX | fcntl.LOCK_NB)
             if args.mode == 'api':
+                if (args.data_dir / 'customer-install.json').is_file():
+                    from services.customer_distribution import ensure_customer_background
+                    ensure_customer_background(args.data_dir)
                 from services.research_client import load_research_config
                 from services.research_runtime import check_cutover_startup
                 check_cutover_startup(load_research_config(), os.environ['SQLITE_DB_PATH'])
@@ -219,6 +222,10 @@ def main(argv=None) -> int:
                 config = load_research_config()
                 if not local_worker_command(config, os.environ['SQLITE_DB_PATH']):
                     return 0
+                if (args.data_dir / 'customer-install.json').is_file():
+                    from services.customer_distribution import customer_worker_ready
+                    if not customer_worker_ready(config):
+                        return 0
                 import asyncio
                 from services.research_worker import _run
                 root = Path(config.get('data_root') or Path.home() / '.local/share/ai-ecommerce-tools/research')

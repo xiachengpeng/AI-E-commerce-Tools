@@ -6,6 +6,7 @@ import { createActionService,actionResultSummary,actionStatus,actionProgress,ret
 import { createActionLogs } from '../components/live-logs.mjs';
 import { renderEvents } from '../components/events.mjs';
 import { renderAds,mediaControl } from '../components/ad-copy.mjs';
+import { restoreTrendsQuery } from '../services/trends-query.mjs';
 export function renderActions(context){
  const host=el(context,'section'),heading=el(context,'h1','','研究任务');heading.tabIndex=-1;host.append(heading,el(context,'p','rw-task-description','系统按步骤处理研究任务；需要核对、重试或补充资料时会在这里提示。'),button(context,'返回探索',()=>context.navigate('project')));
  const service=createActionService(context),logs=createActionLogs(context),records=panel(context,'自动处理记录','执行状态不代表产品已通过筛选；没有可确认结果时保留未知。'),sources=panel(context,'来源可用性','仅显示配置状态；不探测或自动采集。');
@@ -26,13 +27,12 @@ export function renderActions(context){
    row.append(button(rowContext,'查看任务日志',()=>{void logs.openActionLogs(action.id);},'rw-task-open-logs'));
    if(['ready','queued','running'].includes(action.status)&&Number.isInteger(action.attempt))row.append(button(rowContext,'停止本次尝试',async()=>{await service.stop(action);if(context.life.active)await refresh();}));
    if(retryEligible(action)){
-    let queryInput;
     if(action.kind==='trends'){
-     const queryKey=action.id+':'+action.attempt;context.state.actionQueries||={};
-     const label=el(rowContext,'label','','当地常用产品搜索词');queryInput=el(rowContext,'input');queryInput.type='text';queryInput.name='trends_query';queryInput.required=true;queryInput.maxLength=200;queryInput.setAttribute('aria-label','当地常用产品搜索词');
-     queryInput.value=context.state.actionQueries[queryKey]??trendsQuery(action);rowContext.life.listen(queryInput,'input',()=>{context.state.actionQueries[queryKey]=queryInput.value;});label.append(queryInput);row.append(label,el(rowContext,'p','rw-muted','按目标市场输入真实查询词；不自动从商品名推断。'));
+     const product=context.state.project.products?.find(p=>p.id===action.product_id),query=trendsQuery(action),meaning=product?restoreTrendsQuery(context,product).find(item=>item.query.toLocaleLowerCase()===query.toLocaleLowerCase())?.meaning:'';
+     row.append(el(rowContext,'p','rw-muted',query?'失败任务保留原查询词：'+query+(meaning?' · '+meaning:''):'该任务没有可复用的查询词，请从商品页重新准备。'));
     }
-    row.append(button(rowContext,action.recovery_action==='resume'?'继续查询结果':'显式重试失败任务',async()=>{await service.retry(action,queryInput?{query:queryInput.value}:{});if(context.life.active)await refresh();},'rw-primary rw-task-retry'));
+    row.append(button(rowContext,action.recovery_action==='resume'?'继续查询结果':'显式重试失败任务',async()=>{await service.retry(action);if(context.life.active)await refresh();},'rw-primary rw-task-retry'));
+    if(action.kind==='trends'&&trendsQuery(action))row.append(button(rowContext,'使用其他查询词',()=>context.showQueue?.({kind:'trends',product_id:action.product_id,refresh_query:true})));
    }
    if(action.result?.evidence_id)row.append(mediaControl(rowContext,projectPath(context.state.project.id)+'/actions/'+encodeURIComponent(action.id)+'/screenshot','读取采集截图'));
    if(action.result?.evidence_kind==='json')row.append(button(rowContext,'查看接口证据',async()=>{const proof=await context.api.request(projectPath(context.state.project.id)+'/actions/'+encodeURIComponent(action.id)+'/provider-evidence',{signal:context.life.signal});if(context.life.active)row.append(el(context,'pre','rw-log-lines',JSON.stringify(proof,null,2)));}));

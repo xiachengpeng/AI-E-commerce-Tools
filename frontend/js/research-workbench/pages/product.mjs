@@ -8,7 +8,8 @@ import { el as nativeEl, button as nativeButton, panel, link as nativeLink, noti
 import { createForm, fields } from '../components/forms.mjs';
 import { submitMutation, newCommandId } from '../services/commands.mjs';
 import { renderAds } from '../components/ad-copy.mjs';
-import {renderTrendChart} from '../components/trend-chart.mjs';
+import {renderTrendChart,currentTrendsTask,trendsTaskBusy} from '../components/trend-chart.mjs';
+import {renderTrendsCollectionMode} from '../components/collection-mode.mjs';
 import {frameProductForm,productThumbnail} from '../components/presentation.mjs';
 export const productSteps=['identification','coarse','expansion','channels','funnel','economics','score','decision','test','review'];
 export function nextProductStep(product){
@@ -39,6 +40,9 @@ export function renderProduct(context) {
  const stageLabel=stage=>stage||'旧记录未保存阶段';
  const stopScanAction=action=>context.showQueue({kind:action.kind,product_id:action.product_id});
  let activeDraft,activePersist,openingDirectEditor=false,inlineEvidenceHost=null;const inlineEvidenceForms=new Map();
+ const coarseResultKey=()=>JSON.stringify([state.project.id,state.product,product()?.identity_revision]);
+ if(state.coarseSavedResult&&(state.step!=='coarse'||!product()||product().merged_into||state.coarseSavedResult!==coarseResultKey()))delete state.coarseSavedResult;
+ if(state.coarseSavedResult){showCreativeResult();return root;}
  async function api(path,options={}) {
   const body=typeof options.body==='string'?JSON.parse(options.body):options.body;
   if(options.method==='POST'){
@@ -163,12 +167,14 @@ function renderSourceProduct(root){breadcrumbs(root);const p=product();if(!p){ro
  const latestScore=p.scores?.at(-1);
  const intro=box(current?.label||'产品档案',state.step==='score'&&latestScore?scoreMessage(latestScore):current?.reason||'请按步骤补齐证据');intro.classList.add('rw-stage-intro');intro.append(el('span','rw-tag',stepStatusLabel(current,p)));if(current?.next_action)intro.append(el('p','muted','下一步：'+current.next_action));panel.append(intro);if(state.step==='identification')panel.append(offerConceptCard(p));const actionbar=el('div','actions');const details=box('已保存的产物');details.classList.add('rw-stage-artifacts');
 if(state.step==='identification'){actionbar.append(button('确认具体商品',confirmProduct,'primary'),button('自动读取商品页',()=>run('landing',{product_id:p.id,landing_mode:state.landingModes[p.id]||'local'})));if(p.identity_history?.length)details.append(el('p','scope-note','商品身份已更换，旧资料保留为历史，需要重新确认当前商品的渠道、漏斗和成本证据。'));details.append(link('商品来源 ↗',p.url),rawDetails('查看身份审计字段',p.identification));if(p.landing_snapshot){details.append(el('h3','','自动页面观察（未代替人工确认）'),kv({title:p.landing_snapshot.title,price:p.landing_snapshot.price,page_type:p.landing_snapshot.page_type,requested_url:p.landing_snapshot.requested_url||'旧记录未保存',final_url:p.landing_snapshot.final_url||p.landing_snapshot.source_url||'未知',http_status_code:p.landing_snapshot.http_status_code??'旧记录未保存',browser_status_code:p.landing_snapshot.browser_status_code??'未使用 / 未保存',rendering_mode:p.landing_snapshot.rendering_mode||'旧记录未保存',observed_at:p.landing_snapshot.observed_at}));}const adIds=p.source_keyword_ids||[];for(const k of state.project.keywords.filter(k=>adIds.includes(k.id)))details.append(button('查看来源广告 · '+k.text,()=>showAds(k)));details.append(optionalResearchDetails(p));}
-else if(state.step==='coarse'){actionbar.append(button('查看与补充广告证据',()=>confirmCreatives(),'primary'));details.append(el('p','scope-note',`粗筛必须同时确认首次投放距今至少 ${state.project.rules?.min_active_days??30} 天、当前仍在投放，并有 ${state.project.rules?.min_creatives??3} 个独立活跃创意；商品已保留不等于通过。`),coarseFacts(p),button('继续寻找广告素材',()=>context.navigate('project')),button('证据不足，先记录决定',()=>go('decision')),rawDetails('查看身份审计字段',p.identification),optionalResearchDetails(p));}
+else if(state.step==='coarse'){actionbar.append(button('查看与补充广告证据',()=>confirmCreatives(),'primary'));if(p.steps?.find(step=>step.key==='coarse')?.state==='passed')actionbar.append(button('继续核对需求与竞争',()=>go('channels'),'primary'));details.append(el('p','scope-note',`粗筛必须同时确认首次投放距今至少 ${state.project.rules?.min_active_days??30} 天、当前仍在投放，并有 ${state.project.rules?.min_creatives??3} 个独立活跃创意；商品已保留不等于通过。`),coarseFacts(p),button('继续寻找广告素材',()=>context.navigate('project')),button('证据不足，先记录决定',()=>go('decision')),rawDetails('查看身份审计字段',p.identification),optionalResearchDetails(p));}
 else if(state.step==='expansion'){const parents=state.project.keywords.filter(k=>(p.source_keyword_ids||[]).includes(k.id));for(const k of parents)actionbar.append(button('从 '+k.text+' 扩词',()=>addKeyword(k,p),'primary'));if(parents.length)actionbar.append(button('AI 提取扩词建议',()=>run('expand',{product_id:p.id,keyword_id:parents[0].id})));else details.append(el('p','','该商品尚未关联来源关键词，可从项目搜索结果进入有来源的扩词流程。'));if(!(p.expansion_sources||[]).length)details.append(el('p','notice','当前没有可引用来源，请先完成商品页观察或关联广告采集。'));for(const source of p.expansion_sources||[]){const n=el('div','evidence rw-expansion-source');n.append(el('b','',source.source_kind==='landing'?'商品页来源':'广告来源 · '+(source.ad_id||'')),el('p','muted',`身份版本 ${source.identity_revision}${source.keyword_id?' · 来源关键词 '+source.keyword_id:''}`),rawDetails(source.source_kind==='landing'?'展开商品页原文（含网页导航等噪声）':'展开广告原文',source.text));details.append(n);}for(const k of state.project.keywords.filter(k=>k.product_id===p.id)){const n=el('div','path-row rw-expansion-child',k.text+' · '+(labels[k.status]||k.status));if(k.source_quote)n.append(el('p','muted',`${k.source_kind||'旧版来源'} · ${k.source_quote}`));details.append(n);}}
 else if(state.step==='channels'){
+ root.append(renderTrendsCollectionMode(context));
  const channelGrid=el('div','rw-channel-grid');
  for(const c of Object.keys(channels)){const card=box(channels[c]),saved=[...(p.evidence||[])].reverse().find(item=>item.channel===c);card.dataset.channelCard=c;if(c==='trends')card.append(renderTrendChart(context,p));card.append(el('p',saved?.confirmed?'muted':'notice',saved?saved.conclusion||saved.reason||'已保存观察，仍需核对':'尚无已保存证据'),el('p','muted',saved?.confirmed?'已人工确认；仍需核对来源时效':'待核实 · 缺失信息不作零结果'));card.append(button('＋ '+channels[c],()=>evidence(c)));channelGrid.append(card);}details.append(channelGrid);if(context.designDirectForms){inlineEvidenceHost=el('section','rw-channel-inline-editor');details.append(inlineEvidenceHost);}
- actionbar.append(button('导入 Trends CSV',trendsImport,'primary'),button('自动查 Trends',()=>run('trends',{product_id:p.id})));
+ const trendsBusy=trendsTaskBusy(currentTrendsTask(state,p)),collectTrends=button(trendsBusy?'采集已提交，等待状态更新':'自动查 Trends',()=>run('trends',{product_id:p.id}));collectTrends.disabled=trendsBusy;
+ actionbar.append(button('导入 Trends CSV',trendsImport,'primary'),collectTrends);
  const freshnessNames={fresh:'有效期内',stale:'待复核',expired:'已过期',unknown:'时效未知'},scopeNames={domain:'域名',store:'店铺',product:'当前商品',landing_page:'落地页',unknown:'未知'};
  for(const e of p.evidence||[]){
   const n=el('div','evidence');
@@ -258,7 +264,13 @@ function offerConceptCard(p){
  return card;
 }
 function confirmProduct(productId=null,{stayInExploration=false}={}){productId=typeof productId==='string'?productId:null;const p=productId?state.project.products.find(item=>item.id===productId):product();if(!p){warn('当前商品不存在，请刷新后重试。');return;}const i=p.identification||{},version=state.project.version;openForm('确认具体商品','这里只确认广告对应哪个商品。素材数量和活跃天数在下一步单独核对；更换商品链接会使旧证据失效但保留历史。',fields([['name','产品名称'],['url','准确商品详情页','url'],['reason','广告与商品相关性依据','textarea'],['relevance_result','核对结果','select',true,{unverified:'暂时无法判断，稍后核对',matched:'一致，确认是广告中的商品',mismatch:'不一致，不是广告中的商品'}],['relevance_confirmed','我已核对广告与此商品相关','checkbox',false]]).map(def=>def.key==='reason'?{...def,suggestionHelp:'请选择实际核对到的情况；是否一致由上方核对结果决定。',suggestions:['广告落地页直接指向该商品详情页','广告中的商品外观、结构与商品页一致','广告展示的品牌、型号或 SKU 与商品页一致','广告文案与商品页的规格、用途一致','广告中的商品包装、标识与商品页一致','广告中的商品外观、结构与商品页不一致','广告展示的品牌、型号或 SKU 与商品页不一致','广告链接指向分类页或其他商品，尚未找到准确商品','广告素材无法显示，暂时无法核对','商品页无法读取，暂时无法核对']}:def),async data=>{state.project=await api('/projects/'+state.project.id+'/commands',{method:'POST',body:JSON.stringify({action:'confirm_product',version,command_id:newCommandId(),payload:{...data,relevance_result:data.relevance_confirmed?'matched':data.relevance_result==='mismatch'?'mismatch':'unverified',product_id:p.id}})});if(stayInExploration){state.view='project';state.nextFeedback={message:data.relevance_confirmed?'已确认当前商品。可继续提词，或判断是否保留并研究。':'已保存当前商品信息。确认广告相关性后才能继续提词。'};}else state.step=data.relevance_confirmed?'coarse':'identification';},{...i,relevance_result:i.relevance_confirmed?'matched':i.relevance_result==='mismatch'?'mismatch':'unverified',name:p.name,url:p.url},{type:'confirm_product',objectId:p.id});}
+function showCreativeResult({focus=false}={}){
+ const p=product();context.editing=false;root.dataset.editing='false';
+ const result=creativeResult(context,p,{onTriage:d=>context.openTriage?.(p.id,d),onEdit:()=>confirmCreatives(),onBack:()=>{delete state.coarseSavedResult;state.projectSection='leads';state.explorationKeyword=p.source_keyword_ids?.[0];context.navigate('project');},onNext:()=>{delete state.coarseSavedResult;state.step='channels';delete state.productOverview;render();}});
+ root.replaceChildren(result);if(focus){result.querySelector('h1')?.focus({preventScroll:true});context.root.scrollTop=0;}
+}
 function confirmCreatives(extraRows=0,carried=null){
+ delete state.coarseSavedResult;
  const p=product(),i=p.identification||{},report=creativeEvidence(state.project,p),observed=observedCreatives(state.project,p);
  const draftKey='rabbit-hole:draft:'+JSON.stringify([state.project.id,state.product,'confirm_creatives',p.id]);
  const draftValues=state.drafts[draftKey]?.values||{},draftCount=Object.keys(draftValues).reduce((count,key)=>{const match=key.match(/^creative_(\d+)_id$/);return match&&String(draftValues[key]||'').trim()?Math.max(count,Number(match[1])):count;},0);
@@ -273,7 +285,7 @@ function confirmCreatives(extraRows=0,carried=null){
  const form=openForm('确认粗筛素材',`当前标准：广告年龄至少 ${report.requiredDays} 天，并有 ${report.requiredCount} 个独立活跃创意。创意指不同广告素材，不是不同商品。按实际记录展示，不足不补空栏；自动检查只读取已保存观察，不代表实时投放或连续投放。`,defs,async data=>{
   const creatives=[];for(let n=1;n<=creativeCount;n++){if(data[`creative_${n}_id`]||data[`creative_${n}_url`])creatives.push({id:data[`creative_${n}_id`],source_url:data[`creative_${n}_url`],distinct:data[`creative_${n}_distinct`],active:data[`creative_${n}_active`]});for(const suffix of ['id','url','distinct','active'])delete data[`creative_${n}_${suffix}`];}
   state.project=await api('/projects/'+state.project.id+'/commands',{method:'POST',body:JSON.stringify({action:'confirm_creatives',version,command_id:newCommandId(),payload:{...data,product_id:p.id,identity_revision:p.identity_revision,creatives}})});
- },initial,{type:'confirm_creatives',objectId:p.id,onSaved:()=>{context.editing=false;root.dataset.editing='false';const result=creativeResult(context,product(),{onTriage:d=>context.openTriage?.(p.id,d),onEdit:()=>confirmCreatives(),onBack:()=>{state.projectSection='leads';state.explorationKeyword=p.source_keyword_ids?.[0];context.navigate('project');},onNext:()=>{state.step='channels';delete state.productOverview;render();}});root.replaceChildren(result);result.querySelector('h1')?.focus({preventScroll:true});context.root.scrollTop=0;}});
+ },initial,{type:'confirm_creatives',objectId:p.id,onSaved:()=>{state.coarseSavedResult=coarseResultKey();showCreativeResult({focus:true});}});
  // The check uses saved evidence only; draft checkboxes never count as verified facts.
  const check=creativeCheck(context,p),tools=el('div','rw-creative-source-tools');
  if(!creativeCount)tools.append(el('p','rw-muted','尚未绑定广告素材，不需要填写三个空白创意。先补充广告，或添加你实际核对过的外部证据。'));

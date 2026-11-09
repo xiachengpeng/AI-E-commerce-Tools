@@ -95,6 +95,22 @@ def compress_to_webp(
     return webp_bytes, stats
 
 
+def compress_webp_to_target(image_bytes: bytes, target_bytes: int = 60 * 1024) -> Tuple[bytes, dict[str, Any]]:
+    """Try progressively lower quality without resizing or going below 70."""
+    if target_bytes <= 0:
+        raise ValueError("目标大小必须大于零")
+    smallest = None
+    for quality in (90, 85, 80, 75, 70):
+        data, stats = compress_to_webp(image_bytes, quality=quality)
+        stats['target_bytes'] = target_bytes
+        stats['target_met'] = len(data) <= target_bytes
+        if stats['target_met']:
+            return data, stats
+        if smallest is None or len(data) < len(smallest[0]):
+            smallest = (data, stats)
+    return smallest
+
+
 def compress_data_url_to_webp(
     data_url: str,
     quality: int = 90,

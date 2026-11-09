@@ -618,6 +618,7 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
         const altInput = document.getElementById('univUploadAltText');
         const webpCheckbox = document.getElementById('univUploadWebpToggle');
         const qualityInput = document.getElementById('univUploadQuality');
+        const target60Input = document.getElementById('univTarget60Kb');
         const singleContainer = document.getElementById('univSingleUploadContainer');
         const batchContainer = document.getElementById('univBatchUploadContainer');
         const resultCard = document.getElementById('univUploadResultCard');
@@ -630,6 +631,7 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
         if (altInput) altInput.value = STATE.altText;
         if (webpCheckbox) webpCheckbox.checked = true;
         if (qualityInput) qualityInput.value = 90;
+        if (target60Input) target60Input.checked = false;
         if (batchBadge) batchBadge.classList.add('hidden');
 
         if (singleContainer) singleContainer.classList.remove('hidden');
@@ -741,6 +743,8 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
 
     async function openUniversalBatchUploader(options = {}) {
         STATE.isBatchMode = true;
+        const target60Input = document.getElementById('univTarget60Kb');
+        if (target60Input) target60Input.checked = false;
         STATE.isOpen = true;
         STATE.sourceModule = options.sourceModule || 'general';
         const rawItems = Array.isArray(options.items) ? options.items : [];
@@ -1108,9 +1112,14 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
 
         const shouldCompress = webpToggle ? webpToggle.checked : true;
         const quality = qualityInput ? parseInt(qualityInput.value, 10) || 90 : 90;
+        const target60 = Boolean(document.getElementById('univTarget60Kb')?.checked);
+        if (target60 && !shouldCompress) {
+            if (typeof showToast === 'function') showToast('请先启用 WebP 压缩，再选择 60 KB 目标。', 'warning');
+            return;
+        }
 
         if (STATE.isBatchMode) {
-            await executeBatchProcess(shouldCompress, quality);
+            await executeBatchProcess(shouldCompress, quality, target60);
             return;
         }
 
@@ -1134,6 +1143,8 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
         }
 
         STATE.isUploading = true;
+        if (resultCard) resultCard.classList.add('hidden');
+        let uploaded = false;
         if (uploadBtn) {
             uploadBtn.disabled = true;
             uploadBtn.innerHTML = '<span class="loader w-3.5 h-3.5 border-white border-t-transparent inline-block"></span> 正在上传并优化中...';
@@ -1148,6 +1159,7 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
                 mime_type: shouldCompress ? 'image/webp' : 'image/png',
                 convert_to_webp: shouldCompress,
                 quality: quality,
+                target_size_bytes: target60 ? 60 * 1024 : null,
                 title: title,
                 alt_text: altText
             };
@@ -1160,8 +1172,12 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
 
             const data = await res.json().catch(() => ({}));
             if (res.ok && data.success && data.remote_url) {
+                uploaded = true;
                 STATE.lastResult = data;
-                if (typeof showToast === 'function') showToast('图片成功上传并托管至云图床！', 'success');
+                const compression = data.compression_stats;
+                const targetMissed = compression?.target_met === false;
+                const sizeLabel = compression ? `${(compression.compressed_size / 1024).toFixed(1)} KB` : '';
+                if (typeof showToast === 'function') showToast(targetMissed ? `图片已上传，压缩后 ${sizeLabel}，未达到 60 KB 目标。` : '图片成功上传并托管至云图床！', targetMissed ? 'warning' : 'success');
 
                 if (resultCard) {
                     resultCard.classList.remove('hidden');
@@ -1169,10 +1185,12 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
                     const previewLink = document.getElementById('univResultPreviewLink');
                     if (urlInput) urlInput.value = data.remote_url;
                     if (previewLink) previewLink.href = data.remote_url;
+                    const compressionResult = document.getElementById('univCompressionResult');
+                    if (compressionResult) compressionResult.textContent = compression ? `压缩后 ${sizeLabel} · 品质 ${compression.quality}${targetMissed ? ' · 未达到 60 KB 目标' : ''}` : '';
                 }
 
                 if (typeof STATE.onSuccess === 'function') {
-                    try { STATE.onSuccess(data); } catch (e) { console.error(e); }
+                    try { STATE.onSuccess(data, { storageType: STATE.storageType, configId: STATE.configId || null, title, altText, filename }); } catch (e) { console.error(e); }
                 }
             } else {
                 const errMsg = data.error || data.detail || data.message || `上传失败 (HTTP ${res.status})`;
@@ -1185,12 +1203,12 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
             STATE.isUploading = false;
             if (uploadBtn) {
                 uploadBtn.disabled = false;
-                uploadBtn.innerHTML = '<i class="ph-bold ph-check text-base"></i> 再次上传 / 更新';
+                uploadBtn.innerHTML = uploaded ? '<i class="ph-bold ph-check text-base"></i> 再次上传 / 更新' : '<i class="ph-bold ph-cloud-arrow-up text-base"></i> 开始上传至云图床';
             }
         }
     }
 
-    async function executeBatchProcess(shouldCompress, quality) {
+    async function executeBatchProcess(shouldCompress, quality, target60 = false) {
         STATE.isUploading = true;
         const uploadBtn = document.getElementById('btnUnivStartUpload');
         const results = [];
@@ -1222,6 +1240,7 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
                     mime_type: shouldCompress ? 'image/webp' : 'image/png',
                     convert_to_webp: shouldCompress,
                     quality: quality,
+                    target_size_bytes: target60 ? 60 * 1024 : null,
                     title: item.title || sanitizeNameForSeo(filename),
                     alt_text: item.altText || item.title || 'Product Image'
                 };
@@ -1235,9 +1254,9 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
                 const data = await res.json().catch(() => ({}));
                 if (res.ok && data.success && data.remote_url) {
                     results.push(data);
-                    if (statusEl) statusEl.innerHTML = '<span class="text-emerald-600 font-bold">✔ 成功</span>';
+                    if (statusEl) statusEl.textContent = data.compression_stats ? `✔ 成功 · ${(data.compression_stats.compressed_size / 1024).toFixed(1)} KB${data.compression_stats.target_met === false ? ' · 未达到 60 KB' : ''}` : '✔ 成功';
                 } else {
-                    if (statusEl) statusEl.innerHTML = '<span class="text-rose-500 font-bold">✖ 失败</span>';
+                    if (statusEl) statusEl.textContent = `✖ ${data.error || '上传失败'}`;
                 }
             } catch (e) {
                 if (statusEl) statusEl.innerHTML = '<span class="text-rose-500 font-bold">✖ 错误</span>';
@@ -1273,6 +1292,8 @@ Return ONLY a valid JSON object without markdown formatting, code fences, or bac
 
     // 全局暴露
     const exportsObj = {
+        get configId() { return STATE.configId; },
+        set configId(value) { STATE.configId = Number.isInteger(value) && value > 0 ? value : null; },
         openUniversalImageUploader,
         openUniversalBatchUploader,
         closeUniversalImageUploader,

@@ -21,6 +21,11 @@ def stage_frontend(target: Path) -> None:
         shutil.copytree(source / folder, target / folder)
     (target / 'dist').mkdir()
     shutil.copy2(source / 'dist/output.css', target / 'dist/output.css')
+    canvas = source / 'infinite-image-canvas/web/dist'
+    if not (canvas / 'index.html').is_file():
+        raise SystemExit('Build the image canvas before packaging (pnpm --dir frontend/infinite-image-canvas/web run build)')
+    shutil.copytree(canvas, target / 'infinite-image-canvas/web/dist')
+    shutil.copy2(source / 'infinite-image-canvas/LICENSE', target / 'infinite-image-canvas/LICENSE')
     icons = ROOT / 'desktop/node_modules/@phosphor-icons/web/src'
     shutil.copytree(icons, target / 'assets/phosphor')
     shutil.copy2(icons.parent / 'LICENSE', target / 'assets/phosphor/LICENSE')
@@ -53,12 +58,12 @@ def build() -> None:
     copy_runtime(work / 'dist/ai-ecommerce-backend', resources / 'backend')
     import playwright
     inventory = json.loads((Path(playwright.__file__).parent / 'driver/package/browsers.json').read_text())
-    cache = Path.home() / 'Library/Caches/ms-playwright'
+    cache = Path(os.environ.get('PLAYWRIGHT_BROWSERS_PATH') or Path.home() / 'Library/Caches/ms-playwright')
     browsers = resources / 'browsers'
     browsers.mkdir()
     browser_files = {}
     for entry in inventory['browsers']:
-        if entry['name'] not in {'chromium', 'chromium-headless-shell', 'ffmpeg'}:
+        if entry['name'] not in {'chromium-headless-shell', 'ffmpeg'}:
             continue
         folder = entry['name'].replace('-', '_') + '-' + entry['revision']
         source = cache / folder
@@ -66,7 +71,6 @@ def build() -> None:
             raise SystemExit(f'Missing matching build browser: {folder}')
         shutil.copytree(source, browsers / folder, symlinks=True)
         suffix = {
-            'chromium': 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
             'chromium-headless-shell': 'chrome-headless-shell-mac-arm64/chrome-headless-shell',
             'ffmpeg': 'ffmpeg-mac',
         }[entry['name']]

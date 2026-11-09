@@ -103,11 +103,12 @@ test('Trends query edits cannot silently replace uncertain UUID/hash or known409
   await service.retry(action,{query:'original query'});assert.equal(bodies[1].command_id,bodies[0].command_id);assert.equal(bodies[1].version,status?8:7);c.life.dispose();
  }
 });
-test('Trends queue retry exposes explicit labeled query input and blank click sends no POST',async()=>{
+test('Trends retry reuses the original query without an empty manual input',async()=>{
  const calls=[],action={id:'t',kind:'trends',product_id:'product',attempt:2,status:'blocked',recovery_action:'retry'};const c=context({request:async(path,options)=>{calls.push([path,options]);return path==='/sources'?{sources:[]}:options?.method?{id:'queued'}:{actions:[action]};}});c.root=fixtureRoot();c.navigate=()=>{};
- try{const host=renderActions(c);await new Promise(r=>setImmediate(r));const input=host.find(n=>n.name==='trends_query');assert.ok(input);assert.equal(input.attributes['aria-label'],'当地常用产品搜索词');
- const retry=host.find(n=>n.textContent==='显式重试失败任务');retry.click();await new Promise(r=>setImmediate(r));assert.equal(calls.filter(([,o])=>o?.method==='POST').length,0);
- input.value='explicit search';input.dispatchEvent(new Event('input'));retry.click();await new Promise(r=>setTimeout(r,20));assert.equal(calls.find(([,o])=>o?.method==='POST')[1].body.query,'explicit search');}finally{c.life.dispose();}
+ action.query='filtered shower head';
+ try{const host=renderActions(c);await new Promise(r=>setImmediate(r));assert.equal(host.find(n=>n.name==='trends_query'),null);assert.ok(host.find(n=>n.textContent.includes('原查询词：filtered shower head')));
+ const retry=host.find(n=>n.textContent==='显式重试失败任务');retry.click();await new Promise(r=>setTimeout(r,20));assert.equal(calls.find(([,o])=>o?.method==='POST')[1].body.query,'filtered shower head');
+ }finally{c.life.dispose();}
 });
 
 test('task log button opens a visible focused panel before the long record list',async t=>{

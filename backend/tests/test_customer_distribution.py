@@ -13,7 +13,7 @@ def lifecycle():
     return importlib.import_module('services.customer_distribution')
 
 
-def test_fresh_install_is_independently_owned_and_paused(tmp_path):
+def test_fresh_install_is_independently_owned_and_background_enabled(tmp_path):
     module = lifecycle()
     roots = [tmp_path / 'client-a', tmp_path / 'client-b']
     for root in roots:
@@ -21,7 +21,7 @@ def test_fresh_install_is_independently_owned_and_paused(tmp_path):
         assert info['version'] == '0.2.0'
         config = json.loads((root / 'research.json').read_text())
         assert config['enabled'] is True
-        assert config['worker_mode'] == 'paused'
+        assert config['worker_mode'] == 'active'
         assert config['feishu_polling_enabled'] is False
         from services.research_runtime import resolve_runtime_paths
         from services.research_activation import validate_activation, load_activation
@@ -36,6 +36,41 @@ def test_fresh_install_is_independently_owned_and_paused(tmp_path):
         assert not (root / '.env').exists()
     assert (roots[0] / 'research/keys/activation.key').read_bytes() != (roots[1] / 'research/keys/activation.key').read_bytes()
     assert (roots[0] / 'research/keys/evidence-signing.key').read_bytes() != (roots[1] / 'research/keys/evidence-signing.key').read_bytes()
+
+
+def test_startup_enables_old_paused_customer_without_changing_records_or_polling(tmp_path):
+    module = lifecycle(); root = tmp_path / 'customer'
+    module.prepare_customer_data(root, '0.2.0')
+    config_path = root / 'research.json'
+    config = json.loads(config_path.read_text())
+    config.update(worker_mode='paused', feishu_polling_enabled=True,
+                  feishu_polling_policy={'mode': 'observe'})
+    module.write_json(config_path, config)
+    before = {p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+    module.ensure_customer_background(root)
+    config['worker_mode'] = 'active'
+    assert json.loads(config_path.read_text()) == config
+    for name, value in before.items():
+        if name != Path('research.json'):
+            assert (root / name).read_bytes() == value
+    enabled = config_path.read_bytes()
+    module.ensure_customer_background(root)
+    assert config_path.read_bytes() == enabled
+
+
+def test_automatic_background_waits_for_valid_rules_without_creating_them(tmp_path):
+    module = lifecycle(); root = tmp_path / 'customer'
+    module.prepare_customer_data(root, '0.2.0')
+    config = json.loads((root / 'research.json').read_text())
+    assert module.customer_worker_ready(config) is False
+    assert not (root / 'research-business.json').exists()
+    rules = root / 'research-business.json'
+    module.write_json(rules, {})
+    config['business_settings_path'] = str(rules)
+    assert module.customer_worker_ready(config) is False
+    from routes.customer_setup import RULE_TEMPLATE
+    module.write_json(rules, RULE_TEMPLATE)
+    assert module.customer_worker_ready(config) is True
 
 
 def test_restart_preserves_records_keys_and_settings(tmp_path):

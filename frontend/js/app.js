@@ -210,6 +210,40 @@ function updateResearchSettingsFrame(enabled) {
     researchSettingsFrameRestore = () => { title.textContent = previousTitle; if (description) description.textContent = previousDescription; marker.before(grid); marker.remove(); details.remove(); topbar.remove(); for (const [node, text] of labels) node.textContent = text; };
 }
 let unifiedNavigationMounted = false;
+let unifiedSidebarTooltip = null;
+function hideUnifiedSidebarTooltip() {
+    if (unifiedSidebarTooltip) unifiedSidebarTooltip.hidden = true;
+}
+function setupUnifiedSidebarTooltips(menu, sidebar) {
+    if (!menu.addEventListener) return;
+    const show = (event) => {
+        if (!sidebar.classList.contains('rw-sidebar-collapsed')) return;
+        const item = event.target.closest?.('.side-tab, summary');
+        if (!item || !menu.contains(item)) return;
+        const label = item.getAttribute('aria-label');
+        if (!label) return;
+        if (!unifiedSidebarTooltip) {
+            unifiedSidebarTooltip = document.createElement('div');
+            unifiedSidebarTooltip.className = 'rw-sidebar-tooltip';
+            unifiedSidebarTooltip.setAttribute('role', 'tooltip');
+            document.body.append(unifiedSidebarTooltip);
+        }
+        const rect = item.getBoundingClientRect();
+        unifiedSidebarTooltip.textContent = label;
+        unifiedSidebarTooltip.style.left = `${rect.right + 8}px`;
+        unifiedSidebarTooltip.style.top = `${rect.top + rect.height / 2}px`;
+        unifiedSidebarTooltip.hidden = false;
+    };
+    const hide = (event) => {
+        const item = event.target.closest?.('.side-tab, summary');
+        if (item && (!event.relatedTarget || !item.contains(event.relatedTarget))) hideUnifiedSidebarTooltip();
+    };
+    menu.addEventListener('mouseover', show);
+    menu.addEventListener('mouseout', hide);
+    menu.addEventListener('focusin', show);
+    menu.addEventListener('focusout', hide);
+    menu.addEventListener('scroll', hideUnifiedSidebarTooltip);
+}
 function updateResearchDesignNavigation(tabId) {
     const sidebar = document.getElementById('appSidebar');
     if (!document.body?.classList || !sidebar?.querySelector) return;
@@ -225,19 +259,24 @@ function updateResearchDesignNavigation(tabId) {
     if (unifiedNavigationMounted) { revealActiveGroup(); return; }
     const menu = document.createElement('nav'); menu.className = 'rw-global-navigation'; menu.setAttribute('aria-label', '应用功能');
     // Move the original controls once; their handlers and IDs stay intact across modules.
-    const move = (id, parent) => { const node = document.getElementById(id); if (node) parent.append(node); };
+    const move = (id, parent) => { const node = document.getElementById(id); if (node) { const label = node.querySelector('span')?.textContent?.trim(); if (label) { node.setAttribute('title', label); node.setAttribute('aria-label', label); } parent.append(node); } };
     move('tab-research', menu); move('tab-analysis', menu);
-    const group = (label, glyph, ids) => { const details = document.createElement('details'), summary = document.createElement('summary'), icon = document.createElement('i'), name = document.createElement('span'); icon.className = 'ph ph-' + glyph; icon.setAttribute('aria-hidden', 'true'); name.textContent = label; summary.append(icon, name); details.append(summary); ids.forEach(id => move(id, details)); menu.append(details); };
+    const group = (label, glyph, ids) => { const details = document.createElement('details'), summary = document.createElement('summary'), icon = document.createElement('i'), name = document.createElement('span'); icon.className = 'ph ph-' + glyph; icon.setAttribute('aria-hidden', 'true'); summary.setAttribute('title', label); summary.setAttribute('aria-label', label); name.textContent = label; summary.append(icon, name); details.append(summary); ids.forEach(id => move(id, details)); menu.append(details); };
     group('内容制作', 'files', ['tab-generate', 'tab-listing', 'tab-ads']);
-    group('图片工具', 'image', ['tab-square-redraw', 'tab-watermark-removal']);
+    group('图片工具', 'image', ['tab-image-canvas', 'tab-square-redraw', 'tab-watermark-removal']);
     group('翻译', 'translate', ['tab-translate', 'tab-text-translate']);
     const bottom = document.createElement('div'); bottom.className = 'rw-global-bottom'; move('btnOpenBrandHub', bottom); move('tab-settings', bottom); menu.append(bottom);
     group('更多工具', 'dots-three', ['btnOpenHistory', 'btnResetAllState']);
     sidebar.append(menu);
+    setupUnifiedSidebarTooltips(menu, sidebar);
     unifiedNavigationMounted = true;
+    let collapsed = false;
+    try { collapsed = localStorage.getItem('ai_tool_unified_sidebar_collapsed') === 'true'; } catch (_) {}
+    setUnifiedSidebarCollapsed(collapsed, false);
     revealActiveGroup();
 }
 function switchMainTab(tabId) {
+    if (tabId === 'legacy-image-canvas') tabId = 'image-canvas';
     updateResearchDesignNavigation(tabId);
     if (tabId !== 'settings' && typeof unmountSettingsIntegrations === 'function') unmountSettingsIntegrations();
     if (tabId === 'settings' && typeof switchSettingsTab === 'function') switchSettingsTab(settingsState.activeTab || 'ai');
@@ -369,9 +408,24 @@ window.onload = async () => {
     console.log("%c[System] App Ready", "color: #10b981; font-weight: bold;");
 };
 
+function setUnifiedSidebarCollapsed(collapsed, persist = true) {
+    const sidebar = document.getElementById('appSidebar');
+    if (!sidebar) return;
+    hideUnifiedSidebarTooltip();
+    sidebar.classList.toggle('rw-sidebar-collapsed', collapsed);
+    const toggle = document.getElementById('btnToggleSidebar');
+    const label = collapsed ? '展开侧边栏' : '收起侧边栏';
+    if (toggle) { toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true'); toggle.setAttribute('aria-label', label); toggle.setAttribute('title', label); }
+    if (persist) { try { localStorage.setItem('ai_tool_unified_sidebar_collapsed', collapsed ? 'true' : 'false'); } catch (_) {} }
+}
+
 function toggleSidebarExpansion(forceState) {
     const sidebar = document.getElementById('appSidebar');
     if (!sidebar) return;
+    if (document.body?.classList.contains('unified-navigation-mode')) {
+        setUnifiedSidebarCollapsed(typeof forceState === 'boolean' ? !forceState : !sidebar.classList.contains('rw-sidebar-collapsed'));
+        return;
+    }
     const isCurrentlyExpanded = sidebar.classList.contains('sidebar-expanded');
     const targetState = typeof forceState === 'boolean' ? forceState : !isCurrentlyExpanded;
 
@@ -388,6 +442,7 @@ function toggleSidebarExpansion(forceState) {
 function initSidebarState() {
     const sidebar = document.getElementById('appSidebar');
     if (!sidebar) return;
+    if (document.body?.classList.contains('unified-navigation-mode')) return;
     try {
         const saved = localStorage.getItem('ai_tool_sidebar_expanded');
         if (saved === 'true') {

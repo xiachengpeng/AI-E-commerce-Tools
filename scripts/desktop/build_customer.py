@@ -22,6 +22,10 @@ def stage_frontend(source: Path, target: Path, icons: Path):
     shutil.copy2(source/'dist/output.css',target/'dist/output.css')
     shutil.copytree(icons/'src',target/'assets/phosphor')
     shutil.copy2(icons/'LICENSE',target/'assets/phosphor/LICENSE')
+    canvas=target/'infinite-image-canvas'
+    (canvas/'web').mkdir(parents=True)
+    shutil.copytree(source/'infinite-image-canvas/web/dist',canvas/'web/dist')
+    shutil.copy2(source/'infinite-image-canvas/LICENSE',canvas/'LICENSE')
     value=(source/'index.html').read_text().replace('https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/','assets/phosphor/')
     (target/'index.html').write_text(value)
 
@@ -57,8 +61,7 @@ def build(args):
     import playwright
     inventory=json.loads((Path(playwright.__file__).parent/'driver/package/browsers.json').read_text())
     browsers=resources/'browsers';browsers.mkdir();entries={}
-    suffixes={'chromium':'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
-       'chromium-headless-shell':'chrome-headless-shell-mac-arm64/chrome-headless-shell','ffmpeg':'ffmpeg-mac'}
+    suffixes={'chromium-headless-shell':'chrome-headless-shell-mac-arm64/chrome-headless-shell','ffmpeg':'ffmpeg-mac'}
     for item in inventory['browsers']:
         name=item['name']
         if name not in suffixes: continue

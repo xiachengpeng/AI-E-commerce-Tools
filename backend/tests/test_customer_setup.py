@@ -20,13 +20,13 @@ def setup(tmp_path):
 BASE = '/api/research/workbench/v1/customer-setup'
 
 
-def test_clean_status_is_paused_and_contains_no_credentials(setup):
+def test_clean_status_defaults_to_enabled_and_contains_no_credentials(setup):
     root, client, headers = setup
     response = client.get(BASE, headers=headers)
     assert response.status_code == 200
     assert response.headers['cache-control'] == 'no-store'
     data = response.json()
-    assert data['setup_complete'] is False and data['worker_enabled'] is False
+    assert data['setup_complete'] is False and data['worker_enabled'] is True
     assert data['business'] is None and data['version'] == '0.2.0'
     assert 'data_root' not in response.text and 'signature' not in response.text
 
@@ -38,7 +38,7 @@ def test_enable_requires_valid_explicit_rules_and_cost_confirmation(setup):
     assert client.post(BASE, headers=headers, json={'action': 'rules', 'business': RULE_TEMPLATE, 'confirmed': False}).status_code == 422
     saved = client.post(BASE, headers=headers, json={'action': 'rules', 'business': RULE_TEMPLATE, 'confirmed': True})
     assert saved.status_code == 200
-    assert saved.json()['worker_enabled'] is False
+    assert saved.json()['worker_enabled'] is True
     assert client.post(BASE, headers=headers, json={'action': 'background', 'enabled': True}).status_code == 422
     enabled = client.post(BASE, headers=headers, json={'action': 'background', 'enabled': True, 'confirm_costs': True, 'observe_feishu': True})
     assert enabled.status_code == 200 and enabled.json()['restart_required'] is True
@@ -46,8 +46,8 @@ def test_enable_requires_valid_explicit_rules_and_cost_confirmation(setup):
     assert config['worker_mode'] == 'active' and config['feishu_polling_enabled'] is True
     assert config['feishu_polling_policy'] == {'mode': 'observe'}
     paused = client.post(BASE, headers=headers, json={'action': 'background', 'enabled': False})
-    assert paused.status_code == 200
-    assert json.loads((root / 'research.json').read_text())['worker_mode'] == 'paused'
+    assert paused.status_code == 422
+    assert json.loads((root / 'research.json').read_text())['worker_mode'] == 'active'
 
 
 def test_unknown_fields_invalid_rules_and_cross_site_leave_config_unchanged(setup):
@@ -60,8 +60,10 @@ def test_unknown_fields_invalid_rules_and_cross_site_leave_config_unchanged(setu
     assert (root / 'research.json').read_bytes() == before
 
 
-def test_setup_completion_does_not_start_background(setup):
+def test_setup_completion_keeps_background_enabled_without_inventing_rules(setup):
     root, client, headers = setup
     result = client.post(BASE, headers=headers, json={'action': 'complete'})
     assert result.status_code == 200 and result.json()['setup_complete'] is True
-    assert result.json()['worker_enabled'] is False
+    assert result.json()['worker_enabled'] is True
+    assert result.json()['business'] is None
+    assert not (root / 'research-business.json').exists()

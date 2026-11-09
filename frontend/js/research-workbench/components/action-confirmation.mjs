@@ -2,6 +2,8 @@ import {el,button,panel,marketNames,notify} from './elements.mjs';
 import {createActionService,actionNames,actionStatus,actionResultSummary} from '../services/actions.mjs';
 import {createLifecycle} from '../lifecycle.mjs';
 import {scanCandidates} from '../services/journey.mjs';
+import {createTrendsQueryEditor} from './trends-query-editor.mjs';
+import {rememberTrendsQuery} from '../services/trends-query.mjs';
 
 export function renderActionConfirmation(context,selection,onSubmitted) {
  const {state}=context,project=state.project,word=project.keywords?.find(k=>k.id===selection.keyword_id),product=project.products?.find(p=>p.id===selection.product_id);
@@ -24,21 +26,21 @@ export function renderActionConfirmation(context,selection,onSubmitted) {
  if(selection.kind==='verify')choice.append(el(context,'p','','仅核对当前词的商品线索，每批最多20个；AI判断不会代替人工事实核实。'));
  choice.append(el(context,'p','rw-muted',['verify','expand','keywords'].includes(selection.kind)?'将调用已配置的 AI，可能产生费用。仅提交一次，结果不确定时先核对。':selection.kind==='scan'?'按当前采集模式和项目预算搜索公开广告，结果是限定样本，不代表全部市场。':'按当前来源与项目预算执行；不会自动发布或投放。'));
  if(selection.landing_mode)choice.append(el(context,'p','rw-muted',selection.landing_mode==='firecrawl'?'商品页通过 Firecrawl 读取，可能消耗账户额度。':'商品页在本机读取，不自动改用付费读取服务。'));
- let query;
+ let query,queryEditor;
  if(selection.kind==='trends'){
-  const label=el(context,'label','','当地常用产品搜索词');query=el(context,'input');query.name='initial_trends_query';query.type='text';query.maxLength=200;query.required=true;query.setAttribute('aria-label','首次 Trends 查询词');query.value=selection.query||'';
-  context.life.listen(query,'input',()=>{selection.query=query.value;});label.append(query);choice.append(label,el(context,'p','rw-muted','输入1到200字；商品名不会自动代填。'));
+  queryEditor=createTrendsQueryEditor(context,selection,product);query=queryEditor.input;choice.append(queryEditor.host);
  }
  let submitted=false;
  const submit=button(context,'确认提交：'+kinds[selection.kind],async()=>{
   if(submitted)return;
+  queryEditor?.validate();
   if(batch&&(!batch.length||state.project?.id!==confirmedProjectId||state.project.version!==confirmedVersion))throw Error('可执行词或项目资料已更新，请取消后重新核对本批范围。');
   if(selection.kind==='keywords'&&(state.project?.id!==confirmedProjectId||state.project.version!==confirmedVersion||(state.project.direction||'')!==confirmedDirection))throw Error('研究方向或项目资料已更新，请取消后重新确认本次操作。');
   if(collectionSource&&(state.project.collection_modes?.[collectionSource]||'ui')!==collectionMode)throw Error('采集方式已变化，请取消并重新打开确认窗口，核对方式后再提交。');const {action_id,...request}=selection;if(query)request.query=query.value.trim();
-  context.onActionSubmitting?.(true);
-  try{const outcome=await service.enqueue(request);if(!context.life.active)return;submitted=true;choice.replaceChildren(el(context,'p','','请求已保存，正在核对执行状态；不会重复提交。'));await onSubmitted(outcome);}
-  finally{context.onActionSubmitting?.(false);}
- },'rw-primary');submit.disabled=!!batch&&!batch.length;choice.append(submit);
+  const confirmedQuery=queryEditor?.candidate();queryEditor?.setSubmitting(true);context.onActionSubmitting?.(true);
+  try{const outcome=await service.enqueue(request);if(!context.life.active)return;submitted=true;if(confirmedQuery&&product&&queryEditor.isCurrent())rememberTrendsQuery(context,product,confirmedQuery);choice.replaceChildren(el(context,'p','','请求已保存，正在核对执行状态；不会重复提交。'));await onSubmitted(outcome);}
+  finally{queryEditor?.setSubmitting(false);context.onActionSubmitting?.(false);}
+ },'rw-primary');submit.dataset.actionSubmit='true';submit.disabled=!!batch&&!batch.length;choice.append(submit);
  return choice;
 }
 
@@ -50,11 +52,11 @@ export function createActionDialog(context,selection,{onSubmitted,onCancel}){
  let submitting=false,closed=false;
  const cancel=button({...context,life},'取消本次操作',()=>{if(!submitting)onCancel();}),close=button({...context,life},'关闭确认窗口',()=>{if(!submitting)onCancel();},'rw-action-dialog-close');close.setAttribute('aria-label','关闭确认窗口');close.textContent='×';
  const status=el(context,'p','rw-action-dialog-status');status.dataset.rwStatus='';status.setAttribute('role','alert');
- const modalContext={...context,root:dialog,life,onActionSubmitting:busy=>{submitting=busy;cancel.disabled=busy;close.disabled=busy;dialog.setAttribute('aria-busy',String(busy));}};
+ const modalContext={...context,root:dialog,life,onEditTrendsProduct:productId=>{if(submitting)return;onCancel();context.openProduct?.(context.state.project.id,productId,'identification');},onActionSubmitting:busy=>{submitting=busy;cancel.disabled=busy;close.disabled=busy;dialog.setAttribute('aria-busy',String(busy));}};
  const choice=renderActionConfirmation(modalContext,selection,onSubmitted);
  if(!choice){life.dispose();return null;}
  const title=choice.querySelector('h2');title.id='rw-action-confirmation-'+(++dialogSequence);dialog.setAttribute('aria-labelledby',title.id);
- const controls=el(context,'div','rw-action-dialog-actions'),submit=choice.querySelector('button');submit.remove();controls.append(cancel,submit);choice.append(status,controls);dialog.append(close,choice);
+ const controls=el(context,'div','rw-action-dialog-actions'),submit=choice.querySelector('[data-action-submit]');submit.remove();controls.append(cancel,submit);choice.append(status,controls);dialog.append(close,choice);
  life.listen(dialog,'cancel',event=>{event.preventDefault();if(!submitting)onCancel();});
  const controller={dialog,needsPaint:false,close({restoreFocus=true}={}){if(closed)return;closed=true;life.dispose();if(dialog.open&&dialog.close)dialog.close();dialog.remove();if(restoreFocus&&trigger?.isConnected!==false)trigger?.focus?.({preventScroll:true});}};
  const detach=context.life.track(()=>controller.close({restoreFocus:false}));life.track(detach);

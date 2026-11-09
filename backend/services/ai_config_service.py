@@ -362,7 +362,13 @@ def get_snapshot(db, capability):
     binding = db.get(AICapabilityBinding, capability)
     if not binding:
         raise ValueError("该能力尚未绑定 AI 提供商")
-    provider = db.get(AIProviderConfig, binding.provider_config_id)
+    return get_snapshot_for_provider(db, capability, binding.provider_config_id)
+
+
+def get_snapshot_for_provider(db, capability, provider_id):
+    if capability not in CAPABILITIES:
+        raise ValueError("不支持的能力类型")
+    provider = db.get(AIProviderConfig, provider_id)
     if not provider or not provider.enabled:
         raise ValueError("绑定的 AI 提供商不可用")
     supported = provider.supports_text if capability == "text" else provider.supports_image

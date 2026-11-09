@@ -24,11 +24,11 @@ def test_rejects_private_files_and_escaping_links(tmp_path):
 
 
 def test_clean_resources_are_accepted(tmp_path):
-    for name in ['backend/ai-ecommerce-backend','frontend/index.html','frontend/dist/output.css','frontend/js/research-workbench/index.mjs','frontend/assets/phosphor/regular/style.css']:
+    for name in ['backend/ai-ecommerce-backend','frontend/index.html','frontend/dist/output.css','frontend/js/research-workbench/index.mjs','frontend/infinite-image-canvas/web/dist/index.html','frontend/infinite-image-canvas/web/dist/THIRD_PARTY_NOTICES.txt','frontend/infinite-image-canvas/LICENSE','frontend/assets/phosphor/regular/style.css']:
         p=tmp_path/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('fixture')
     import json
     inventory={}
-    for name in ('chromium','chromium-headless-shell','ffmpeg'):
+    for name in ('chromium-headless-shell','ffmpeg'):
         executable=tmp_path/'browsers'/name
         executable.parent.mkdir(exist_ok=True)
         executable.write_text('fixture');executable.chmod(0o700)
@@ -55,3 +55,9 @@ def test_python_runtime_copy_preserves_framework_structure(tmp_path):
     assert (target/'Python').is_symlink()
     assert (target/'Versions/Current').is_symlink()
     assert (target/'Python').read_text()=='fixture'
+
+
+def test_missing_canvas_resources_rejected(tmp_path):
+    issues=checker().validate(tmp_path)
+    assert 'missing-resource:frontend/infinite-image-canvas/web/dist/index.html' in issues
+    assert 'missing-resource:frontend/infinite-image-canvas/LICENSE' in issues

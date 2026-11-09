@@ -17,7 +17,7 @@ def validate(root: Path) -> list[str]:
     inventory = root / 'browser-inventory.json'
     try:
         entries = json.loads(inventory.read_text())
-        if set(entries) != {'chromium', 'chromium-headless-shell', 'ffmpeg'}:
+        if set(entries) != {'chromium-headless-shell', 'ffmpeg'}:
             raise ValueError('incomplete browser inventory')
         for name, relative in entries.items():
             executable = root / relative
@@ -26,7 +26,8 @@ def validate(root: Path) -> list[str]:
     except (OSError, ValueError, TypeError):
         problems.append('missing-browser:inventory')
     for name in ['backend/ai-ecommerce-backend', 'frontend/index.html', 'frontend/dist/output.css',
-                 'frontend/js/research-workbench/index.mjs', 'frontend/assets/phosphor/regular/style.css']:
+                 'frontend/js/research-workbench/index.mjs',
+                 'frontend/infinite-image-canvas/web/dist/index.html', 'frontend/infinite-image-canvas/web/dist/THIRD_PARTY_NOTICES.txt', 'frontend/infinite-image-canvas/LICENSE', 'frontend/assets/phosphor/regular/style.css']:
         if not (root / name).is_file():
             problems.append('missing-resource:' + name)
     return problems

@@ -30,6 +30,11 @@ def test_runtime_frontend_staging_is_allowlisted(tmp_path):
     (root/'.env').write_text('private')
     (root/'history.db').write_text('private')
     (root/'js/app.js').write_text('const value=1;')
+    canvas=root/'infinite-image-canvas'; (canvas/'web/dist').mkdir(parents=True)
+    (canvas/'LICENSE').write_text('license')
+    (canvas/'web/dist/index.html').write_text('canvas')
+    (canvas/'web/dist/THIRD_PARTY_NOTICES.txt').write_text('notices')
+    (canvas/'web/.env').write_text('private')
     icons=tmp_path/'icons';(icons/'src/regular').mkdir(parents=True)
     (icons/'src/regular/style.css').write_text('font{}');(icons/'LICENSE').write_text('license')
     out=tmp_path/'out'
@@ -37,3 +42,6 @@ def test_runtime_frontend_staging_is_allowlisted(tmp_path):
     assert not (out/'.env').exists() and not (out/'history.db').exists()
     assert 'https://cdn.jsdelivr.net/npm/@phosphor' not in (out/'index.html').read_text()
     assert (out/'assets/phosphor/LICENSE').is_file()
+    assert (out/'infinite-image-canvas/web/dist/index.html').read_text()=='canvas'
+    assert (out/'infinite-image-canvas/LICENSE').is_file()
+    assert not (out/'infinite-image-canvas/web/.env').exists()
